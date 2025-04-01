@@ -1,0 +1,27 @@
+[project]
+name = "rich-list"
+version = "0.1.0"
+description = "Read articles, posts, videos and manage content you view with AI."
+authors = [
+    {name = "Andrew Wray",email = "andrew@denseanalysis.org"}
+]
+license = {text = "AGPL"}
+readme = "README.md"
+requires-python = ">=3.13"
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+
+zendriver = "^0.5.1"
+yt-dlp = "^2025.3.27"
+
+[tool.poetry.group.dev.dependencies]
+
+pyright = "^1.1.398"
+ruff = "^0.11.2"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

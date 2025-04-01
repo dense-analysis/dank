@@ -1,0 +1,3 @@
+# Make poetry install files to ./.venv
+[virtualenvs]
+in-project = true
