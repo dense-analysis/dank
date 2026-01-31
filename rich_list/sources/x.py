@@ -1,11 +1,10 @@
+from collections.abc import AsyncIterator
+from typing import Any, TypedDict, cast
 from urllib.parse import quote
+
 import zendriver
-from typing import Any, AsyncIterator, TypedDict
-from typing import cast
-import asyncio
 
-
-from .base import SourceSettings, Post, register_source
+from .base import Post, SourceSettings, register_source
 
 
 class XAccountSettings(TypedDict):
@@ -37,7 +36,7 @@ async def login(
 
     try:
         await page.wait_for_ready_state()
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # If we time out waiting for the page to be ready, proceed anyway.
         # We can timeout and still the page can actually be interacted with.
         pass
@@ -47,14 +46,14 @@ async def login(
     await username_input.send_keys(username + '\n')
 
     password_input = await page.select(
-        '[autocomplete="current-password"]'
+        '[autocomplete="current-password"]',
     )
 
     await password_input.send_keys(password + '\n')
 
     try:
         await page.wait_for_ready_state()
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # If we time out waiting for the page to be ready, proceed anyway.
         # We can timeout and still the page can actually be interacted with.
         pass
@@ -96,7 +95,7 @@ async def load_posts(
 
         try:
             await page.wait_for_ready_state()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Proceed even if we timeout anyway.
             pass
 

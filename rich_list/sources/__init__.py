@@ -1,9 +1,9 @@
 import concurrent.futures
-
 from typing import Any, NamedTuple, Protocol
 
-from .base import available_sources, SourceSettings, Source, Post
 import rich_list.sources.x  # noqa
+
+from .base import Post, Source, SourceSettings, available_sources
 
 
 class SourceTaskDefinition(NamedTuple):
@@ -38,7 +38,7 @@ async def load_posts_group(
 
         async for post in task_def.source.load_posts(
             task_def.settings,
-            task_def.source_persistent_data
+            task_def.source_persistent_data,
         ):
             await post_processor(source_name, post)
 

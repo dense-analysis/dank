@@ -1,8 +1,5 @@
-from typing import AsyncIterator, NamedTuple, TypedDict
-from typing import TypeVar
-from typing import Type
-from typing import Any
-from typing import Callable
+from collections.abc import AsyncIterator, Callable
+from typing import Any, NamedTuple, TypedDict, TypeVar
 
 
 class Post(NamedTuple):
@@ -16,7 +13,7 @@ class SourceSettings(TypedDict):
 
 class Source(NamedTuple):
     name: str
-    settings_type: Type[SourceSettings]
+    settings_type: type[SourceSettings]
     load_posts: Callable[[Any, dict[str, Any]], AsyncIterator[Post]]
 
 
@@ -27,7 +24,7 @@ available_sources: dict[str, Source] = {}
 
 def register_source(
     source_name: str,
-    settings_type: Type[SettingsType],
+    settings_type: type[SettingsType],
     load_func: Callable[[SettingsType, dict[str, Any]], AsyncIterator[Post]],
 ) -> None:
     """
