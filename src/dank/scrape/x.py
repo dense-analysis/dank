@@ -8,7 +8,7 @@ import pathlib
 import random
 import time
 from collections.abc import AsyncIterator, Iterable
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 from urllib.parse import quote, urlparse
 
 import aiohttp
@@ -18,6 +18,7 @@ from zendriver import Element, cdp
 from dank.config import EmailSettings, XSettings
 from dank.model import RawAsset, RawPost
 from dank.scrape.imap_email import EmailSearchFilters, wait_for_code
+from dank.scrape.types import ScrapeBatch
 from dank.scrape.x_payloads import (
     XAsset,
     XExtractedPost,
@@ -80,11 +81,6 @@ async def scrape_accounts(
                     "X login required; stopping scrape.",
                 )
                 return
-
-
-class ScrapeBatch(NamedTuple):
-    posts: list[RawPost]
-    assets: list[RawAsset]
 
 
 async def _scrape_account(
@@ -459,7 +455,7 @@ async def _download_assets(
 
                     with temp_path.open("wb") as file:
                         async for chunk in response.content.iter_chunked(
-                            65536
+                            65536,
                         ):
                             if not chunk:
                                 continue

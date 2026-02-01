@@ -27,6 +27,20 @@ ENGINE = MergeTree
 PARTITION BY (domain, toYYYYMM(scraped_at))
 ORDER BY (domain, scraped_at, post_id, url);
 
+CREATE TABLE IF NOT EXISTS dank.assets (
+    domain LowCardinality(String),
+    post_id String,
+    url String,
+    local_path String,
+    content_type LowCardinality(String),
+    size_bytes UInt64,
+    created_at DateTime64(3, 'UTC'),
+    updated_at DateTime64(3, 'UTC'),
+    source LowCardinality(String)
+)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (domain, post_id, url);
+
 CREATE TABLE IF NOT EXISTS dank.posts (
     domain LowCardinality(String),
     post_id String,

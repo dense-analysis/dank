@@ -10,7 +10,7 @@ class RawPost(NamedTuple):
     scraped_at: datetime.datetime
     source: str
     request_url: str
-    # A payload such as a JSON string of data from a scraped post.
+    # A payload such as raw XML data from a scraped post.
     payload: str
 
 
@@ -22,6 +22,18 @@ class RawAsset(NamedTuple):
     scraped_at: datetime.datetime
     source: str
     local_path: str
+
+
+class Asset(NamedTuple):
+    domain: str
+    post_id: str
+    url: str
+    local_path: str
+    content_type: str
+    size_bytes: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    source: str
 
 
 class Post(NamedTuple):

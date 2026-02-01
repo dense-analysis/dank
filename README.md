@@ -34,6 +34,7 @@ Configuration lives in `config.toml` and should not be committed. Example:
 ```toml
 sources = [
   { domain = "x.com", accounts = ["example"] },
+  "blog.codinghorror.com",
 ]
 
 [clickhouse]
@@ -75,6 +76,9 @@ port = 993
 `sources` controls which domains to scrape and process. Each entry can provide
 accounts for account-based sources like `x.com`.
 
+If any particular domain lacks a specific configuration, the root of the
+domain will be scraped to discover RSS feeds to read from.
+
 `browser.executable_path` sets the browser binary to launch. If unset, DANK
 will try common Chromium locations.
 
@@ -96,8 +100,8 @@ Scrape configured sources:
 uv run python -m dank.scrape --config config.toml --headless
 ```
 
-Process raw posts into normalized posts:
+Process raw posts into normalized posts and assets:
 
 ```
-uv run python -m dank.process --config config.toml --limit 500
+uv run python -m dank.process --config config.toml --age 6h
 ```

@@ -13,13 +13,12 @@ def main() -> None:
         help="Path to config.toml",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=500,
-        help="Limit raw posts to process",
+        "--age",
+        default="24h",
+        help="How far back to process (e.g. 30s, 10m, 2h)",
     )
     args = parser.parse_args()
-    run_process_from_config(args.config, limit=args.limit)
+    run_process_from_config(args.config, age=args.age)
 
 
 if __name__ == "__main__":

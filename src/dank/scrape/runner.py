@@ -2,41 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
-from collections.abc import Iterable
 
-from dank.config import Settings, SourceConfig, load_settings
+from dank.config import Settings, load_settings
 from dank.model import RawAsset, RawPost
+from dank.scrape.rss import scrape_site_rss
 from dank.scrape.x import scrape_accounts
 from dank.scrape.zendriver import BrowserSession
 from dank.storage.clickhouse import ClickHouseClient
-
-
-def _resolve_sources(sources: Iterable[SourceConfig]) -> list[SourceConfig]:
-    resolved: list[SourceConfig] = []
-    unknown: list[str] = []
-
-    for source in sources:
-        domain = source.domain.strip().lower()
-
-        if not domain:
-            continue
-
-        if domain != "x.com":
-            unknown.append(source.domain)
-            continue
-
-        if domain != source.domain:
-            resolved.append(
-                SourceConfig(domain=domain, accounts=source.accounts),
-            )
-        else:
-            resolved.append(source)
-
-    if unknown:
-        unknown_list = ", ".join(sorted(set(unknown)))
-        raise ValueError(f"Unknown sources: {unknown_list}")
-
-    return resolved
 
 
 async def run_scrape(
@@ -48,7 +20,9 @@ async def run_scrape(
     assets_dir = pathlib.Path(settings.assets_dir)
     assets_dir.mkdir(parents=True, exist_ok=True)
     profile_dir = assets_dir.parent / "browser-profile"
+
     async with ClickHouseClient(settings.clickhouse) as client:
+        # Run a query early to check if the ClickHouse connection lives.
         await client.execute("SELECT 1")
         session = BrowserSession(
             headless=headless,
@@ -66,38 +40,37 @@ async def run_scrape(
         pending_assets: list[RawAsset] = []
 
         async def flush_posts() -> None:
-            nonlocal pending_posts
-            if not pending_posts:
-                return
             await client.insert_json_rows(
                 "raw_posts",
                 [post._asdict() for post in pending_posts],
             )
-            pending_posts = []
+            pending_posts.clear()
 
         async def flush_assets() -> None:
-            nonlocal pending_assets
-            if not pending_assets:
-                return
             await client.insert_json_rows(
                 "raw_assets",
                 [asset._asdict() for asset in pending_assets],
             )
-            pending_assets = []
+            pending_assets.clear()
 
         failed = False
 
         try:
-            for source in _resolve_sources(settings.sources):
-                x_settings = settings.x
+            for source in settings.sources:
+                match source.domain:
+                    case "x.com":
+                        batches = scrape_accounts(
+                            settings.x,
+                            source.accounts,
+                            settings.email,
+                            assets_dir,
+                            session,
+                            max_asset_bytes=settings.max_asset_bytes,
+                        )
+                    case _:
+                        batches = scrape_site_rss(source.domain)
 
-                async for batch in scrape_accounts(
-                    x_settings,
-                    source.accounts,
-                    settings.email,
-                    assets_dir,
-                    session,
-                ):
+                async for batch in batches:
                     if batch.posts:
                         pending_posts.extend(batch.posts)
 

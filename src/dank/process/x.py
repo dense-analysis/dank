@@ -7,7 +7,7 @@ from typing import Any, cast
 from dank.model import Post, RawPost
 
 
-def convert_raw_post(row: RawPost) -> Post | None:
+def convert_raw_x_post(row: RawPost) -> Post | None:
     try:
         payload = json.loads(row.payload)
     except ValueError:
