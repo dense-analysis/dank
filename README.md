@@ -105,3 +105,11 @@ Process raw posts into normalized posts and assets:
 ```
 uv run python -m dank.process --config config.toml --age 6h
 ```
+
+You can quickly view the data that has been read with a built in simple web
+viewer.
+
+```
+# Run the web viewer in development mode and reload when files change.
+uv run python -m dank.web --reload
+```
