@@ -2,3 +2,5 @@
 *.pyc
 config.toml
 *.egg-info
+*.json
+data
