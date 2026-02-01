@@ -45,6 +45,8 @@ async def scrape_accounts(
     email_settings: EmailSettings | None,
     assets_dir: pathlib.Path,
     session: BrowserSession,
+    *,
+    max_asset_bytes: int | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     browser = await session.get_browser()
 
@@ -70,6 +72,7 @@ async def scrape_accounts(
                     email_settings,
                     assets_dir,
                     http_client,
+                    max_asset_bytes=max_asset_bytes,
                 ):
                     yield batch
             except LoginRequiredError:
@@ -91,6 +94,8 @@ async def _scrape_account(
     email_settings: EmailSettings | None,
     assets_dir: pathlib.Path,
     http_client: aiohttp.ClientSession,
+    *,
+    max_asset_bytes: int | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     handle = account.strip("@").strip()
     if not handle:
@@ -127,6 +132,7 @@ async def _scrape_account(
                 assets,
                 assets_dir,
                 http_client,
+                max_asset_bytes=max_asset_bytes,
             )
 
             if posts or downloaded:
@@ -143,7 +149,12 @@ async def _scrape_account(
             seen_posts,
             seen_assets,
         )
-        downloaded = await _download_assets(assets, assets_dir, http_client)
+        downloaded = await _download_assets(
+            assets,
+            assets_dir,
+            http_client,
+            max_asset_bytes=max_asset_bytes,
+        )
 
         if posts or downloaded:
             yield ScrapeBatch(posts=posts, assets=downloaded)
@@ -405,6 +416,7 @@ async def _download_assets(
     client: aiohttp.ClientSession,
     *,
     concurrency: int = 4,
+    max_asset_bytes: int | None = None,
 ) -> list[RawAsset]:
     semaphore = asyncio.Semaphore(concurrency)
 
@@ -421,17 +433,62 @@ async def _download_assets(
         if target_path.exists():
             return asset._replace(local_path=str(target_path))
 
+        temp_path = target_path.with_suffix(f"{target_path.suffix}.part")
         async with semaphore:
             try:
                 async with client.get(asset.url) as response:
                     response.raise_for_status()
-                    data = await response.read()
+
+                    if max_asset_bytes is not None:
+                        content_length = response.content_length
+
+                        if (
+                            content_length is not None
+                            and content_length > max_asset_bytes
+                        ):
+                            logger.debug(
+                                "Skipping asset larger than limit: %s",
+                                asset.url,
+                            )
+                            temp_path.unlink(missing_ok=True)
+
+                            return asset
+
+                    bytes_read = 0
+                    exceeded_limit = False
+
+                    with temp_path.open("wb") as file:
+                        async for chunk in response.content.iter_chunked(
+                            65536
+                        ):
+                            if not chunk:
+                                continue
+
+                            bytes_read += len(chunk)
+
+                            if (
+                                max_asset_bytes is not None
+                                and bytes_read > max_asset_bytes
+                            ):
+                                exceeded_limit = True
+                                break
+
+                            file.write(chunk)
+
+                    if exceeded_limit:
+                        temp_path.unlink(missing_ok=True)
+                        logger.debug(
+                            "Skipping asset larger than limit: %s",
+                            asset.url,
+                        )
+
+                        return asset
             except Exception:
+                temp_path.unlink(missing_ok=True)
                 logger.debug("Failed to download asset", exc_info=True)
+
                 return None
 
-        temp_path = target_path.with_suffix(f"{target_path.suffix}.part")
-        temp_path.write_bytes(data)
         temp_path.replace(target_path)
 
         return asset._replace(local_path=str(target_path))

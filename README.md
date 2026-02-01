@@ -54,6 +54,7 @@ scroll_pause_seconds = 1.5
 
 [storage]
 assets_dir = "data/assets"
+max_asset_bytes = 10485760
 
 [browser]
 # Optional: full path or command name for a Chromium-based browser.
@@ -76,6 +77,9 @@ accounts for account-based sources like `x.com`.
 
 `browser.executable_path` sets the browser binary to launch. If unset, DANK
 will try common Chromium locations.
+
+`storage.max_asset_bytes` caps asset downloads (bytes). Larger assets are
+skipped but still recorded.
 
 When X prompts for a one-time code, DANK will poll the IMAP inbox for messages
 from `x.com` that arrived after the login attempt and extract the confirmation

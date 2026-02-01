@@ -46,6 +46,7 @@ class Settings(NamedTuple):
     clickhouse: ClickHouseSettings
     x: XSettings
     assets_dir: pathlib.Path
+    max_asset_bytes: int | None
     sources: tuple[SourceConfig, ...]
     browser: BrowserSettings
     email: EmailSettings | None
@@ -161,6 +162,9 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
 
     storage_data: dict[str, Any] = _as_dict(data.get("storage")) or {}
     assets_dir = pathlib.Path(storage_data.get("assets_dir", "data/assets"))
+    max_asset_bytes = _parse_optional_int(storage_data.get("max_asset_bytes"))
+    if max_asset_bytes is not None and max_asset_bytes <= 0:
+        max_asset_bytes = None
 
     browser_data: dict[str, Any] = _as_dict(data.get("browser")) or {}
     browser_settings = BrowserSettings(
@@ -193,6 +197,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         clickhouse=clickhouse_settings,
         x=x_settings,
         assets_dir=assets_dir,
+        max_asset_bytes=max_asset_bytes,
         sources=sources,
         browser=browser_settings,
         email=email_settings,
