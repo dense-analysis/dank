@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import datetime
-import json
 from collections.abc import Iterable
 from types import TracebackType
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
-import aiohttp
+import clickhouse_connect
+from clickhouse_connect.driver.asyncclient import AsyncClient
 
 from dank.config import ClickHouseSettings
 
@@ -20,29 +20,28 @@ class ClickHouseClient:
         self,
         settings: ClickHouseSettings,
         timeout_seconds: float = 30.0,
-    ):
+    ) -> None:
         if not settings.use_http:
             raise ValueError("Only HTTP ClickHouse connections are supported")
 
         self._settings = settings
-        self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        self._session: aiohttp.ClientSession | None = None
-        self._base_url = (
-            f"https://{settings.host}:{settings.port}"
-            if settings.secure
-            else f"http://{settings.host}:{settings.port}"
-        )
+        self._timeout_seconds = timeout_seconds
+        self._client: AsyncClient | None = None
 
     async def __aenter__(self) -> ClickHouseClient:
-        auth = None
+        if self._client is not None:
+            return self
 
-        if self._settings.username or self._settings.password:
-            auth = aiohttp.BasicAuth(
-                login=self._settings.username,
-                password=self._settings.password,
-            )
-
-        self._session = aiohttp.ClientSession(timeout=self._timeout, auth=auth)
+        self._client = await clickhouse_connect.get_async_client(  # type: ignore
+            host=self._settings.host,
+            port=self._settings.port,
+            username=self._settings.username or "",
+            password=self._settings.password or "",
+            database=self._settings.database,
+            secure=self._settings.secure,
+            connect_timeout=self._timeout_seconds,
+            send_receive_timeout=self._timeout_seconds,
+        )
 
         return self
 
@@ -52,87 +51,81 @@ class ClickHouseClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
+        if self._client is None:
+            return
 
-    async def execute(self, query: str) -> None:
-        await self._request(query)
+        await self._client.close()
+        self._client = None
 
-    async def fetch_json(self, query: str) -> QueryResult:
-        text = await self._request(self._ensure_json_format(query))
-        rows: list[dict[str, Any]] = []
+    async def execute(
+        self,
+        query: str,
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        await self._command(query, params)
 
-        for line in text.splitlines():
-            line = line.strip()
+    async def fetch_json(
+        self,
+        query: str,
+        params: dict[str, Any] | None = None,
+    ) -> QueryResult:
+        result = await self._query(query, params)
+        column_names = cast(tuple[str, ...], result.column_names)  # type: ignore
 
-            if not line:
-                continue
-
-            rows.append(json.loads(line))
+        rows = [
+            dict(zip(column_names, row, strict=True))
+            for row in result.result_rows
+        ]
 
         return QueryResult(rows=rows)
 
-    async def insert_json_rows(
+    async def insert_rows(
         self,
         table: str,
         rows: Iterable[dict[str, Any]],
     ) -> None:
-        lines = [
-            json.dumps(
-                {
-                    key: (
-                        format_datetime(value)
-                        if isinstance(value, datetime.datetime) else
-                        value
-                    )
-                    for key, value in
-                    row.items()
-                },
-                separators=(",", ":"),
-            )
-            for row in rows
-        ]
+        data = list(rows)
 
-        if not lines:
+        if not data:
             return
 
-        payload = f"INSERT INTO {table} FORMAT JSONEachRow\n" + "\n".join(
-            lines,
-        )
-        await self._request(payload)
+        column_names = list(data[0].keys())
+        values = [
+            [row.get(column) for column in column_names]
+            for row in data
+        ]
 
-    async def _request(self, query: str) -> str:
-        if self._session is None:
+        await self._ensure_client().insert(
+            table,
+            values,
+            column_names=column_names,
+        )
+
+    async def _command(
+        self,
+        query: str,
+        params: dict[str, Any] | None,
+    ) -> None:
+        await self._ensure_client().command(  # type: ignore
+            query,
+            parameters=params,
+        )
+
+    async def _query(
+        self,
+        query: str,
+        params: dict[str, Any] | None,
+    ):
+        return await self._ensure_client().query(  # type: ignore
+            query,
+            parameters=params,
+        )
+
+    def _ensure_client(self) -> AsyncClient:
+        if self._client is None:
             raise RuntimeError("ClickHouse client is not initialized")
 
-        params = {"database": self._settings.database}
-
-        async with self._session.post(
-            self._base_url,
-            params=params,
-            data=query,
-        ) as response:
-            response.raise_for_status()
-
-            return await response.text()
-
-    @staticmethod
-    def _ensure_json_format(query: str) -> str:
-        if "FORMAT" in query.upper():
-            return query
-
-        return f"{query.rstrip()}\nFORMAT JSONEachRow"
-
-
-def format_datetime(value: datetime.datetime | None) -> str | None:
-    if value is None:
-        return None
-
-    if value.tzinfo is not None:
-        value = value.astimezone(datetime.UTC).replace(tzinfo=None)
-
-    return value.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        return self._client
 
 
 def parse_datetime(value: Any) -> datetime.datetime | None:

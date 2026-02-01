@@ -44,5 +44,7 @@ class Post(NamedTuple):
     updated_at: datetime.datetime
     author: str
     title: str
+    title_embedding: list[float]
     html: str
+    html_embedding: list[float]
     source: str

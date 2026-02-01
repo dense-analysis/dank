@@ -48,9 +48,15 @@ CREATE TABLE IF NOT EXISTS dank.posts (
     author String,
     title String,
     html String,
+    title_embedding Array(Float32),
+    html_embedding Array(Float32),
     created_at DateTime64(3, 'UTC'),
     updated_at DateTime64(3, 'UTC'),
     source LowCardinality(String)
 )
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY (domain, post_id);
+
+ALTER TABLE dank.posts
+    ADD COLUMN IF NOT EXISTS title_embedding Array(Float32),
+    ADD COLUMN IF NOT EXISTS html_embedding Array(Float32);

@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 from collections.abc import Callable
 from typing import Any
 
+from dank.embeddings import EmbeddingModel
 from dank.model import Asset, Post, RawAsset, RawPost
-from dank.storage.clickhouse import (
-    ClickHouseClient,
-    format_datetime,
-    parse_datetime,
-)
+from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
 RawPostConverter = Callable[[RawPost], Post | None]
 RawAssetConverter = Callable[[RawAsset], Asset | None]
@@ -22,18 +20,21 @@ async def process_source_posts(
     *,
     since: datetime.datetime,
     batch_size: int = 100,
+    embedder: EmbeddingModel,
 ) -> int:
-    since_literal = _format_datetime_literal(since)
     query = (
         "SELECT domain, post_id, url, post_created_at, scraped_at, "
         "source, request_url, payload FROM raw_posts "
-        f"WHERE domain = {quote_literal(domain)} "
-        f"AND coalesce(post_created_at, scraped_at) >= {since_literal} "
+        "WHERE domain = %(domain)s "
+        "AND coalesce(post_created_at, scraped_at) >= %(since)s "
         "ORDER BY scraped_at DESC "
     )
-    result = await client.fetch_json(query)
+    result = await client.fetch_json(
+        query,
+        {"domain": domain, "since": since},
+    )
     converted = 0
-    batch: list[dict[str, Any]] = []
+    batch: list[Post] = []
 
     for row in result.rows:
         raw = parse_raw_post_row(row)
@@ -42,15 +43,15 @@ async def process_source_posts(
         if post is None:
             continue
 
-        batch.append(post._asdict())
+        batch.append(post)
         converted += 1
 
         if len(batch) >= batch_size:
-            await client.insert_json_rows("posts", batch)
+            await _insert_posts(client, batch, embedder)
             batch.clear()
 
     if batch:
-        await client.insert_json_rows("posts", batch)
+        await _insert_posts(client, batch, embedder)
 
     return converted
 
@@ -63,15 +64,14 @@ async def process_source_assets(
     since: datetime.datetime,
     batch_size: int = 100,
 ) -> int:
-    since_literal = _format_datetime_literal(since)
     query = (
         "SELECT domain, post_id, url, asset_type, scraped_at, "
         "source, local_path FROM raw_assets "
-        f"WHERE domain = {quote_literal(domain)} "
-        f"AND scraped_at >= {since_literal} "
+        "WHERE domain = %(domain)s "
+        "AND scraped_at >= %(since)s "
         "ORDER BY scraped_at DESC"
     )
-    result = await client.fetch_json(query)
+    result = await client.fetch_json(query, {"domain": domain, "since": since})
     converted = 0
     batch: list[dict[str, Any]] = []
 
@@ -86,11 +86,11 @@ async def process_source_assets(
         converted += 1
 
         if len(batch) >= batch_size:
-            await client.insert_json_rows("assets", batch)
+            await client.insert_rows("assets", batch)
             batch.clear()
 
     if batch:
-        await client.insert_json_rows("assets", batch)
+        await client.insert_rows("assets", batch)
 
     return converted
 
@@ -130,12 +130,31 @@ def parse_raw_asset_row(row: dict[str, Any]) -> RawAsset:
     )
 
 
-def quote_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+async def _insert_posts(
+    client: ClickHouseClient,
+    posts: list[Post],
+    embedder: EmbeddingModel,
+) -> None:
+    # Compute embeddings for all of the posts.
+    title_embeddings = await asyncio.to_thread(
+        embedder.embed_texts,
+        [post.title for post in posts],
+    )
+    html_embeddings = await asyncio.to_thread(
+        embedder.embed_texts,
+        [post.html for post in posts],
+    )
+    posts = [
+        post._replace(
+            title_embedding=title_embedding,
+            html_embedding=html_embedding,
+        )
+        for post, title_embedding, html_embedding in zip(
+            posts,
+            title_embeddings,
+            html_embeddings,
+            strict=True,
+        )
+    ]
 
-
-def _format_datetime_literal(value: datetime.datetime) -> str:
-    formatted = format_datetime(value)
-    if formatted is None:
-        formatted = format_datetime(datetime.datetime.now(datetime.UTC))
-    return f"toDateTime64('{formatted}', 3, 'UTC')"
+    await client.insert_rows("posts", [post._asdict() for post in posts])

@@ -35,7 +35,10 @@ if TYPE_CHECKING:
 
     flags: _Flags
 else:
-    from inotify_simple import INotify, flags  # type: ignore[reportMissingTypeStubs]
+    from inotify_simple import (  # type: ignore[reportMissingTypeStubs]
+        INotify,
+        flags,
+    )
 
 from dank.config import load_settings
 from dank.web.app import (

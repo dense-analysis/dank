@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import html
 import pathlib
@@ -12,16 +13,16 @@ import bleach
 from aiohttp import web
 
 from dank.config import Settings
-from dank.storage.clickhouse import (
-    ClickHouseClient,
-    format_datetime,
-    parse_datetime,
-)
+from dank.embeddings import get_embedding_model
+from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
+SEARCH_TITLE_WEIGHT = 0.65
+SEARCH_HTML_WEIGHT = 0.35
+SEARCH_MINIMUM_SCORE = 0.2
 
 ALLOWED_TAGS = [
     "a",
@@ -139,23 +140,32 @@ async def handle_index(request: web.Request) -> web.Response:
     client = request.app["clickhouse"]
     state = request.app["state"]
     limit = _parse_limit(request.query.get("limit"), state.page_size)
+    search_text = _parse_search_text(request.query.get("q"))
     cursor_created_at = _parse_cursor_datetime(
         request.query.get("cursor_created_at"),
     )
     cursor_post_id = request.query.get("cursor_post_id")
 
-    posts = await _fetch_posts(
-        client,
-        limit=limit,
-        cursor_created_at=cursor_created_at,
-        cursor_post_id=cursor_post_id,
-    )
+    if search_text:
+        posts = await _search_posts(
+            client,
+            search_text=search_text,
+            limit=limit,
+        )
+    else:
+        posts = await _fetch_posts(
+            client,
+            limit=limit,
+            cursor_created_at=cursor_created_at,
+            cursor_post_id=cursor_post_id,
+        )
     assets = await _fetch_assets(client, [post.post_id for post in posts])
     body = _render_index(
         posts,
         assets,
         assets_dir=state.assets_dir,
         limit=limit,
+        search_text=search_text,
     )
 
     return web.Response(text=body, content_type="text/html")
@@ -196,19 +206,69 @@ async def _fetch_posts(
         "SELECT domain, post_id, url, author, title, html, created_at, "
         "updated_at, source FROM posts FINAL"
     )
+    params: dict[str, Any] = {"limit": int(limit)}
 
     if cursor_created_at is not None and cursor_post_id:
         query += (
-            " WHERE created_at <= "
-            f"{_format_datetime_literal(cursor_created_at)} "
-            "AND post_id < "
-            f"{quote_literal(cursor_post_id)}"
+            " WHERE (created_at < %(cursor_created_at)s "
+            "OR (created_at = %(cursor_created_at)s "
+            "AND post_id < %(cursor_post_id)s))"
         )
+        params["cursor_created_at"] = cursor_created_at
+        params["cursor_post_id"] = cursor_post_id
 
     query += " ORDER BY created_at DESC, post_id DESC "
-    query += f"LIMIT {int(limit)}"
+    query += "LIMIT %(limit)s"
 
-    result = await client.fetch_json(query)
+    result = await client.fetch_json(query, params)
+
+    return [_parse_post_row(row) for row in result.rows]
+
+
+async def _search_posts(
+    client: ClickHouseClient,
+    *,
+    search_text: str,
+    limit: int,
+) -> list[PostRow]:
+    embedder = get_embedding_model()
+    embedding = await asyncio.to_thread(embedder.embed_text, search_text)
+
+    if not embedding:
+        return []
+
+    query = r"""
+        SELECT
+            domain,
+            post_id,
+            url,
+            author,
+            title,
+            html,
+            created_at,
+            updated_at,
+            source,
+            (
+                (1.0 - cosineDistance(title_embedding, %(embedding)s))
+                    * %(title_weight)s
+                + (1.0 - cosineDistance(html_embedding, %(embedding)s))
+                    * %(html_weight)s
+            ) AS score
+        FROM posts FINAL
+        WHERE length(title_embedding) > 0
+        AND length(html_embedding) > 0
+        AND score >= %(minimum_score)s
+        ORDER BY score DESC
+        LIMIT %(limit)s
+    """
+    params = {
+        "embedding": embedding,
+        "title_weight": SEARCH_TITLE_WEIGHT,
+        "html_weight": SEARCH_HTML_WEIGHT,
+        "minimum_score": SEARCH_MINIMUM_SCORE,
+        "limit": int(limit),
+    }
+    result = await client.fetch_json(query, params)
 
     return [_parse_post_row(row) for row in result.rows]
 
@@ -222,10 +282,13 @@ async def _fetch_post(
     query = (
         "SELECT domain, post_id, url, author, title, html, created_at, "
         "updated_at, source FROM posts FINAL "
-        f"WHERE domain = {quote_literal(domain)} "
-        f"AND post_id = {quote_literal(post_id)} "
+        "WHERE domain = %(domain)s "
+        "AND post_id = %(post_id)s "
     )
-    result = await client.fetch_json(query)
+    result = await client.fetch_json(
+        query,
+        {"domain": domain, "post_id": post_id},
+    )
 
     if not result.rows:
         return None
@@ -242,12 +305,11 @@ async def _fetch_assets(
     if not ids:
         return {}
 
-    literal_ids = ", ".join(quote_literal(post_id) for post_id in ids)
     query = (
         "SELECT post_id, url, local_path, content_type, size_bytes "
-        f"FROM assets FINAL WHERE post_id IN ({literal_ids}) "
+        "FROM assets FINAL WHERE post_id IN %(post_ids)s "
     )
-    result = await client.fetch_json(query)
+    result = await client.fetch_json(query, {"post_ids": ids})
     assets: dict[str, list[AssetRow]] = {}
 
     for row in result.rows:
@@ -300,6 +362,7 @@ def _render_index(
     *,
     assets_dir: pathlib.Path,
     limit: int,
+    search_text: str,
 ) -> str:
     title = "DANK Posts"
     items: list[str] = []
@@ -318,7 +381,7 @@ def _render_index(
 
     next_link = ""
 
-    if posts:
+    if posts and not search_text:
         cursor_post = posts[-1]
         cursor_created_at = _cursor_datetime(cursor_post.created_at)
         query = urlencode(
@@ -335,11 +398,13 @@ def _render_index(
         )
 
     body = "\n".join(items) or "<p>No posts yet.</p>"
+    search_form = _render_search_form(search_text, limit=limit)
 
     return _render_page(
         title,
         "\n".join(
             [
+                search_form,
                 '<section class="post-list">',
                 body,
                 "</section>",
@@ -424,6 +489,29 @@ def _render_post_detail(
                 "</article>",
             ],
         ),
+    )
+
+
+def _render_search_form(search_text: str, *, limit: int) -> str:
+    escaped = html.escape(search_text)
+    clear_link = (
+        '<a class="search-clear" href="/">Clear</a>' if search_text else ""
+    )
+
+    return "\n".join(
+        [
+            '<form class="search-form" action="/" method="get">',
+            '<div class="search-field">',
+            (
+                '<input class="search-input" type="search" name="q" '
+                f'value="{escaped}" placeholder="Search posts" />'
+            ),
+            f'<input type="hidden" name="limit" value="{limit}" />',
+            '<button class="search-button" type="submit">Search</button>',
+            clear_link,
+            "</div>",
+            "</form>",
+        ],
     )
 
 
@@ -570,24 +658,11 @@ def _cursor_datetime(value: datetime.datetime) -> str:
     return value.isoformat()
 
 
-def _format_datetime_literal(value: datetime.datetime) -> str:
-    formatted = format_datetime(value)
-
-    if formatted is None:
-        formatted = format_datetime(datetime.datetime.now(datetime.UTC))
-
-    return f"toDateTime64('{formatted}', 3, 'UTC')"
-
-
 def _format_display_datetime(value: datetime.datetime) -> str:
     if value.tzinfo is not None:
         value = value.astimezone(datetime.UTC)
 
     return value.strftime("%Y-%m-%d %H:%M UTC")
-
-
-def quote_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
 
 
 def _assets_dir(settings: Settings) -> pathlib.Path:
@@ -651,3 +726,10 @@ def _has_extension(value: str, extensions: tuple[str, ...]) -> bool:
     trimmed = value.split("?", 1)[0].lower()
 
     return trimmed.endswith(extensions)
+
+
+def _parse_search_text(value: str | None) -> str:
+    if value is None:
+        return ""
+
+    return value.strip()

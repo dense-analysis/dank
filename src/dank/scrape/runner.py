@@ -40,14 +40,14 @@ async def run_scrape(
         pending_assets: list[RawAsset] = []
 
         async def flush_posts() -> None:
-            await client.insert_json_rows(
+            await client.insert_rows(
                 "raw_posts",
                 [post._asdict() for post in pending_posts],
             )
             pending_posts.clear()
 
         async def flush_assets() -> None:
-            await client.insert_json_rows(
+            await client.insert_rows(
                 "raw_assets",
                 [asset._asdict() for asset in pending_assets],
             )

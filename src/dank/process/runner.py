@@ -5,6 +5,7 @@ import datetime
 import re
 
 from dank.config import Settings, load_settings
+from dank.embeddings import get_embedding_model
 from dank.process.assets import convert_raw_asset
 from dank.process.processor import process_source_assets, process_source_posts
 from dank.process.rss import convert_raw_post as convert_raw_rss_post
@@ -21,6 +22,7 @@ async def run_process(
     since = datetime.datetime.now(datetime.UTC) - window
     total_posts = 0
     total_assets = 0
+    embedder = get_embedding_model()
 
     async with ClickHouseClient(settings.clickhouse) as client:
         for source in settings.sources:
@@ -35,6 +37,7 @@ async def run_process(
                 source.domain,
                 converter,
                 since=since,
+                embedder=embedder,
             )
 
             total_assets += await process_source_assets(

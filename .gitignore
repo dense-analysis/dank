@@ -3,4 +3,5 @@
 config.toml
 *.egg-info
 *.json
+*.xml
 data
