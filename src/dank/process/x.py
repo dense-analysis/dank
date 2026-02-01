@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from typing import Any, cast
 
 from dank.model import Post, RawPost
@@ -18,7 +19,7 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
 
     payload = cast(dict[str, Any], payload)
 
-    text = _extract_text(payload)
+    text = _strip_trailing_tco(_extract_text(payload))
     title = text.splitlines()[0] if text else ""
     created_at = (
         row.post_created_at
@@ -35,7 +36,9 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
         updated_at=updated_at,
         author=author,
         title=title,
+        title_embedding=[],
         html=text,
+        html_embedding=[],
         source=row.source,
     )
 
@@ -69,6 +72,15 @@ def _extract_text(payload: dict[str, object]) -> str:
                 if text:
                     return text
     return ""
+
+
+def _strip_trailing_tco(text: str) -> str:
+    if not text:
+        return ""
+
+    cleaned = re.sub(r"(?:\s+https://t\.co/[A-Za-z0-9]+)+\s*$", "", text)
+
+    return cleaned.rstrip()
 
 
 def _extract_created_at(
