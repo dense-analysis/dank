@@ -1,4 +1,5 @@
 import datetime
+import json
 import xml.etree.ElementTree as ElementTree
 
 from dank.model import RawPost
@@ -35,6 +36,21 @@ RSS2_XML = r"""<?xml version="1.0" encoding="UTF-8"?>
         </item>
     </channel>
 </rss>
+"""
+
+ATOM_NO_TITLE_XML = r"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+    <title>Example Feed</title>
+    <link href="https://example.com/"/>
+    <updated>2026-02-01T00:00:00+00:00</updated>
+    <id>https://example.com/</id>
+    <entry>
+        <link href="https://example.com/atom-no-title"/>
+        <id>atom-2</id>
+        <updated>2026-02-01T01:30:00+00:00</updated>
+        <summary>First line\nSecond line.</summary>
+    </entry>
+</feed>
 """
 
 RSS1_XML = r"""<?xml version="1.0"?>
@@ -165,3 +181,62 @@ def test_convert_raw_post_rss1_item() -> None:
     assert post.author == ""
     assert post.created_at == scraped_at
     assert post.updated_at == scraped_at
+
+
+def test_convert_raw_post_uses_summary_for_title() -> None:
+    scraped_at = datetime.datetime(2026, 2, 1, 3, 0, tzinfo=datetime.UTC)
+    raw = _raw_post(
+        payload=_raw_xml(
+            ATOM_NO_TITLE_XML,
+            "atom:entry",
+            {"atom": "http://www.w3.org/2005/Atom"},
+        ),
+        url="https://example.com/atom-no-title",
+        scraped_at=scraped_at,
+    )
+
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert post.title == "First line"
+    assert post.html == "First line\nSecond line."
+
+
+def test_convert_raw_post_prefers_post_created_at() -> None:
+    scraped_at = datetime.datetime(2026, 2, 1, 4, 0, tzinfo=datetime.UTC)
+    post_created_at = datetime.datetime(2026, 2, 1, 3, 30, tzinfo=datetime.UTC)
+    raw = _raw_post(
+        payload=_raw_xml(RSS2_XML, "channel/item"),
+        url="https://example.com/rss2-post",
+        scraped_at=scraped_at,
+        post_created_at=post_created_at,
+    )
+
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert post.created_at == post_created_at
+
+
+def test_convert_raw_post_reads_page_html_payload() -> None:
+    scraped_at = datetime.datetime(2026, 2, 1, 5, 0, tzinfo=datetime.UTC)
+    feed_xml = _raw_xml(
+        ATOM_XML,
+        "atom:entry",
+        {"atom": "http://www.w3.org/2005/Atom"},
+    )
+    payload = {
+        "feed_xml": feed_xml,
+        "page_html": "<html><body>Full page</body></html>",
+    }
+    raw = _raw_post(
+        payload=json.dumps(payload),
+        url="https://example.com/atom-post",
+        scraped_at=scraped_at,
+    )
+
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert post.html == "<html><body>Full page</body></html>"
+    assert post.title == "Atom Post"

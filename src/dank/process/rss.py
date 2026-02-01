@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import datetime
+import json
 import xml.etree.ElementTree as ElementTree
 from email.utils import parsedate_to_datetime
-from typing import NamedTuple
+from typing import Any, NamedTuple, cast
 
 from dank.model import Post, RawPost
 
@@ -31,7 +32,8 @@ class _ParsedItem(NamedTuple):
 
 
 def convert_raw_post(row: RawPost) -> Post | None:
-    root = _parse_xml_root(row.payload)
+    feed_xml, page_html = _split_payload(row.payload)
+    root = _parse_xml_root(feed_xml)
 
     if root is None:
         return None
@@ -46,6 +48,7 @@ def convert_raw_post(row: RawPost) -> Post | None:
 
     title = parsed.title
     text = parsed.text
+    html = page_html or text
 
     if not title and text:
         title = text.splitlines()[0]
@@ -66,7 +69,9 @@ def convert_raw_post(row: RawPost) -> Post | None:
         updated_at=updated_at,
         author=parsed.author,
         title=title,
-        html=text,
+        title_embedding=[],
+        html=html,
+        html_embedding=[],
         source=row.source,
     )
 
@@ -76,6 +81,28 @@ def _parse_xml_root(xml: str) -> ElementTree.Element | None:
         return ElementTree.fromstring(xml)
     except ElementTree.ParseError:
         return None
+
+
+def _split_payload(payload: str) -> tuple[str, str]:
+    if not payload:
+        return "", ""
+
+    try:
+        parsed = json.loads(payload)
+    except ValueError:
+        return payload, ""
+
+    if not isinstance(parsed, dict):
+        return payload, ""
+
+    parsed_dict = cast(dict[str, Any], parsed)
+    feed_xml = parsed_dict.get("feed_xml")
+    page_html = parsed_dict.get("page_html")
+
+    if isinstance(feed_xml, str):
+        return feed_xml, page_html if isinstance(page_html, str) else ""
+
+    return payload, ""
 
 
 def _strip_xml_namespace(tag: str) -> str:

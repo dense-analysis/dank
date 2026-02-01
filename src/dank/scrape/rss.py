@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
+import json
 import logging
 import xml.etree.ElementTree as ElementTree
 from collections.abc import AsyncIterator, Iterable
@@ -23,6 +25,29 @@ ATOM_FEED_TYPE = "atom"
 RSS2_FEED_TYPE = "rss2"
 RSS1_FEED_TYPE = "rss1"
 type FeedType = Literal["atom", "rss2", "rss1"]
+
+PAGE_DATE_KEYS = {
+    "article:published_time",
+    "article:published",
+    "og:published_time",
+    "published_time",
+    "pubdate",
+    "publishdate",
+    "publish_date",
+    "date",
+    "datepublished",
+    "date_published",
+    "datecreated",
+    "date_created",
+    "dc.date",
+    "dc.date.issued",
+    "dc.date.created",
+}
+PAGE_ITEMPROP_KEYS = {
+    "datepublished",
+    "datecreated",
+    "date",
+}
 
 ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
 RSS1_NAMESPACE = "http://purl.org/rss/1.0/"
@@ -82,6 +107,51 @@ class _HeadFeedLinkParser(HTMLParser):
             self._in_head = False
 
 
+class _PostDateParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.candidates: list[str] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        attr_map = {
+            key.lower(): value
+            for key, value in attrs
+            if key and value is not None
+        }
+
+        if tag == "meta":
+            key = (
+                attr_map.get("property")
+                or attr_map.get("name")
+                or attr_map.get("itemprop")
+                or ""
+            ).lower()
+            if key in PAGE_DATE_KEYS:
+                content = attr_map.get("content") or attr_map.get("value")
+                if content:
+                    self.candidates.append(content)
+            return
+
+        if tag == "time":
+            datetime_value = attr_map.get("datetime") or attr_map.get(
+                "content",
+            )
+            if datetime_value:
+                self.candidates.append(datetime_value)
+            return
+
+        itemprop = (attr_map.get("itemprop") or "").lower()
+        if itemprop in PAGE_ITEMPROP_KEYS:
+            content = attr_map.get("content") or attr_map.get("datetime")
+            if content:
+                self.candidates.append(content)
+
+
 async def scrape_site_rss(
     domain: str,
     *,
@@ -135,6 +205,8 @@ async def scrape_site_rss(
             logger.warning("No posts parsed for %s", selected.url)
 
             return
+
+        posts = await _attach_page_payloads(client, posts)
 
         pending: list[RawPost] = []
 
@@ -212,6 +284,47 @@ def _accept_from_link(link: FeedLink) -> list[str]:
             ]
         case _:
             return ["application/xml", "text/xml"]
+
+
+async def _attach_page_payloads(
+    client: aiohttp.ClientSession,
+    posts: list[RawPost],
+    *,
+    concurrency: int = 4,
+) -> list[RawPost]:
+    if not posts:
+        return []
+
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _attach(post: RawPost) -> RawPost:
+        async with semaphore:
+            page_html = await _fetch_text(
+                client,
+                post.url,
+                accept=[
+                    "text/html",
+                    "application/xhtml+xml",
+                    "application/xml",
+                ],
+            )
+
+        created_at = post.post_created_at
+        if created_at is None and page_html:
+            created_at = _extract_post_created_at_from_html(page_html)
+
+        payload = _compose_payload(post.payload, page_html or "")
+
+        return post._replace(payload=payload, post_created_at=created_at)
+
+    return await asyncio.gather(*(_attach(post) for post in posts))
+
+
+def _compose_payload(feed_xml: str, page_html: str) -> str:
+    return json.dumps(
+        {"feed_xml": feed_xml, "page_html": page_html},
+        separators=(",", ":"),
+    )
 
 
 def discover_feed_links(html: str, root_url: str) -> list[FeedLink]:
@@ -435,3 +548,44 @@ def _parse_datetime(value: str | None) -> datetime.datetime | None:
             return None
 
     return None
+
+
+def _extract_post_created_at_from_html(
+    html: str,
+) -> datetime.datetime | None:
+    if not html:
+        return None
+
+    parser = _PostDateParser()
+    parser.feed(html)
+
+    for candidate in parser.candidates:
+        parsed = _parse_date_candidate(candidate)
+
+        if parsed is not None:
+            return parsed
+
+    return None
+
+
+def _parse_date_candidate(value: str) -> datetime.datetime | None:
+    if not value:
+        return None
+
+    trimmed = value.strip()
+
+    if trimmed.endswith("Z"):
+        trimmed = trimmed[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.datetime.fromisoformat(trimmed)
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(trimmed)
+        except (TypeError, ValueError):
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=datetime.UTC)
+
+    return parsed.astimezone(datetime.UTC)
