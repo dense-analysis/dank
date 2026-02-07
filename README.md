@@ -103,22 +103,15 @@ are resolved from the current working directory.
 
 ## Usage
 
-Scrape configured sources:
+Dank offers the following commands.
 
-```
-uv run python -m dank.scrape --config config.toml --headless
-```
-
-Process raw posts into normalized posts and assets:
-
-```
-uv run python -m dank.process --config config.toml --age 6h
-```
-
-You can quickly view the data that has been read with a built in simple web
-viewer.
-
-```
-# Run the web viewer in development mode and reload when files change.
-uv run python -m dank.web --reload
-```
+* `uv run python -m dank.scrape` -- Scrape the web for data
+* `uv run python -m dank.process` -- Process previously scraped data
+    * The `--age` argument can be given a duration to process, for example
+      `6hours` or `2days`.
+* `uv run python -m dank.tools/clickhouse_query` -- Run queries on the database
+    * You can only run `SELECT` or `SHOW` queries through this tool
+    * Query results are well formatted and easy to read
+    * Query results are truncated unless you pass `--full`
+* `uv run python -m dank.web` -- Start a simple web server to view content.
+    * Pass `--reload` for hot code reloading.

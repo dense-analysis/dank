@@ -57,6 +57,15 @@ indirection.
 
 * Run `./run-linters.sh` to run all linters to check for and autofix errors.
 * You can run tests with `uv run pytest`.
+* You can scrape data with `uv run python -m dank.scrape`.
+* You can process scraped data with `uv run python -m dank.process`.
+    * You might want to pass `--age 10m` to process content scraped in the
+      past 10 minutes, other other ages accepted by `parse_age_window`.
+* You can read recent scraper and processor logs from `dank.log`.
+* Query with `uv run python -m dank.tools.clickhouse_query -q "<QUERY>"`
+    * You can run only `SELECT` or `SHOW` queries.
+    * Output is truncated by default. To see more information pass the `--full`
+      argument.
 
 ## Code Style
 

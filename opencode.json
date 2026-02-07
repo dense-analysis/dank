@@ -1,0 +1,32 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "keybinds": {
+    "app_exit": "<leader>q"
+  },
+  "permission": {
+    "bash": {
+      "git *": "deny",
+      "git diff *": "allow",
+      "git show *": "allow",
+      "python *": "deny",
+      "python3 *": "deny",
+      "pypy *": "deny",
+      "ipython *": "deny",
+      "uv *": "deny",
+      "./run-linters.sh": "allow",
+      "uv run python -m dank.tools.clickhouse_query *": "allow",
+      "uv run python -m dank.process *": "allow",
+      "uv run python -m dank.scrape *": "allow",
+      "uv run pytest *": "allow"
+    },
+    "read": {
+      "*": "allow",
+      "config.toml": "deny"
+    },
+    "edit": {
+      "*": "allow",
+      "config.toml": "deny",
+      "opencode.json": "deny"
+    }
+  }
+}
