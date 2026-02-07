@@ -196,7 +196,7 @@ async def handle_post_detail(request: web.Request) -> web.Response:
 
 
 async def _fetch_posts(
-    client: ClickHouseClient,
+    clickhouse_client: ClickHouseClient,
     *,
     limit: int,
     cursor_created_at: datetime.datetime | None,
@@ -220,13 +220,13 @@ async def _fetch_posts(
     query += " ORDER BY created_at DESC, post_id DESC "
     query += "LIMIT %(limit)s"
 
-    result = await client.fetch_json(query, params)
+    result = await clickhouse_client.fetch_json(query, params)
 
     return [_parse_post_row(row) for row in result.rows]
 
 
 async def _search_posts(
-    client: ClickHouseClient,
+    clickhouse_client: ClickHouseClient,
     *,
     search_text: str,
     limit: int,
@@ -268,13 +268,13 @@ async def _search_posts(
         "minimum_score": SEARCH_MINIMUM_SCORE,
         "limit": int(limit),
     }
-    result = await client.fetch_json(query, params)
+    result = await clickhouse_client.fetch_json(query, params)
 
     return [_parse_post_row(row) for row in result.rows]
 
 
 async def _fetch_post(
-    client: ClickHouseClient,
+    clickhouse_client: ClickHouseClient,
     *,
     domain: str,
     post_id: str,
@@ -285,7 +285,7 @@ async def _fetch_post(
         "WHERE domain = %(domain)s "
         "AND post_id = %(post_id)s "
     )
-    result = await client.fetch_json(
+    result = await clickhouse_client.fetch_json(
         query,
         {"domain": domain, "post_id": post_id},
     )
@@ -297,7 +297,7 @@ async def _fetch_post(
 
 
 async def _fetch_assets(
-    client: ClickHouseClient,
+    clickhouse_client: ClickHouseClient,
     post_ids: Iterable[str],
 ) -> dict[str, list[AssetRow]]:
     ids = [post_id for post_id in post_ids if post_id]
@@ -309,7 +309,7 @@ async def _fetch_assets(
         "SELECT post_id, url, local_path, content_type, size_bytes "
         "FROM assets FINAL WHERE post_id IN %(post_ids)s "
     )
-    result = await client.fetch_json(query, {"post_ids": ids})
+    result = await clickhouse_client.fetch_json(query, {"post_ids": ids})
     assets: dict[str, list[AssetRow]] = {}
 
     for row in result.rows:

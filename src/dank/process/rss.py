@@ -7,6 +7,12 @@ from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple, cast
 
 from dank.model import Post, RawPost
+from dank.process.page import (
+    extract_article_html,
+    extract_page_metadata,
+    extract_youtube_iframes,
+    strip_html,
+)
 
 ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
 RSS1_NAMESPACE = "http://purl.org/rss/1.0/"
@@ -46,20 +52,33 @@ def convert_raw_post(row: RawPost) -> Post | None:
         case _:
             return None
 
-    title = parsed.title
-    text = parsed.text
-    html = page_html or text
+    page_metadata = extract_page_metadata(page_html)
+    title = parsed.title or page_metadata.title
+    content_html = extract_article_html(page_html)
 
-    if not title and text:
-        title = text.splitlines()[0]
+    if not content_html and page_html:
+        content_html = page_html
+
+    if not content_html:
+        content_html = parsed.text
+
+    if not content_html:
+        content_html = extract_youtube_iframes(page_html)
+
+    if not title:
+        title_source = parsed.text or strip_html(content_html)
+        if title_source:
+            title = title_source.splitlines()[0].strip()
 
     created_at = (
         row.post_created_at
+        or page_metadata.published_at
         or parsed.created_at
         or row.scraped_at
         or datetime.datetime.now(datetime.UTC)
     )
     updated_at = row.scraped_at or created_at
+    author = parsed.author or page_metadata.author
 
     return Post(
         domain=row.domain,
@@ -67,10 +86,10 @@ def convert_raw_post(row: RawPost) -> Post | None:
         url=row.url,
         created_at=created_at,
         updated_at=updated_at,
-        author=parsed.author,
+        author=author,
         title=title,
         title_embedding=[],
-        html=html,
+        html=content_html,
         html_embedding=[],
         source=row.source,
     )

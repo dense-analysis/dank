@@ -5,3 +5,5 @@ config.toml
 *.json
 *.xml
 data
+/examples
+*.log

@@ -6,7 +6,7 @@ information off of the public Internet.
 
 ## Libraries
 
-You should stick to using the following libraries.
+You should stick to using the following libraries for scraping.
 
 * Use `zendriver` for web browser scraping.
 * Use `yt-dlp` for scraping videos and music content off sites like YouTube.
@@ -14,7 +14,9 @@ You should stick to using the following libraries.
 
 ## Configuration
 
-Configuration lives in `config.toml` and should never be committed.
+Configuration lives in `config.toml` and should never be committed. You must
+never read the values from `config.toml`, only pass them on to internal
+functions in code for running DANK.
 
 ## Architecture
 
@@ -25,14 +27,20 @@ using web scraping `zendriver` should connect to hosts and pull information from
 the web requests the browser is sending instead of scraping HTML content on
 the pages.
 
-* Code in the `scrape` module should only be concerned with scraping data, and
-  should know nothing about the database or how processing is done. We should
-  be capturing data as raw as possible and storing JSON payloads of data to
-  process.
+* Code in the `scrape` module should only be concerned with scraping data.
+  Only in `dank/scrape/runner.py` should write to the ClickHouse database
+  or to the filesystem for assets. Submodules should only be concerned with
+  discovering posts and assets that need persisting.
 * Code in the `process` module should only be concerned with loading data from
   the database, processing it, and storing it back again in a processed form.
-* Never import `scrape` code in the `process` module or vice versa. Never
-  import `clickhouse` code into the `scrape` module.
+* Never import `scrape` code in the `process` module or vice versa.
+* Only `dank/scrape/runner.py`, `dank/process/runner.py`, and the web app
+  may access ClickHouse.
+
+IMPORTANT: You are not allowed to just create new modules and import `process`
+or `scrape` code in them to get around the rules of not importing `scrape` code
+in to `process` code or `process` code into `scrape` code through a layer of
+indirection.
 
 ## Basic Principles
 
@@ -43,7 +51,7 @@ the pages.
 * Store original payloads of data scraped from sites as JSON in the database.
 * Never use `os.environ` for configuration in code, because all configuration
   should belong in the TOML configuration.
-* Implement tests
+* Implement tests, especially unit tests for data processing.
 
 ## Tools
 

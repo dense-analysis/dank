@@ -10,45 +10,20 @@ from collections.abc import AsyncIterator, Iterable
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Literal, NamedTuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
-from dank.model import RawPost
+from dank.html_utils import is_youtube_url
+from dank.model import AssetDiscovery, RawPost
 from dank.scrape.types import ScrapeBatch
 
 logger = logging.getLogger(__name__)
 
-RSS_SOURCE = "rss"
 RSS_MIME_HINTS = ("rss", "atom", "xml", "rdf")
 ATOM_FEED_TYPE = "atom"
 RSS2_FEED_TYPE = "rss2"
 RSS1_FEED_TYPE = "rss1"
-type FeedType = Literal["atom", "rss2", "rss1"]
-
-PAGE_DATE_KEYS = {
-    "article:published_time",
-    "article:published",
-    "og:published_time",
-    "published_time",
-    "pubdate",
-    "publishdate",
-    "publish_date",
-    "date",
-    "datepublished",
-    "date_published",
-    "datecreated",
-    "date_created",
-    "dc.date",
-    "dc.date.issued",
-    "dc.date.created",
-}
-PAGE_ITEMPROP_KEYS = {
-    "datepublished",
-    "datecreated",
-    "date",
-}
-
 ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
 RSS1_NAMESPACE = "http://purl.org/rss/1.0/"
 RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -57,6 +32,30 @@ RSS1_NAMESPACES = {
     "rss": RSS1_NAMESPACE,
     "rdf": RDF_NAMESPACE,
 }
+
+FEED_ACCEPT = [
+    "application/atom+xml",
+    "application/rss+xml",
+    "application/xml",
+    "text/xml",
+]
+HTML_ACCEPT = ["text/html", "application/xhtml+xml", "application/xml"]
+MEDIA_SRC_ATTRS = (
+    "src",
+    "data-src",
+    "data-lazy-src",
+    "data-original",
+    "data-lazy",
+)
+
+type FeedType = Literal["atom", "rss2", "rss1"]
+
+
+class PageDiscovery(NamedTuple):
+    domain: str
+    url: str
+    created_at: datetime.datetime | None
+    payload: str
 
 
 class FeedLink(NamedTuple):
@@ -107,224 +106,112 @@ class _HeadFeedLinkParser(HTMLParser):
             self._in_head = False
 
 
-class _PostDateParser(HTMLParser):
-    def __init__(self) -> None:
+class _ParsedEntry(NamedTuple):
+    url: str
+    created_at: datetime.datetime | None
+    payload: str
+
+
+class _PageAssetParser(HTMLParser):
+    def __init__(self, base_url: str) -> None:
         super().__init__()
 
-        self.candidates: list[str] = []
+        self._base_url = base_url
+        self._assets: dict[str, str] = {}
+        self._media_stack: list[str] = []
 
     def handle_starttag(
         self,
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        attr_map = {
-            key.lower(): value
-            for key, value in attrs
-            if key and value is not None
-        }
+        tag = tag.lower()
+        attr_map = _attrs_to_map(attrs)
 
-        if tag == "meta":
-            key = (
-                attr_map.get("property")
-                or attr_map.get("name")
-                or attr_map.get("itemprop")
-                or ""
-            ).lower()
-            if key in PAGE_DATE_KEYS:
-                content = attr_map.get("content") or attr_map.get("value")
-                if content:
-                    self.candidates.append(content)
-            return
+        if tag == "video":
+            self._media_stack.append("video")
+        elif tag == "audio":
+            self._media_stack.append("audio")
 
-        if tag == "time":
-            datetime_value = attr_map.get("datetime") or attr_map.get(
-                "content",
+        if tag == "img":
+            _add_asset(
+                self._assets,
+                self._base_url,
+                _extract_media_url(attr_map),
+                "image",
             )
-            if datetime_value:
-                self.candidates.append(datetime_value)
+
             return
 
-        itemprop = (attr_map.get("itemprop") or "").lower()
-        if itemprop in PAGE_ITEMPROP_KEYS:
-            content = attr_map.get("content") or attr_map.get("datetime")
-            if content:
-                self.candidates.append(content)
+        if tag == "video":
+            _add_asset(
+                self._assets,
+                self._base_url,
+                _extract_media_url(attr_map),
+                "video",
+            )
+            _add_asset(
+                self._assets,
+                self._base_url,
+                attr_map.get("poster"),
+                "image",
+            )
+
+            return
+
+        if tag == "audio":
+            _add_asset(
+                self._assets,
+                self._base_url,
+                _extract_media_url(attr_map),
+                "audio",
+            )
+
+            return
+
+        if tag == "source" and self._media_stack:
+            _add_asset(
+                self._assets,
+                self._base_url,
+                _extract_media_url(attr_map),
+                self._media_stack[-1],
+            )
+
+            return
+
+        if tag == "iframe":
+            src = attr_map.get("src", "")
+            asset_type = "youtube" if is_youtube_url(src) else "iframe"
+            _add_asset(self._assets, self._base_url, src, asset_type)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+
+        if tag in {"video", "audio"} and self._media_stack:
+            self._media_stack.pop()
+
+    def assets(self) -> Iterable[tuple[str, str]]:
+        return self._assets.items()
 
 
-async def scrape_site_rss(
+async def fetch_feed_links(
     domain: str,
     *,
-    batch_size: int = 50,
-) -> AsyncIterator[ScrapeBatch]:
+    timeout_seconds: float = 30.0,
+) -> list[FeedLink]:
     root_url = f"https://{domain}"
 
     async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=30),
-    ) as client:
-        html = await _fetch_text(client, root_url, accept=["text/html"])
+        timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+    ) as http_client:
+        html = await _fetch_text(http_client, root_url, accept=["text/html"])
 
-        if not html:
-            logger.warning("No HTML received for %s", root_url)
+    if not html:
+        logger.warning("No HTML received for %s", root_url)
 
-            return
-
-        feed_links = discover_feed_links(html, root_url)
-
-        if not feed_links:
-            logger.warning("No RSS feeds found for %s", root_url)
-
-            return
-
-        selected = select_feed_link(feed_links)
-
-        if selected is None:
-            logger.warning("No RSS feeds found for %s", root_url)
-
-            return
-
-        xml = await _fetch_text(
-            client,
-            selected.url,
-            accept=_accept_from_link(selected),
-        )
-
-        if not xml:
-            logger.warning("No feed content returned for %s", selected.url)
-
-            return
-
-        posts = raw_posts_from_xml(
-            xml,
-            domain=domain,
-            feed_url=selected.url,
-            root_url=root_url,
-        )
-
-        if not posts:
-            logger.warning("No posts parsed for %s", selected.url)
-
-            return
-
-        posts = await _attach_page_payloads(client, posts)
-
-        pending: list[RawPost] = []
-
-        for raw in posts:
-            pending.append(raw)
-
-            if len(pending) >= batch_size:
-                yield ScrapeBatch(posts=pending, assets=[])
-                pending = []
-
-        if pending:
-            yield ScrapeBatch(posts=pending, assets=[])
-
-
-async def _fetch_text(
-    client: aiohttp.ClientSession,
-    url: str,
-    *,
-    accept: list[str],
-) -> str | None:
-    try:
-        async with client.get(
-            url,
-            headers={"Accept": ", ".join(accept)},
-        ) as response:
-            response.raise_for_status()
-
-            return await response.text()
-    except Exception:
-        logger.debug("Failed to fetch %s", url, exc_info=True)
-
-        return None
-
-
-def _feed_type_from_mime(type_hint: str | None) -> FeedType:
-    match type_hint:
-        case str() if "atom" in type_hint:
-            return ATOM_FEED_TYPE
-        case str() if "rdf" in type_hint:
-            return RSS1_FEED_TYPE
-        case _:
-            return RSS2_FEED_TYPE
-
-
-def select_feed_link(links: Iterable[FeedLink]) -> FeedLink | None:
-    """Get the highest priority feed link."""
-    order = [ATOM_FEED_TYPE, RSS2_FEED_TYPE, RSS1_FEED_TYPE]
-    links = sorted(links, key=lambda link: order.index(link.feed_type))
-
-    return links[0] if links else None
-
-
-def _accept_from_link(link: FeedLink) -> list[str]:
-    if link.mime_type:
-        return [link.mime_type]
-
-    match link.feed_type:
-        case "atom":
-            return [
-                "application/atom+xml",
-                "application/xml",
-                "text/xml",
-            ]
-        case "rss1":
-            return [
-                "application/rdf+xml",
-                "application/xml",
-                "text/xml",
-            ]
-        case "rss2":
-            return [
-                "application/rss+xml",
-                "application/xml",
-                "text/xml",
-            ]
-        case _:
-            return ["application/xml", "text/xml"]
-
-
-async def _attach_page_payloads(
-    client: aiohttp.ClientSession,
-    posts: list[RawPost],
-    *,
-    concurrency: int = 4,
-) -> list[RawPost]:
-    if not posts:
         return []
 
-    semaphore = asyncio.Semaphore(concurrency)
-
-    async def _attach(post: RawPost) -> RawPost:
-        async with semaphore:
-            page_html = await _fetch_text(
-                client,
-                post.url,
-                accept=[
-                    "text/html",
-                    "application/xhtml+xml",
-                    "application/xml",
-                ],
-            )
-
-        created_at = post.post_created_at
-        if created_at is None and page_html:
-            created_at = _extract_post_created_at_from_html(page_html)
-
-        payload = _compose_payload(post.payload, page_html or "")
-
-        return post._replace(payload=payload, post_created_at=created_at)
-
-    return await asyncio.gather(*(_attach(post) for post in posts))
-
-
-def _compose_payload(feed_xml: str, page_html: str) -> str:
-    return json.dumps(
-        {"feed_xml": feed_xml, "page_html": page_html},
-        separators=(",", ":"),
-    )
+    return discover_feed_links(html, root_url)
 
 
 def discover_feed_links(html: str, root_url: str) -> list[FeedLink]:
@@ -343,13 +230,22 @@ def discover_feed_links(html: str, root_url: str) -> list[FeedLink]:
     return links
 
 
-def raw_posts_from_xml(
+def _feed_type_from_mime(type_hint: str | None) -> FeedType:
+    match type_hint:
+        case str() if "atom" in type_hint:
+            return ATOM_FEED_TYPE
+        case str() if "rdf" in type_hint:
+            return RSS1_FEED_TYPE
+        case _:
+            return RSS2_FEED_TYPE
+
+
+def parse_feed_entries(
     xml: str,
     *,
     domain: str,
-    feed_url: str,
     root_url: str,
-) -> list[RawPost]:
+) -> list[PageDiscovery]:
     if not xml:
         return []
 
@@ -360,42 +256,36 @@ def raw_posts_from_xml(
 
     feed_type = _feed_type_from_root(root)
 
+    entries: list[_ParsedEntry]
     match feed_type:
         case "atom":
-            return _parse_atom_posts(
-                root,
-                domain=domain,
-                feed_url=feed_url,
-                root_url=root_url,
-            )
+            entries = _parse_atom_entries(root, root_url)
         case "rss2":
-            return _parse_rss2_posts(
-                root,
-                domain=domain,
-                feed_url=feed_url,
-                root_url=root_url,
-            )
+            entries = _parse_rss2_entries(root, root_url)
         case "rss1":
-            return _parse_rss1_posts(
-                root,
-                domain=domain,
-                feed_url=feed_url,
-                root_url=root_url,
-            )
+            entries = _parse_rss1_entries(root, root_url)
         case _:
-            return []
+            entries = []
+
+    return [
+        PageDiscovery(
+            domain=domain,
+            url=entry.url,
+            created_at=entry.created_at,
+            payload=entry.payload,
+        )
+        for entry in entries
+    ]
 
 
 def _parse_xml_root(xml: str) -> ElementTree.Element | None:
     try:
         return ElementTree.fromstring(xml)
     except ElementTree.ParseError:
-        logger.debug("Failed to parse feed XML", exc_info=True)
-
         return None
 
 
-def _feed_type_from_root(root: ElementTree.Element) -> str | None:
+def _feed_type_from_root(root: ElementTree.Element) -> FeedType | None:
     match _strip_xml_namespace(root.tag).lower():
         case "feed":
             return ATOM_FEED_TYPE
@@ -414,32 +304,32 @@ def _strip_xml_namespace(tag: str) -> str:
     return tag
 
 
-def _parse_atom_posts(
+def _parse_atom_entries(
     root: ElementTree.Element,
-    *,
-    domain: str,
-    feed_url: str,
     root_url: str,
-) -> list[RawPost]:
-    return [
-        _create_raw_post(
-            payload_xml=ElementTree.tostring(entry, encoding="unicode"),
-            link=_atom_entry_link(entry),
-            created_at=_parse_datetime(
-                _text(entry, "atom:published", ATOM_NAMESPACES)
-                or _text(entry, "atom:updated", ATOM_NAMESPACES),
-            ),
-            domain=domain,
-            feed_url=feed_url,
-            root_url=root_url,
+) -> list[_ParsedEntry]:
+    entries: list[_ParsedEntry] = []
+
+    for entry in root.findall("atom:entry", ATOM_NAMESPACES):
+        payload_xml = ElementTree.tostring(entry, encoding="unicode")
+        url = urljoin(root_url, _atom_entry_link(entry) or "")
+        created_at = _parse_datetime(
+            _text(entry, "atom:published", ATOM_NAMESPACES)
+            or _text(entry, "atom:updated", ATOM_NAMESPACES),
         )
-        for entry in root.findall("atom:entry", ATOM_NAMESPACES)
-    ]
+        entries.append(
+            _ParsedEntry(
+                url=url or root_url,
+                created_at=created_at,
+                payload=payload_xml,
+            ),
+        )
+
+    return entries
 
 
 def _atom_entry_link(entry: ElementTree.Element) -> str | None:
     links = entry.findall("atom:link", ATOM_NAMESPACES)
-    # Prefer alternate links, then those with text/html types.
     links.sort(
         key=lambda link: (
             (link.get("rel") or "").lower() == "alternate",
@@ -455,71 +345,50 @@ def _atom_entry_link(entry: ElementTree.Element) -> str | None:
     return None
 
 
-def _parse_rss2_posts(
+def _parse_rss2_entries(
     root: ElementTree.Element,
-    *,
-    domain: str,
-    feed_url: str,
     root_url: str,
-) -> list[RawPost]:
-    if (channel := root.find("channel")) is not None:
-        return [
-            _create_raw_post(
-                payload_xml=ElementTree.tostring(item, encoding="unicode"),
-                link=_text(item, "link"),
-                created_at=_parse_datetime(_text(item, "pubDate")),
-                domain=domain,
-                feed_url=feed_url,
-                root_url=root_url,
-            )
-            for item in channel.findall("item")
-        ]
+) -> list[_ParsedEntry]:
+    channel = root.find("channel")
 
-    return []
+    if channel is None:
+        return []
 
+    entries: list[_ParsedEntry] = []
 
-def _parse_rss1_posts(
-    root: ElementTree.Element,
-    *,
-    domain: str,
-    feed_url: str,
-    root_url: str,
-) -> list[RawPost]:
-    return [
-        _create_raw_post(
-            payload_xml=ElementTree.tostring(item, encoding="unicode"),
-            link=_text(item, "rss:link", RSS1_NAMESPACES),
-            created_at=None,
-            domain=domain,
-            feed_url=feed_url,
-            root_url=root_url,
+    for item in channel.findall("item"):
+        payload_xml = ElementTree.tostring(item, encoding="unicode")
+        url = urljoin(root_url, _text(item, "link") or "")
+        created_at = _parse_datetime(_text(item, "pubDate"))
+        entries.append(
+            _ParsedEntry(
+                url=url or root_url,
+                created_at=created_at,
+                payload=payload_xml,
+            ),
         )
-        for item in root.findall("rss:item", RSS1_NAMESPACES)
-    ]
+
+    return entries
 
 
-def _create_raw_post(
-    *,
-    payload_xml: str,
-    link: str | None,
-    created_at: datetime.datetime | None,
-    domain: str,
-    feed_url: str,
+def _parse_rss1_entries(
+    root: ElementTree.Element,
     root_url: str,
-) -> RawPost:
-    url = urljoin(root_url, link) if link else root_url
-    post_id = hashlib.sha256(url.encode()).hexdigest()
+) -> list[_ParsedEntry]:
+    entries: list[_ParsedEntry] = []
 
-    return RawPost(
-        domain=domain,
-        post_id=post_id,
-        url=url,
-        post_created_at=created_at,
-        scraped_at=datetime.datetime.now(datetime.UTC),
-        source=RSS_SOURCE,
-        request_url=feed_url,
-        payload=payload_xml,
-    )
+    for item in root.findall("rss:item", RSS1_NAMESPACES):
+        payload_xml = ElementTree.tostring(item, encoding="unicode")
+        url = urljoin(root_url, _text(item, "rss:link", RSS1_NAMESPACES) or "")
+        entries.append(
+            _ParsedEntry(
+                url=url or root_url,
+                created_at=None,
+                payload=payload_xml,
+            ),
+        )
+
+    return entries
 
 
 def _text(
@@ -535,6 +404,275 @@ def _text(
     return child.text.strip()
 
 
+async def scrape_feed_batches(
+    http_client: aiohttp.ClientSession,
+    *,
+    domain: str,
+    feed_urls: list[str],
+    batch_size: int = 50,
+    concurrency: int = 4,
+) -> AsyncIterator[ScrapeBatch]:
+    if not feed_urls:
+        return
+
+    root_url = f"https://{domain}"
+    seen_urls: set[str] = set()
+
+    for feed_url in feed_urls:
+        feed_xml = await _fetch_text(http_client, feed_url, accept=FEED_ACCEPT)
+
+        if not feed_xml:
+            continue
+
+        discoveries = parse_feed_entries(
+            feed_xml,
+            domain=domain,
+            root_url=root_url,
+        )
+        unique_discoveries = dedupe_discoveries(discoveries, seen_urls)
+
+        for page_chunk in chunked(unique_discoveries, batch_size):
+            page_results = await _fetch_pages(
+                http_client,
+                page_chunk,
+                concurrency=concurrency,
+            )
+            raw_posts: list[RawPost] = []
+            asset_discoveries: list[AssetDiscovery] = []
+            scraped_at = datetime.datetime.now(datetime.UTC)
+
+            for discovery, page_html in page_results:
+                if not page_html:
+                    continue
+
+                raw_post, assets = _build_raw_post(
+                    discovery,
+                    page_html,
+                    request_url=feed_url,
+                    scraped_at=scraped_at,
+                )
+                raw_posts.append(raw_post)
+                asset_discoveries.extend(assets)
+
+            if raw_posts or asset_discoveries:
+                yield ScrapeBatch(posts=raw_posts, assets=asset_discoveries)
+
+
+def _build_raw_post(
+    discovery: PageDiscovery,
+    page_html: str,
+    *,
+    request_url: str,
+    scraped_at: datetime.datetime,
+) -> tuple[RawPost, list[AssetDiscovery]]:
+    post_id = _hash_post_id(discovery.url)
+    raw_post = RawPost(
+        domain=discovery.domain,
+        post_id=post_id,
+        url=discovery.url,
+        post_created_at=discovery.created_at,
+        scraped_at=scraped_at,
+        source="rss",
+        request_url=request_url,
+        payload=_compose_payload(discovery.payload, page_html),
+    )
+    assets = _extract_page_assets(
+        page_html,
+        domain=discovery.domain,
+        post_id=post_id,
+        base_url=discovery.url,
+    )
+
+    return raw_post, assets
+
+
+def dedupe_discoveries(
+    discoveries: list[PageDiscovery],
+    seen_urls: set[str],
+) -> list[PageDiscovery]:
+    unique: dict[str, PageDiscovery] = {}
+
+    for discovery in discoveries:
+        if discovery.url and discovery.url not in seen_urls:
+            seen_urls.add(discovery.url)
+            unique.setdefault(discovery.url, discovery)
+
+    return list(unique.values())
+
+
+def chunked(
+    items: list[PageDiscovery],
+    batch_size: int,
+) -> Iterable[list[PageDiscovery]]:
+    for start in range(0, len(items), batch_size):
+        yield items[start : start + batch_size]
+
+
+def _compose_payload(feed_xml: str, page_html: str) -> str:
+    return json.dumps(
+        {"feed_xml": feed_xml, "page_html": page_html},
+        separators=(",", ":"),
+    )
+
+
+def _hash_post_id(url: str) -> str:
+    return hashlib.sha256(url.encode()).hexdigest()
+
+
+def _extract_page_assets(
+    page_html: str,
+    *,
+    domain: str,
+    post_id: str,
+    base_url: str | None = None,
+) -> list[AssetDiscovery]:
+    if not page_html:
+        return []
+
+    parser = _PageAssetParser(base_url or f"https://{domain}")
+    parser.feed(page_html)
+
+    return [
+        AssetDiscovery(
+            source="rss",
+            domain=domain,
+            post_id=post_id,
+            url=url,
+            asset_type=asset_type,
+        )
+        for url, asset_type in parser.assets()
+    ]
+
+
+def _extract_media_url(attr_map: dict[str, str]) -> str:
+    for key in MEDIA_SRC_ATTRS:
+        value = attr_map.get(key)
+
+        if value:
+            return value
+
+    srcset = attr_map.get("srcset") or attr_map.get("data-srcset")
+
+    if srcset:
+        first = srcset.split(",", 1)[0].strip()
+
+        if first:
+            return first.split(" ", 1)[0]
+
+    return ""
+
+
+def _add_asset(
+    assets: dict[str, str],
+    base_url: str,
+    raw_url: str | None,
+    asset_type: str,
+) -> None:
+    if not raw_url:
+        return
+
+    normalized = _normalize_asset_url(base_url, raw_url)
+
+    if normalized is None:
+        return
+
+    existing = assets.get(normalized)
+
+    if existing is None or _asset_priority(asset_type) > _asset_priority(
+        existing,
+    ):
+        assets[normalized] = asset_type
+
+
+def _normalize_asset_url(base_url: str, raw_url: str) -> str | None:
+    trimmed = raw_url.strip()
+
+    if not trimmed:
+        return None
+
+    if trimmed.startswith("data:") or trimmed.startswith("javascript:"):
+        return None
+
+    absolute = urljoin(base_url, trimmed)
+    parsed = urlparse(absolute)
+
+    if parsed.scheme not in {"http", "https"}:
+        return None
+
+    return absolute
+
+
+def _asset_priority(asset_type: str) -> int:
+    match asset_type:
+        case "youtube":
+            return 4
+        case "video":
+            return 3
+        case "audio":
+            return 3
+        case "image":
+            return 2
+        case "iframe":
+            return 1
+        case _:
+            return 0
+
+
+def _attrs_to_map(attrs: list[tuple[str, str | None]]) -> dict[str, str]:
+    return {key.lower(): (value or "") for key, value in attrs if key}
+
+
+async def _fetch_pages(
+    http_client: aiohttp.ClientSession,
+    discoveries: list[PageDiscovery],
+    *,
+    concurrency: int,
+) -> list[tuple[PageDiscovery, str | None]]:
+    if not discoveries:
+        return []
+
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _fetch(
+        discovery: PageDiscovery,
+    ) -> tuple[PageDiscovery, str | None]:
+        async with semaphore:
+            html = await _fetch_text(
+                http_client,
+                discovery.url,
+                accept=HTML_ACCEPT,
+            )
+
+        return discovery, html
+
+    return await asyncio.gather(
+        *(_fetch(discovery) for discovery in discoveries),
+    )
+
+
+async def _fetch_text(
+    http_client: aiohttp.ClientSession,
+    url: str,
+    *,
+    accept: list[str],
+) -> str | None:
+    if not url:
+        return None
+
+    try:
+        async with http_client.get(
+            url,
+            headers={"Accept": ", ".join(accept)},
+        ) as response:
+            response.raise_for_status()
+
+            return await response.text()
+    except Exception:
+        logger.debug("Failed to fetch %s", url, exc_info=True)
+
+        return None
+
+
 def _parse_datetime(value: str | None) -> datetime.datetime | None:
     if value is None:
         return None
@@ -546,46 +684,3 @@ def _parse_datetime(value: str | None) -> datetime.datetime | None:
             return parsedate_to_datetime(value)
         except (TypeError, ValueError):
             return None
-
-    return None
-
-
-def _extract_post_created_at_from_html(
-    html: str,
-) -> datetime.datetime | None:
-    if not html:
-        return None
-
-    parser = _PostDateParser()
-    parser.feed(html)
-
-    for candidate in parser.candidates:
-        parsed = _parse_date_candidate(candidate)
-
-        if parsed is not None:
-            return parsed
-
-    return None
-
-
-def _parse_date_candidate(value: str) -> datetime.datetime | None:
-    if not value:
-        return None
-
-    trimmed = value.strip()
-
-    if trimmed.endswith("Z"):
-        trimmed = trimmed[:-1] + "+00:00"
-
-    try:
-        parsed = datetime.datetime.fromisoformat(trimmed)
-    except ValueError:
-        try:
-            parsed = parsedate_to_datetime(trimmed)
-        except (TypeError, ValueError):
-            return None
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=datetime.UTC)
-
-    return parsed.astimezone(datetime.UTC)

@@ -1,33 +1,31 @@
 from __future__ import annotations
 
-import asyncio
 import datetime
 import json
 import logging
-import pathlib
 import random
 import time
 from collections.abc import AsyncIterator, Iterable
 from typing import Any, cast
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
-import aiohttp
 import zendriver
 from zendriver import Element, cdp
 
 from dank.config import EmailSettings, XSettings
-from dank.model import RawAsset, RawPost
+from dank.model import AssetDiscovery, RawPost
 from dank.scrape.imap_email import EmailSearchFilters, wait_for_code
 from dank.scrape.types import ScrapeBatch
-from dank.scrape.x_payloads import (
-    XAsset,
-    XExtractedPost,
-    extract_posts_from_payload,
-)
 from dank.scrape.zendriver import (
     BrowserSession,
     NetworkCapture,
     NetworkResponse,
+)
+
+from .payloads import (
+    XAsset,
+    XExtractedPost,
+    extract_posts_from_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,17 +35,17 @@ X_GRAPHQL_PATTERNS = (
     r"https://x\.com/i/api/graphql/.+/UserTweets",
     r"https://x\.com/i/api/graphql/.+/UserTweetsAndReplies",
     r"https://x\.com/i/api/graphql/.+/TweetDetail",
+    r"https://x\.com/i/api/graphql/.+/UserMedia",
 )
+FAST_SCROLL_PAUSE_SECONDS = 0.35
+MAX_IDLE_SCROLLS = 4
 
 
-async def scrape_accounts(
+async def scrape_x_accounts(
     settings: XSettings,
     accounts: tuple[str, ...],
     email_settings: EmailSettings | None,
-    assets_dir: pathlib.Path,
     session: BrowserSession,
-    *,
-    max_asset_bytes: int | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     browser = await session.get_browser()
 
@@ -61,26 +59,20 @@ async def scrape_accounts(
         page = browser.main_tab
     except Exception:
         page = await browser.get("about:blank")
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=30),
-    ) as http_client:
-        for account in accounts:
-            try:
-                async for batch in _scrape_account(
-                    page,
-                    account,
-                    settings,
-                    email_settings,
-                    assets_dir,
-                    http_client,
-                    max_asset_bytes=max_asset_bytes,
-                ):
-                    yield batch
-            except LoginRequiredError:
-                logger.warning(
-                    "X login required; stopping scrape.",
-                )
-                return
+    for account in accounts:
+        try:
+            async for batch in _scrape_account(
+                page,
+                account,
+                settings,
+                email_settings,
+            ):
+                yield batch
+        except LoginRequiredError:
+            logger.warning(
+                "X login required; stopping scrape.",
+            )
+            return
 
 
 async def _scrape_account(
@@ -88,74 +80,105 @@ async def _scrape_account(
     account: str,
     settings: XSettings,
     email_settings: EmailSettings | None,
-    assets_dir: pathlib.Path,
-    http_client: aiohttp.ClientSession,
-    *,
-    max_asset_bytes: int | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     handle = account.strip("@").strip()
     if not handle:
         return
-    url = f"https://x.com/{quote(handle)}"
-    page = await page.get(url)
-    await _ensure_navigation(page, url)
 
-    if await _is_login_page(page):
-        await _login(page, settings, email_settings)
-        page = await page.get(url)
-        await _ensure_navigation(page, url)
+    logger.info("Starting X scrape for account=%s", handle)
 
     capture = NetworkCapture(page, X_GRAPHQL_PATTERNS)
     await capture.start()
 
     try:
+        url = f"https://x.com/{quote(handle)}"
+        page = await page.get(url)
+        await _ensure_navigation(page, url)
+
+        if await _is_login_page(page):
+            await _login(page, settings, email_settings)
+            page = await page.get(url)
+            await _ensure_navigation(page, url)
+
         seen_posts: set[str] = set()
         seen_assets: set[str] = set()
         total_posts = 0
+        idle_scrolls = 0
+
+        posts, assets = await _drain_posts_and_assets(
+            capture,
+            seen_posts,
+            seen_assets,
+            timeout_seconds=settings.scroll_pause_seconds,
+        )
+        logger.info(
+            "Initial drain for %s produced posts=%d assets=%d",
+            handle,
+            len(posts),
+            len(assets),
+        )
+        total_posts += len(posts)
+
+        if posts or assets:
+            yield ScrapeBatch(posts=posts, assets=assets)
+
+        if total_posts >= settings.max_posts:
+            return
 
         for _ in range(settings.max_scrolls):
             await _scroll(page)
-            responses = await capture.drain(
-                timeout_seconds=settings.scroll_pause_seconds,
-            )
-            posts, assets = _extract_posts_and_assets(
-                responses,
+            posts, assets = await _drain_posts_and_assets(
+                capture,
                 seen_posts,
                 seen_assets,
+                timeout_seconds=_scroll_pause_seconds(
+                    settings.scroll_pause_seconds,
+                    idle_scrolls,
+                ),
+            )
+            logger.info(
+                "Scroll drain for %s produced posts=%d assets=%d idle=%d",
+                handle,
+                len(posts),
+                len(assets),
+                idle_scrolls,
             )
             total_posts += len(posts)
-            downloaded = await _download_assets(
-                assets,
-                assets_dir,
-                http_client,
-                max_asset_bytes=max_asset_bytes,
-            )
 
-            if posts or downloaded:
-                yield ScrapeBatch(posts=posts, assets=downloaded)
+            if posts or assets:
+                yield ScrapeBatch(posts=posts, assets=assets)
+                idle_scrolls = 0
+            else:
+                idle_scrolls += 1
 
             if total_posts >= settings.max_posts:
                 break
 
-        trailing = await capture.drain(
-            timeout_seconds=settings.scroll_pause_seconds,
-        )
-        posts, assets = _extract_posts_and_assets(
-            trailing,
+            if idle_scrolls >= MAX_IDLE_SCROLLS and total_posts > 0:
+                break
+
+        posts, assets = await _drain_posts_and_assets(
+            capture,
             seen_posts,
             seen_assets,
+            timeout_seconds=min(
+                settings.scroll_pause_seconds,
+                FAST_SCROLL_PAUSE_SECONDS,
+            ),
         )
-        downloaded = await _download_assets(
-            assets,
-            assets_dir,
-            http_client,
-            max_asset_bytes=max_asset_bytes,
+        logger.info(
+            "Trailing drain for %s produced posts=%d assets=%d total_posts=%d",
+            handle,
+            len(posts),
+            len(assets),
+            total_posts,
         )
 
-        if posts or downloaded:
-            yield ScrapeBatch(posts=posts, assets=downloaded)
+        if posts or assets:
+            yield ScrapeBatch(posts=posts, assets=assets)
     finally:
         await capture.stop()
+        logger.info("Finished X scrape for account=%s", handle)
 
 
 async def _is_login_page(page: zendriver.Tab) -> bool:
@@ -336,29 +359,91 @@ async def _handle_otp(
 
 
 async def _scroll(page: zendriver.Tab) -> None:
-    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    await page.evaluate(
+        "(() => {"
+        "const viewport = window.innerHeight || 800;"
+        "const step = Math.max(500, Math.floor(viewport * 1.5));"
+        "const root = document.scrollingElement || document.documentElement;"
+        "const maxTop = Math.max(0, root.scrollHeight - viewport);"
+        "const nextTop = Math.min(root.scrollTop + step, maxTop);"
+        "window.scrollTo(0, nextTop);"
+        "})()",
+    )
 
 
-def _extract_posts_and_assets(
+async def _drain_posts_and_assets(
+    capture: NetworkCapture,
+    seen_posts: set[str],
+    seen_assets: set[str],
+    *,
+    timeout_seconds: float,
+) -> tuple[list[RawPost], list[AssetDiscovery]]:
+    responses = await capture.drain(timeout_seconds=max(0.05, timeout_seconds))
+    logger.info("Drained %d X network responses", len(responses))
+
+    return extract_posts_and_assets(responses, seen_posts, seen_assets)
+
+
+def _scroll_pause_seconds(configured_pause: float, idle_scrolls: int) -> float:
+    if configured_pause <= 0:
+        return FAST_SCROLL_PAUSE_SECONDS
+
+    if idle_scrolls >= 2:
+        return configured_pause
+
+    return min(configured_pause, FAST_SCROLL_PAUSE_SECONDS)
+
+
+def extract_posts_and_assets(
     responses: Iterable[NetworkResponse],
     seen_posts: set[str],
     seen_assets: set[str],
-) -> tuple[list[RawPost], list[RawAsset]]:
+) -> tuple[list[RawPost], list[AssetDiscovery]]:
     posts: list[RawPost] = []
-    assets: list[RawAsset] = []
+    assets: list[AssetDiscovery] = []
 
     for response in responses:
+        logger.info(
+            (
+                "X response request_id=%s status=%s resource=%s "
+                "mime=%s bytes=%d url=%s"
+            ),
+            response.request_id,
+            response.status,
+            response.resource_type,
+            response.mime_type,
+            len(response.body),
+            response.url,
+        )
+
         try:
             payload = json.loads(response.body)
         except json.JSONDecodeError:
+            logger.warning(
+                "Skipping non-JSON X response request_id=%s url=%s",
+                response.request_id,
+                response.url,
+            )
             continue
 
         if not isinstance(payload, dict):
+            logger.warning(
+                "Skipping non-object X payload request_id=%s url=%s",
+                response.request_id,
+                response.url,
+            )
             continue
 
         payload = cast(dict[str, object], payload)
 
-        for extracted in extract_posts_from_payload(payload):
+        extracted_posts = extract_posts_from_payload(payload)
+        logger.info(
+            "Parsed %d posts from X response request_id=%s",
+            len(extracted_posts),
+            response.request_id,
+        )
+
+        for extracted in extracted_posts:
             if extracted.post_id not in seen_posts:
                 seen_posts.add(extracted.post_id)
                 posts.append(
@@ -369,8 +454,14 @@ def _extract_posts_and_assets(
                     if asset.url not in seen_assets:
                         seen_assets.add(asset.url)
                         assets.append(
-                            _raw_asset_from_extracted(extracted, asset),
+                            _asset_discovery_from_extracted(extracted, asset),
                         )
+
+    logger.info(
+        "Extracted %d new posts and %d new assets from drained responses",
+        len(posts),
+        len(assets),
+    )
 
     return posts, assets
 
@@ -391,106 +482,14 @@ def _raw_post_from_extracted(
     )
 
 
-def _raw_asset_from_extracted(
+def _asset_discovery_from_extracted(
     extracted: XExtractedPost,
     asset: XAsset,
-) -> RawAsset:
-    return RawAsset(
+) -> AssetDiscovery:
+    return AssetDiscovery(
+        source="x",
         domain="x.com",
         post_id=extracted.post_id,
         url=asset.url,
         asset_type=asset.asset_type,
-        scraped_at=datetime.datetime.now(datetime.UTC),
-        source=X_SOURCE,
-        local_path="",
     )
-
-
-async def _download_assets(
-    assets: list[RawAsset],
-    assets_dir: pathlib.Path,
-    client: aiohttp.ClientSession,
-    *,
-    concurrency: int = 4,
-    max_asset_bytes: int | None = None,
-) -> list[RawAsset]:
-    semaphore = asyncio.Semaphore(concurrency)
-
-    async def _download_asset(asset: RawAsset) -> RawAsset | None:
-        if asset.asset_type == "link":
-            return asset
-
-        parsed = urlparse(asset.url)
-        filename = pathlib.Path(parsed.path).name or "asset"
-        target_dir = assets_dir / "x.com" / asset.post_id
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / filename
-
-        if target_path.exists():
-            return asset._replace(local_path=str(target_path))
-
-        temp_path = target_path.with_suffix(f"{target_path.suffix}.part")
-        async with semaphore:
-            try:
-                async with client.get(asset.url) as response:
-                    response.raise_for_status()
-
-                    if max_asset_bytes is not None:
-                        content_length = response.content_length
-
-                        if (
-                            content_length is not None
-                            and content_length > max_asset_bytes
-                        ):
-                            logger.debug(
-                                "Skipping asset larger than limit: %s",
-                                asset.url,
-                            )
-                            temp_path.unlink(missing_ok=True)
-
-                            return asset
-
-                    bytes_read = 0
-                    exceeded_limit = False
-
-                    with temp_path.open("wb") as file:
-                        async for chunk in response.content.iter_chunked(
-                            65536,
-                        ):
-                            if not chunk:
-                                continue
-
-                            bytes_read += len(chunk)
-
-                            if (
-                                max_asset_bytes is not None
-                                and bytes_read > max_asset_bytes
-                            ):
-                                exceeded_limit = True
-                                break
-
-                            file.write(chunk)
-
-                    if exceeded_limit:
-                        temp_path.unlink(missing_ok=True)
-                        logger.debug(
-                            "Skipping asset larger than limit: %s",
-                            asset.url,
-                        )
-
-                        return asset
-            except Exception:
-                temp_path.unlink(missing_ok=True)
-                logger.debug("Failed to download asset", exc_info=True)
-
-                return None
-
-        temp_path.replace(target_path)
-
-        return asset._replace(local_path=str(target_path))
-
-    results = await asyncio.gather(
-        *(_download_asset(asset) for asset in assets),
-    )
-
-    return [r for r in results if r is not None]

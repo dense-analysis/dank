@@ -71,6 +71,12 @@ host = "imap.example.com"
 username = "you@example.com"
 password = "your-imap-password"
 port = 993
+
+[logging]
+# Optional: file path for scrape/process logs.
+file = "dank.log"
+# Optional: logging level (DEBUG, INFO, WARNING, ERROR).
+level = "INFO"
 ```
 
 `sources` controls which domains to scrape and process. Each entry can provide
@@ -91,6 +97,9 @@ code.
 
 If the browser takes longer to start, increase
 `browser.connection_timeout` or `browser.connection_max_tries`.
+
+`logging.file` controls where scrape/process logs are written. Relative paths
+are resolved from the current working directory.
 
 ## Usage
 

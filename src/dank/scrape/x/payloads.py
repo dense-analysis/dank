@@ -53,31 +53,221 @@ def extract_posts_from_payload(
 def _iter_tweet_results(
     payload: Mapping[str, object],
 ) -> list[dict[str, object]]:
+    timeline_results = _iter_timeline_tweet_results(payload)
     stack: list[object] = [payload]
-    results: list[dict[str, object]] = []
+    results: list[dict[str, object]] = list(timeline_results)
+
     while stack:
         current = stack.pop()
         current_dict = _as_dict(current)
+
         if current_dict is not None:
-            tweet_results = _as_dict(current_dict.get("tweet_results"))
-            if tweet_results is not None:
-                result = _as_dict(tweet_results.get("result"))
-                if result is not None:
-                    results.append(result)
+            results.extend(_extract_tweet_results(current_dict))
+
+            if _looks_like_tweet(current_dict):
+                results.append(current_dict)
+
             for value in current_dict.values():
                 if isinstance(value, dict | list):
                     stack.append(cast(object, value))
+
             continue
+
         current_list = _as_list(current)
+
         if current_list is None:
             continue
+
         for value in current_list:
             if isinstance(value, dict | list):
                 stack.append(cast(object, value))
+
     return results
 
 
+def _iter_timeline_tweet_results(
+    payload: Mapping[str, object],
+) -> list[dict[str, object]]:
+    data = _as_dict(payload.get("data"))
+
+    if data is None:
+        return []
+
+    user = _as_dict(data.get("user"))
+
+    if user is None:
+        return []
+
+    user_result = _as_dict(user.get("result"))
+
+    if user_result is None:
+        return []
+
+    timeline = _as_dict(user_result.get("timeline"))
+
+    if timeline is None:
+        return []
+
+    timeline_data = _as_dict(timeline.get("timeline"))
+
+    if timeline_data is None:
+        return []
+
+    instructions = _as_list(timeline_data.get("instructions"))
+
+    if instructions is None:
+        return []
+
+    extracted: list[dict[str, object]] = []
+
+    for instruction in instructions:
+        instruction_dict = _as_dict(instruction)
+
+        if instruction_dict is None:
+            continue
+
+        if instruction_dict.get("type") != "TimelineAddEntries":
+            continue
+
+        entries = _as_list(instruction_dict.get("entries"))
+
+        if entries is None:
+            continue
+
+        for entry in entries:
+            entry_dict = _as_dict(entry)
+
+            if entry_dict is None:
+                continue
+
+            extracted.extend(_extract_tweet_results_from_entry(entry_dict))
+
+    return extracted
+
+
+def _extract_tweet_results_from_entry(
+    entry: dict[str, object],
+) -> list[dict[str, object]]:
+    content = _as_dict(entry.get("content"))
+
+    if content is None:
+        return []
+
+    match content.get("entryType"):
+        case "TimelineTimelineItem":
+            return _extract_tweet_results_from_item_content(
+                _as_dict(content.get("itemContent")),
+            )
+        case "TimelineTimelineModule":
+            return _extract_tweet_results_from_module(content)
+        case _:
+            return []
+
+
+def _extract_tweet_results_from_module(
+    content: dict[str, object],
+) -> list[dict[str, object]]:
+    items = _as_list(content.get("items"))
+
+    if items is None:
+        return []
+
+    extracted: list[dict[str, object]] = []
+
+    for item in items:
+        item_dict = _as_dict(item)
+
+        if item_dict is None:
+            continue
+
+        item_wrapper = _as_dict(item_dict.get("item"))
+        node = item_wrapper if item_wrapper is not None else item_dict
+        extracted.extend(
+            _extract_tweet_results_from_item_content(
+                _as_dict(node.get("itemContent")),
+            ),
+        )
+
+    return extracted
+
+
+def _extract_tweet_results_from_item_content(
+    item_content: dict[str, object] | None,
+) -> list[dict[str, object]]:
+    if item_content is None:
+        return []
+
+    item_type = item_content.get("itemType")
+
+    if item_type not in {None, "TimelineTweet"}:
+        return []
+
+    return _extract_tweet_results(item_content)
+
+
+def _extract_tweet_results(node: dict[str, object]) -> list[dict[str, object]]:
+    extracted: list[dict[str, object]] = []
+
+    for key in ("tweet_results", "tweetResult"):
+        tweet_results = _as_dict(node.get(key))
+
+        if tweet_results is None:
+            continue
+
+        result = _as_dict(tweet_results.get("result"))
+
+        if result is None:
+            continue
+
+        unwrapped = _unwrap_tweet_result(result)
+        extracted.append(unwrapped or result)
+
+    return extracted
+
+
+def _unwrap_tweet_result(
+    result: dict[str, object],
+) -> dict[str, object] | None:
+    stack: list[dict[str, object]] = [result]
+
+    while stack:
+        current = stack.pop()
+
+        if _looks_like_tweet(current):
+            return current
+
+        for key in ("tweet", "result"):
+            nested = _as_dict(current.get(key))
+
+            if nested is not None:
+                stack.append(nested)
+
+    return None
+
+
+def _looks_like_tweet(node: dict[str, object]) -> bool:
+    if node.get("__typename") == "Tweet":
+        return True
+
+    if _as_dict(node.get("note_tweet")) is not None:
+        return True
+
+    legacy = _as_dict(node.get("legacy"))
+
+    if legacy is None:
+        return False
+
+    if isinstance(legacy.get("full_text"), str):
+        return True
+
+    if isinstance(legacy.get("conversation_id_str"), str):
+        return True
+
+    return False
+
+
 def _parse_tweet_result(tweet: dict[str, object]) -> XExtractedPost | None:
+    tweet = _unwrap_tweet_result(tweet) or tweet
     post_id = _get_post_id(tweet)
     if not post_id:
         return None

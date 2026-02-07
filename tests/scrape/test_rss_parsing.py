@@ -1,7 +1,6 @@
-import hashlib
 import xml.etree.ElementTree as ElementTree
 
-from dank.scrape.rss import raw_posts_from_xml
+from dank.scrape.rss import parse_feed_entries
 
 ATOM_XML = r"""<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -53,7 +52,9 @@ xmlns="http://purl.org/rss/1.0/">
 
 
 def _raw_xml(
-    xml: str, path: str, namespaces: dict[str, str] | None = None,
+    xml: str,
+    path: str,
+    namespaces: dict[str, str] | None = None,
 ) -> str:
     root = ElementTree.fromstring(xml)
     element = root.find(path, namespaces or {})
@@ -62,72 +63,57 @@ def _raw_xml(
     return ElementTree.tostring(element, encoding="unicode")
 
 
-def test_raw_posts_from_xml_atom() -> None:
-    feed_url = "https://example.com/atom.xml"
-    posts = raw_posts_from_xml(
+def test_parse_feed_entries_atom() -> None:
+    entries = parse_feed_entries(
         ATOM_XML,
         domain="example.com",
-        feed_url=feed_url,
         root_url="https://example.com/",
     )
 
-    assert len(posts) == 1
+    assert len(entries) == 1
 
-    post = posts[0]
+    entry = entries[0]
 
-    assert post.source == "rss"
-    assert post.domain == "example.com"
-    assert post.url == "https://example.com/atom-post"
-    assert post.post_id == hashlib.sha256(post.url.encode()).hexdigest()
-    assert post.request_url == feed_url
-    assert post.post_created_at is not None
-    assert post.payload == _raw_xml(
+    assert entry.domain == "example.com"
+    assert entry.url == "https://example.com/atom-post"
+    assert entry.created_at is not None
+    assert entry.payload == _raw_xml(
         ATOM_XML,
         "atom:entry",
         {"atom": "http://www.w3.org/2005/Atom"},
     )
 
 
-def test_raw_posts_from_xml_rss2() -> None:
-    feed_url = "https://example.com/rss.xml"
-    posts = raw_posts_from_xml(
+def test_parse_feed_entries_rss2() -> None:
+    entries = parse_feed_entries(
         RSS2_XML,
         domain="example.com",
-        feed_url=feed_url,
         root_url="https://example.com/",
     )
 
-    assert len(posts) == 1
+    assert len(entries) == 1
 
-    post = posts[0]
-    assert post.source == "rss"
-    assert post.domain == "example.com"
-    assert post.url == "https://example.com/rss2-post"
-    assert post.post_id == hashlib.sha256(post.url.encode()).hexdigest()
-    assert post.request_url == feed_url
-    assert post.post_created_at is not None
-    assert post.payload == _raw_xml(RSS2_XML, "channel/item")
+    entry = entries[0]
+    assert entry.domain == "example.com"
+    assert entry.url == "https://example.com/rss2-post"
+    assert entry.created_at is not None
+    assert entry.payload == _raw_xml(RSS2_XML, "channel/item")
 
 
-def test_raw_posts_from_xml_rss1() -> None:
-    feed_url = "https://example.com/rss1.xml"
-    posts = raw_posts_from_xml(
+def test_parse_feed_entries_rss1() -> None:
+    entries = parse_feed_entries(
         RSS1_XML,
         domain="example.com",
-        feed_url=feed_url,
         root_url="https://example.com/",
     )
 
-    assert len(posts) == 1
+    assert len(entries) == 1
 
-    post = posts[0]
-    assert post.source == "rss"
-    assert post.domain == "example.com"
-    assert post.url == "https://example.com/rss1-post"
-    assert post.post_id == hashlib.sha256(post.url.encode()).hexdigest()
-    assert post.request_url == feed_url
-    assert post.post_created_at is None
-    assert post.payload == _raw_xml(
+    entry = entries[0]
+    assert entry.domain == "example.com"
+    assert entry.url == "https://example.com/rss1-post"
+    assert entry.created_at is None
+    assert entry.payload == _raw_xml(
         RSS1_XML,
         "rss:item",
         {"rss": "http://purl.org/rss/1.0/"},

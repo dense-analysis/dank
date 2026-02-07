@@ -42,14 +42,21 @@ class EmailSettings(NamedTuple):
     port: int
 
 
+class LoggingSettings(NamedTuple):
+    file_path: pathlib.Path
+    level: str
+
+
 class Settings(NamedTuple):
     clickhouse: ClickHouseSettings
     x: XSettings
     assets_dir: pathlib.Path
     max_asset_bytes: int | None
+    feed_staleness_days: int
     sources: tuple[SourceConfig, ...]
     browser: BrowserSettings
     email: EmailSettings | None
+    logging: LoggingSettings
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -166,6 +173,11 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     if max_asset_bytes is not None and max_asset_bytes <= 0:
         max_asset_bytes = None
 
+    rss_data: dict[str, Any] = _as_dict(data.get("rss")) or {}
+    feed_staleness_days = int(rss_data.get("feed_staleness_days", 14))
+    if feed_staleness_days <= 0:
+        feed_staleness_days = 14
+
     browser_data: dict[str, Any] = _as_dict(data.get("browser")) or {}
     browser_settings = BrowserSettings(
         executable_path=_parse_path(browser_data.get("executable_path")),
@@ -193,12 +205,27 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
                 port=int(email_data.get("port", 993)),
             )
 
+    logging_data: dict[str, Any] = _as_dict(data.get("logging")) or {}
+    file_path = _parse_path(logging_data.get("file"))
+
+    if file_path is None:
+        file_path = pathlib.Path("dank.log")
+
+    level = str(logging_data.get("level", "INFO")).strip().upper()
+
+    if not level:
+        level = "INFO"
+
+    logging_settings = LoggingSettings(file_path=file_path, level=level)
+
     return Settings(
         clickhouse=clickhouse_settings,
         x=x_settings,
         assets_dir=assets_dir,
         max_asset_bytes=max_asset_bytes,
+        feed_staleness_days=feed_staleness_days,
         sources=sources,
         browser=browser_settings,
         email=email_settings,
+        logging=logging_settings,
     )

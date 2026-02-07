@@ -24,50 +24,59 @@ class NetworkResponse(NamedTuple):
     resource_type: str
 
 
+class BrowserConfig(NamedTuple):
+    headless: bool = False
+    browser_executable_path: str | None = None
+    connection_timeout: float | None = None
+    connection_max_tries: int | None = None
+    keep_open: bool = False
+    profile_dir: pathlib.Path | None = None
+
+
 class BrowserSession:
-    def __init__(
-        self,
-        *,
-        headless: bool = False,
-        browser_executable_path: str | None = None,
-        connection_timeout: float | None = None,
-        connection_max_tries: int | None = None,
-        keep_open: bool = False,
-        profile_dir: pathlib.Path | None = None,
-    ) -> None:
-        self._headless = headless
-        self._browser_executable_path = browser_executable_path
-        self._connection_timeout = connection_timeout
-        self._connection_max_tries = connection_max_tries
-        self._keep_open = keep_open
-        self._profile_dir = profile_dir
+    def __init__(self, config: BrowserConfig) -> None:
+        self._config = config
         self._browser: zendriver.Browser | None = None
         self._lock = asyncio.Lock()
+
+    async def __aenter__(self) -> BrowserSession:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: object,
+        exc: object,
+        tb: object,
+    ) -> None:
+        if exc_type is not None and self._config.keep_open:
+            await self.hold_open()
+
+        await self.close()
 
     async def get_browser(self) -> zendriver.Browser:
         async with self._lock:
             if self._browser is None:
                 options: dict[str, Any] = {
-                    "headless": self._headless,
+                    "headless": self._config.headless,
                 }
                 browser_path = _resolve_browser_executable(
-                    self._browser_executable_path,
+                    self._config.browser_executable_path,
                 )
 
                 if browser_path is not None:
                     options["browser_executable_path"] = browser_path
 
-                if self._profile_dir is not None:
-                    self._profile_dir.mkdir(parents=True, exist_ok=True)
-                    options["user_data_dir"] = str(self._profile_dir)
+                if self._config.profile_dir is not None:
+                    self._config.profile_dir.mkdir(parents=True, exist_ok=True)
+                    options["user_data_dir"] = str(self._config.profile_dir)
 
                 browser_args: list[str] = []
 
                 if browser_args:
                     options["browser_args"] = browser_args
 
-                timeout = self._connection_timeout
-                max_tries = self._connection_max_tries
+                timeout = self._config.connection_timeout
+                max_tries = self._config.connection_max_tries
 
                 if timeout is not None:
                     options["browser_connection_timeout"] = timeout
@@ -85,7 +94,7 @@ class BrowserSession:
             await self._browser.stop()
 
     async def hold_open(self) -> None:
-        if self._browser is not None and not self._headless:
+        if self._browser is not None and not self._config.headless:
             logger.warning(
                 "Scrape crashed; keeping browser open for inspection.",
             )
@@ -93,7 +102,7 @@ class BrowserSession:
 
     @property
     def headless(self) -> bool:
-        return self._headless
+        return self._config.headless
 
 
 class NetworkCapture:
@@ -178,6 +187,17 @@ class NetworkCapture:
         if not self._matches(url):
             return
 
+        logger.info(
+            (
+                "Captured matching response metadata request_id=%s "
+                "status=%s type=%s url=%s"
+            ),
+            event.request_id,
+            event.response.status,
+            event.type_.value,
+            url,
+        )
+
         self._pending[event.request_id] = event
 
     async def _on_loading_finished(
@@ -198,6 +218,12 @@ class NetworkCapture:
             return
 
         text = _decode_body(body, is_base64=is_base64)
+        logger.info(
+            "Queued matching response body request_id=%s bytes=%d url=%s",
+            event.request_id,
+            len(text),
+            response.response.url,
+        )
         await self._queue.put(
             NetworkResponse(
                 url=response.response.url,

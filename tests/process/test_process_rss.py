@@ -38,7 +38,7 @@ RSS2_XML = r"""<?xml version="1.0" encoding="UTF-8"?>
 </rss>
 """
 
-ATOM_NO_TITLE_XML = r"""<?xml version="1.0" encoding="utf-8"?>
+ATOM_NO_TITLE_XML = """<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
     <title>Example Feed</title>
     <link href="https://example.com/"/>
@@ -216,6 +216,7 @@ def test_convert_raw_post_prefers_post_created_at() -> None:
 
     assert post is not None
     assert post.created_at == post_created_at
+
 
 
 def test_convert_raw_post_reads_page_html_payload() -> None:

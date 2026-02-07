@@ -14,6 +14,17 @@ if grep -qrI 'dank.process' src/dank/scrape/; then
     exit 1
 fi
 
+
+if grep  -qrI 'dank.storage.clickhouse' src/dank/process/ --exclude 'runner.py'; then
+    echo 'dank.process code other than runner.py should not use clickhouse code!' 1>&2
+    exit 1
+fi
+
+if grep -rI aiohttp src/dank/process/; then
+    echo 'dank.process code should not be making HTTP requests!' 1>&2
+    exit 1
+fi
+
 status=0
 
 # Run Pyright

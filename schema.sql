@@ -60,3 +60,12 @@ ORDER BY (domain, post_id);
 ALTER TABLE dank.posts
     ADD COLUMN IF NOT EXISTS title_embedding Array(Float32),
     ADD COLUMN IF NOT EXISTS html_embedding Array(Float32);
+
+CREATE TABLE IF NOT EXISTS dank.site_feeds (
+    domain LowCardinality(String),
+    feed_url String,
+    feed_type LowCardinality(String),
+    scraped_at DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(scraped_at)
+ORDER BY (domain, feed_url);
