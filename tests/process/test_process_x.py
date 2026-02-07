@@ -67,3 +67,16 @@ def test_convert_raw_x_post_uses_note_tweet_text() -> None:
     assert post.html == "Long note\nline 2"
     assert post.title == "Long note"
     assert post.created_at == raw.post_created_at
+
+
+def test_convert_raw_x_post_filters_sparse_payloads() -> None:
+    raw = _raw_post(
+        payload={
+            "__typename": "Tweet",
+            "rest_id": "2019269738728468765",
+        },
+    )
+
+    post = convert_raw_x_post(raw)
+
+    assert post is None

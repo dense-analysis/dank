@@ -20,6 +20,11 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
     payload = cast(dict[str, Any], payload)
 
     text = _strip_trailing_tco(_extract_text(payload))
+    author = _extract_author(payload).strip()
+
+    if not _has_substantive_content(text, author):
+        return None
+
     title = text.splitlines()[0] if text else ""
     created_at = (
         row.post_created_at
@@ -27,7 +32,7 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
         or datetime.datetime.now(datetime.UTC)
     )
     updated_at = row.scraped_at or created_at
-    author = _extract_author(payload)
+
     return Post(
         domain=row.domain,
         post_id=row.post_id,
@@ -41,6 +46,10 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
         html_embedding=[],
         source=row.source,
     )
+
+
+def _has_substantive_content(text: str, author: str) -> bool:
+    return bool(text.strip()) or bool(author.strip())
 
 
 def _as_dict(value: object) -> dict[str, object] | None:
