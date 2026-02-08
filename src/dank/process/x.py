@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import html
 import json
 import re
 from typing import Any, cast
@@ -26,7 +27,7 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
     if not _has_substantive_content(text, author):
         return None
 
-    title = text.splitlines()[0] if text else ""
+    title = html.unescape(text.splitlines()[0] if text else "")
     created_at = (
         row.post_created_at
         or _extract_created_at(payload)
@@ -68,17 +69,24 @@ def _get_str(value: object) -> str | None:
 
 def _extract_text(payload: dict[str, object]) -> str:
     legacy = _as_dict(payload.get("legacy"))
+
     if legacy is not None:
         full_text = _get_str(legacy.get("full_text"))
+
         if full_text:
             return full_text
+
     note_tweet = _as_dict(payload.get("note_tweet"))
+
     if note_tweet is not None:
         note_results = _as_dict(note_tweet.get("note_tweet_results"))
+
         if note_results is not None:
             result = _as_dict(note_results.get("result"))
+
             if result is not None:
                 text = _get_str(result.get("text"))
+
                 if text:
                     return text
     return ""

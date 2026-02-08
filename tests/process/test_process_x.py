@@ -6,7 +6,7 @@ from dank.model import RawPost
 from dank.process.x import convert_raw_x_post
 
 
-def _raw_post(*, payload: Any) -> RawPost:
+def _raw_post(payload: dict[str, Any]) -> RawPost:
     return RawPost(
         domain="x.com",
         post_id="123",
@@ -20,7 +20,7 @@ def _raw_post(*, payload: Any) -> RawPost:
 
 
 def test_convert_raw_x_post_strips_trailing_tco() -> None:
-    payload = {
+    raw = _raw_post({
         "legacy": {
             "full_text": "Hello world https://t.co/abc123",
             "created_at": "Tue Jan 27 23:56:27 +0000 2026",
@@ -28,8 +28,7 @@ def test_convert_raw_x_post_strips_trailing_tco() -> None:
         "core": {
             "user_results": {"result": {"legacy": {"screen_name": "alice"}}},
         },
-    }
-    raw = _raw_post(payload=payload)
+    })
 
     post = convert_raw_x_post(raw)
 
@@ -40,7 +39,7 @@ def test_convert_raw_x_post_strips_trailing_tco() -> None:
 
 
 def test_convert_raw_x_post_uses_note_tweet_text() -> None:
-    payload = {
+    raw = _raw_post({
         "note_tweet": {
             "note_tweet_results": {
                 "result": {"text": "Long note\nline 2 https://t.co/xyz987"},
@@ -49,8 +48,9 @@ def test_convert_raw_x_post_uses_note_tweet_text() -> None:
         "core": {
             "user_results": {"result": {"legacy": {"screen_name": "alice"}}},
         },
-    }
-    raw = _raw_post(payload=payload)._replace(
+    })
+
+    raw = raw._replace(
         post_created_at=datetime.datetime(
             2026,
             1,
@@ -70,13 +70,27 @@ def test_convert_raw_x_post_uses_note_tweet_text() -> None:
 
 
 def test_convert_raw_x_post_filters_sparse_payloads() -> None:
-    raw = _raw_post(
-        payload={
-            "__typename": "Tweet",
-            "rest_id": "2019269738728468765",
-        },
-    )
+    raw = _raw_post({
+        "__typename": "Tweet",
+        "rest_id": "2019269738728468765",
+    })
 
     post = convert_raw_x_post(raw)
 
     assert post is None
+
+def test_convert_raw_x_post_unescapes_html() -> None:
+    raw = _raw_post({
+        "legacy": {
+            "full_text": "&lt;Sam &amp; Max&gt;",
+            "created_at": "Tue Jan 27 23:56:27 +0000 2026",
+        },
+        "core": {
+            "user_results": {"result": {"legacy": {"screen_name": "alice"}}},
+        },
+    })
+
+    post = convert_raw_x_post(raw)
+
+    assert post is not None
+    assert post.title == "<Sam & Max>"
