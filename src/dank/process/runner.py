@@ -195,9 +195,17 @@ async def _insert_posts(
         )
     ]
 
+    rows: list[dict[str, Any]] = []
+
+    for post in posts:
+        row = post._asdict()
+        row["title_embedding"] = list(post.title_embedding)
+        row["html_embedding"] = list(post.html_embedding)
+        rows.append(row)
+
     await clickhouse_client.insert_rows(
         "posts",
-        [post._asdict() for post in posts],
+        rows,
     )
 
 

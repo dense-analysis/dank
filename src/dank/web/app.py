@@ -262,7 +262,7 @@ async def _search_posts(
         LIMIT %(limit)s
     """
     params = {
-        "embedding": embeddings[0],
+        "embedding": list(embeddings[0]),
         "title_weight": SEARCH_TITLE_WEIGHT,
         "html_weight": SEARCH_HTML_WEIGHT,
         "minimum_score": SEARCH_MINIMUM_SCORE,

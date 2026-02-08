@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ElementTree
 from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple, cast
 
+from dank.embedding_vectors import EMPTY_STRING_VECTOR
 from dank.model import Post, RawPost
 from dank.process.page import (
     extract_article_html,
@@ -88,9 +89,9 @@ def convert_raw_post(row: RawPost) -> Post | None:
         updated_at=updated_at,
         author=author,
         title=title,
-        title_embedding=[],
+        title_embedding=EMPTY_STRING_VECTOR,
         html=content_html,
-        html_embedding=[],
+        html_embedding=EMPTY_STRING_VECTOR,
         source=row.source,
     )
 

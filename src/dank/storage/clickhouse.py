@@ -73,7 +73,9 @@ class ClickHouseClient:
         column_names = cast(tuple[str, ...], result.column_names)  # type: ignore
 
         rows = [
-            dict(zip(column_names, row, strict=True))
+            self._normalize_result_row(
+                dict(zip(column_names, row, strict=True)),
+            )
             for row in result.result_rows
         ]
 
@@ -126,6 +128,34 @@ class ClickHouseClient:
             raise RuntimeError("ClickHouse client is not initialized")
 
         return self._client
+
+    @staticmethod
+    def _normalize_result_row(row: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+
+        for key, value in row.items():
+            normalized[key] = ClickHouseClient._normalize_result_value(
+                key,
+                value,
+            )
+
+        return normalized
+
+    @staticmethod
+    def _normalize_result_value(key: str, value: Any) -> Any:
+        if key.endswith("_embedding") and isinstance(value, list):
+            embedding_values = cast(list[object], value)
+            numeric_values: list[int | float] = []
+
+            for item in embedding_values:
+                if not isinstance(item, int | float):
+                    return embedding_values
+
+                numeric_values.append(item)
+
+            return tuple(float(item) for item in numeric_values)
+
+        return value
 
 
 def parse_datetime(value: Any) -> datetime.datetime | None:

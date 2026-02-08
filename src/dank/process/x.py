@@ -5,6 +5,7 @@ import json
 import re
 from typing import Any, cast
 
+from dank.embedding_vectors import EMPTY_STRING_VECTOR
 from dank.model import Post, RawPost
 
 
@@ -41,9 +42,9 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
         updated_at=updated_at,
         author=author,
         title=title,
-        title_embedding=[],
+        title_embedding=EMPTY_STRING_VECTOR,
         html=text,
-        html_embedding=[],
+        html_embedding=EMPTY_STRING_VECTOR,
         source=row.source,
     )
 

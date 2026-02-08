@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 
+from dank.embedding_vectors import Vector
 from dank.embeddings import get_embedding_model
 
 
-def embed_text(text: str) -> list[float]:
+def embed_text(text: str) -> Vector:
     embedding_model = get_embedding_model()
 
     return embedding_model.embed_texts([text])[0]
@@ -19,7 +20,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     embedding = embed_text(args.text)
-    print(embedding)
+    print(list(embedding))
 
 
 if __name__ == "__main__":
