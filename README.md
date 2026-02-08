@@ -113,5 +113,7 @@ Dank offers the following commands.
     * You can only run `SELECT` or `SHOW` queries through this tool
     * Query results are well formatted and easy to read
     * Query results are truncated unless you pass `--full`
+* `uv run python -m dank.tools.embed_text "your text"` -- Print an embedding vector
+    * Output is a JSON `list[float]` for easy copy/paste into other tools.
 * `uv run python -m dank.web` -- Start a simple web server to view content.
     * Pass `--reload` for hot code reloading.
