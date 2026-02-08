@@ -232,9 +232,9 @@ async def _search_posts(
     limit: int,
 ) -> list[PostRow]:
     embedder = get_embedding_model()
-    embedding = await asyncio.to_thread(embedder.embed_text, search_text)
+    embeddings = await asyncio.to_thread(embedder.embed_texts, [search_text])
 
-    if not embedding:
+    if not embeddings:
         return []
 
     query = r"""
@@ -262,7 +262,7 @@ async def _search_posts(
         LIMIT %(limit)s
     """
     params = {
-        "embedding": embedding,
+        "embedding": embeddings[0],
         "title_weight": SEARCH_TITLE_WEIGHT,
         "html_weight": SEARCH_HTML_WEIGHT,
         "minimum_score": SEARCH_MINIMUM_SCORE,

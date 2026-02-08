@@ -8,10 +8,10 @@ class _DummyEmbedder:
     def __init__(self) -> None:
         self.items: list[str] = []
 
-    def embed_text(self, text: str) -> list[float]:
-        self.items.append(text)
+    def embed_texts(self, items: list[str]) -> list[list[float]]:
+        self.items.extend(items)
 
-        return [0.5, -0.25, 0.0]
+        return [[0.5, -0.25, 0.0] for _ in items]
 
 
 def test_embed_text_returns_model_result(monkeypatch: Any) -> None:

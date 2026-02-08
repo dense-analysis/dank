@@ -8,7 +8,7 @@ from dank.embeddings import get_embedding_model
 def embed_text(text: str) -> list[float]:
     embedding_model = get_embedding_model()
 
-    return embedding_model.embed_text(text)
+    return embedding_model.embed_texts([text])[0]
 
 
 def main(argv: list[str] | None = None) -> None:
