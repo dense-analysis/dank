@@ -6,7 +6,7 @@ import html
 import pathlib
 import textwrap
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 from urllib.parse import quote, urlencode
 
 import bleach
@@ -23,6 +23,8 @@ DEFAULT_PORT = 8080
 SEARCH_TITLE_WEIGHT = 0.65
 SEARCH_HTML_WEIGHT = 0.35
 SEARCH_MINIMUM_SCORE = 0.2
+
+type CursorDirection = Literal["next", "prev"]
 
 ALLOWED_TAGS = [
     "a",
@@ -153,6 +155,11 @@ async def handle_index(request: web.Request) -> web.Response:
         request.query.get("cursor_created_at"),
     )
     cursor_post_id = request.query.get("cursor_post_id")
+    cursor_direction = _parse_cursor_direction(
+        request.query.get("cursor_direction"),
+    )
+    has_previous_page = False
+    has_next_page = False
 
     if search_text:
         posts = await _search_posts(
@@ -166,7 +173,23 @@ async def handle_index(request: web.Request) -> web.Response:
             limit=limit,
             cursor_created_at=cursor_created_at,
             cursor_post_id=cursor_post_id,
+            cursor_direction=cursor_direction,
         )
+
+        if posts:
+            has_previous_page, has_next_page = await asyncio.gather(
+                _has_newer_posts(
+                    client,
+                    cursor_created_at=posts[0].created_at,
+                    cursor_post_id=posts[0].post_id,
+                ),
+                _has_older_posts(
+                    client,
+                    cursor_created_at=posts[-1].created_at,
+                    cursor_post_id=posts[-1].post_id,
+                ),
+            )
+
     assets = await _fetch_assets(client, [post.post_id for post in posts])
     body = _render_index(
         posts,
@@ -174,6 +197,8 @@ async def handle_index(request: web.Request) -> web.Response:
         assets_dir=state.assets_dir,
         limit=limit,
         search_text=search_text,
+        has_previous_page=has_previous_page,
+        has_next_page=has_next_page,
     )
 
     return web.Response(text=body, content_type="text/html")
@@ -209,6 +234,7 @@ async def _fetch_posts(
     limit: int,
     cursor_created_at: datetime.datetime | None,
     cursor_post_id: str | None,
+    cursor_direction: CursorDirection,
 ) -> list[PostRow]:
     query = (
         "SELECT domain, post_id, url, author, title, html, created_at, "
@@ -217,6 +243,22 @@ async def _fetch_posts(
     params: dict[str, Any] = {"limit": int(limit)}
 
     if cursor_created_at is not None and cursor_post_id:
+        if cursor_direction == "prev":
+            query += (
+                " WHERE (created_at > %(cursor_created_at)s "
+                "OR (created_at = %(cursor_created_at)s "
+                "AND post_id > %(cursor_post_id)s))"
+            )
+            query += " ORDER BY created_at ASC, post_id ASC "
+            query += "LIMIT %(limit)s"
+            params["cursor_created_at"] = cursor_created_at
+            params["cursor_post_id"] = cursor_post_id
+            result = await clickhouse_client.fetch_json(query, params)
+            posts = [_parse_post_row(row) for row in result.rows]
+            posts.reverse()
+
+            return posts
+
         query += (
             " WHERE (created_at < %(cursor_created_at)s "
             "OR (created_at = %(cursor_created_at)s "
@@ -231,6 +273,56 @@ async def _fetch_posts(
     result = await clickhouse_client.fetch_json(query, params)
 
     return [_parse_post_row(row) for row in result.rows]
+
+
+async def _has_newer_posts(
+    clickhouse_client: ClickHouseClient,
+    *,
+    cursor_created_at: datetime.datetime,
+    cursor_post_id: str,
+) -> bool:
+    query = (
+        "SELECT post_id FROM posts FINAL "
+        "WHERE (created_at > %(cursor_created_at)s "
+        "OR (created_at = %(cursor_created_at)s "
+        "AND post_id > %(cursor_post_id)s)) "
+        "ORDER BY created_at ASC, post_id ASC "
+        "LIMIT 1"
+    )
+    result = await clickhouse_client.fetch_json(
+        query,
+        {
+            "cursor_created_at": cursor_created_at,
+            "cursor_post_id": cursor_post_id,
+        },
+    )
+
+    return bool(result.rows)
+
+
+async def _has_older_posts(
+    clickhouse_client: ClickHouseClient,
+    *,
+    cursor_created_at: datetime.datetime,
+    cursor_post_id: str,
+) -> bool:
+    query = (
+        "SELECT post_id FROM posts FINAL "
+        "WHERE (created_at < %(cursor_created_at)s "
+        "OR (created_at = %(cursor_created_at)s "
+        "AND post_id < %(cursor_post_id)s)) "
+        "ORDER BY created_at DESC, post_id DESC "
+        "LIMIT 1"
+    )
+    result = await clickhouse_client.fetch_json(
+        query,
+        {
+            "cursor_created_at": cursor_created_at,
+            "cursor_post_id": cursor_post_id,
+        },
+    )
+
+    return bool(result.rows)
 
 
 async def _search_posts(
@@ -371,6 +463,8 @@ def _render_index(
     assets_dir: pathlib.Path,
     limit: int,
     search_text: str,
+    has_previous_page: bool,
+    has_next_page: bool,
 ) -> str:
     title = "DANK Posts"
     items: list[str] = []
@@ -387,9 +481,27 @@ def _render_index(
             ),
         )
 
+    previous_link = ""
     next_link = ""
 
-    if posts and not search_text:
+    if posts and not search_text and has_previous_page:
+        cursor_post = posts[0]
+        cursor_created_at = _cursor_datetime(cursor_post.created_at)
+        query = urlencode(
+            {
+                "limit": str(limit),
+                "cursor_created_at": cursor_created_at,
+                "cursor_post_id": cursor_post.post_id,
+                "cursor_direction": "prev",
+            },
+        )
+        previous_link = (
+            '<a class="pager-prev" href="/?'
+            + html.escape(query)
+            + '">Previous</a>'
+        )
+
+    if posts and not search_text and has_next_page:
         cursor_post = posts[-1]
         cursor_created_at = _cursor_datetime(cursor_post.created_at)
         query = urlencode(
@@ -397,6 +509,7 @@ def _render_index(
                 "limit": str(limit),
                 "cursor_created_at": cursor_created_at,
                 "cursor_post_id": cursor_post.post_id,
+                "cursor_direction": "next",
             },
         )
         next_link = (
@@ -416,7 +529,7 @@ def _render_index(
                 '<section class="post-list">',
                 body,
                 "</section>",
-                f'<div class="pager">{next_link}</div>',
+                f'<div class="pager">{previous_link}{next_link}</div>',
             ],
         ),
     )
@@ -741,3 +854,10 @@ def _parse_search_text(value: str | None) -> str:
         return ""
 
     return value.strip()
+
+
+def _parse_cursor_direction(value: str | None) -> CursorDirection:
+    if value == "prev":
+        return "prev"
+
+    return "next"
