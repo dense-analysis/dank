@@ -117,9 +117,17 @@ async def _no_cache_middleware(
     handler: Callable[[web.Request], Awaitable[web.StreamResponse]],
 ) -> web.StreamResponse:
     response = await handler(request)
+    content_type = response.headers.get("Content-Type", "").lower()
 
-    if request.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-store"
+    if (
+        request.path.startswith("/static/")
+        or content_type.startswith("text/html")
+    ):
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
 
     return response
 
