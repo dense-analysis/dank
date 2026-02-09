@@ -38,6 +38,7 @@ X_GRAPHQL_PATTERNS = (
     r"https://x\.com/i/api/graphql/.+/UserMedia",
 )
 FAST_SCROLL_PAUSE_SECONDS = 0.35
+INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
 
 
@@ -109,7 +110,7 @@ async def _scrape_account(
             capture,
             seen_posts,
             seen_assets,
-            timeout_seconds=settings.scroll_pause_seconds,
+            timeout_seconds=INITIAL_DRAIN_TIMEOUT_SECONDS,
         )
         logger.info(
             "Initial drain for %s produced posts=%d assets=%d",
@@ -381,7 +382,11 @@ async def _drain_posts_and_assets(
     responses = await capture.drain(timeout_seconds=max(0.05, timeout_seconds))
     logger.info("Drained %d X network responses", len(responses))
 
-    return extract_posts_and_assets(responses, seen_posts, seen_assets)
+    return extract_posts_and_assets(
+        responses,
+        seen_posts,
+        seen_assets,
+    )
 
 
 def _scroll_pause_seconds(configured_pause: float, idle_scrolls: int) -> float:
@@ -492,4 +497,5 @@ def _asset_discovery_from_extracted(
         post_id=extracted.post_id,
         url=asset.url,
         asset_type=asset.asset_type,
+        estimated_size_bytes=asset.estimated_size_bytes,
     )

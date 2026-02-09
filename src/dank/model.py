@@ -28,6 +28,7 @@ class AssetDiscovery(NamedTuple):
     post_id: str
     url: str
     asset_type: str
+    estimated_size_bytes: int | None
 
 
 class RawAsset(NamedTuple):

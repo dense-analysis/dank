@@ -539,6 +539,7 @@ def _extract_page_assets(
             post_id=post_id,
             url=url,
             asset_type=asset_type,
+            estimated_size_bytes=None,
         )
         for url, asset_type in parser.assets()
     ]

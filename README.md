@@ -54,7 +54,7 @@ max_scrolls = 20
 scroll_pause_seconds = 1.5
 
 [storage]
-assets_dir = "data/assets"
+data_dir = "data"
 max_asset_bytes = 10485760
 
 [browser]

@@ -21,7 +21,7 @@ requires-python = ">=3.13"
 
 # Core dependencies
 dependencies = [
-    "yt-dlp==2025.7.21",
+    "yt-dlp==2026.2.4",
     "zendriver==0.13.0",
     "aiohttp==3.12.15",
     "bleach==6.2.0",

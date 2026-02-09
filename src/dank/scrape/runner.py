@@ -41,9 +41,11 @@ async def run_scrape(
     if batch_size <= 0:
         batch_size = 1
 
-    assets_dir = pathlib.Path(settings.assets_dir)
+    data_dir = pathlib.Path(settings.data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir = data_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir = assets_dir.parent / "browser-profile"
+    profile_dir = data_dir / "browser-profile"
     feed_staleness = datetime.timedelta(days=settings.feed_staleness_days)
     http_timeout = aiohttp.ClientTimeout(total=30)
     browser_config = BrowserConfig(
@@ -73,6 +75,7 @@ async def run_scrape(
                 clickhouse_client,
                 http_client,
                 assets_dir=assets_dir,
+                browser_profile_dir=profile_dir,
                 max_asset_bytes=settings.max_asset_bytes,
                 batch_size=batch_size,
             ),
@@ -155,6 +158,7 @@ async def _process_batches(
     http_client: aiohttp.ClientSession,
     *,
     assets_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path,
     max_asset_bytes: int | None,
     batch_size: int,
 ) -> None:
@@ -181,6 +185,7 @@ async def _process_batches(
                 http_client,
                 pending_discoveries,
                 assets_dir=assets_dir,
+                browser_profile_dir=browser_profile_dir,
                 max_asset_bytes=max_asset_bytes,
             )
 
@@ -210,6 +215,7 @@ async def _flush_assets(
     discoveries: list[AssetDiscovery],
     *,
     assets_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path,
     max_asset_bytes: int | None,
 ) -> None:
     if not discoveries:
@@ -218,6 +224,7 @@ async def _flush_assets(
     downloaded = await download_assets(
         discoveries,
         assets_dir=assets_dir,
+        browser_profile_dir=browser_profile_dir,
         http_client=http_client,
         max_asset_bytes=max_asset_bytes,
     )

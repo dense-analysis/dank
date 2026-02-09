@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from collections.abc import Mapping
 from typing import NamedTuple, cast
 
@@ -9,6 +10,7 @@ class XAsset(NamedTuple):
     url: str
     asset_type: str
     should_download: bool
+    estimated_size_bytes: int | None = None
 
 
 class XExtractedPost(NamedTuple):
@@ -18,6 +20,16 @@ class XExtractedPost(NamedTuple):
     url: str
     payload: dict[str, object]
     assets: tuple[XAsset, ...]
+
+
+class _VideoVariant(NamedTuple):
+    url: str
+    width: int
+    height: int
+    bitrate: int | None
+
+
+VIDEO_RESOLUTION_PATTERN = re.compile(r"/vid/[^/]+/(\d+)x(\d+)/")
 
 
 def _as_dict(value: object) -> dict[str, object] | None:
@@ -30,6 +42,13 @@ def _as_dict(value: object) -> dict[str, object] | None:
 def _as_list(value: object) -> list[object] | None:
     if isinstance(value, list):
         return cast(list[object], value)
+
+    return None
+
+
+def _as_int(value: object) -> int | None:
+    if isinstance(value, int):
+        return value
 
     return None
 
@@ -266,7 +285,9 @@ def _looks_like_tweet(node: dict[str, object]) -> bool:
     return False
 
 
-def _parse_tweet_result(tweet: dict[str, object]) -> XExtractedPost | None:
+def _parse_tweet_result(
+    tweet: dict[str, object],
+) -> XExtractedPost | None:
     tweet = _unwrap_tweet_result(tweet) or tweet
     post_id = _get_post_id(tweet)
     if not post_id:
@@ -342,7 +363,9 @@ def _build_post_url(author: str, post_id: str) -> str:
     return f"https://x.com/i/status/{post_id}"
 
 
-def _extract_assets(tweet: dict[str, object]) -> tuple[XAsset, ...]:
+def _extract_assets(
+    tweet: dict[str, object],
+) -> tuple[XAsset, ...]:
     assets: list[XAsset] = []
     legacy = _as_dict(tweet.get("legacy"))
     if legacy is not None:
@@ -376,7 +399,9 @@ def _extract_links(entities: dict[str, object]) -> list[XAsset]:
     return assets
 
 
-def _extract_media(entities: dict[str, object]) -> list[XAsset]:
+def _extract_media(
+    entities: dict[str, object],
+) -> list[XAsset]:
     media_items = _as_list(entities.get("media"))
     if media_items is None:
         return []
@@ -402,28 +427,122 @@ def _extract_media(entities: dict[str, object]) -> list[XAsset]:
         if media_type in {"video", "animated_gif"}:
             video_info = _as_dict(item_dict.get("video_info"))
             if video_info is not None:
-                assets.extend(_extract_video_variants(video_info))
+                assets.extend(
+                    _extract_video_variants(
+                        video_info,
+                    ),
+                )
     return assets
 
 
-def _extract_video_variants(video_info: dict[str, object]) -> list[XAsset]:
+def _extract_video_variants(
+    video_info: dict[str, object],
+) -> list[XAsset]:
     variants = _as_list(video_info.get("variants"))
     if variants is None:
         return []
-    assets: list[XAsset] = []
+
+    duration_millis = _as_int(video_info.get("duration_millis"))
+    parsed_variants: list[_VideoVariant] = []
+
     for variant in variants:
         variant_dict = _as_dict(variant)
         if variant_dict is None:
             continue
+
         url = variant_dict.get("url")
         content_type = variant_dict.get("content_type")
+
         if (
             isinstance(url, str)
             and url
             and isinstance(content_type, str)
             and "video" in content_type
         ):
-            assets.append(
-                XAsset(url=url, asset_type="video", should_download=True),
+            width, height = _parse_video_resolution(url)
+            parsed_variants.append(
+                _VideoVariant(
+                    url=url,
+                    width=width,
+                    height=height,
+                    bitrate=_as_int(
+                        variant_dict.get("bitrate")
+                        or variant_dict.get("bit_rate"),
+                    ),
+                ),
             )
-    return assets
+
+    selected = _pick_video_variant(
+        parsed_variants,
+    )
+
+    if selected is None:
+        return []
+
+    return [
+        XAsset(
+            url=selected.url,
+            asset_type="video",
+            should_download=True,
+            estimated_size_bytes=_estimate_video_size_bytes(
+                selected,
+                duration_millis=duration_millis,
+            ),
+        ),
+    ]
+
+
+def _pick_video_variant(
+    variants: list[_VideoVariant],
+) -> _VideoVariant | None:
+    if not variants:
+        return None
+
+    ordered = sorted(
+        variants,
+        key=_video_variant_sort_key,
+        reverse=True,
+    )
+
+    return ordered[0]
+
+
+def _video_variant_sort_key(
+    variant: _VideoVariant,
+) -> tuple[int, int, int, int]:
+    return (
+        variant.width * variant.height,
+        variant.width,
+        variant.height,
+        variant.bitrate or 0,
+    )
+
+
+def _parse_video_resolution(url: str) -> tuple[int, int]:
+    match = VIDEO_RESOLUTION_PATTERN.search(url)
+
+    if match is None:
+        return 0, 0
+
+    width = int(match.group(1))
+    height = int(match.group(2))
+
+    return width, height
+
+
+def _estimate_video_size_bytes(
+    variant: _VideoVariant,
+    *,
+    duration_millis: int | None,
+) -> int | None:
+    if duration_millis is None or duration_millis <= 0:
+        return None
+
+    if variant.bitrate is None or variant.bitrate <= 0:
+        return None
+
+    # X variant "bitrate" values are significantly larger than observed
+    # transfer sizes. Use a conservative scaling factor.
+    estimated = (variant.bitrate * duration_millis) // 64_000
+
+    return max(1, estimated)

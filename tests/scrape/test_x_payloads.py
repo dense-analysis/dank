@@ -461,28 +461,11 @@ def test_extract_posts_and_assets_from_watcher_guru_payload() -> None:
                     url=(
                         "https://video.twimg.com/"
                         "amplify_video/2019503894544474112/"
-                        "vid/avc1/358x270/BtGlN5Afa_JJnAAA.mp4?tag=24"
-                    ),
-                    asset_type="video",
-                    should_download=True,
-                ),
-                XAsset(
-                    url=(
-                        "https://video.twimg.com/"
-                        "amplify_video/2019503894544474112/"
-                        "vid/avc1/476x360/OF7oXVaPwk4_RlyV.mp4?tag=24"
-                    ),
-                    asset_type="video",
-                    should_download=True,
-                ),
-                XAsset(
-                    url=(
-                        "https://video.twimg.com/"
-                        "amplify_video/2019503894544474112/"
                         "vid/avc1/954x720/-mvG6BaEFVR68rJc.mp4?tag=24"
                     ),
                     asset_type="video",
                     should_download=True,
+                    estimated_size_bytes=1_626_642,
                 ),
             ),
         ),
@@ -502,3 +485,60 @@ def test_extract_posts_and_assets_from_watcher_guru_payload() -> None:
     ]
 
     assert actual == expected
+
+
+def test_extract_posts_from_payload_estimates_video_size() -> None:
+    payload: dict[str, object] = {
+        "__typename": "Tweet",
+        "rest_id": "post-1",
+        "legacy": {
+            "full_text": "Video post",
+            "entities": {
+                "media": [
+                    {
+                        "media_url_https": "https://pbs.twimg.com/media/thumb.jpg",
+                        "type": "video",
+                        "video_info": {
+                            "duration_millis": 10_000,
+                            "variants": [
+                                {
+                                    "bitrate": 10_000_000,
+                                    "content_type": "video/mp4",
+                                    "url": (
+                                        "https://video.twimg.com/amplify_video/1/"
+                                        "vid/avc1/1920x1080/high.mp4?tag=1"
+                                    ),
+                                },
+                                {
+                                    "bitrate": 1_200_000,
+                                    "content_type": "video/mp4",
+                                    "url": (
+                                        "https://video.twimg.com/amplify_video/1/"
+                                        "vid/avc1/640x360/medium.mp4?tag=1"
+                                    ),
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        },
+    }
+
+    posts = extract_posts_from_payload(payload)
+
+    assert posts
+    video_assets = [
+        asset for asset in posts[0].assets if "video.twimg.com" in asset.url
+    ]
+    assert video_assets == [
+        XAsset(
+            url=(
+                "https://video.twimg.com/amplify_video/1/"
+                "vid/avc1/1920x1080/high.mp4?tag=1"
+            ),
+            asset_type="video",
+            should_download=True,
+            estimated_size_bytes=1_562_500,
+        ),
+    ]

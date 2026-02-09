@@ -787,7 +787,7 @@ def _format_display_datetime(value: datetime.datetime) -> str:
 
 
 def _assets_dir(settings: Settings) -> pathlib.Path:
-    return settings.assets_dir.expanduser().resolve()
+    return (settings.data_dir / "assets").expanduser().resolve()
 
 
 def _static_dir() -> pathlib.Path:

@@ -257,9 +257,11 @@ a:hover {
 .pager {
     margin-top: 24px;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
 }
 
+.pager-prev,
 .pager-next {
     padding: 10px 16px;
     border-radius: 999px;
@@ -268,6 +270,11 @@ a:hover {
     font-weight: 600;
 }
 
+.pager-next {
+    margin-left: auto;
+}
+
+.pager-prev:hover,
 .pager-next:hover {
     text-decoration: none;
     background: #0f1822;

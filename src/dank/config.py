@@ -50,7 +50,7 @@ class LoggingSettings(NamedTuple):
 class Settings(NamedTuple):
     clickhouse: ClickHouseSettings
     x: XSettings
-    assets_dir: pathlib.Path
+    data_dir: pathlib.Path
     max_asset_bytes: int | None
     feed_staleness_days: int
     sources: tuple[SourceConfig, ...]
@@ -111,15 +111,11 @@ def _parse_sources(raw_sources: object) -> tuple[SourceConfig, ...]:
 
 
 def _parse_path(value: object) -> pathlib.Path | None:
-    if not isinstance(value, str):
-        return None
+    """Return either a path from a trimmed string or None."""
+    if isinstance(value, str) and (value := value.strip()):
+        return pathlib.Path(value).expanduser()
 
-    trimmed = value.strip()
-
-    if not trimmed:
-        return None
-
-    return pathlib.Path(trimmed).expanduser()
+    return None
 
 
 def _parse_optional_float(value: object) -> float | None:
@@ -168,13 +164,19 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     )
 
     storage_data: dict[str, Any] = _as_dict(data.get("storage")) or {}
-    assets_dir = pathlib.Path(storage_data.get("assets_dir", "data/assets"))
+    data_dir = _parse_path(storage_data.get("data_dir"))
+
+    if data_dir is None:
+        data_dir = pathlib.Path("data")
+
     max_asset_bytes = _parse_optional_int(storage_data.get("max_asset_bytes"))
+
     if max_asset_bytes is not None and max_asset_bytes <= 0:
         max_asset_bytes = None
 
     rss_data: dict[str, Any] = _as_dict(data.get("rss")) or {}
     feed_staleness_days = int(rss_data.get("feed_staleness_days", 14))
+
     if feed_staleness_days <= 0:
         feed_staleness_days = 14
 
@@ -221,7 +223,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     return Settings(
         clickhouse=clickhouse_settings,
         x=x_settings,
-        assets_dir=assets_dir,
+        data_dir=data_dir,
         max_asset_bytes=max_asset_bytes,
         feed_staleness_days=feed_staleness_days,
         sources=sources,
