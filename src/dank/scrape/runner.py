@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import logging
 import pathlib
+import re
 from collections.abc import AsyncIterator
 
 import aiohttp
@@ -328,8 +329,33 @@ def run_scrape_from_config(
     path: str = "config.toml",
     *,
     headless: bool = False,
+    domain_regex: re.Pattern[str] | None = None,
 ) -> None:
     settings = load_settings(path)
+
+    if domain_regex:
+        settings = filter_settings_sources(settings, domain_regex)
+
     configure_logging(settings.logging, component="scrape")
 
     asyncio.run(run_scrape(settings, headless=headless))
+
+
+def filter_settings_sources(
+    settings: Settings,
+    domain_regex: re.Pattern[str],
+) -> Settings:
+    filtered_sources = tuple(
+        source
+        for source in settings.sources
+        if domain_regex.search(source.domain)
+    )
+
+    logger.info(
+        "Filtered sources with pattern=%r retained=%d total=%d",
+        domain_regex.pattern,
+        len(filtered_sources),
+        len(settings.sources),
+    )
+
+    return settings._replace(sources=filtered_sources)

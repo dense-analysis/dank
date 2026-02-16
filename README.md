@@ -106,6 +106,8 @@ are resolved from the current working directory.
 Dank offers the following commands.
 
 * `uv run python -m dank.scrape` -- Scrape the web for data
+    * Pass `--domains` to scrape only matching domains from `sources`,
+      for example `--domains '^x\\.com$'`.
 * `uv run python -m dank.process` -- Process previously scraped data
     * The `--age` argument can be given a duration to process, for example
       `6hours` or `2days`.

@@ -58,6 +58,7 @@ indirection.
 * Run `./run-linters.sh` to run all linters to check for and autofix errors.
 * You can run tests with `uv run pytest`.
 * You can scrape data with `uv run python -m dank.scrape`.
+    * Pass `--domains` to scrape only matching `sources` domains.
 * You can process scraped data with `uv run python -m dank.process`.
     * You might want to pass `--age 10m` to process content scraped in the
       past 10 minutes, other other ages accepted by `parse_age_window`.
