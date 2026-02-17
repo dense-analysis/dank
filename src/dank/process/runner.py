@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import logging
 import re
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -30,25 +31,60 @@ async def process_source_posts(
     converter: RawPostConverter,
     *,
     since: datetime.datetime,
-    batch_size: int = 100,
+    batch_size: int = 250,
     embedder: EmbeddingModel,
 ) -> int:
     query = (
-        "SELECT domain, post_id, url, post_created_at, scraped_at, "
-        "source, request_url, payload FROM raw_posts "
+        "SELECT "
+        "raw.domain AS domain, "
+        "raw.post_id AS post_id, "
+        "raw.url AS url, "
+        "raw.post_created_at AS post_created_at, "
+        "raw.scraped_at AS scraped_at, "
+        "raw.source AS source, "
+        "raw.request_url AS request_url, "
+        "raw.payload AS payload "
+        "FROM ("
+        "SELECT "
+        "domain, "
+        "post_id, "
+        "url, "
+        "post_created_at, "
+        "scraped_at, "
+        "source, "
+        "request_url, "
+        "payload "
+        "FROM raw_posts "
         "WHERE domain = %(domain)s "
         "AND scraped_at >= %(since)s "
         "ORDER BY scraped_at DESC "
+        "LIMIT 1 BY post_id"
+        ") AS raw "
+        "LEFT JOIN ("
+        "SELECT domain, post_id, updated_at "
+        "FROM posts "
+        "WHERE domain = %(domain)s "
+        "ORDER BY updated_at DESC "
+        "LIMIT 1 BY post_id"
+        ") AS processed "
+        "ON raw.domain = processed.domain "
+        "AND raw.post_id = processed.post_id "
+        "WHERE processed.updated_at IS NULL "
+        "OR raw.scraped_at > processed.updated_at "
+        "ORDER BY raw.scraped_at DESC "
     )
+    query_started_at = time.perf_counter()
     result = await clickhouse_client.fetch_json(
         query,
         {"domain": domain, "since": since},
     )
+    query_seconds = time.perf_counter() - query_started_at
     logger.info(
-        "Loaded %d raw posts for domain=%s since=%s",
+        "Loaded %d unprocessed raw posts for domain=%s since=%s in %.3fs",
         len(result.rows),
         domain,
         since.isoformat(),
+        query_seconds,
     )
 
     converted = 0
@@ -86,24 +122,62 @@ async def process_source_assets(
     converter: RawAssetConverter,
     *,
     since: datetime.datetime,
-    batch_size: int = 100,
+    batch_size: int = 500,
 ) -> int:
     query = (
-        "SELECT domain, post_id, url, asset_type, scraped_at, "
-        "source, local_path FROM raw_assets "
+        "SELECT "
+        "raw.domain AS domain, "
+        "raw.post_id AS post_id, "
+        "raw.url AS url, "
+        "raw.asset_type AS asset_type, "
+        "raw.scraped_at AS scraped_at, "
+        "raw.source AS source, "
+        "raw.local_path AS local_path "
+        "FROM ("
+        "SELECT "
+        "domain, "
+        "post_id, "
+        "url, "
+        "asset_type, "
+        "scraped_at, "
+        "source, "
+        "local_path "
+        "FROM raw_assets "
         "WHERE domain = %(domain)s "
         "AND scraped_at >= %(since)s "
-        "ORDER BY scraped_at DESC"
+        "ORDER BY scraped_at DESC "
+        "LIMIT 1 BY post_id, url"
+        ") AS raw "
+        "LEFT JOIN ("
+        "SELECT "
+        "domain, "
+        "post_id, "
+        "url, "
+        "updated_at "
+        "FROM assets "
+        "WHERE domain = %(domain)s "
+        "ORDER BY updated_at DESC "
+        "LIMIT 1 BY post_id, url"
+        ") AS processed "
+        "ON raw.domain = processed.domain "
+        "AND raw.post_id = processed.post_id "
+        "AND raw.url = processed.url "
+        "WHERE processed.updated_at IS NULL "
+        "OR raw.scraped_at > processed.updated_at "
+        "ORDER BY raw.scraped_at DESC"
     )
+    query_started_at = time.perf_counter()
     result = await clickhouse_client.fetch_json(
         query,
         {"domain": domain, "since": since},
     )
+    query_seconds = time.perf_counter() - query_started_at
     logger.info(
-        "Loaded %d raw assets for domain=%s since=%s",
+        "Loaded %d unprocessed raw assets for domain=%s since=%s in %.3fs",
         len(result.rows),
         domain,
         since.isoformat(),
+        query_seconds,
     )
 
     converted = 0

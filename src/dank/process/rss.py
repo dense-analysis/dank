@@ -38,6 +38,13 @@ class _ParsedItem(NamedTuple):
     created_at: datetime.datetime | None
 
 
+class _PageDerivedValues(NamedTuple):
+    title: str
+    author: str
+    published_at: datetime.datetime | None
+    content_html: str
+
+
 def convert_raw_post(row: RawPost) -> Post | None:
     feed_xml, page_html = _split_payload(row.payload)
     root = _parse_xml_root(feed_xml)
@@ -53,18 +60,17 @@ def convert_raw_post(row: RawPost) -> Post | None:
         case _:
             return None
 
-    page_metadata = extract_page_metadata(page_html)
-    title = parsed.title or page_metadata.title
-    content_html = extract_article_html(page_html)
-
-    if not content_html and page_html:
-        content_html = page_html
-
-    if not content_html:
-        content_html = parsed.text
-
-    if not content_html:
-        content_html = extract_youtube_iframes(page_html)
+    page_derived = _derive_page_values(
+        page_html,
+        title=parsed.title,
+        author=parsed.author,
+        published_at=row.post_created_at or parsed.created_at,
+        content_html=parsed.text,
+    )
+    title = page_derived.title
+    author = page_derived.author
+    published_at = page_derived.published_at
+    content_html = page_derived.content_html
 
     if not title:
         title_source = parsed.text or strip_html(content_html)
@@ -72,14 +78,11 @@ def convert_raw_post(row: RawPost) -> Post | None:
             title = title_source.splitlines()[0].strip()
 
     created_at = (
-        row.post_created_at
-        or page_metadata.published_at
-        or parsed.created_at
+        published_at
         or row.scraped_at
         or datetime.datetime.now(datetime.UTC)
     )
     updated_at = row.scraped_at or created_at
-    author = parsed.author or page_metadata.author
 
     return Post(
         domain=row.domain,
@@ -93,6 +96,48 @@ def convert_raw_post(row: RawPost) -> Post | None:
         html=content_html,
         html_embedding=EMPTY_STRING_VECTOR,
         source=row.source,
+    )
+
+
+def _derive_page_values(
+    page_html: str,
+    *,
+    title: str,
+    author: str,
+    published_at: datetime.datetime | None,
+    content_html: str,
+) -> _PageDerivedValues:
+    # Parse heavyweight HTML only when RSS fields are missing information.
+    if page_html and (not title or not author or published_at is None):
+        page_metadata = extract_page_metadata(page_html)
+
+        if not title:
+            title = page_metadata.title
+
+        if not author:
+            author = page_metadata.author
+
+        if published_at is None:
+            published_at = page_metadata.published_at
+
+    # Keep full page HTML when scraper already fetched it.
+    if page_html and content_html:
+        content_html = page_html
+
+    if page_html and not content_html:
+        content_html = extract_article_html(page_html)
+
+        if not content_html:
+            content_html = page_html
+
+        if not content_html:
+            content_html = extract_youtube_iframes(page_html)
+
+    return _PageDerivedValues(
+        title=title,
+        author=author,
+        published_at=published_at,
+        content_html=content_html,
     )
 
 

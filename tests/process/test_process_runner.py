@@ -6,6 +6,7 @@ import pytest
 from dank.model import Post
 from dank.process.runner import (
     parse_age_window,
+    process_source_assets,
     process_source_posts,
 )
 
@@ -79,6 +80,29 @@ class _InsertClient:
         self.rows = rows
 
 
+class _DummyAssetClient:
+    def __init__(self) -> None:
+        self.query = ""
+        self.params: dict[str, object] = {}
+
+    async def fetch_json(
+        self,
+        query: str,
+        params: dict[str, object] | None = None,
+    ) -> _Result:
+        self.query = query
+        self.params = params or {}
+
+        return _Result(rows=[])
+
+    async def insert_rows(
+        self,
+        _table: str,
+        _rows: list[dict[str, Any]],
+    ) -> None:
+        return
+
+
 def test_parse_age_window_seconds() -> None:
     assert parse_age_window("30s") == datetime.timedelta(seconds=30)
     assert parse_age_window("15") == datetime.timedelta(seconds=15)
@@ -117,6 +141,24 @@ async def test_process_source_posts_filters_by_scraped_at() -> None:
     assert "coalesce(post_created_at, scraped_at)" not in client.query
 
 
+async def test_process_source_posts_only_selects_unprocessed_posts() -> None:
+    client = _DummyClient()
+    since = datetime.datetime.now(datetime.UTC)
+
+    converted = await process_source_posts(
+        cast(Any, client),
+        "x.com",
+        lambda _row: None,
+        since=since,
+        embedder=cast(Any, _DummyEmbedder()),
+    )
+
+    assert converted == 0
+    assert "LIMIT 1 BY post_id" in client.query
+    assert "LEFT JOIN" in client.query
+    assert "raw.scraped_at > processed.updated_at" in client.query
+
+
 async def test_insert_posts_writes_embedding_arrays() -> None:
     client = _InsertClient()
 
@@ -152,3 +194,20 @@ async def test_insert_posts_writes_embedding_arrays() -> None:
     assert client.rows
     assert client.rows[0]["title_embedding"] == [1.0]
     assert client.rows[0]["html_embedding"] == [1.0]
+
+
+async def test_process_source_assets_only_selects_unprocessed_assets() -> None:
+    client = _DummyAssetClient()
+    since = datetime.datetime.now(datetime.UTC)
+
+    converted = await process_source_assets(
+        cast(Any, client),
+        "x.com",
+        lambda _raw: None,
+        since=since,
+    )
+
+    assert converted == 0
+    assert "LIMIT 1 BY post_id, url" in client.query
+    assert "LEFT JOIN" in client.query
+    assert "raw.scraped_at > processed.updated_at" in client.query
