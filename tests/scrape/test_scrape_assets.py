@@ -343,7 +343,7 @@ def test_download_assets_logs_yt_dlp_messages_with_prefix(
 
     assert assets
     assert any(
-        record.levelno == logging.INFO
+        record.levelno == logging.DEBUG
         and record.getMessage() == "[yt-dlp] [info] Downloading"
         for record in caplog.records
     )
