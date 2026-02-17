@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import pathlib
 from collections.abc import Iterable
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -13,6 +14,9 @@ from .audio_video import download_audio_video_asset
 from .http import download_file_http
 
 SKIP_ASSET_TYPES = {"iframe", "link"}
+ASSET_FILENAMES_TO_NEVER_DOWNLOAD = {
+    "loader.gif",
+}
 
 
 async def download_assets(
@@ -36,8 +40,19 @@ async def download_assets(
 
     async def _download(discovery: AssetDiscovery) -> RawAsset | None:
         target_dir = assets_dir / discovery.domain / discovery.post_id
+        asset_filename = pathlib.Path(urlparse(discovery.url).path).name
 
-        if discovery.asset_type in SKIP_ASSET_TYPES:
+        if asset_filename.lower() in ASSET_FILENAMES_TO_NEVER_DOWNLOAD:
+            return RawAsset(
+                domain=discovery.domain,
+                post_id=discovery.post_id,
+                url=discovery.url,
+                asset_type=discovery.asset_type,
+                scraped_at=timestamp,
+                source=discovery.source,
+                local_path="",
+            )
+        elif discovery.asset_type in SKIP_ASSET_TYPES:
             return RawAsset(
                 domain=discovery.domain,
                 post_id=discovery.post_id,

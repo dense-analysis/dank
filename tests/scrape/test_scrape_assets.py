@@ -187,6 +187,30 @@ def test_download_assets_skips_oversized_estimated_asset(
     assert assets[0].local_path == ""
 
 
+def test_download_assets_skips_loader_gif_by_filename(
+    tmp_path: Any,
+) -> None:
+    assets_dir = tmp_path / "assets"
+    discovery = AssetDiscovery(
+        source="rss",
+        domain="example.com",
+        post_id="post-1",
+        url="https://example.com/images/loader.gif",
+        asset_type="image",
+        estimated_size_bytes=None,
+    )
+    assets = asyncio.run(
+        download_assets(
+            [discovery],
+            assets_dir=assets_dir,
+            http_client=cast(Any, _UnusedHttpClient()),
+        ),
+    )
+
+    assert assets
+    assert assets[0].local_path == ""
+
+
 def test_download_assets_passes_js_runtimes_to_yt_dlp(
     monkeypatch: Any,
     tmp_path: Any,
