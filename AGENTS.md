@@ -47,6 +47,7 @@ indirection.
 * You are writing Python 3.12+ code. Never write simple helper functions
   if there are very simple first party library functions like
   `itertools.batched`.
+* Code lives in either `src` or `test` directories.
 * Use `asyncio` as much as possible for great concurrency.
 * Never ever use a Python `dataclass` if at all possible.
 * Use `NamedTuple` for abstract data types as much as possible to pass immutable
