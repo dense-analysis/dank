@@ -57,6 +57,8 @@ indirection.
 * Add simple single-line comments to involving parts of code to explain what
   the code is supposed to be doing.
 * Implement tests, especially unit tests for data processing.
+* Never use `importlib` in test code for importing private functions, and
+  instead import with `# pyright: ignore[reportPrivateUsage]`
 
 ## Tools
 

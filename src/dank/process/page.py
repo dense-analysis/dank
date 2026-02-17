@@ -444,15 +444,7 @@ def _content_candidate_kind(
     stack: list[str],
 ) -> str | None:
     if tag == "template":
-        if _has_parent_tag(stack, {"single-post", "single-video"}):
-            if _is_template_slot(attr_map, "content"):
-                return "template-content"
-
-        if _has_parent_tag(stack, {"single-video"}):
-            if _is_template_slot(attr_map, "video"):
-                return "template-video"
-
-        return None
+        return _template_candidate_kind(attr_map, stack)
 
     if tag == "article":
         if _has_parent_tag(stack, {"main"}):
@@ -472,6 +464,22 @@ def _content_candidate_kind(
         element_id = attr_map.get("id", "")
         if _id_has_content_key(element_id):
             return "content-block"
+
+    return None
+
+
+def _template_candidate_kind(
+    attr_map: dict[str, str],
+    stack: list[str],
+) -> str | None:
+    has_post_parent = _has_parent_tag(stack, {"single-post", "single-video"})
+    has_video_parent = _has_parent_tag(stack, {"single-video"})
+
+    if has_post_parent and _is_template_slot(attr_map, "content"):
+        return "template-content"
+
+    if has_video_parent and _is_template_slot(attr_map, "video"):
+        return "template-video"
 
     return None
 

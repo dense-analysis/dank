@@ -107,58 +107,56 @@ def _iter_tweet_results(
 def _iter_timeline_tweet_results(
     payload: Mapping[str, object],
 ) -> list[dict[str, object]]:
-    data = _as_dict(payload.get("data"))
+    extracted: list[dict[str, object]] = []
+    instructions = _timeline_instructions(payload)
 
-    if data is None:
+    for instruction in instructions:
+        extracted.extend(_extract_timeline_add_entries(instruction))
+
+    return extracted
+
+
+def _timeline_instructions(
+    payload: Mapping[str, object],
+) -> list[object]:
+    current = _as_dict(payload.get("data"))
+
+    for key in ("user", "result", "timeline", "timeline"):
+        if current is None:
+            return []
+
+        current = _as_dict(current.get(key))
+
+    if current is None:
         return []
 
-    user = _as_dict(data.get("user"))
+    instructions = _as_list(current.get("instructions"))
 
-    if user is None:
+    return instructions or []
+
+
+def _extract_timeline_add_entries(
+    instruction: object,
+) -> list[dict[str, object]]:
+    instruction_dict = _as_dict(instruction)
+
+    if instruction_dict is None:
         return []
 
-    user_result = _as_dict(user.get("result"))
-
-    if user_result is None:
+    if instruction_dict.get("type") != "TimelineAddEntries":
         return []
 
-    timeline = _as_dict(user_result.get("timeline"))
+    entries = _as_list(instruction_dict.get("entries"))
 
-    if timeline is None:
-        return []
-
-    timeline_data = _as_dict(timeline.get("timeline"))
-
-    if timeline_data is None:
-        return []
-
-    instructions = _as_list(timeline_data.get("instructions"))
-
-    if instructions is None:
+    if entries is None:
         return []
 
     extracted: list[dict[str, object]] = []
 
-    for instruction in instructions:
-        instruction_dict = _as_dict(instruction)
+    for entry in entries:
+        entry_dict = _as_dict(entry)
 
-        if instruction_dict is None:
-            continue
-
-        if instruction_dict.get("type") != "TimelineAddEntries":
-            continue
-
-        entries = _as_list(instruction_dict.get("entries"))
-
-        if entries is None:
-            continue
-
-        for entry in entries:
-            entry_dict = _as_dict(entry)
-
-            if entry_dict is None:
-                continue
-
+        if entry_dict is not None:
             extracted.extend(_extract_tweet_results_from_entry(entry_dict))
 
     return extracted
