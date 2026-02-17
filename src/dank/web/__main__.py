@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import re
 import sys
 import threading
 from typing import TYPE_CHECKING
@@ -93,7 +94,30 @@ def main() -> None:
         _start_reloader()
 
     app = create_app(settings, page_size=page_size)
-    web.run_app(app, host=args.host, port=args.port)
+    web.run_app(
+        app,
+        host=args.host,
+        port=args.port,
+        print=_terminal_print,
+    )
+
+
+def _terminal_print(message: str) -> None:
+    # OSC is the ANSI Operating System Command sequence used for
+    # terminal hyperlinks.
+    osc = "\x1b]8;;"
+    st = "\x1b\\"
+
+    linked = re.sub(
+        r"https?://[^\s]+",
+        lambda match: (
+            f"{osc}{match.group(0)}{st}"
+            f"{match.group(0)}"
+            f"{osc}{st}"
+        ),
+        message,
+    )
+    print(linked)
 
 
 def _start_reloader() -> None:
