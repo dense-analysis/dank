@@ -1,7 +1,13 @@
 import json
 import pathlib
+from typing import Any, cast
 
-from dank.scrape.x import extract_posts_and_assets
+from dank.scrape.x import (
+    LOGIN_PROMPT_TIMEOUT_SECONDS,
+    _has_login_prompt,  # pyright: ignore[reportPrivateUsage]
+    _is_login_page,  # pyright: ignore[reportPrivateUsage]
+    extract_posts_and_assets,
+)
 from dank.scrape.zendriver import NetworkResponse
 
 
@@ -47,3 +53,58 @@ def test_extract_posts_and_assets_from_network_payload() -> None:
 
     assert not posts_repeat
     assert not assets_repeat
+
+
+class _FakeLoginPromptPage:
+    def __init__(
+        self,
+        *,
+        location: object,
+        select_raises: Exception | None,
+    ) -> None:
+        self.location = location
+        self.select_raises = select_raises
+        self.last_timeout: float | None = None
+
+    async def evaluate(self, _script: str) -> object:
+        return self.location
+
+    async def select(self, *_args: object, **kwargs: object) -> object:
+        timeout = kwargs.get("timeout")
+
+        if isinstance(timeout, int | float):
+            self.last_timeout = float(timeout)
+
+        if self.select_raises is not None:
+            raise self.select_raises
+
+        return object()
+
+
+async def test_has_login_prompt_uses_short_selector_timeout() -> None:
+    page = _FakeLoginPromptPage(location=None, select_raises=None)
+
+    assert await _has_login_prompt(cast(Any, page)) is True
+    assert page.last_timeout == LOGIN_PROMPT_TIMEOUT_SECONDS
+
+
+async def test_has_login_prompt_handles_timeout() -> None:
+    page = _FakeLoginPromptPage(location=None, select_raises=TimeoutError())
+
+    assert await _has_login_prompt(cast(Any, page)) is False
+
+
+async def test_is_login_page_skips_selector_for_non_login_url() -> None:
+    page = _FakeLoginPromptPage(
+        location="https://x.com/example",
+        select_raises=None,
+    )
+
+    assert await _is_login_page(cast(Any, page)) is False
+    assert page.last_timeout is None
+
+
+async def test_is_login_page_checks_selector_for_missing_location() -> None:
+    page = _FakeLoginPromptPage(location=None, select_raises=None)
+
+    assert await _is_login_page(cast(Any, page)) is True

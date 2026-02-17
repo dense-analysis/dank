@@ -40,6 +40,8 @@ X_GRAPHQL_PATTERNS = (
 FAST_SCROLL_PAUSE_SECONDS = 0.35
 INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
+READY_STATE_TIMEOUT_SECONDS = 2
+LOGIN_PROMPT_TIMEOUT_SECONDS = 0.25
 
 
 async def scrape_x_accounts(
@@ -191,14 +193,11 @@ async def _is_login_page(page: zendriver.Tab) -> bool:
     if "/i/flow/login" in location or "/login" in location:
         return True
 
-    return await _has_login_prompt(page)
+    return False
 
 
 async def _ensure_navigation(page: zendriver.Tab, url: str) -> None:
-    try:
-        await page.wait_for_ready_state()
-    except TimeoutError:
-        pass
+    await _wait_for_ready_state(page)
 
     location = await _get_location(page)
 
@@ -210,8 +209,13 @@ async def _ensure_navigation(page: zendriver.Tab, url: str) -> None:
     except Exception:
         return
 
+    await _wait_for_ready_state(page)
+
+
+async def _wait_for_ready_state(page: zendriver.Tab) -> None:
     try:
-        await page.wait_for_ready_state()
+        # Bound ready-state waits because X keeps active requests open.
+        await page.wait_for_ready_state(timeout=READY_STATE_TIMEOUT_SECONDS)
     except TimeoutError:
         pass
 
@@ -229,9 +233,12 @@ async def _get_location(page: zendriver.Tab) -> str | None:
 
 
 async def _has_login_prompt(page: zendriver.Tab) -> bool:
-    # Wait for a signup link to appear, which means we aren't logged in.
+    # Only wait briefly for a login selector to appear.
     try:
-        await page.select('a[href="/i/flow/signup"]', timeout=2)
+        await page.select(
+            'a[href="/i/flow/signup"]',
+            timeout=LOGIN_PROMPT_TIMEOUT_SECONDS,
+        )
     except TimeoutError:
         return False
     else:
@@ -323,11 +330,7 @@ async def _login(
 
     await _submit_input_slowly(page, password_input, settings.password)
     await _handle_otp(page, email_settings, otp_start)
-
-    try:
-        await page.wait_for_ready_state()
-    except TimeoutError:
-        pass
+    await _wait_for_ready_state(page)
 
 
 async def _handle_otp(
