@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 RawPostConverter = Callable[[RawPost], Post | None]
 RawAssetConverter = Callable[[RawAsset], Asset | None]
+MAX_TITLE_EMBED_CHARS = 512
+MAX_HTML_EMBED_CHARS = 8192
 
 
 async def process_source_posts(
@@ -173,14 +175,19 @@ async def _insert_posts(
     posts: list[Post],
     embedder: EmbeddingModel,
 ) -> None:
-    # Compute embeddings for all of the posts.
     title_embeddings = await asyncio.to_thread(
         embedder.embed_texts,
-        [post.title for post in posts],
+        [
+            _truncate_for_embedding(post.title, limit=MAX_TITLE_EMBED_CHARS)
+            for post in posts
+        ],
     )
     html_embeddings = await asyncio.to_thread(
         embedder.embed_texts,
-        [post.html for post in posts],
+        [
+            _truncate_for_embedding(post.html, limit=MAX_HTML_EMBED_CHARS)
+            for post in posts
+        ],
     )
     posts = [
         post._replace(
@@ -207,6 +214,10 @@ async def _insert_posts(
         "posts",
         rows,
     )
+
+
+def _truncate_for_embedding(value: str, *, limit: int) -> str:
+    return value.strip()[:limit]
 
 
 async def run_process(

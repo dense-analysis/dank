@@ -50,27 +50,29 @@ class EmbeddingModel:
         if all(x is not None for x in vectors):
             return cast(list[Vector], vectors)
 
+        missing_indexes_by_text: dict[str, list[int]] = {}
+
+        for index, item in enumerate(items):
+            if vectors[index] is None:
+                missing_indexes_by_text.setdefault(item, []).append(index)
+
         # Dynamically load the model when we need it.
         model = self._get_model()
+        missing_items = list(missing_indexes_by_text)
 
-        # Encode just the values we need to.
+        # Encode each unique value we need to once.
         tensors = model.encode(  # type: ignore
-            [
-                item
-                for index, item in enumerate(items)
-                if vectors[index] is None
-            ],
+            missing_items,
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=False,
         )
 
-        # Run through missing vectors in order and fill in the encoded values.
-        tensors_iter = iter(tensors)
+        for item, tensor in zip(missing_items, tensors, strict=True):
+            vector = tuple(float(x) for x in tensor)
 
-        for index in range(len(vectors)):
-            if vectors[index] is None:
-                vectors[index] = tuple(float(x) for x in next(tensors_iter))
+            for index in missing_indexes_by_text[item]:
+                vectors[index] = vector
 
         return cast(list[Vector], vectors)
 
