@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, NamedTuple
 
 from dank.config import ClickHouseSettings
@@ -36,7 +35,7 @@ class _DummyClickHouseClient(ClickHouseClient):
         return self._result
 
 
-def test_fetch_json_converts_embedding_lists_to_tuples() -> None:
+async def test_fetch_json_converts_embedding_lists_to_tuples() -> None:
     client = _DummyClickHouseClient(
         _RawResult(
             column_names=("post_id", "title_embedding", "misc_values"),
@@ -44,7 +43,7 @@ def test_fetch_json_converts_embedding_lists_to_tuples() -> None:
         ),
     )
 
-    result = asyncio.run(client.fetch_json("SELECT 1"))
+    result = await client.fetch_json("SELECT 1")
 
     assert result.rows == [
         {

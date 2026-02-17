@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from dank.scrape.rss import (
@@ -25,8 +23,8 @@ def test_discover_feed_links_from_head() -> None:
 
 
 @pytest.mark.parametrize("domain", ["bbc.co.uk", "bbc.com", "bbc.ag"])
-def test_fetch_feed_links_returns_fixed_bbc_feeds(domain: str) -> None:
-    links = asyncio.run(fetch_feed_links(domain))
+async def test_fetch_feed_links_returns_fixed_bbc_feeds(domain: str) -> None:
+    links = await fetch_feed_links(domain)
 
     assert [link.url for link in links] == [
         "http://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",

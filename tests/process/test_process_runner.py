@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 from typing import Any, NamedTuple, cast
 
@@ -101,18 +100,16 @@ def test_parse_age_window_invalid(value: str) -> None:
         parse_age_window(value)
 
 
-def test_process_source_posts_filters_by_scraped_at() -> None:
+async def test_process_source_posts_filters_by_scraped_at() -> None:
     client = _DummyClient()
     since = datetime.datetime.now(datetime.UTC)
 
-    converted = asyncio.run(
-        process_source_posts(
-            cast(Any, client),
-            "x.com",
-            lambda _row: None,
-            since=since,
-            embedder=cast(Any, _DummyEmbedder()),
-        ),
+    converted = await process_source_posts(
+        cast(Any, client),
+        "x.com",
+        lambda _row: None,
+        since=since,
+        embedder=cast(Any, _DummyEmbedder()),
     )
 
     assert converted == 0
@@ -120,7 +117,7 @@ def test_process_source_posts_filters_by_scraped_at() -> None:
     assert "coalesce(post_created_at, scraped_at)" not in client.query
 
 
-def test_insert_posts_writes_embedding_arrays() -> None:
+async def test_insert_posts_writes_embedding_arrays() -> None:
     client = _InsertClient()
 
     class _TupleEmbedder:
@@ -142,14 +139,12 @@ def test_insert_posts_writes_embedding_arrays() -> None:
             source="x",
         )
 
-    converted = asyncio.run(
-        process_source_posts(
-            cast(Any, client),
-            "x.com",
-            _converter,
-            since=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
-            embedder=cast(Any, _TupleEmbedder()),
-        ),
+    converted = await process_source_posts(
+        cast(Any, client),
+        "x.com",
+        _converter,
+        since=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
+        embedder=cast(Any, _TupleEmbedder()),
     )
 
     assert converted == 1

@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, cast
 
 from dank.scrape.rss import scrape_feed_batches
@@ -119,7 +118,7 @@ class _FakeClient:
         return _FakeResponse(body, 200)
 
 
-def test_scrape_feed_batches_yields_posts_and_assets() -> None:
+async def test_scrape_feed_batches_yields_posts_and_assets() -> None:
     client = _FakeClient(
         {
             "https://example.test/feed.xml": RSS_XML,
@@ -128,20 +127,15 @@ def test_scrape_feed_batches_yields_posts_and_assets() -> None:
         },
     )
 
-    async def _collect_batches() -> list[ScrapeBatch]:
-        batches: list[ScrapeBatch] = []
+    batches: list[ScrapeBatch] = []
 
-        async for batch in scrape_feed_batches(
-            cast(Any, client),
-            domain="example.test",
-            feed_urls=["https://example.test/feed.xml"],
-            batch_size=2,
-        ):
-            batches.append(batch)
-
-        return batches
-
-    batches = asyncio.run(_collect_batches())
+    async for batch in scrape_feed_batches(
+        cast(Any, client),
+        domain="example.test",
+        feed_urls=["https://example.test/feed.xml"],
+        batch_size=2,
+    ):
+        batches.append(batch)
 
     assert len(batches) == 1
     batch = batches[0]
@@ -159,7 +153,7 @@ def test_scrape_feed_batches_yields_posts_and_assets() -> None:
     }
 
 
-def test_scrape_feed_batches_loads_multiple_feeds() -> None:
+async def test_scrape_feed_batches_loads_multiple_feeds() -> None:
     client = _FakeClient(
         {
             "https://example.test/feed-one.xml": RSS_XML,
@@ -170,23 +164,18 @@ def test_scrape_feed_batches_loads_multiple_feeds() -> None:
         },
     )
 
-    async def _collect_batches() -> list[ScrapeBatch]:
-        batches: list[ScrapeBatch] = []
+    batches: list[ScrapeBatch] = []
 
-        async for batch in scrape_feed_batches(
-            cast(Any, client),
-            domain="example.test",
-            feed_urls=[
-                "https://example.test/feed-one.xml",
-                "https://example.test/feed-two.xml",
-            ],
-            batch_size=10,
-        ):
-            batches.append(batch)
-
-        return batches
-
-    batches = asyncio.run(_collect_batches())
+    async for batch in scrape_feed_batches(
+        cast(Any, client),
+        domain="example.test",
+        feed_urls=[
+            "https://example.test/feed-one.xml",
+            "https://example.test/feed-two.xml",
+        ],
+        batch_size=10,
+    ):
+        batches.append(batch)
 
     assert len(batches) == 1
     assert [post.url for post in batches[0].posts] == [

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Any, NamedTuple, cast
 
@@ -16,7 +15,7 @@ class _UnusedHttpClient:
         raise AssertionError("HTTP client should not be used for yt-dlp")
 
 
-def test_download_assets_uses_yt_dlp_library_for_youtube(
+async def test_download_assets_uses_yt_dlp_library_for_youtube(
     monkeypatch: Any,
     tmp_path: Any,
 ) -> None:
@@ -73,14 +72,12 @@ def test_download_assets_uses_yt_dlp_library_for_youtube(
         asset_type="youtube",
         estimated_size_bytes=None,
     )
-    assets = asyncio.run(
-        download_assets(
-            [discovery],
-            assets_dir=assets_dir,
-            browser_profile_dir=browser_profile_dir,
-            http_client=cast(Any, _UnusedHttpClient()),
-            max_asset_bytes=1_024,
-        ),
+    assets = await download_assets(
+        [discovery],
+        assets_dir=assets_dir,
+        browser_profile_dir=browser_profile_dir,
+        http_client=cast(Any, _UnusedHttpClient()),
+        max_asset_bytes=1_024,
     )
 
     assert assets
@@ -96,7 +93,7 @@ def test_download_assets_uses_yt_dlp_library_for_youtube(
     )
 
 
-def test_download_assets_deletes_oversized_youtube_file(
+async def test_download_assets_deletes_oversized_youtube_file(
     monkeypatch: Any,
     tmp_path: Any,
 ) -> None:
@@ -148,13 +145,11 @@ def test_download_assets_deletes_oversized_youtube_file(
         asset_type="youtube",
         estimated_size_bytes=None,
     )
-    assets = asyncio.run(
-        download_assets(
-            [discovery],
-            assets_dir=assets_dir,
-            http_client=cast(Any, _UnusedHttpClient()),
-            max_asset_bytes=4,
-        ),
+    assets = await download_assets(
+        [discovery],
+        assets_dir=assets_dir,
+        http_client=cast(Any, _UnusedHttpClient()),
+        max_asset_bytes=4,
     )
 
     assert assets
@@ -162,7 +157,7 @@ def test_download_assets_deletes_oversized_youtube_file(
     assert not created_path.exists()
 
 
-def test_download_assets_skips_oversized_estimated_asset(
+async def test_download_assets_skips_oversized_estimated_asset(
     tmp_path: Any,
 ) -> None:
     assets_dir = tmp_path / "assets"
@@ -174,20 +169,18 @@ def test_download_assets_skips_oversized_estimated_asset(
         asset_type="video",
         estimated_size_bytes=10,
     )
-    assets = asyncio.run(
-        download_assets(
-            [discovery],
-            assets_dir=assets_dir,
-            http_client=cast(Any, _UnusedHttpClient()),
-            max_asset_bytes=4,
-        ),
+    assets = await download_assets(
+        [discovery],
+        assets_dir=assets_dir,
+        http_client=cast(Any, _UnusedHttpClient()),
+        max_asset_bytes=4,
     )
 
     assert assets
     assert assets[0].local_path == ""
 
 
-def test_download_assets_skips_loader_gif_by_filename(
+async def test_download_assets_skips_loader_gif_by_filename(
     tmp_path: Any,
 ) -> None:
     assets_dir = tmp_path / "assets"
@@ -199,19 +192,17 @@ def test_download_assets_skips_loader_gif_by_filename(
         asset_type="image",
         estimated_size_bytes=None,
     )
-    assets = asyncio.run(
-        download_assets(
-            [discovery],
-            assets_dir=assets_dir,
-            http_client=cast(Any, _UnusedHttpClient()),
-        ),
+    assets = await download_assets(
+        [discovery],
+        assets_dir=assets_dir,
+        http_client=cast(Any, _UnusedHttpClient()),
     )
 
     assert assets
     assert assets[0].local_path == ""
 
 
-def test_download_assets_passes_js_runtimes_to_yt_dlp(
+async def test_download_assets_passes_js_runtimes_to_yt_dlp(
     monkeypatch: Any,
     tmp_path: Any,
 ) -> None:
@@ -277,12 +268,10 @@ def test_download_assets_passes_js_runtimes_to_yt_dlp(
         asset_type="youtube",
         estimated_size_bytes=None,
     )
-    assets = asyncio.run(
-        download_assets(
-            [discovery],
-            assets_dir=assets_dir,
-            http_client=cast(Any, _UnusedHttpClient()),
-        ),
+    assets = await download_assets(
+        [discovery],
+        assets_dir=assets_dir,
+        http_client=cast(Any, _UnusedHttpClient()),
     )
 
     assert assets
@@ -294,7 +283,7 @@ def test_download_assets_passes_js_runtimes_to_yt_dlp(
     )
 
 
-def test_download_assets_logs_yt_dlp_messages_with_prefix(
+async def test_download_assets_logs_yt_dlp_messages_with_prefix(
     monkeypatch: Any,
     tmp_path: Any,
     caplog: Any,
@@ -357,12 +346,10 @@ def test_download_assets_logs_yt_dlp_messages_with_prefix(
         logging.DEBUG,
         logger="dank.scrape.assets.audio_video",
     ):
-        assets = asyncio.run(
-            download_assets(
-                [discovery],
-                assets_dir=assets_dir,
-                http_client=cast(Any, _UnusedHttpClient()),
-            ),
+        assets = await download_assets(
+            [discovery],
+            assets_dir=assets_dir,
+            http_client=cast(Any, _UnusedHttpClient()),
         )
 
     assert assets
