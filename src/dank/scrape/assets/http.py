@@ -20,7 +20,7 @@ async def download_file_http(
     max_asset_bytes: int | None,
     timestamp: datetime.datetime,
 ) -> RawAsset | None:
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir.mkdir(parents=True, exist_ok=True)  # noqa
 
     parsed = urlparse(discovery.url)
     filename = pathlib.Path(parsed.path).name or "asset"

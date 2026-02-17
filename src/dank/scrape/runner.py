@@ -43,7 +43,7 @@ async def run_scrape(
         batch_size = 1
 
     data_dir = pathlib.Path(settings.data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)  # noqa
     assets_dir = data_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
     profile_dir = data_dir / "browser-profile"
