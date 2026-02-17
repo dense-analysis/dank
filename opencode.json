@@ -17,10 +17,7 @@
       "ipython *": "deny",
       "uv *": "deny",
       "./run-linters.sh": "allow",
-      "uv run python -m dank.tools.clickhouse_query *": "allow",
-      "uv run python -m dank.process *": "allow",
-      "uv run python -m dank.scrape *": "allow",
-      "uv run pytest *": "allow"
+      "uv run *": "allow"
     },
     "read": {
       "*": "allow",

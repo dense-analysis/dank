@@ -105,17 +105,17 @@ are resolved from the current working directory.
 
 Dank offers the following commands.
 
-* `uv run python -m dank.scrape` -- Scrape the web for data
+* `uv run scrape` -- Scrape the web for data
     * Pass `--domains` to scrape only matching domains from `sources`,
       for example `--domains '^x\\.com$'`.
-* `uv run python -m dank.process` -- Process previously scraped data
+* `uv run process` -- Process previously scraped data
     * The `--age` argument can be given a duration to process, for example
       `6hours` or `2days`.
-* `uv run python -m dank.tools/clickhouse_query` -- Run queries on the database
+* `uv run clickhouse-query` -- Run queries on the database
     * You can only run `SELECT` or `SHOW` queries through this tool
     * Query results are well formatted and easy to read
     * Query results are truncated unless you pass `--full`
-* `uv run python -m dank.tools.embed_text "your text"` -- Print an embedding vector
+* `uv run embed-text "your text"` -- Print an embedding vector
     * Output is a JSON `list[float]` for easy copy/paste into other tools.
-* `uv run python -m dank.web` -- Start a simple web server to view content.
+* `uv run web` -- Start a simple web server to view content.
     * Pass `--reload` for hot code reloading.

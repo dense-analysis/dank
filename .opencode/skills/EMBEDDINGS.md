@@ -1,4 +1,4 @@
-Run `uv run python -m dank.tools.embed_text 'your text'` to print embeddings.
+Run `uv run embed-text 'your text'` to print embeddings.
 
 This is a quick way to check what the embeddings for text will be during
 analysis using the same model that DANK uses for embeddings stored in the
