@@ -65,8 +65,13 @@ def _validate_select_query(query: str) -> str:
 
     lowered = normalized.lower()
 
-    if not lowered.startswith("select") and not lowered.startswith("show"):
-        raise ValueError("Only SELECT or SHOW queries are allowed")
+
+    if (
+        not lowered.startswith("select")
+        and not lowered.startswith("show")
+        and not lowered.startswith("explain")
+    ):
+        raise ValueError("Only SELECT, SHOW, EXPLAIN queries are allowed")
 
     if ";" in normalized:
         raise ValueError("Only a single statement is allowed")
@@ -74,12 +79,43 @@ def _validate_select_query(query: str) -> str:
     if re.search(r"\binto\s+outfile\b", lowered):
         raise ValueError("INTO OUTFILE is not allowed")
 
-    if lowered.startswith("select"):
+    if lowered.startswith("select") or lowered.startswith("explain"):
         for keyword in WRITE_KEYWORDS:
             if re.search(rf"\b{keyword}\b", lowered):
                 raise ValueError(f"Keyword {keyword!r} is not allowed")
 
     return normalized
+
+
+def _print_rows(
+    rows: list[dict[str, object]],
+    *,
+    full: bool,
+) -> None:
+    print(f"**{len(rows)} rows returned**")
+
+    for row_num, row in enumerate(rows, 1):
+        print()
+        print(f"## Row {row_num}")
+
+        for key, value in row.items():
+            if full:
+                # Print full values.
+                print(f"{key}: {value!r}")
+            else:
+                # Print truncated values.
+                match value:
+                    case str() if len(value) > 70:
+                        # Truncate strings.
+                        out = repr(value[:67] + "...")
+                    case list() if len(value) > 4:  # type: ignore
+                        # Truncate arrays like embeddings.
+                        value = cast(list[Any], value)[:4]
+                        out = repr(value)[:-1] + ", ...]"
+                    case _:
+                        out = repr(value)
+
+                print(f"{key}: {out}")
 
 
 async def _run_query(
@@ -89,6 +125,7 @@ async def _run_query(
     full: bool = False,
 ) -> None:
     settings = load_settings(config_path)
+    query_lower = query.lower()
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
         try:
@@ -100,33 +137,20 @@ async def _run_query(
                 case _:
                     raise
 
-        if query.lower().startswith("show"):
+        if query_lower.startswith("show"):
+            # Handle SHOW output specially.
             print(result.rows[0]["statement"])
+        elif (
+            query_lower.startswith("explain")
+            and not query_lower.startswith("explain estimate")
+        ):
+            # Handle EXPLAIN output specially.
+            # EXPLAIN ESTIMATE output reads like regular rows.
+            for row in result.rows:
+                print(row["explain"])
         else:
-            print(f"**{len(result.rows)} rows returned**")
-
-            for row_num, row in enumerate(result.rows, 1):
-                print()
-                print(f"## Row {row_num}")
-
-                for key, value in row.items():
-                    if full:
-                        # Print full values.
-                        print(f"{key}: {value!r}")
-                    else:
-                        # Print truncated values.
-                        match value:
-                            case str() if len(value) > 70:
-                                # Truncate strings.
-                                out = repr(value[:67] + "...")
-                            case list() if len(value) > 4:  # type: ignore
-                                # Truncate arrays like embeddings.
-                                value = cast(list[Any], value)[:4]
-                                out = repr(value)[:-1] + ", ...]"
-                            case _:
-                                out = repr(value)
-
-                        print(f"{key}: {out}")
+            # Handle the default case of printing row values.
+            _print_rows(result.rows, full=full)
 
 
 if __name__ == "__main__":

@@ -72,7 +72,7 @@ indirection.
       past 10 minutes, other other ages accepted by `parse_age_window`.
 * You can read recent scraper and processor logs from `dank.log`.
 * Query with `uv run clickhouse-query -q "<QUERY>"`
-    * You can run only `SELECT` or `SHOW` queries.
+    * You can run only `SELECT`, `SHOW`, or `EXPLAIN` queries.
     * Output is truncated by default. To see more information pass the `--full`
       argument.
 

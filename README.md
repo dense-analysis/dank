@@ -112,7 +112,7 @@ Dank offers the following commands.
     * The `--age` argument can be given a duration to process, for example
       `6hours` or `2days`.
 * `uv run clickhouse-query` -- Run queries on the database
-    * You can only run `SELECT` or `SHOW` queries through this tool
+    * You can only run `SELECT`, `SHOW`, or `EXPLAIN` queries through this tool
     * Query results are well formatted and easy to read
     * Query results are truncated unless you pass `--full`
 * `uv run embed-text "your text"` -- Print an embedding vector
