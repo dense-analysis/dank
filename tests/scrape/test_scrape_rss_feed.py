@@ -26,6 +26,22 @@ RSS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </rss>
 """
 
+RSS_XML_TWO = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Feed Two</title>
+    <link>https://example.test/</link>
+    <description>Example</description>
+    <item>
+      <title>Third</title>
+      <link>https://example.test/post-three</link>
+      <guid>post-three</guid>
+      <pubDate>Sun, 01 Feb 2026 03:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+
 PAGE_ONE_HTML = """
 <html>
   <body>
@@ -44,6 +60,18 @@ PAGE_TWO_HTML = """
       <p>Second post.</p>
       <video src="/video-two.mp4"></video>
     </article>
+  </body>
+</html>
+"""
+
+PAGE_THREE_HTML = """
+<html>
+  <body>
+    <main>
+      <article>
+        <p>Third post.</p>
+      </article>
+    </main>
   </body>
 </html>
 """
@@ -129,3 +157,45 @@ def test_scrape_feed_batches_yields_posts_and_assets() -> None:
         "https://example.test/img-one.jpg",
         "https://example.test/video-two.mp4",
     }
+
+
+def test_scrape_feed_batches_loads_multiple_feeds() -> None:
+    client = _FakeClient(
+        {
+            "https://example.test/feed-one.xml": RSS_XML,
+            "https://example.test/feed-two.xml": RSS_XML_TWO,
+            "https://example.test/post-one": PAGE_ONE_HTML,
+            "https://example.test/post-two": PAGE_TWO_HTML,
+            "https://example.test/post-three": PAGE_THREE_HTML,
+        },
+    )
+
+    async def _collect_batches() -> list[ScrapeBatch]:
+        batches: list[ScrapeBatch] = []
+
+        async for batch in scrape_feed_batches(
+            cast(Any, client),
+            domain="example.test",
+            feed_urls=[
+                "https://example.test/feed-one.xml",
+                "https://example.test/feed-two.xml",
+            ],
+            batch_size=10,
+        ):
+            batches.append(batch)
+
+        return batches
+
+    batches = asyncio.run(_collect_batches())
+
+    assert len(batches) == 1
+    assert [post.url for post in batches[0].posts] == [
+        "https://example.test/post-one",
+        "https://example.test/post-two",
+        "https://example.test/post-three",
+    ]
+    assert [post.request_url for post in batches[0].posts] == [
+        "https://example.test/feed-one.xml",
+        "https://example.test/feed-one.xml",
+        "https://example.test/feed-two.xml",
+    ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
+import itertools
 import json
 import logging
 import xml.etree.ElementTree as ElementTree
@@ -48,6 +49,7 @@ MEDIA_SRC_ATTRS = (
     "data-lazy",
 )
 
+
 type FeedType = Literal["atom", "rss2", "rss1"]
 
 
@@ -56,6 +58,11 @@ class PageDiscovery(NamedTuple):
     url: str
     created_at: datetime.datetime | None
     payload: str
+
+
+class _FeedPageDiscovery(NamedTuple):
+    feed_url: str
+    page: PageDiscovery
 
 
 class FeedLink(NamedTuple):
@@ -199,6 +206,27 @@ async def fetch_feed_links(
     *,
     timeout_seconds: float = 30.0,
 ) -> list[FeedLink]:
+    # BBC requires specific overrides for where feeds are.
+    match domain.split("."):
+        case (*_, "bbc", "co", "uk") | (*_, "bbc", _):
+            return [
+                FeedLink(
+                    url=url,
+                    feed_type=RSS2_FEED_TYPE,
+                    mime_type="application/rss+xml",
+                )
+                for url in (
+                    "http://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
+                    "http://feeds.bbci.co.uk/news/england/rss.xml",
+                    "http://feeds.bbci.co.uk/news/northern_ireland/rss.xml",
+                    "http://feeds.bbci.co.uk/news/scotland/rss.xml",
+                    "http://feeds.bbci.co.uk/news/wales/rss.xml",
+                )
+            ]
+        case _:
+            pass
+
+    # For all other domains load RSS feeds from the HTML source of the site.
     root_url = f"https://{domain}"
 
     async with aiohttp.ClientSession(
@@ -416,46 +444,99 @@ async def scrape_feed_batches(
         return
 
     root_url = f"https://{domain}"
-    seen_urls: set[str] = set()
+    page_discoveries = await _fetch_feed_page_discoveries(
+        http_client,
+        domain=domain,
+        root_url=root_url,
+        feed_urls=feed_urls,
+        concurrency=concurrency,
+    )
 
-    for feed_url in feed_urls:
-        feed_xml = await _fetch_text(http_client, feed_url, accept=FEED_ACCEPT)
+    # We batch page fetches separately from feed fetches.
+    for page_chunk in itertools.batched(page_discoveries, batch_size):
+        discoveries = [discovery.page for discovery in page_chunk]
+        page_results = await _fetch_pages(
+            http_client,
+            discoveries,
+            concurrency=concurrency,
+        )
+        # Index by page URL so we can preserve feed URL provenance per post.
+        page_html_map = {
+            discovery.url: page_html
+            for discovery, page_html in page_results
+        }
+        raw_posts: list[RawPost] = []
+        asset_discoveries: list[AssetDiscovery] = []
+        scraped_at = datetime.datetime.now(datetime.UTC)
+
+        for feed_discovery in page_chunk:
+            page_html = page_html_map.get(feed_discovery.page.url)
+
+            if not page_html:
+                continue
+
+            raw_post, assets = _build_raw_post(
+                feed_discovery.page,
+                page_html,
+                request_url=feed_discovery.feed_url,
+                scraped_at=scraped_at,
+            )
+            raw_posts.append(raw_post)
+            asset_discoveries.extend(assets)
+
+        if raw_posts or asset_discoveries:
+            yield ScrapeBatch(posts=raw_posts, assets=asset_discoveries)
+
+
+async def _fetch_feed_page_discoveries(
+    http_client: aiohttp.ClientSession,
+    *,
+    domain: str,
+    root_url: str,
+    feed_urls: list[str],
+    concurrency: int,
+) -> list[_FeedPageDiscovery]:
+    seen_urls: set[str] = set()
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _fetch_feed(feed_url: str) -> list[_FeedPageDiscovery]:
+        # Feed fetches are bounded so many-feed domains do not spike traffic.
+        async with semaphore:
+            feed_xml = await _fetch_text(
+                http_client,
+                feed_url,
+                accept=FEED_ACCEPT,
+            )
 
         if not feed_xml:
-            continue
+            return []
 
         discoveries = parse_feed_entries(
             feed_xml,
             domain=domain,
             root_url=root_url,
         )
-        unique_discoveries = dedupe_discoveries(discoveries, seen_urls)
 
-        for page_chunk in chunked(unique_discoveries, batch_size):
-            page_results = await _fetch_pages(
-                http_client,
-                page_chunk,
-                concurrency=concurrency,
-            )
-            raw_posts: list[RawPost] = []
-            asset_discoveries: list[AssetDiscovery] = []
-            scraped_at = datetime.datetime.now(datetime.UTC)
+        return [
+            _FeedPageDiscovery(feed_url=feed_url, page=discovery)
+            for discovery in discoveries
+        ]
 
-            for discovery, page_html in page_results:
-                if not page_html:
-                    continue
+    all_discoveries = await asyncio.gather(
+        *(_fetch_feed(feed_url) for feed_url in feed_urls),
+    )
+    unique: list[_FeedPageDiscovery] = []
 
-                raw_post, assets = _build_raw_post(
-                    discovery,
-                    page_html,
-                    request_url=feed_url,
-                    scraped_at=scraped_at,
-                )
-                raw_posts.append(raw_post)
-                asset_discoveries.extend(assets)
+    # Prevent duplicates from overlapping feeds from double-scraping.
+    for feed_discoveries in all_discoveries:
+        for feed_discovery in feed_discoveries:
+            page_url = feed_discovery.page.url
 
-            if raw_posts or asset_discoveries:
-                yield ScrapeBatch(posts=raw_posts, assets=asset_discoveries)
+            if page_url and page_url not in seen_urls:
+                seen_urls.add(page_url)
+                unique.append(feed_discovery)
+
+    return unique
 
 
 def _build_raw_post(
@@ -498,14 +579,6 @@ def dedupe_discoveries(
             unique.setdefault(discovery.url, discovery)
 
     return list(unique.values())
-
-
-def chunked(
-    items: list[PageDiscovery],
-    batch_size: int,
-) -> Iterable[list[PageDiscovery]]:
-    for start in range(0, len(items), batch_size):
-        yield items[start : start + batch_size]
 
 
 def _compose_payload(feed_xml: str, page_html: str) -> str:

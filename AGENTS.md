@@ -54,6 +54,8 @@ indirection.
 * Store original payloads of data scraped from sites as JSON in the database.
 * Never use `os.environ` for configuration in code, because all configuration
   should belong in the TOML configuration.
+* Add simple single-line comments to involving parts of code to explain what
+  the code is supposed to be doing.
 * Implement tests, especially unit tests for data processing.
 
 ## Tools
