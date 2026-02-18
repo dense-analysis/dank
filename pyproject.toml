@@ -106,7 +106,7 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 # pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--strict-markers --tb=short -m \"not embeddings\""
+addopts = "-q --strict-markers --tb=short -m \"not embeddings\""
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]

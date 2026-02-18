@@ -8,6 +8,11 @@ from typing import Any, Never, Self
 import pytest
 
 
+def pytest_report_teststatus(report: Any, config: Any) -> Any:
+    if report.passed and report.when == "call":
+        return report.outcome, "", report.outcome.upper()
+
+
 class GuardedSocket:
     __slots__ = ('_s',)
     _s: socket.socket
