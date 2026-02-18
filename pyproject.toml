@@ -38,6 +38,7 @@ process = "dank.process.__main__:main"
 web = "dank.web.__main__:main"
 clickhouse-query = "dank.tools.clickhouse_query:main"
 embed-text = "dank.tools.embed_text:main"
+download-embedding-model = "dank.tools.download_embedding_model:main"
 
 [dependency-groups]
 dev = [
@@ -105,7 +106,7 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 # pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "--strict-markers --tb=short"
+addopts = "--strict-markers --tb=short -m \"not embeddings\""
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -114,6 +115,7 @@ markers = [
   "integration: mark integration tests",
   "allow_network: allow network connections for this test",
   "unit: mark unit tests",
+  "embeddings: mark real-model embedding similarity checks",
 ]
 
 [tool.uv.sources]

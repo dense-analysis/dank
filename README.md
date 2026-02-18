@@ -117,5 +117,14 @@ Dank offers the following commands.
     * Query results are truncated unless you pass `--full`
 * `uv run embed-text "your text"` -- Print an embedding vector
     * Output is a JSON `list[float]` for easy copy/paste into other tools.
+* `uv run download-embedding-model` -- Download and cache embeddings model
+    * Pass `--model` to choose another Hugging Face model id.
 * `uv run web` -- Start a simple web server to view content.
     * Pass `--reload` for hot code reloading.
+
+## Testing
+
+* `uv run pytest` -- Run default test suite.
+* `uv run pytest -m embeddings -s` -- Run real-model embedding checks.
+    * These tests are skipped by default and require the model cache.
+    * Includes per-case similarity and margin output for each model.

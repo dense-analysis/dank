@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, cast
 
 from dank.embedding_vectors import PRECOMPUTED_TEXT_VECTORS, Vector
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_NAME = "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 # Avoid loading sentence transfomers until needed.
 if TYPE_CHECKING:
@@ -17,11 +17,14 @@ class EmbeddingModel:
         self,
         model_name: str = MODEL_NAME,
         device: str = "cpu",
+        *,
+        local_files_only: bool = False,
     ) -> None:
         # We'll defer loading the model until needed.
         self._model: SentenceTransformer | None = None
         self.model_name = model_name
         self.device = device
+        self.local_files_only = local_files_only
 
     def _get_model(self) -> SentenceTransformer:
         if self._model is None:
@@ -30,6 +33,7 @@ class EmbeddingModel:
             self._model = SentenceTransformer(
                 self.model_name,
                 device=self.device,
+                local_files_only=self.local_files_only,
             )
             self._model.eval()
 
@@ -75,6 +79,9 @@ class EmbeddingModel:
                 vectors[index] = vector
 
         return cast(list[Vector], vectors)
+
+    def ensure_model_loaded(self) -> None:
+        self._get_model()
 
 
 @lru_cache(maxsize=1)
