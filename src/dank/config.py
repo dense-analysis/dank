@@ -5,6 +5,10 @@ import tomllib
 from typing import Any, NamedTuple, cast
 
 
+class ConfigError(RuntimeError):
+    pass
+
+
 class XSettings(NamedTuple):
     email: str
     username: str
@@ -134,8 +138,11 @@ def _parse_optional_int(value: object) -> int | None:
 def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     config_path = pathlib.Path(path)
 
-    with config_path.open("rb") as file:
-        data = tomllib.load(file)
+    try:
+        with config_path.open("rb") as file:
+            data = tomllib.load(file)
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"Broken {path}: {error}") from None
 
     x_data: dict[str, Any] = _as_dict(data.get("x")) or {}
 
