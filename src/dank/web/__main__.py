@@ -76,9 +76,9 @@ def main() -> None:
         help="Posts per page",
     )
     parser.add_argument(
-        "--reload",
+        "--no-reload",
         action="store_true",
-        help="Restart the server when files change",
+        help="Disable hot code reloading",
     )
     args = parser.parse_args()
     settings = load_settings(args.config)
@@ -90,7 +90,7 @@ def main() -> None:
     if page_size > MAX_PAGE_SIZE:
         page_size = MAX_PAGE_SIZE
 
-    if args.reload:
+    if not args.no_reload:
         _start_reloader()
 
     app = create_app(settings, page_size=page_size)

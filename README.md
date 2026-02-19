@@ -120,7 +120,7 @@ Dank offers the following commands.
 * `uv run download-embedding-model` -- Download and cache embeddings model
     * Pass `--model` to choose another Hugging Face model id.
 * `uv run web` -- Start a simple web server to view content.
-    * Pass `--reload` for hot code reloading.
+    * Pass `--no-reload` to disable hot code reloading.
     * Supports search filters for domain/account and a days-back slider.
 
 ## Testing
