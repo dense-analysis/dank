@@ -1,5 +1,25 @@
 CREATE DATABASE IF NOT EXISTS dank;
 
+-----------------------
+--- SCRAPING MODELS ---
+-----------------------
+
+-- Recently scraped feeds from sites
+-- Used for avoiding loading feeds too much.
+CREATE TABLE IF NOT EXISTS dank.site_feeds (
+    domain LowCardinality(String),
+    feed_url String,
+    feed_type LowCardinality(String),
+    scraped_at DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(scraped_at)
+ORDER BY (domain, feed_url);
+
+-- RawPost data with JSON/XML/HTML and other payloads
+-- We only store minimal columns to find posts to process, and dump as much
+-- data in `payload` as we can to post-process later.
+--
+-- Post-processing lets us quickly correct bugs without re-scraping.
 CREATE TABLE IF NOT EXISTS dank.raw_posts (
     domain LowCardinality(String),
     post_id String,
@@ -14,6 +34,9 @@ ENGINE = MergeTree
 PARTITION BY (domain, toYYYYMM(scraped_at))
 ORDER BY (domain, scraped_at, post_id);
 
+-- RawAsset data with JSON/XML/HTML and other payloads
+--
+-- When scraping assets are saved to a local filesystem path on disk.
 CREATE TABLE IF NOT EXISTS dank.raw_assets (
     domain LowCardinality(String),
     post_id String,
@@ -27,20 +50,12 @@ ENGINE = MergeTree
 PARTITION BY (domain, toYYYYMM(scraped_at))
 ORDER BY (domain, scraped_at, post_id, url);
 
-CREATE TABLE IF NOT EXISTS dank.assets (
-    domain LowCardinality(String),
-    post_id String,
-    url String,
-    local_path String,
-    content_type LowCardinality(String),
-    size_bytes UInt64,
-    created_at DateTime64(3, 'UTC'),
-    updated_at DateTime64(3, 'UTC'),
-    source LowCardinality(String)
-)
-ENGINE = ReplacingMergeTree(updated_at)
-ORDER BY (domain, post_id, url);
 
+-------------------------
+--- PROCESSING MODELS ---
+-------------------------
+
+-- Processed posts with lots of information.
 CREATE TABLE IF NOT EXISTS dank.posts (
     domain LowCardinality(String),
     post_id String,
@@ -57,18 +72,20 @@ CREATE TABLE IF NOT EXISTS dank.posts (
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY (domain, post_id);
 
-ALTER TABLE dank.posts
-    ADD COLUMN IF NOT EXISTS title_embedding Array(Float32),
-    ADD COLUMN IF NOT EXISTS html_embedding Array(Float32);
-
-CREATE TABLE IF NOT EXISTS dank.site_feeds (
+-- Processed assets with lots of information.
+CREATE TABLE IF NOT EXISTS dank.assets (
     domain LowCardinality(String),
-    feed_url String,
-    feed_type LowCardinality(String),
-    scraped_at DateTime64(3, 'UTC')
+    post_id String,
+    url String,
+    local_path String,
+    content_type LowCardinality(String),
+    size_bytes UInt64,
+    created_at DateTime64(3, 'UTC'),
+    updated_at DateTime64(3, 'UTC'),
+    source LowCardinality(String)
 )
-ENGINE = ReplacingMergeTree(scraped_at)
-ORDER BY (domain, feed_url);
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (domain, post_id, url);
 
 
 -----------------------
