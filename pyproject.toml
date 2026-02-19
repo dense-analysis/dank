@@ -29,6 +29,7 @@ dependencies = [
     "clickhouse-connect==0.8.15",
     "sentence-transformers==5.2.2",
     "torch==2.10.0+cpu",
+    "jinja2==3.1.6",
 ]
 
 [project.scripts]

@@ -121,6 +121,7 @@ Dank offers the following commands.
     * Pass `--model` to choose another Hugging Face model id.
 * `uv run web` -- Start a simple web server to view content.
     * Pass `--reload` for hot code reloading.
+    * Supports search filters for domain/account and a days-back slider.
 
 ## Testing
 

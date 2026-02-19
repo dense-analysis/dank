@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block content %}
+<form class="search-form" action="/" method="get">
+    <div class="search-field">
+        <input
+            class="search-input"
+            type="search"
+            name="q"
+            value="{{ search_text }}"
+            placeholder="Search posts"
+        />
+        <input
+            class="filter-input"
+            type="search"
+            name="domain"
+            value="{{ domain_filter }}"
+            placeholder="Domain (example.com)"
+        />
+        <input
+            class="filter-input"
+            type="search"
+            name="account"
+            value="{{ account_filter }}"
+            placeholder="Account / author"
+        />
+        <div class="days-filter">
+            <output id="days_back_value" class="days-value" for="days_back">{{ days_back_label }}</output>
+            <label for="days_back">Days back</label>
+            <input
+                id="days_back"
+                class="days-slider"
+                type="range"
+                min="0"
+                max="365"
+                step="1"
+                name="days_back"
+                value="{{ days_back }}"
+            />
+        </div>
+        <input type="hidden" name="limit" value="{{ limit }}" />
+        <button class="search-button" type="submit">Search</button>
+        {% if search_text or domain_filter or account_filter or days_back > 0 %}
+        <a class="search-clear" href="/">Clear</a>
+        {% endif %}
+    </div>
+</form>
+
+<section class="post-list">
+    {% if posts %}
+    {% for post in posts %}
+    <article class="post-card">
+        <header class="post-header">
+            <h2 class="post-title"><a href="{{ post.detail_link }}">{{ post.title }}</a></h2>
+            <div class="post-meta">
+                <span class="meta-item">{{ post.domain }}</span>
+                <span class="meta-item">{{ post.created_at }}</span>
+                <span class="meta-item">{{ post.author }}</span>
+                <a
+                    class="meta-link"
+                    href="{{ post.source_link }}"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    Source<span class="icon">↗</span>
+                </a>
+            </div>
+        </header>
+        <p class="post-summary">{{ post.summary }}</p>
+        {% if post.assets %}
+        <section class="assets">
+            <h3>Assets</h3>
+            <ul class="asset-list">
+                {% for asset in post.assets %}
+                <li class="asset-item">
+                    {% if asset.kind == "image" %}
+                    <a class="asset-link" href="{{ asset.url }}">
+                        <img src="{{ asset.url }}" alt="" />
+                    </a>
+                    {% elif asset.kind == "audio" %}
+                    <audio controls>
+                        <source
+                            src="{{ asset.url }}"
+                            {% if asset.content_type %}
+                            type="{{ asset.content_type }}"
+                            {% endif %}
+                        />
+                    </audio>
+                    {% elif asset.kind == "video" %}
+                    <video controls>
+                        <source
+                            src="{{ asset.url }}"
+                            {% if asset.content_type %}
+                            type="{{ asset.content_type }}"
+                            {% endif %}
+                        />
+                    </video>
+                    {% else %}
+                    <a class="asset-link" href="{{ asset.url }}">Local asset</a>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+    </article>
+    {% endfor %}
+    {% else %}
+    <p>No posts found for current filters.</p>
+    {% endif %}
+</section>
+
+<div class="pager">
+    {% if previous_link %}
+    <a class="pager-prev" href="{{ previous_link }}">Previous</a>
+    {% endif %}
+    {% if next_link %}
+    <a class="pager-next" href="{{ next_link }}">Next</a>
+    {% endif %}
+</div>
+
+<script>
+const daysBackInput = document.getElementById("days_back");
+const daysBackValue = document.getElementById("days_back_value");
+
+if (daysBackInput && daysBackValue) {
+    const syncDaysBackValue = () => {
+        const value = Number.parseInt(daysBackInput.value, 10);
+
+        if (!Number.isFinite(value) || value <= 0) {
+            daysBackValue.textContent = "∞";
+            return;
+        }
+
+        daysBackValue.textContent = String(value);
+    };
+
+    daysBackInput.addEventListener("input", syncDaysBackValue);
+    syncDaysBackValue();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<article class="post-detail">
+    <header class="post-header">
+        <h1 class="post-title">{{ post.title }}</h1>
+        <div class="post-meta">
+            <span class="meta-item">{{ post.created_at }}</span>
+            <span class="meta-item">{{ post.author }}</span>
+            <a
+                class="meta-link"
+                href="{{ post.source_link }}"
+                target="_blank"
+                rel="noreferrer"
+            >
+                Source <span class="icon">↗</span>
+            </a>
+        </div>
+    </header>
+
+    <div class="post-body">{{ post.body_html | safe }}</div>
+
+    {% if assets %}
+    <section class="assets">
+        <h3>Assets</h3>
+        <ul class="asset-list">
+            {% for asset in assets %}
+            <li class="asset-item">
+                {% if asset.kind == "image" %}
+                <a class="asset-link" href="{{ asset.url }}">
+                    <img src="{{ asset.url }}" alt="" />
+                </a>
+                {% elif asset.kind == "audio" %}
+                <audio controls>
+                    <source
+                        src="{{ asset.url }}"
+                        {% if asset.content_type %}
+                        type="{{ asset.content_type }}"
+                        {% endif %}
+                    />
+                </audio>
+                {% elif asset.kind == "video" %}
+                <video controls>
+                    <source
+                        src="{{ asset.url }}"
+                        {% if asset.content_type %}
+                        type="{{ asset.content_type }}"
+                        {% endif %}
+                    />
+                </video>
+                {% else %}
+                <a class="asset-link" href="{{ asset.url }}">Local asset</a>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <div class="pager">
+        <a class="pager-next" href="/">Back</a>
+    </div>
+</article>
+{% endblock %}

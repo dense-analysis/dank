@@ -69,3 +69,19 @@ CREATE TABLE IF NOT EXISTS dank.site_feeds (
 )
 ENGINE = ReplacingMergeTree(scraped_at)
 ORDER BY (domain, feed_url);
+
+
+-----------------------
+--- WEB VIEW MODELS ---
+-----------------------
+
+-- Caching for embeddings used for search in the web app view
+CREATE TABLE IF NOT EXISTS dank.web_embedding_cache (
+    model_name LowCardinality(String),
+    search_text String,
+    embedding Array(Float32),
+    created_at DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(created_at)
+ORDER BY (model_name, search_text)
+TTL toDateTime(created_at) + INTERVAL 6 HOUR DELETE;
