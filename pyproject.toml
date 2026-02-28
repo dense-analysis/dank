@@ -40,6 +40,7 @@ web = "dank.web.__main__:main"
 clickhouse-query = "dank.tools.clickhouse_query:main"
 embed-text = "dank.tools.embed_text:main"
 download-embedding-model = "dank.tools.download_embedding_model:main"
+web-screenshot = "dank.tools.web_screenshot:main"
 
 [dependency-groups]
 dev = [

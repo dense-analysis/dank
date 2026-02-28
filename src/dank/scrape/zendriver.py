@@ -31,6 +31,7 @@ class BrowserConfig(NamedTuple):
     connection_max_tries: int | None = None
     keep_open: bool = False
     profile_dir: pathlib.Path | None = None
+    browser_args: tuple[str, ...] = ()
 
 
 class BrowserSession:
@@ -70,7 +71,7 @@ class BrowserSession:
                     self._config.profile_dir.mkdir(parents=True, exist_ok=True)
                     options["user_data_dir"] = str(self._config.profile_dir)
 
-                browser_args: list[str] = []
+                browser_args = list(self._config.browser_args)
 
                 if browser_args:
                     options["browser_args"] = browser_args

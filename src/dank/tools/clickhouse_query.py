@@ -112,6 +112,10 @@ def _print_rows(
                         # Truncate arrays like embeddings.
                         value = cast(list[Any], value)[:4]
                         out = repr(value)[:-1] + ", ...]"
+                    case tuple() if len(value) > 4:  # type: ignore
+                        # Truncate arrays like embeddings.
+                        value = cast(tuple[Any, ...], value)[:4]
+                        out = repr(value)[:-1] + ", ...)"
                     case _:
                         out = repr(value)
 

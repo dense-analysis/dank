@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import pathlib
+import re
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Literal, NamedTuple
 from urllib.parse import quote, urlencode
@@ -41,6 +42,18 @@ We apply: freshness_weight * exp(-days_ago / half_life_days)
 
 "freshness" pulls content nearer if content matches weaker, but it is newer.
 """
+SEARCH_EMBEDDING_WEIGHT = 0.65
+"""The contribution weight for semantic vector similarity."""
+SEARCH_FULL_TEXT_WEIGHT = 0.35
+"""The contribution weight for tokenized full-text matching."""
+SEARCH_FULL_TEXT_TITLE_WEIGHT = 0.55
+"""The contribution of title token matches to full-text score."""
+SEARCH_FULL_TEXT_HTML_WEIGHT = 0.45
+"""The contribution of HTML/body token matches to full-text score."""
+SEARCH_TERM_PATTERN = re.compile(r"[0-9A-Za-z_]+")
+"""Pattern used to split query text into search terms."""
+SEARCH_MIN_TERM_LENGTH = 2
+"""Minimum token length to include in full-text scoring."""
 
 # Assert configuration of search parameters fit in bounds.
 assert 0 <= SEARCH_TITLE_WEIGHT <= 1
@@ -48,6 +61,20 @@ assert 0 <= SEARCH_HTML_WEIGHT <= 1
 assert 0 <= SEARCH_MAXIMUM_DISTANCE <= 2
 assert 0 <= SEARCH_FRESHNESS_WEIGHT <= 2
 assert SEARCH_FRESHNESS_HALF_LIFE_DAYS > 0
+assert 0 <= SEARCH_EMBEDDING_WEIGHT <= 1
+assert 0 <= SEARCH_FULL_TEXT_WEIGHT <= 1
+assert 0 <= SEARCH_FULL_TEXT_TITLE_WEIGHT <= 1
+assert 0 <= SEARCH_FULL_TEXT_HTML_WEIGHT <= 1
+assert SEARCH_MIN_TERM_LENGTH > 0
+assert abs((SEARCH_TITLE_WEIGHT + SEARCH_HTML_WEIGHT) - 1) < 1e-9
+assert abs((SEARCH_EMBEDDING_WEIGHT + SEARCH_FULL_TEXT_WEIGHT) - 1) < 1e-9
+assert (
+    abs(
+        (SEARCH_FULL_TEXT_TITLE_WEIGHT + SEARCH_FULL_TEXT_HTML_WEIGHT)
+        - 1,
+    )
+    < 1e-9
+)
 
 DEFAULT_DAYS_BACK = 0
 MAX_DAYS_BACK = 365
@@ -195,6 +222,7 @@ async def handle_index(request: web.Request) -> web.Response:
     )
     has_previous_page = False
     has_next_page = False
+
 
     if search_text:
         posts = await _search_posts(
@@ -421,12 +449,20 @@ async def _search_posts(
         clickhouse_client,
         search_text=search_text,
     )
+    search_terms = _search_terms(search_text)
+    search_term_count = len(search_terms)
 
     if embedding is None:
         return []
 
     params: dict[str, Any] = {
         "embedding": list(embedding),
+        "search_terms": list(search_terms),
+        "search_term_count": search_term_count,
+        "search_embedding_weight": SEARCH_EMBEDDING_WEIGHT,
+        "search_full_text_weight": SEARCH_FULL_TEXT_WEIGHT,
+        "search_full_text_title_weight": SEARCH_FULL_TEXT_TITLE_WEIGHT,
+        "search_full_text_html_weight": SEARCH_FULL_TEXT_HTML_WEIGHT,
         "title_weight": SEARCH_TITLE_WEIGHT,
         "html_weight": SEARCH_HTML_WEIGHT,
         "maximum_distance": SEARCH_MAXIMUM_DISTANCE,
@@ -451,12 +487,11 @@ async def _search_posts(
     query = rf"""
         SELECT
             *,
-            -- The final score for sorting is influenced by 'freshness'
-            -- freshness is impact by the number of days that have passed
-            -- This way newer posts appear higher up despite being further
-            -- in distance by the embeddings match
             (
-                distance - (
+                (
+                    embedding_similarity * %(search_embedding_weight)s
+                    + full_text_score * %(search_full_text_weight)s
+                ) + (
                     %(freshness_weight)s
                     * exp(-age_days / %(freshness_half_life_days)s)
                 )
@@ -469,7 +504,45 @@ async def _search_posts(
                         * %(title_weight)s
                     + cosineDistance(html_embedding, %(embedding)s)
                         * %(html_weight)s
-                ) AS distance,
+                ) AS embedding_distance,
+                (
+                    greatest(
+                        1 - least(embedding_distance, 2.0) / 2.0,
+                        0.0
+                    )
+                ) AS embedding_similarity,
+                (
+                    if(
+                        %(search_term_count)s = 0,
+                        0.0,
+                        toFloat64(
+                            arrayCount(
+                                term -> (
+                                    positionCaseInsensitive(title, term) > 0
+                                ),
+                                %(search_terms)s
+                            )
+                        ) / %(search_term_count)s
+                    )
+                ) AS title_text_score,
+                (
+                    if(
+                        %(search_term_count)s = 0,
+                        0.0,
+                        toFloat64(
+                            arrayCount(
+                                term -> (
+                                    positionCaseInsensitive(html, term) > 0
+                                ),
+                                %(search_terms)s
+                            )
+                        ) / %(search_term_count)s
+                    )
+                ) AS html_text_score,
+                (
+                    title_text_score * %(search_full_text_title_weight)s
+                    + html_text_score * %(search_full_text_html_weight)s
+                ) AS full_text_score,
                 (
                     greatest(
                         dateDiff('second', created_at, now64(3)),
@@ -479,8 +552,11 @@ async def _search_posts(
             FROM posts FINAL
             {where_clause}
         )
-        WHERE distance <= %(maximum_distance)s
-        ORDER BY score ASC
+        WHERE (
+            embedding_distance <= %(maximum_distance)s
+            OR full_text_score > 0
+        )
+        ORDER BY score DESC
         LIMIT %(limit)s
     """
     result = await clickhouse_client.fetch_json(query, params)
@@ -816,11 +892,17 @@ def _asset_view(
 
 
 def _sanitize_html(raw_html: str) -> str:
-    return bleach.clean(
+    cleaned = bleach.clean(
         raw_html,
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
         strip=True,
+    )
+
+    return bleach.linkify(
+        cleaned,
+        parse_email=False,
+        skip_tags={"code", "pre"},
     )
 
 
@@ -1040,6 +1122,23 @@ def _has_extension(value: str, extensions: tuple[str, ...]) -> bool:
     trimmed = value.split("?", 1)[0].lower()
 
     return trimmed.endswith(extensions)
+
+
+def _search_terms(value: str) -> tuple[str, ...]:
+    seen: set[str] = set()
+    terms: list[str] = []
+
+    for raw_term in SEARCH_TERM_PATTERN.findall(value.lower()):
+        if len(raw_term) < SEARCH_MIN_TERM_LENGTH:
+            continue
+
+        if raw_term in seen:
+            continue
+
+        seen.add(raw_term)
+        terms.append(raw_term)
+
+    return tuple(terms)
 
 
 def _parse_search_text(value: str | None) -> str:

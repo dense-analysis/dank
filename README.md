@@ -122,6 +122,9 @@ Dank offers the following commands.
 * `uv run web` -- Start a simple web server to view content.
     * Pass `--no-reload` to disable hot code reloading.
     * Supports search filters for domain/account and a days-back slider.
+* `uv run web-screenshot` -- Start a temporary web view and capture a PNG.
+    * Uses a locked headless browser that only loads loopback URLs.
+    * Pass `--port` and `--route` to capture a specific view URL.
 
 ## Testing
 

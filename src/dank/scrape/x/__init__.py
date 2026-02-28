@@ -6,8 +6,8 @@ import logging
 import random
 import time
 from collections.abc import AsyncIterator, Iterable
-from typing import Any, cast
-from urllib.parse import quote
+from typing import Any, NamedTuple, cast
+from urllib.parse import quote, urlsplit
 
 import zendriver
 from zendriver import Element, cdp
@@ -42,6 +42,17 @@ INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
 READY_STATE_TIMEOUT_SECONDS = 2
 LOGIN_PROMPT_TIMEOUT_SECONDS = 0.25
+REUSE_READY_STATE_TIMEOUT_SECONDS = 0.12
+ACCOUNT_JUMP_OPEN_WAIT_SECONDS = 0.04
+ACCOUNT_JUMP_TYPEAHEAD_WAIT_SECONDS = 0.18
+ACCOUNT_JUMP_CONFIRM_WAIT_SECONDS = 0.04
+ACCOUNT_JUMP_HISTORY_TIMEOUT_SECONDS = 1.25
+ACCOUNT_CONTENT_TIMEOUT_SECONDS = 1.5
+
+
+class HistorySnapshot(NamedTuple):
+    path: str
+    event_count: int
 
 
 async def scrape_x_accounts(
@@ -94,14 +105,11 @@ async def _scrape_account(
     await capture.start()
 
     try:
-        url = f"https://x.com/{quote(handle)}"
-        page = await page.get(url)
-        await _ensure_navigation(page, url)
+        page = await _open_account_page(page, handle)
 
         if await _is_login_page(page):
             await _login(page, settings, email_settings)
-            page = await page.get(url)
-            await _ensure_navigation(page, url)
+            page = await _open_account_page(page, handle)
 
         seen_posts: set[str] = set()
         seen_assets: set[str] = set()
@@ -184,13 +192,234 @@ async def _scrape_account(
         logger.info("Finished X scrape for account=%s", handle)
 
 
+async def _open_account_page(
+    page: zendriver.Tab,
+    handle: str,
+) -> zendriver.Tab:
+    url = f"https://x.com/{quote(handle)}"
+
+    if await _navigate_using_x_account_jump(page, handle):
+        logger.info("Used in-page account jump for account=%s", handle)
+        return page
+
+    page = await page.get(url)
+    await _ensure_navigation(page, url)
+
+    return page
+
+
+async def _navigate_using_x_account_jump(
+    page: zendriver.Tab,
+    handle: str,
+) -> bool:
+    location = await _get_location(page)
+
+    if not _is_x_location(location) or _is_login_location(location):
+        return False
+
+    await page.sleep(REUSE_READY_STATE_TIMEOUT_SECONDS)
+    expected_path = _normalize_x_path(f"/{handle}")
+    baseline_count = await _install_history_tracker(page)
+
+    if baseline_count is None:
+        return False
+
+    keyboard_target = await _select_keyboard_target(page)
+
+    if keyboard_target is None:
+        return False
+
+    await keyboard_target.send_keys("/")
+    await page.sleep(ACCOUNT_JUMP_OPEN_WAIT_SECONDS)
+    await keyboard_target.send_keys(f"@{handle}")
+    await page.sleep(ACCOUNT_JUMP_TYPEAHEAD_WAIT_SECONDS)
+    await keyboard_target.send_keys(zendriver.SpecialKeys.ARROW_UP)
+    await page.sleep(ACCOUNT_JUMP_CONFIRM_WAIT_SECONDS)
+    await keyboard_target.send_keys(zendriver.SpecialKeys.ENTER)
+
+    if not await _wait_for_history_path(
+        page,
+        expected_path=expected_path,
+        baseline_count=baseline_count,
+    ):
+        return False
+
+    await _wait_for_account_content(page, expected_path=expected_path)
+
+    return True
+
+
+def _is_x_location(location: str | None) -> bool:
+    if not location:
+        return False
+
+    parsed = urlsplit(location)
+
+    return (parsed.hostname or "").lower() in {"x.com", "www.x.com"}
+
+
+def _is_login_location(location: str | None) -> bool:
+    if not location:
+        return False
+
+    path = urlsplit(location).path.lower()
+
+    return "/i/flow/login" in path or "/login" in path
+
+
+def _normalize_x_path(path: str) -> str:
+    normalized = path.strip().lower()
+
+    if not normalized:
+        return "/"
+
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized
+
+    if normalized != "/":
+        normalized = normalized.rstrip("/")
+
+    return normalized
+
+
+async def _install_history_tracker(page: zendriver.Tab) -> int | None:
+    script = (
+        "(() => {"
+        "if (!Array.isArray(window.__dankHistoryEvents)) {"
+        "const events = [];"
+        "const trim = () => {"
+        "if (events.length > 64) { events.shift(); }"
+        "};"
+        "const record = (kind) => {"
+        "events.push({kind, path: window.location.pathname});"
+        "trim();"
+        "};"
+        "const pushState = history.pushState.bind(history);"
+        "history.pushState = (...args) => {"
+        "const out = pushState(...args);"
+        "record('pushState');"
+        "return out;"
+        "};"
+        "const replaceState = history.replaceState.bind(history);"
+        "history.replaceState = (...args) => {"
+        "const out = replaceState(...args);"
+        "record('replaceState');"
+        "return out;"
+        "};"
+        "window.addEventListener('popstate', () => {"
+        "record('popstate');"
+        "});"
+        "window.__dankHistoryEvents = events;"
+        "record('install');"
+        "}"
+        "return window.__dankHistoryEvents.length;"
+        "})()"
+    )
+
+    try:
+        result = await page.evaluate(script)
+    except Exception:
+        return None
+
+    if not isinstance(result, int):
+        return None
+
+    return result
+
+
+async def _history_snapshot(page: zendriver.Tab) -> HistorySnapshot | None:
+    try:
+        value = await page.evaluate(
+            "(() => ({"
+            "path: window.location.pathname,"
+            "event_count: Array.isArray(window.__dankHistoryEvents)"
+            " ? window.__dankHistoryEvents.length"
+            " : 0"
+            "}))()",
+        )
+    except Exception:
+        return None
+
+    if not isinstance(value, dict):
+        return None
+
+    value = cast(dict[str, object], value)
+
+    path = value.get("path")
+    event_count = value.get("event_count")
+
+    if not isinstance(path, str):
+        return None
+
+    if not isinstance(event_count, int):
+        return None
+
+    return HistorySnapshot(
+        path=_normalize_x_path(path),
+        event_count=event_count,
+    )
+
+
+async def _wait_for_history_path(
+    page: zendriver.Tab,
+    *,
+    expected_path: str,
+    baseline_count: int,
+) -> bool:
+    deadline = time.monotonic() + ACCOUNT_JUMP_HISTORY_TIMEOUT_SECONDS
+
+    while time.monotonic() < deadline:
+        snapshot = await _history_snapshot(page)
+
+        if (
+            snapshot is not None
+            and snapshot.event_count > baseline_count
+            and snapshot.path == expected_path
+        ):
+            return True
+
+        await page.sleep(0.04)
+
+    return False
+
+
+async def _select_keyboard_target(page: zendriver.Tab) -> Element | None:
+    for selector in ("body", "main", "html"):
+        try:
+            element = await page.select(selector, timeout=0.1)
+        except TimeoutError:
+            continue
+        else:
+            return element
+
+    return None
+
+
+async def _wait_for_account_content(
+    page: zendriver.Tab,
+    *,
+    expected_path: str,
+) -> None:
+    await page.sleep(0.5)
+
+    try:
+        await page.select(
+            '[data-testid="primaryColumn"]',
+            timeout=ACCOUNT_CONTENT_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        logger.debug(
+            "X account content did not fully load expected_path=%s",
+            expected_path,
+        )
+
 async def _is_login_page(page: zendriver.Tab) -> bool:
     location = await _get_location(page)
 
     if not location:
         return await _has_login_prompt(page)
 
-    if "/i/flow/login" in location or "/login" in location:
+    if _is_login_location(location):
         return True
 
     return False

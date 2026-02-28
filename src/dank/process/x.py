@@ -5,6 +5,7 @@ import html
 import json
 import re
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
 from dank.model import Post, RawPost
@@ -21,13 +22,13 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
 
     payload = cast(dict[str, Any], payload)
 
-    text = _strip_trailing_tco(_extract_text(payload))
+    text = _clean_post_text(payload, post_url=row.url)
     author = _extract_author(payload).strip()
 
     if not _has_substantive_content(text, author):
         return None
 
-    title = html.unescape(text.splitlines()[0] if text else "")
+    title = _title_from_text(text)
     created_at = (
         row.post_created_at
         or _extract_created_at(payload)
@@ -52,6 +53,14 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
 
 def _has_substantive_content(text: str, author: str) -> bool:
     return bool(text.strip()) or bool(author.strip())
+
+
+def _title_from_text(text: str) -> str:
+    first_line = text.splitlines()[0] if text else ""
+    unescaped = html.unescape(first_line)
+    without_urls = re.sub(r"https?://\S+", "", unescaped)
+
+    return " ".join(without_urls.split())
 
 
 def _as_dict(value: object) -> dict[str, object] | None:
@@ -92,13 +101,171 @@ def _extract_text(payload: dict[str, object]) -> str:
     return ""
 
 
-def _strip_trailing_tco(text: str) -> str:
+def _clean_post_text(payload: dict[str, object], *, post_url: str) -> str:
+    text = _extract_text(payload)
+
     if not text:
         return ""
 
-    cleaned = re.sub(r"(?:\s+https://t\.co/[A-Za-z0-9]+)+\s*$", "", text)
+    url_map = _extract_url_map(payload)
+    text = _replace_tco_urls(text, url_map)
+    removable_urls = _removable_trailing_urls(
+        payload,
+        url_map=url_map,
+        post_url=post_url,
+    )
 
-    return cleaned.rstrip()
+    return _strip_trailing_urls(text, removable_urls)
+
+
+def _strip_trailing_urls(text: str, removable: set[str]) -> str:
+    if not text:
+        return ""
+
+    cleaned = text.rstrip()
+
+    while True:
+        match = re.search(r"\s+(https://[^\s]+)\s*$", cleaned)
+        if match is None:
+            break
+
+        url = match.group(1)
+
+        if url not in removable:
+            break
+
+        cleaned = cleaned[: match.start()].rstrip()
+
+    return cleaned
+
+
+def _replace_tco_urls(text: str, url_map: dict[str, str]) -> str:
+    if not text:
+        return ""
+
+    return re.sub(
+        r"https://t\.co/[A-Za-z0-9]+",
+        lambda match: url_map.get(match.group(0), match.group(0)),
+        text,
+    )
+
+
+def _removable_trailing_urls(
+    payload: dict[str, object],
+    *,
+    url_map: dict[str, str],
+    post_url: str,
+) -> set[str]:
+    removable = set(_extract_media_short_urls(payload))
+
+    for short_url, expanded_url in url_map.items():
+        if _is_same_post_url(expanded_url, post_url):
+            removable.add(short_url)
+            removable.add(expanded_url)
+
+    return removable
+
+
+def _extract_url_map(payload: dict[str, object]) -> dict[str, str]:
+    url_map: dict[str, str] = {}
+
+    for entry in _iter_entity_urls(payload):
+        short_url = _get_str(entry.get("url"))
+        expanded_url = _get_str(entry.get("expanded_url"))
+
+        if short_url and expanded_url:
+            url_map[short_url] = expanded_url
+
+    return url_map
+
+
+def _extract_media_short_urls(payload: dict[str, object]) -> set[str]:
+    short_urls: set[str] = set()
+
+    for media in _iter_entity_media(payload):
+        short_url = _get_str(media.get("url"))
+
+        if short_url:
+            short_urls.add(short_url)
+
+    return short_urls
+
+
+def _iter_entity_urls(payload: dict[str, object]) -> list[dict[str, object]]:
+    legacy = _as_dict(payload.get("legacy"))
+    if legacy is None:
+        return []
+
+    entities = _as_dict(legacy.get("entities"))
+    if entities is None:
+        return []
+
+    url_entries = _as_list(entities.get("urls"))
+    if url_entries is None:
+        return []
+
+    return [entry for value in url_entries if (entry := _as_dict(value))]
+
+
+def _iter_entity_media(payload: dict[str, object]) -> list[dict[str, object]]:
+    legacy = _as_dict(payload.get("legacy"))
+    if legacy is None:
+        return []
+
+    media_entries: list[dict[str, object]] = []
+    entities = _as_dict(legacy.get("entities"))
+
+    if entities is not None:
+        media_entries.extend(_media_entries_from_container(entities))
+
+    extended_entities = _as_dict(legacy.get("extended_entities"))
+
+    if extended_entities is not None:
+        media_entries.extend(_media_entries_from_container(extended_entities))
+
+    return media_entries
+
+
+def _media_entries_from_container(
+    container: dict[str, object],
+) -> list[dict[str, object]]:
+    media = _as_list(container.get("media"))
+
+    if media is None:
+        return []
+
+    return [entry for value in media if (entry := _as_dict(value))]
+
+
+def _as_list(value: object) -> list[object] | None:
+    if isinstance(value, list):
+        return cast(list[object], value)
+
+    return None
+
+
+def _is_same_post_url(candidate_url: str, post_url: str) -> bool:
+    candidate = urlsplit(candidate_url)
+    post = urlsplit(post_url)
+
+    candidate_host = candidate.hostname or ""
+    post_host = post.hostname or ""
+
+    candidate_domain = candidate_host.lower().removeprefix("www.")
+    post_domain = post_host.lower().removeprefix("www.")
+
+    if candidate_domain != post_domain:
+        return False
+
+    candidate_path = candidate.path.rstrip("/")
+    post_path = post.path.rstrip("/")
+
+    if not candidate_path or not post_path:
+        return False
+
+    return candidate_path == post_path or candidate_path.startswith(
+        f"{post_path}/",
+    )
 
 
 def _extract_created_at(

@@ -5,7 +5,10 @@ from typing import Any, cast
 from dank.scrape.x import (
     LOGIN_PROMPT_TIMEOUT_SECONDS,
     _has_login_prompt,  # pyright: ignore[reportPrivateUsage]
+    _is_login_location,  # pyright: ignore[reportPrivateUsage]
     _is_login_page,  # pyright: ignore[reportPrivateUsage]
+    _is_x_location,  # pyright: ignore[reportPrivateUsage]
+    _normalize_x_path,  # pyright: ignore[reportPrivateUsage]
     extract_posts_and_assets,
 )
 from dank.scrape.zendriver import NetworkResponse
@@ -53,6 +56,24 @@ def test_extract_posts_and_assets_from_network_payload() -> None:
 
     assert not posts_repeat
     assert not assets_repeat
+
+
+def test_is_x_location_accepts_only_x_domains() -> None:
+    assert _is_x_location("https://x.com/dense") is True
+    assert _is_x_location("https://www.x.com/dense") is True
+    assert _is_x_location("https://example.com/dense") is False
+
+
+def test_is_login_location_checks_x_login_paths() -> None:
+    assert _is_login_location("https://x.com/i/flow/login") is True
+    assert _is_login_location("https://x.com/login") is True
+    assert _is_login_location("https://x.com/dense") is False
+
+
+def test_normalize_x_path_normalizes_case_and_trailing_slashes() -> None:
+    assert _normalize_x_path("Dense/") == "/dense"
+    assert _normalize_x_path("/DENSE/") == "/dense"
+    assert _normalize_x_path("/") == "/"
 
 
 class _FakeLoginPromptPage:

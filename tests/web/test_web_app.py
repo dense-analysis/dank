@@ -40,6 +40,24 @@ def test_days_back_zero_shows_infinity_and_no_time_filter() -> None:
     assert web_app._minimum_created_at(0) is None  # pyright: ignore[reportPrivateUsage]
 
 
+def test_sanitize_html_linkifies_plain_urls() -> None:
+    html = "<p>Source https://x.com/FRIEREN_PR/status/1839990406161018954</p>"
+
+    sanitized = web_app._sanitize_html(html)  # pyright: ignore[reportPrivateUsage]
+
+    assert '<a href="https://x.com/FRIEREN_PR/status/1839990406161018954"' in (
+        sanitized
+    )
+
+
+def test_search_terms_dedupes_and_drops_short_tokens() -> None:
+    terms = web_app._search_terms(  # pyright: ignore[reportPrivateUsage]
+        "A AI ai systems SYSTEMS @x",
+    )
+
+    assert terms == ("ai", "systems")
+
+
 def test_render_index_uses_jinja_template_and_root_header_link() -> None:
     templates = web_app._template_environment()  # pyright: ignore[reportPrivateUsage]
     body = web_app._render_index(  # pyright: ignore[reportPrivateUsage]
@@ -94,7 +112,9 @@ async def test_search_posts_filters_before_age_weighting(
         min_created_at=now - datetime.timedelta(days=3),
     )
 
-    assert "WHERE distance <= %(maximum_distance)s" in clickhouse.query
+    assert "embedding_distance <= %(maximum_distance)s" in clickhouse.query
+    assert "OR full_text_score > 0" in clickhouse.query
+    assert "positionCaseInsensitive(title, term) > 0" in clickhouse.query
     assert "positionCaseInsensitive(author, %(account_filter)s) > 0" in (
         clickhouse.query
     )
@@ -102,6 +122,7 @@ async def test_search_posts_filters_before_age_weighting(
     assert clickhouse.params["maximum_distance"] == (
         web_app.SEARCH_MAXIMUM_DISTANCE
     )
+    assert clickhouse.params["search_terms"] == ["status", "update"]
 
 
 @pytest.mark.asyncio

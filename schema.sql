@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS dank.posts (
     html_embedding Array(Float32),
     created_at DateTime64(3, 'UTC'),
     updated_at DateTime64(3, 'UTC'),
-    source LowCardinality(String)
+    source LowCardinality(String),
+    INDEX idx_posts_title_tokens title TYPE tokenbf_v1(32768, 4, 0) GRANULARITY 64,
+    INDEX idx_posts_html_tokens html TYPE tokenbf_v1(65536, 4, 0) GRANULARITY 64
 )
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY (domain, post_id);
