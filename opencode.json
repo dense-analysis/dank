@@ -1,8 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "keybinds": {
-    "app_exit": "<leader>q"
-  },
   "permission": {
     "bash": {
       "git *": "deny",
