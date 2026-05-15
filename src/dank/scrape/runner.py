@@ -6,6 +6,7 @@ import logging
 import pathlib
 import re
 from collections.abc import AsyncIterator
+from typing import cast
 
 import aiohttp
 
@@ -15,6 +16,7 @@ from dank.model import AssetDiscovery, RawPost
 from dank.scrape.assets import download_assets
 from dank.scrape.rss import (
     FeedLink,
+    FeedType,
     fetch_feed_links,
     scrape_feed_batches,
 )
@@ -314,7 +316,7 @@ async def _load_site_feed_urls(
 def _parse_feed_row(row: dict[str, object]) -> FeedLink:
     match row.get("feed_type"):
         case "atom" | "rss1" | "rss2" as feed_type:
-            pass
+            feed_type = cast(FeedType, feed_type)
         case _:
             feed_type = "rss2"
 

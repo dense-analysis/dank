@@ -43,8 +43,7 @@ download-embedding-model = "dank.tools.download_embedding_model:main"
 
 [dependency-groups]
 dev = [
-    # NOTE: pyright 1.1.408 broke match ... case type narrowing
-    "pyright==1.1.402",
+    "pyright==1.1.409",
     "pytest==9.0.2",
     "pytest-asyncio==1.3.0",
     "ruff==0.15.1",
