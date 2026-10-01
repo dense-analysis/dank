@@ -9,3 +9,4 @@ data
 *.log
 /logs/
 compose.local.yaml
+/.codex/stop-trigger
