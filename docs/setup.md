@@ -11,6 +11,10 @@ and filesystem settings refer to different environments.
 | Browser | Installed host browser | Bundled Chromium launcher |
 | Schema setup | Initialise your server once | Automatic on first startup |
 
+The [Make command reference](../README.md#make-commands) lists the shortcuts.
+`MODE` selects the launcher and the template used when configuration is missing;
+it never converts an existing configuration.
+
 Existing native users can keep their config, server and data. Templates are
 starting points for new setups; they do not migrate or rewrite an existing
 configuration. Separate checkouts are simplest when using both modes.
@@ -18,6 +22,7 @@ configuration. Separate checkouts are simplest when using both modes.
 ## Native
 
 Install Python 3.13, uv and ClickHouse, and start your ClickHouse service.
+The Make shortcuts additionally require `make`.
 X collection needs an installed Chromium-based browser; media tools such as
 FFmpeg must also be installed on the host when needed.
 
@@ -25,7 +30,7 @@ For a fresh checkout, create a private configuration without overwriting one:
 
 ```sh
 uv sync --frozen
-(umask 077; cp -n config.native.example.toml config.toml)
+make config MODE=native
 ```
 
 Edit `config.toml` for your server credentials, sources and data directory.
@@ -41,7 +46,7 @@ clickhouse client --multiquery < schema.sql
 
 `schema.sql` creates the `dank` database and uses `IF NOT EXISTS`. Existing
 installations can continue using their tables. Start the native viewer with
-`uv run web --no-reload`, shown below. Stop it with Ctrl+C; restart after
+`make web MODE=native`, shown below. Stop it with Ctrl+C; restart after
 configuration changes.
 
 ## Docker
@@ -56,7 +61,7 @@ user. Existing configuration is never replaced. The Docker template's database
 host and browser path are container-specific.
 
 After editing configuration, reload the viewer with
-`docker compose up -d --force-recreate dank`. The image includes Python,
+`make web ARGS='--force-recreate dank'`. The image includes Python,
 Chromium, Node and FFmpeg. Chromium's own sandbox is disabled inside Docker;
 the application runs as the unprivileged `dank` user. Use `--headless` to scrape.
 
@@ -67,23 +72,23 @@ Complete your chosen setup above, then use the corresponding commands.
 **Native**
 
 ```sh
-uv run web --no-reload
+make web MODE=native
 # In another terminal:
-uv run download-embedding-model
-uv run clickhouse-query -q 'SELECT count() FROM posts FINAL'
+make download-model MODE=native
+make query MODE=native ARGS='-q "SELECT count() FROM posts FINAL"'
 ```
 
 **Docker**
 
 ```sh
 make up
-docker compose run --rm dank download-embedding-model
-docker compose run --rm dank clickhouse-query -q 'SELECT count() FROM posts FINAL'
+make download-model
+make query ARGS='-q "SELECT count() FROM posts FINAL"'
 ```
 
 Both viewers use [localhost:8080](http://127.0.0.1:8080) by default. For another
-port, pass `--port 8081` to native `web`, or change the Compose mapping to
-`127.0.0.1:8081:8080`. Compose keeps its ClickHouse service on its private
+port, pass `ARGS='--port 8081'` to `make web MODE=native`, or change the Compose
+mapping to `127.0.0.1:8081:8080`. Compose keeps its ClickHouse service on its private
 network; it does not expose that database for native commands by default.
 
 ## Data and logs

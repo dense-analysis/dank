@@ -31,7 +31,7 @@ and initialise a new database, then run:
 
 ```sh
 uv sync --frozen
-uv run web --no-reload
+make web MODE=native
 ```
 
 ### Docker
@@ -60,26 +60,62 @@ sources = ["blog.codinghorror.com"]
 **Native**
 
 ```sh
-uv run scrape --headless
-uv run process --age 24h
+make scrape MODE=native
+make process MODE=native ARGS='--age 24h'
 ```
 
 **Docker**
 
 ```sh
-docker compose run --rm dank scrape --headless
-docker compose run --rm dank process --age 24h
+make scrape
+make process ARGS='--age 24h'
 ```
 
-The [feature guides](#features) show both command forms. Docker's `dank` is
-the service name; `run --rm` starts a one-off container and removes it on exit,
+The [feature guides](#features) also show the equivalent direct commands.
+Docker's `dank` is the service name; `run --rm` starts a one-off container and removes it on exit,
 while named data volumes persist.
+
+## Make commands
+
+Make defaults to Docker. Add `MODE=native` to run an application command with
+`uv` on the host. Use `make help` for a quick reference.
+
+| Target | Action |
+| --- | --- |
+| `make up` or `make web` | Start the Docker stack; native mode runs the viewer in the foreground |
+| `make scrape` | Collect configured sources; Docker adds `--headless` |
+| `make process` | Process collected posts and assets |
+| `make query` | Run `clickhouse-query` with arguments from `ARGS` |
+| `make embed` | Run `embed-text` with text from `ARGS` |
+| `make download-model` | Cache the embedding model |
+| `make config` | Create missing configuration for the selected mode |
+| `make down`, `make logs` | Stop or inspect the Docker stack; Docker mode only |
+
+**Native**
+
+```sh
+make query MODE=native ARGS='-q "SELECT count() FROM posts FINAL"'
+make scrape MODE=native ARGS='--headless --domains "^nichegamer\.com$"'
+make embed MODE=native ARGS='"A phrase to embed"'
+```
+
+**Docker**
+
+```sh
+make query ARGS='-q "SELECT count() FROM posts FINAL"'
+make scrape ARGS='--domains "^nichegamer\.com$"'
+make embed ARGS='"A phrase to embed"'
+```
+
+`ARGS` uses shell quoting and goes to the underlying application command.
+For Docker `up`/`web`, it goes to `docker compose up` instead. Native `web`
+disables hot reload by default. `COMPOSE` and `UV` can override the launchers.
 
 ## Configuration and storage
 
-Use `config.native.example.toml` for a new native setup and
-`config.example.toml` for Docker. Configuration is ignored by Git. Existing
-files are preserved, but switching modes requires the matching database host,
+Use `make config MODE=native` for a new native setup or `make config` for
+Docker. These copy the matching example template. Configuration is ignored
+by Git. Existing files are preserved, but switching modes requires the matching database host,
 browser path and data location; copying a template does not migrate data.
 
 After configuration edits, stop the native viewer with Ctrl+C, then restart
@@ -88,13 +124,13 @@ it using the matching command.
 **Native**
 
 ```sh
-uv run web --no-reload
+make web MODE=native
 ```
 
 **Docker**
 
 ```sh
-docker compose up -d --force-recreate dank
+make web ARGS='--force-recreate dank'
 ```
 
 Native runs use your local ClickHouse and files. Docker stores database files,

@@ -47,7 +47,7 @@ container at `/root/.cache/huggingface`, for example through a read-only mount.
 **Native**
 
 ```sh
-uv run web --no-reload
+make web MODE=native
 ```
 
 Stop the viewer with Ctrl+C and rerun it after editing code.
@@ -66,7 +66,7 @@ Use a separate config, database and data directory for each native instance.
 Select its config and viewer port explicitly:
 
 ```sh
-uv run web --config task-config.toml --no-reload --port 8081
+make web MODE=native ARGS='--config task-config.toml --port 8081'
 ```
 
 For Docker, give each stack a distinct project name and host port. Create an
