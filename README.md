@@ -1,12 +1,21 @@
 # DANK - Dense Analysis Network Knowledge
 
-DANK is a Dense Analysis project focused on collecting and analyzing live data
-from the public Internet. It uses API access, web scraping, RSS feeds, and
-semantic indexing tools to ingest external content in real time. It applies
-sentiment analysis, semantic clustering, and AI models to build structured
-insights about the world, including trends, public perception, and evolving
-narratives. The goal is to automate contextual understanding and surface
-relevant knowledge as it emerges.
+DANK is a locally hosted Dense Analysis tool for collecting and exploring
+public Internet content. It collects RSS/Atom articles and X posts, preserves
+raw source payloads, downloads media, and prepares posts for browsing and
+semantic search using local text embeddings.
+
+The broader goal is to automate contextual understanding of trends, public
+perception and evolving narratives.
+
+## Features
+
+- [RSS and Atom feeds](docs/features/rss.md) — discover feeds and collect articles.
+- [X accounts](docs/features/x.md) — capture posts from configured accounts.
+- [Media downloads](docs/features/media.md) — download and store discovered assets.
+- [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
+- [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
+- [Database queries](docs/features/database.md) — inspect collected and processed data.
 
 ## Requirements
 
@@ -116,10 +125,10 @@ Dank offers the following commands.
 
 * `uv run scrape` -- Scrape the web for data
     * Pass `--domains` to scrape only matching domains from `sources`,
-      for example `--domains '^x\\.com$'`.
+      for example `--domains '^x\.com$'`.
 * `uv run process` -- Process previously scraped data
     * The `--age` argument can be given a duration to process, for example
-      `6hours` or `2days`.
+      `6hours` or `48h`.
 * `uv run clickhouse-query` -- Run queries on the database
     * You can only run `SELECT`, `SHOW`, or `EXPLAIN` queries through this tool
     * Query results are well formatted and easy to read

@@ -1,0 +1,59 @@
+# Processing and embeddings
+
+DANK separates collecting source material from preparing it for browsing and
+search. Scraping writes raw posts and asset references; processing reads those
+records and writes normalised posts, local-file metadata and text embeddings.
+
+## Run
+
+```sh
+uv run process
+uv run process --age 48h
+uv run process --config alternate.toml --age 30m
+```
+
+The default window is `24h`. The age applies to collection time, and processing
+uses the domains listed in `sources`. Durations accept seconds, minutes or
+hours, including forms such as `30s`, `10minutes` and `6hours`; use `48h` for
+two days.
+
+For each post, processing selects the newest raw capture inside the window
+and skips it if its collection time is not newer than the stored processed
+version. Increasing `--age` includes older captures but does not force
+unchanged records through an updated processor.
+
+## Produced data
+
+- RSS/Atom entries become posts using feed metadata and available article HTML.
+  Entries retained after an article-fetch failure use their feed content.
+- X payloads become posts with text, author, title and timestamps.
+- Downloaded assets gain file size and an inferred content type. Missing local
+  files are omitted from processed assets.
+- Posts receive separate title and body embeddings for semantic search.
+
+Raw payloads remain in the [database](database.md) alongside the processed
+records. A post's identity is its domain and source post ID. Where a publication
+time is absent, processors use a fallback timestamp.
+
+## Embedding tools
+
+The default model is `sentence-transformers/paraphrase-MiniLM-L3-v2`.
+It loads on demand and runs locally on CPU. The model may be downloaded on first
+use; it can also be cached in advance:
+
+```sh
+uv run download-embedding-model
+uv run embed-text "Example text to represent as a vector"
+```
+
+`embed-text` prints a numeric vector. `download-embedding-model` accepts
+`--model` and `--device` to initialise another model; downloading one does not
+change the model used by processing or search.
+
+The current processor embeds the first 512 characters of the title and the
+first 8,192 characters of the body HTML. Model token limits also apply. These
+are whole-post representations; the processor does not create passage-level
+indexes or analyse the contents of downloaded images, audio or video.
+
+Use the [web viewer](search.md) to browse or search processed posts. See the
+[README](../../README.md) for setup.
