@@ -7,9 +7,9 @@ records and writes normalised posts, local-file metadata and text embeddings.
 ## Run
 
 ```sh
-uv run process
-uv run process --age 48h
-uv run process --config alternate.toml --age 30m
+docker compose run --rm dank process
+docker compose run --rm dank process --age 48h
+docker compose run --rm dank process --age 30m
 ```
 
 The default window is `24h`. The age applies to collection time, and processing
@@ -42,8 +42,8 @@ It loads on demand and runs locally on CPU. The model may be downloaded on first
 use; it can also be cached in advance:
 
 ```sh
-uv run download-embedding-model
-uv run embed-text "Example text to represent as a vector"
+docker compose run --rm dank download-embedding-model
+docker compose run --rm dank embed-text "Example text to represent as a vector"
 ```
 
 `embed-text` prints a numeric vector. `download-embedding-model` accepts

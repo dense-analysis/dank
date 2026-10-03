@@ -1,0 +1,13 @@
+# Only application sources and locked dependencies enter the build context.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/**
+!static/
+!static/**
+
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/

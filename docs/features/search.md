@@ -7,22 +7,23 @@ opening the viewer.
 ## Start the viewer
 
 ```sh
-uv run web --no-reload
+make up
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080). The default bind address is
-`127.0.0.1`, with 50 posts per page. Other launch options include:
+Open [localhost:8080](http://127.0.0.1:8080). Compose publishes the viewer on
+`127.0.0.1:8080` and starts it after ClickHouse is ready. It shows 50 posts per
+page by default; the `limit` URL parameter accepts up to 200 results.
+
+Configuration lives in the `config.toml` generated beside `compose.yaml`.
+After editing it, recreate the viewer:
 
 ```sh
-uv run web --no-reload --port 8081 --limit 100
-uv run web --config alternate.toml --no-reload
+docker compose up -d --force-recreate dank
 ```
 
-`--limit` is capped at 200. `--host` changes the bind address. The server has
-no built-in user authentication, so its default is local access.
-
-Hot reloading is enabled unless `--no-reload` is supplied. The reloader uses
-Linux inotify; use `--no-reload` on macOS.
+The image starts the web server without development hot reloading. See
+[setup](../setup.md) for storage and port settings. The viewer has no built-in
+user authentication and is published only on the local host by default.
 
 ## Browse and filter
 

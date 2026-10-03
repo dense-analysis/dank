@@ -1,8 +1,8 @@
 # Stored data and database queries
 
 DANK stores collected and processed records in ClickHouse. Downloaded media
-files remain in the [asset directory](media.md). Create the database tables
-from `schema.sql` as described in the [README](../../README.md).
+files remain in the [asset directory](media.md). `make up` creates the database
+tables automatically from `schema.sql`. See [setup](../setup.md).
 
 ## Tables
 
@@ -25,9 +25,9 @@ to resolve replacement versions at read time.
 The query tool uses the ClickHouse connection in `config.toml`:
 
 ```sh
-uv run clickhouse-query -q 'SELECT domain, count() FROM posts FINAL GROUP BY domain'
-uv run clickhouse-query -q 'SELECT url, title FROM posts FINAL ORDER BY created_at DESC LIMIT 10'
-uv run clickhouse-query -q 'SHOW CREATE TABLE posts'
+docker compose run --rm dank clickhouse-query -q 'SELECT domain, count() FROM posts FINAL GROUP BY domain'
+docker compose run --rm dank clickhouse-query -q 'SELECT url, title FROM posts FINAL ORDER BY created_at DESC LIMIT 10'
+docker compose run --rm dank clickhouse-query -q 'SHOW CREATE TABLE posts'
 ```
 
 It accepts a single `SELECT`, `SHOW` or `EXPLAIN` statement and rejects write
@@ -35,8 +35,8 @@ operations. Long values are abbreviated in the displayed output; use `--full`
 to display them without truncation:
 
 ```sh
-uv run clickhouse-query --full -q 'SELECT payload FROM raw_posts LIMIT 1'
-uv run clickhouse-query --config alternate.toml -q 'SELECT count() FROM posts FINAL'
+docker compose run --rm dank clickhouse-query --full -q 'SELECT payload FROM raw_posts LIMIT 1'
+docker compose run --rm dank clickhouse-query -q 'SELECT count() FROM posts FINAL'
 ```
 
 Use `LIMIT` in the query to control how many rows are returned. `--full` changes
@@ -48,7 +48,7 @@ RSS/Atom raw payloads contain `feed_xml` and `page_html`. Entries retained after
 an article-fetch failure also carry `page_fetch_status: "failed"`:
 
 ```sh
-uv run clickhouse-query -q "SELECT url, scraped_at FROM raw_posts WHERE source = 'rss' AND JSONExtractString(payload, 'page_fetch_status') = 'failed' ORDER BY scraped_at DESC LIMIT 20"
+docker compose run --rm dank clickhouse-query -q "SELECT url, scraped_at FROM raw_posts WHERE source = 'rss' AND JSONExtractString(payload, 'page_fetch_status') = 'failed' ORDER BY scraped_at DESC LIMIT 20"
 ```
 
 This query shows retained failed captures, including earlier attempts that may

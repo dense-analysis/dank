@@ -6,8 +6,8 @@ homepage, reads their entries and fetches the linked article pages.
 
 ## Configure
 
-Add domains and RSS options to your private `config.toml`. The values below
-show the defaults for RSS options:
+Add domains and RSS options to the `config.toml` created by `make up` in the
+checkout root. The values below show the defaults for RSS options:
 
 ```toml
 sources = ["blog.codinghorror.com"]
@@ -28,8 +28,8 @@ links on their homepage.
 ## Collect and process
 
 ```sh
-uv run scrape --domains '^blog\.codinghorror\.com$'
-uv run process --age 24h
+docker compose run --rm dank scrape --headless --domains '^blog\.codinghorror\.com$'
+docker compose run --rm dank process --age 24h
 ```
 
 `--domains` filters the domains already listed in `sources`. Processing uses

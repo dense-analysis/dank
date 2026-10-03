@@ -1,0 +1,46 @@
+# make up copies this file to config.toml if it is missing.
+# Edit config.toml; it is private and ignored by Git.
+# Example: sources = ["blog.codinghorror.com"]
+# X example: sources = [{ domain = "x.com", accounts = ["example"] }]
+sources = []
+
+[clickhouse]
+# Compose service name, reachable from the application container.
+host = "clickhouse"
+port = 8123
+database = "dank"
+username = "default"
+password = ""
+secure = false
+use_http = true
+
+[storage]
+data_dir = "data"
+max_asset_bytes = 10485760
+
+[rss]
+feed_staleness_days = 14
+keep_feed_on_fetch_failure = false
+
+[browser]
+executable_path = "/usr/local/bin/dank-chromium"
+
+[logging]
+file = "data/dank.log"
+level = "INFO"
+
+# Uncomment for X account collection.
+# [x]
+# username = "your-username"
+# email = "you@example.com"
+# password = "your-password"
+# max_posts = 200
+# max_scrolls = 20
+# scroll_pause_seconds = 1.5
+
+# Optional IMAP settings for X confirmation codes.
+# [email]
+# host = "imap.example.com"
+# username = "you@example.com"
+# password = "your-imap-password"
+# port = 993

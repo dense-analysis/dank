@@ -6,7 +6,8 @@ responses while visiting and scrolling account pages.
 
 ## Configure
 
-Add account handles and login details to your private `config.toml`:
+Add account handles and login details to the `config.toml` created by
+`make up` in the checkout root:
 
 ```toml
 sources = [{ domain = "x.com", accounts = ["example", "another_account"] }]
@@ -32,14 +33,14 @@ the collection attempt, not a guarantee of complete account history.
 ## Run
 
 ```sh
-uv run scrape --domains '^x\.com$'
-uv run process --age 24h
+docker compose run --rm dank scrape --headless --domains '^x\.com$'
+docker compose run --rm dank process --age 24h
 ```
 
-The browser is visible by default. Add `--headless` to scrape without a visible
-window. To select a browser executable, configure `browser.executable_path`.
-The optional `browser.connection_timeout` and `browser.connection_max_tries`
-settings help with slow browser startup.
+Container collection uses `--headless`. Chromium is included in the image,
+and the generated configuration selects it. The optional
+`browser.connection_timeout` and `browser.connection_max_tries` settings help
+with slow browser startup.
 
 ## Email confirmation codes
 

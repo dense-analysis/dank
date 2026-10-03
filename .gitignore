@@ -7,3 +7,4 @@ config.toml
 data
 /examples
 *.log
+compose.local.yaml
