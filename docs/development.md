@@ -1,7 +1,12 @@
 # Development
 
-Use the [container setup](setup.md) to run DANK and ClickHouse. For editing and
-running unit tests on the host, install Python 3.13 and uv:
+Use [native or Docker setup](setup.md) to run the application. The checks below
+need no live ClickHouse server, browser login or private configuration. The
+default tests use fixtures and block external network access.
+
+## Native checks
+
+Install Python 3.13 and uv, then run from the checkout root:
 
 ```sh
 uv sync --frozen
@@ -10,41 +15,62 @@ uv run pytest
 uv run pyright
 ```
 
-The default tests use fixtures and block external network access. They need no
-ClickHouse server, browser login or private configuration. Real-model embedding
-checks are separate and require the models to be available:
+The linter can fix files; inspect the resulting diff. Running Pyright directly
+also exposes its exit status.
+
+## Docker checks
+
+The runtime image omits test dependencies and test files. Build the current
+source, mount the tests read-only, then install the locked development tools
+inside a disposable container:
 
 ```sh
-uv run pytest -m embeddings -s
+docker build -t dank-checks .
+docker run --rm --entrypoint sh \
+  --mount "type=bind,source=$PWD/tests,target=/app/tests,readonly" \
+  --mount "type=bind,source=$PWD/run-linters.sh,target=/app/run-linters.sh,readonly" \
+  dank-checks -c 'uv sync --frozen && uv run pytest && ./run-linters.sh && uv run pyright'
 ```
 
-The linter script can fix files; inspect your diff afterward. Running Pyright
-directly also makes its exit status visible.
+These checks operate on the source copied into the image. Linter fixes stay in
+the disposable container; use the native command to apply fixes to the checkout.
+Rebuild the image after changing application code. This command does not start
+the Compose services or mount private configuration and application data.
 
-## Containers during development
+Real-model checks are opt-in. Replace `uv run pytest` in either example with
+`uv run pytest -m embeddings -s`; the models listed in the embedding tests must
+already be cached. In Docker, make that cache available inside the check
+container at `/root/.cache/huggingface`, for example through a read-only mount.
 
-Application code is copied into the image. Rebuild after changing it:
+## Run edited application code
+
+**Native**
+
+```sh
+uv run web --no-reload
+```
+
+Stop the viewer with Ctrl+C and rerun it after editing code.
+
+**Docker**
 
 ```sh
 make up
 ```
 
-Feature-guide examples run commands inside the application image. The matching
-host commands use `uv run` instead of `docker compose run --rm dank`; host
-execution needs a configuration and database connection appropriate to the
-host. The generated container configuration uses the internal hostname
-`clickhouse`.
+This rebuilds the application image and recreates the service when needed.
 
-For parallel checkouts, give each stack a distinct project name and host port.
-Use a local Compose override to change the viewer's port, then consistently
-supply the same project and files for all commands:
+## Parallel instances
+
+Use a separate config, database and data directory for each native instance.
+Select its config and viewer port explicitly:
 
 ```sh
-make up COMPOSE='docker compose -p dank-my-task -f compose.yaml -f compose.local.yaml'
-docker compose -p dank-my-task -f compose.yaml -f compose.local.yaml ps
+uv run web --config task-config.toml --no-reload --port 8081
 ```
 
-`compose.local.yaml` example (requires Compose 2.24.4 or later):
+For Docker, give each stack a distinct project name and host port. Create an
+ignored `compose.local.yaml` override (Compose 2.24.4 or later):
 
 ```yaml
 services:
@@ -53,5 +79,12 @@ services:
       - "127.0.0.1:8081:8080"
 ```
 
-Each project gets separate database, data and model-cache volumes. Each
-checkout also keeps its own ignored `config.toml`.
+Use that project and override consistently for its commands:
+
+```sh
+make up COMPOSE='docker compose -p dank-my-task -f compose.yaml -f compose.local.yaml'
+docker compose -p dank-my-task -f compose.yaml -f compose.local.yaml ps
+```
+
+Each Compose project has separate database, data and model-cache volumes. Each
+checkout keeps its own ignored `config.toml`.

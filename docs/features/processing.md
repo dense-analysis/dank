@@ -6,6 +6,16 @@ records and writes normalised posts, local-file metadata and text embeddings.
 
 ## Run
 
+**Native**
+
+```sh
+uv run process
+uv run process --age 48h
+uv run process --age 30m
+```
+
+**Docker**
+
 ```sh
 docker compose run --rm dank process
 docker compose run --rm dank process --age 48h
@@ -40,6 +50,15 @@ time is absent, processors use a fallback timestamp.
 The default model is `sentence-transformers/paraphrase-MiniLM-L3-v2`.
 It loads on demand and runs locally on CPU. The model may be downloaded on first
 use; it can also be cached in advance:
+
+**Native**
+
+```sh
+uv run download-embedding-model
+uv run embed-text "Example text to represent as a vector"
+```
+
+**Docker**
 
 ```sh
 docker compose run --rm dank download-embedding-model

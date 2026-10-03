@@ -1,75 +1,104 @@
-# Container setup
+# Native and Docker setup
 
-DANK runs as two Compose services: `clickhouse` stores records, and `dank`
-serves the web viewer and runs collection/processing commands. Start Docker,
-then run `make up` from the checkout containing `compose.yaml`.
+Choose a mode for each checkout. Both read `./config.toml`; their connection
+and filesystem settings refer to different environments.
 
-## Where configuration lives
+| Setting | Native | Docker Compose |
+| --- | --- | --- |
+| Template | `config.native.example.toml` | `config.example.toml` |
+| ClickHouse host | Your server, usually `localhost` | `clickhouse` |
+| Relative `data_dir = "data"` | Host working directory | `/app/data` volume |
+| Browser | Installed host browser | Bundled Chromium launcher |
+| Schema setup | Initialise your server once | Automatic on first startup |
 
-`make config` copies `config.example.toml` to **`./config.toml`** with private
-file permissions, only if the file is missing. `make up` includes this step.
-Edit this file to choose sources, login details and collection settings.
+Existing native users can keep their config, server and data. Templates are
+starting points for new setups; they do not migrate or rewrite an existing
+configuration. Separate checkouts are simplest when using both modes.
 
-The file is mounted read-only at `/run/dank/config.toml` in containers. The
-entry point creates a private application-readable copy, then runs the command
-as the unprivileged `dank` user. Recreate the viewer after edits:
+## Native
+
+Install Python 3.13, uv and ClickHouse, and start your ClickHouse service.
+X collection needs an installed Chromium-based browser; media tools such as
+FFmpeg must also be installed on the host when needed.
+
+For a fresh checkout, create a private configuration without overwriting one:
 
 ```sh
-docker compose up -d --force-recreate dank
+uv sync --frozen
+(umask 077; cp -n config.native.example.toml config.toml)
 ```
 
-Each `docker compose run --rm dank ...` command starts a fresh container and
-loads the current configuration. New Git worktrees need their own
-`config.toml`; ignored files are not copied between checkouts.
+Edit `config.toml` for your server credentials, sources and data directory.
+The example uses ClickHouse's HTTP interface on port 8123. Leave
+`browser.executable_path` unset for auto-detection, or set a host browser path.
 
-The example's ClickHouse hostname is `clickhouse`, the Compose service name.
-An existing configuration is never rewritten automatically: if you previously
-ran on the host, compare its connection, storage and browser settings with
-`config.example.toml` before using the containers.
-
-## What each setup file does
-
-- `Dockerfile` builds Python, locked dependencies, Chromium, Node and FFmpeg
-  together with DANK. Its default command starts the web viewer.
-- `compose.yaml` starts ClickHouse, mounts `schema.sql` for initial table
-  creation, and waits for the database before starting the viewer.
-- `Makefile` creates missing configuration and wraps starting, stopping and logs.
-- `.dockerignore` excludes private configuration and runtime files from builds.
-
-The container uses a Chromium wrapper that disables Chromium's own sandbox;
-the application still runs as the unprivileged `dank` user within Docker.
-Use `--headless` for browser collection in this image.
-
-Database creation is automatic on first startup. The initialisation SQL uses
-`IF NOT EXISTS`; future schema changes still need their own migration steps.
-
-## Persistent data
-
-The default Compose project is `dank`. Its named volumes are:
-
-| Volume | Contents |
-| --- | --- |
-| `dank_clickhouse_data` | ClickHouse database files |
-| `dank_dank_data` | Assets, browser profile and `dank.log` |
-| `dank_model_cache` | Downloaded embedding models and library caches |
-
-In the application container, the default `data_dir = "data"` resolves to
-`/app/data`. Keep this path to use the mounted volume. Ordinary `make down`
-preserves volumes; removing the volumes deletes their stored data.
-
-## Useful commands
+For a new database, initialise tables once using your ClickHouse client's
+connection/authentication options. With a local default connection:
 
 ```sh
+clickhouse client --multiquery < schema.sql
+```
+
+`schema.sql` creates the `dank` database and uses `IF NOT EXISTS`. Existing
+installations can continue using their tables. Start the native viewer with
+`uv run web --no-reload`, shown below. Stop it with Ctrl+C; restart after
+configuration changes.
+
+## Docker
+
+Start Docker and run `make up` from the checkout containing `compose.yaml`.
+It builds the image, starts ClickHouse, initialises tables and waits for the
+viewer. `make config` can create configuration without starting services.
+
+The generated `config.toml` is private and ignored by Git. It is mounted
+read-only at `/run/dank/config.toml`, then copied for the unprivileged `dank`
+user. Existing configuration is never replaced. The Docker template's database
+host and browser path are container-specific.
+
+After editing configuration, reload the viewer with
+`docker compose up -d --force-recreate dank`. The image includes Python,
+Chromium, Node and FFmpeg. Chromium's own sandbox is disabled inside Docker;
+the application runs as the unprivileged `dank` user. Use `--headless` to scrape.
+
+## Start, preload and query
+
+Complete your chosen setup above, then use the corresponding commands.
+
+**Native**
+
+```sh
+uv run web --no-reload
+# In another terminal:
+uv run download-embedding-model
+uv run clickhouse-query -q 'SELECT count() FROM posts FINAL'
+```
+
+**Docker**
+
+```sh
+make up
 docker compose run --rm dank download-embedding-model
 docker compose run --rm dank clickhouse-query -q 'SELECT count() FROM posts FINAL'
-docker compose logs --tail 100 clickhouse dank
 ```
 
-Model files download on demand when processing or searching non-empty text;
-the first command above preloads the default model. Initial startup with the
-empty source list does not scrape sites or require an embedding model.
+Both viewers use [localhost:8080](http://127.0.0.1:8080) by default. For another
+port, pass `--port 8081` to native `web`, or change the Compose mapping to
+`127.0.0.1:8081:8080`. Compose keeps its ClickHouse service on its private
+network; it does not expose that database for native commands by default.
 
-If port 8080 is busy, change the host side of the viewer's port mapping in
-`compose.yaml`, for example `127.0.0.1:8081:8080`. Keep ClickHouse on the private
-Compose network. Scrape and process logs also persist at `/app/data/dank.log` inside the
-application container. See [development](development.md) for isolated worktrees.
+## Data and logs
+
+Native assets, profile and scrape/process logs use the configured host paths.
+The examples put logs at `data/dank.log`; existing configurations may differ.
+Model downloads use the host's normal model cache. Stop the native viewer
+with Ctrl+C and manage your ClickHouse service separately.
+
+Docker's default project is `dank`, with named volumes `dank_clickhouse_data`,
+`dank_dank_data` and `dank_model_cache`. These hold the database, assets/profile/
+logs, and models respectively. `make logs` shows service logs; scrape/process
+logs also live at `/app/data/dank.log` in the application container.
+`make down` preserves these volumes. Removing volumes deletes their data.
+
+Future schema changes need migration steps in either mode. New worktrees need
+their own ignored configuration. See [development](development.md) for checks
+and running multiple instances.

@@ -6,8 +6,9 @@ homepage, reads their entries and fetches the linked article pages.
 
 ## Configure
 
-Add domains and RSS options to the `config.toml` created by `make up` in the
-checkout root. The values below show the defaults for RSS options:
+Add domains and RSS options to `config.toml` in the checkout root. Use the
+[native or Docker setup](../setup.md) to create it. These RSS options apply
+to both modes and show their default values:
 
 ```toml
 sources = ["blog.codinghorror.com"]
@@ -26,6 +27,15 @@ The BBC uses a built-in set of feed URLs. Other sites need discoverable feed
 links on their homepage.
 
 ## Collect and process
+
+**Native**
+
+```sh
+uv run scrape --headless --domains '^blog\.codinghorror\.com$'
+uv run process --age 24h
+```
+
+**Docker**
 
 ```sh
 docker compose run --rm dank scrape --headless --domains '^blog\.codinghorror\.com$'

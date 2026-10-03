@@ -6,24 +6,43 @@ opening the viewer.
 
 ## Start the viewer
 
+**Native**
+
+```sh
+uv run web --no-reload
+```
+
+**Docker**
+
 ```sh
 make up
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080). Compose publishes the viewer on
-`127.0.0.1:8080` and starts it after ClickHouse is ready. It shows 50 posts per
-page by default; the `limit` URL parameter accepts up to 200 results.
+Complete [setup](../setup.md) for your chosen mode first. Both viewers are
+available at [localhost:8080](http://127.0.0.1:8080) by default. Native runs use
+your configured database; Compose starts its database before the viewer. The
+default page size is 50; the `limit` URL parameter accepts up to 200 results.
 
-Configuration lives in the `config.toml` generated beside `compose.yaml`.
-After editing it, recreate the viewer:
+Both modes read the checkout's `config.toml`. After editing it, stop the
+native viewer with Ctrl+C and restart it, or recreate the Docker service:
+
+**Native**
+
+```sh
+uv run web --no-reload
+```
+
+**Docker**
 
 ```sh
 docker compose up -d --force-recreate dank
 ```
 
-The image starts the web server without development hot reloading. See
-[setup](../setup.md) for storage and port settings. The viewer has no built-in
-user authentication and is published only on the local host by default.
+The native example disables development hot reload, which uses Linux inotify.
+The Docker image also disables reload. Use `--port 8081` on native `web` to
+change its port; for Docker, change the host port mapping as described in
+[setup](../setup.md). The viewer has no built-in authentication and defaults
+to local access in both modes.
 
 ## Browse and filter
 

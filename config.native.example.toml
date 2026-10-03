@@ -1,0 +1,32 @@
+# Copy to config.toml for native execution with uv.
+# Keep an existing native config.toml and its connection/data settings.
+# Example: sources = ["blog.codinghorror.com"]
+sources = []
+
+[clickhouse]
+host = "localhost"
+port = 8123
+database = "dank"
+username = "default"
+password = ""
+secure = false
+use_http = true
+
+[storage]
+# Relative to the directory where you run DANK, or use your existing host path.
+data_dir = "data"
+max_asset_bytes = 10485760
+
+[rss]
+feed_staleness_days = 14
+keep_feed_on_fetch_failure = false
+
+[logging]
+file = "data/dank.log"
+level = "INFO"
+
+# Browser auto-detection is used when executable_path is omitted.
+# [browser]
+# executable_path = "/path/to/your/chromium-browser"
+
+# See docs/features/x.md for X account and optional email settings.

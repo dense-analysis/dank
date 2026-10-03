@@ -17,65 +17,89 @@ perception and evolving narratives.
 - [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
 - [Database queries](docs/features/database.md) — inspect collected and processed data.
 
-## Quick start
+## Choose how to run
 
-Install Docker with Docker Compose and `make`, and start your Docker engine
-(Docker Desktop or OrbStack on macOS). From this checkout, run:
+DANK supports **native execution with uv** and **Docker Compose**. Both use
+`config.toml` in the checkout root. Existing native users can keep their
+ClickHouse connection, configuration and data directory.
+
+### Native
+
+Install Python 3.13, uv and ClickHouse; X collection also needs a Chromium-based
+browser. Follow [native setup](docs/setup.md#native) to create configuration
+and initialise a new database, then run:
+
+```sh
+uv sync --frozen
+uv run web --no-reload
+```
+
+### Docker
+
+Install Docker with Compose and `make`, and start your Docker engine:
 
 ```sh
 make up
 ```
 
-This creates **`config.toml` in this directory** from
-[`config.example.toml`](config.example.toml) if it is missing, builds the
-application image, starts ClickHouse, creates the database tables, and starts
-the web viewer at [localhost:8080](http://127.0.0.1:8080).
+This creates missing configuration from `config.example.toml`, builds the
+application, starts ClickHouse, initialises its tables and starts the viewer.
+Python, Chromium and media tools are included in the image.
 
-Containers provide Python, Chromium and the other runtime dependencies. The
-first build downloads them; later starts reuse the image and volumes.
+Open [localhost:8080](http://127.0.0.1:8080) for either mode. The supplied
+configuration templates start with an empty source list.
 
 ## Choose sources and collect
 
-Edit the generated `config.toml`. It starts with an empty source list. For
-example, change its top-level `sources` setting to:
+Edit the top-level `sources` setting in your private `config.toml`, for example:
 
 ```toml
 sources = ["blog.codinghorror.com"]
 ```
 
-Then collect and process content:
+**Native**
+
+```sh
+uv run scrape --headless
+uv run process --age 24h
+```
+
+**Docker**
 
 ```sh
 docker compose run --rm dank scrape --headless
 docker compose run --rm dank process --age 24h
 ```
 
-The [feature guides](#features) cover source options and other commands. These
-commands use the same configuration and persistent storage. To collect
-only selected configured domains, add `--domains` to `scrape`.
+The [feature guides](#features) show both command forms. Docker's `dank` is
+the service name; `run --rm` starts a one-off container and removes it on exit,
+while named data volumes persist.
 
-`config.toml` stays private and is ignored by Git. `make config` creates it
-without starting containers, and never replaces an existing file. For X,
-add your account settings as described in [X collection](docs/features/x.md).
+## Configuration and storage
 
-After editing configuration, recreate the viewer to load it:
+Use `config.native.example.toml` for a new native setup and
+`config.example.toml` for Docker. Configuration is ignored by Git. Existing
+files are preserved, but switching modes requires the matching database host,
+browser path and data location; copying a template does not migrate data.
+
+After configuration edits, stop the native viewer with Ctrl+C, then restart
+it using the matching command.
+
+**Native**
+
+```sh
+uv run web --no-reload
+```
+
+**Docker**
 
 ```sh
 docker compose up -d --force-recreate dank
 ```
 
-## Manage the stack
+Native runs use your local ClickHouse and files. Docker stores database files,
+assets, browser profile and model cache in named volumes. Use `make logs` and
+`make down` to inspect and stop the Docker stack; `make down` preserves volumes.
 
-```sh
-docker compose ps
-make logs
-make down
-```
-
-`make down` stops the stack while preserving the database, downloaded assets,
-browser profile and model cache in Docker volumes. `make up` starts it again.
-ClickHouse is available inside the Compose network; only the web viewer is
-published on the host, at `127.0.0.1:8080`.
-
-See [container setup](docs/setup.md) for configuration paths, storage and
-troubleshooting, or [development](docs/development.md) for local tests and uv.
+See [setup](docs/setup.md) for both modes, or
+[development](docs/development.md) for native and container checks.

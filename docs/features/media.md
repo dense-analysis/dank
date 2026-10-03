@@ -26,9 +26,10 @@ data_dir = "data"
 max_asset_bytes = 10485760
 ```
 
-Files are stored under `<data_dir>/assets/<domain>/<post_id>/`. In the
-container, the default `data_dir = "data"` resolves to `/app/data`, backed by
-the persistent data volume. See [setup](../setup.md) for volume locations.
+Files are stored under `<data_dir>/assets/<domain>/<post_id>/`. Native runs
+use the host path in `storage.data_dir`; a relative `data` path is beneath
+your working directory. Docker resolves `data` to `/app/data` in its persistent
+volume. See [setup](../setup.md) for configuration and storage differences.
 
 The example sets a 10 MiB limit for each media file. Omitting
 `max_asset_bytes`, or setting it to zero or a negative value, removes the
@@ -40,6 +41,16 @@ the downloaded media file. Its additional metadata and thumbnail files are not
 covered by a total storage budget.
 
 ## Collect and view
+
+**Native**
+
+```sh
+uv run scrape --headless
+uv run process --age 24h
+uv run web --no-reload
+```
+
+**Docker**
 
 ```sh
 docker compose run --rm dank scrape --headless
