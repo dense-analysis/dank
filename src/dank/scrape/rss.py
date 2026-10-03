@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Iterable
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Literal, NamedTuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 
 import aiohttp
 
@@ -21,6 +21,10 @@ from dank.progress import Progress
 from dank.scrape.types import ScrapeBatch
 
 logger = logging.getLogger(__name__)
+
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_BACKOFF_SECONDS = 2.0
+MAX_RATE_LIMIT_DELAY_SECONDS = 30.0
 
 RSS_MIME_HINTS = ("rss", "atom", "xml", "rdf")
 ATOM_FEED_TYPE = "atom"
@@ -726,29 +730,33 @@ async def _fetch_pages(
     if not discoveries:
         return []
 
+    # Fragments identify comments, but are not sent in HTTP requests.
+    page_urls = list(dict.fromkeys(
+        urldefrag(discovery.url).url for discovery in discoveries
+    ))
     semaphore = asyncio.Semaphore(concurrency)
     progress = Progress(
-        f"Fetching articles for {discoveries[0].domain}", len(discoveries),
+        f"Fetching articles for {discoveries[0].domain}", len(page_urls),
     )
 
-    async def _fetch(
-        discovery: PageDiscovery,
-    ) -> tuple[PageDiscovery, str | None]:
+    async def _fetch(url: str) -> tuple[str, str | None]:
         async with semaphore:
-            html = await _fetch_text(
-                http_client,
-                discovery.url,
-                accept=HTML_ACCEPT,
-            )
+            html = await _fetch_text(http_client, url, accept=HTML_ACCEPT)
 
         progress.advance()
 
-        return discovery, html
+        return url, html
 
     async with progress:
-        return await asyncio.gather(
-            *(_fetch(discovery) for discovery in discoveries),
-        )
+        page_html = dict(await asyncio.gather(
+            *(_fetch(url) for url in page_urls),
+        ))
+
+    # Preserve each entry's URL and payload even when its page was shared.
+    return [
+        (discovery, page_html[urldefrag(discovery.url).url])
+        for discovery in discoveries
+    ]
 
 
 async def _fetch_text(
@@ -760,33 +768,107 @@ async def _fetch_text(
     if not url:
         return None
 
-    try:
-        async with http_client.get(
-            url,
-            headers={"Accept": ", ".join(accept)},
-        ) as response:
-            response.raise_for_status()
+    for retry in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            async with http_client.get(
+                url,
+                headers={"Accept": ", ".join(accept)},
+            ) as response:
+                response.raise_for_status()
+                text = await response.text()
 
-            text = await response.text()
+                if not text:
+                    logger.warning("Empty response fetching %s", url)
+                elif retry:
+                    logger.info(
+                        "Fetched %s after %d rate-limit retries", url, retry,
+                    )
 
-            if not text:
-                logger.warning("Empty response fetching %s", url)
+                return text
+        except aiohttp.ClientResponseError as error:
+            retry_after = (error.headers or {}).get("Retry-After")
+            logger.warning(
+                "HTTP %d fetching %s: %s%s",
+                error.status, url, error.message,
+                f"; Retry-After: {retry_after}" if retry_after else "",
+            )
 
-            return text
-    except aiohttp.ClientResponseError as error:
-        retry_after = (error.headers or {}).get("Retry-After")
-        logger.warning(
-            "HTTP %d fetching %s: %s%s",
-            error.status, url, error.message,
-            f"; Retry-After: {retry_after}" if retry_after else "",
-        )
-    except Exception as error:
-        logger.warning(
-            "Failed to fetch %s: %s: %s",
-            url, type(error).__name__, error,
-        )
+            if error.status != 429:
+                return None
+
+            delay = _rate_limit_delay(url, retry, retry_after)
+
+            if delay is None:
+                return None
+
+            # Release the response before sleeping; cancellation propagates.
+            await asyncio.sleep(delay)
+        except Exception as error:
+            logger.warning(
+                "Failed to fetch %s: %s: %s",
+                url, type(error).__name__, error,
+            )
+
+            return None
 
     return None
+
+
+def _rate_limit_delay(
+    url: str,
+    retry: int,
+    retry_after: str | None,
+) -> float | None:
+    if retry >= RATE_LIMIT_RETRIES:
+        logger.warning(
+            "Giving up fetching %s after %d HTTP 429 retries",
+            url, RATE_LIMIT_RETRIES,
+        )
+
+        return None
+
+    delay = max(
+        RATE_LIMIT_BACKOFF_SECONDS * 2 ** retry,
+        _retry_after_seconds(retry_after),
+    )
+
+    if delay > MAX_RATE_LIMIT_DELAY_SECONDS:
+        logger.warning(
+            "Skipping %s: Retry-After exceeds the %.0fs retry wait limit",
+            url, MAX_RATE_LIMIT_DELAY_SECONDS,
+        )
+
+        return None
+
+    logger.warning(
+        "Retrying %s in %.1fs after HTTP 429 (retry %d/%d)",
+        url, delay, retry + 1, RATE_LIMIT_RETRIES,
+    )
+
+    return delay
+
+
+def _retry_after_seconds(value: str | None) -> float:
+    if not value:
+        return 0.0
+
+    value = value.strip()
+
+    if value.isascii() and value.isdecimal():
+        return float(value)
+
+    try:
+        date = parsedate_to_datetime(value)
+
+        if date.tzinfo is not None:
+            return max(
+                0.0,
+                (date - datetime.datetime.now(datetime.UTC)).total_seconds(),
+            )
+    except (TypeError, ValueError, OverflowError):
+        pass
+
+    return 0.0
 
 
 def _parse_datetime(value: str | None) -> datetime.datetime | None:

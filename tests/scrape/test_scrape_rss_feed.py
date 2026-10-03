@@ -323,3 +323,70 @@ async def test_runner_uses_configured_feed_failure_retention(
         assert len(batches[0].posts) == 2
     else:
         assert batches == []
+
+
+@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("keep", [False, True])
+async def test_comment_entries_share_page_fetch_but_keep_their_identity(
+    *,
+    failed: bool,
+    keep: bool,
+) -> None:
+    page_url = "https://example.test/article"
+    comment_urls = [f"{page_url}#comment-1", f"{page_url}#comment-2"]
+    feed_url = "https://example.test/comments/feed/"
+    feed = RSS_XML.replace(
+        "https://example.test/post-one", comment_urls[0],
+    ).replace("https://example.test/post-two", comment_urls[1])
+    # A different query string is a separate HTTP resource.
+    other_feed = RSS_XML_TWO.replace(
+        "https://example.test/post-three", page_url + "?page=2#comment-3",
+    )
+    responses = {
+        feed_url: feed,
+        "https://example.test/other-feed/": other_feed,
+        page_url + "?page=2": PAGE_THREE_HTML,
+    }
+
+    if not failed:
+        responses[page_url] = PAGE_ONE_HTML
+
+    class _CountingClient(_FakeClient):
+        def __init__(self) -> None:
+            super().__init__(responses)
+            self.urls: list[str] = []
+
+        def get(self, url: str, headers: dict[str, str]) -> _FakeResponse:
+            self.urls.append(url)
+
+            return super().get(url, headers)
+
+    client = _CountingClient()
+    batches = [
+        batch async for batch in scrape_feed_batches(
+            cast(Any, client), domain="example.test",
+            feed_urls=[feed_url, "https://example.test/other-feed/"],
+            keep_feed_on_fetch_failure=keep,
+        )
+    ]
+    posts = batches[0].posts
+    assert client.urls == [
+        feed_url, "https://example.test/other-feed/", page_url,
+        page_url + "?page=2",
+    ]
+    expected_urls = [] if failed and not keep else comment_urls
+    assert [post.url for post in posts] == [
+        *expected_urls, page_url + "?page=2#comment-3",
+    ]
+    assert len({post.post_id for post in posts}) == len(posts)
+
+    for index, post in enumerate(posts[:-1]):
+        payload = json.loads(post.payload)
+        assert post.request_url == feed_url
+        entry = ElementTree.fromstring(payload["feed_xml"])
+        assert entry.findtext("title") == ["First", "Second"][index]
+        assert entry.findtext("link") == comment_urls[index]
+        assert payload["page_html"] == ("" if failed else PAGE_ONE_HTML)
+
+        if failed:
+            assert payload["page_fetch_status"] == "failed"
