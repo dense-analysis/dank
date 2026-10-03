@@ -76,3 +76,11 @@ indexes or analyse the contents of downloaded images, audio or video.
 
 Use the [web viewer](search.md) to browse or search processed posts. See the
 [README](../../README.md) for setup.
+
+## Terminal progress
+
+Processing reports source and record counts to stdout. Embedding and database
+writes also report elapsed time every five seconds while pending. Warnings
+and errors go to stderr; both streams are retained in the configured log file.
+The same output is available through `make process` and
+`make process MODE=native`.

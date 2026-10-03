@@ -80,8 +80,11 @@ async def download_file_http(
                             f"and {bytes_read} bytes downloaded"
                         ),
                     )
-        except Exception:
-            logger.debug("Failed to download %s", discovery.url, exc_info=True)
+        except Exception as error:
+            logger.warning(
+                "Asset not downloaded: %s (%s: %s)",
+                discovery.url, type(error).__name__, error,
+            )
 
             # Delete partial downloads when downloading fails.
             temp_path.unlink(missing_ok=True)

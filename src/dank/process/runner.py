@@ -15,6 +15,7 @@ from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
 from dank.process.rss import convert_raw_post as convert_raw_rss_post
 from dank.process.x import convert_raw_x_post
+from dank.progress import Progress
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
 logger = logging.getLogger(__name__)
@@ -249,45 +250,48 @@ async def _insert_posts(
     posts: list[Post],
     embedder: EmbeddingModel,
 ) -> None:
-    title_embeddings = await asyncio.to_thread(
-        embedder.embed_texts,
-        [
-            _truncate_for_embedding(post.title, limit=MAX_TITLE_EMBED_CHARS)
-            for post in posts
-        ],
-    )
-    html_embeddings = await asyncio.to_thread(
-        embedder.embed_texts,
-        [
-            _truncate_for_embedding(post.html, limit=MAX_HTML_EMBED_CHARS)
-            for post in posts
-        ],
-    )
-    posts = [
-        post._replace(
-            title_embedding=title_embedding,
-            html_embedding=html_embedding,
+    async with Progress(f"Embedding and saving {len(posts)} posts"):
+        title_embeddings = await asyncio.to_thread(
+            embedder.embed_texts,
+            [
+                _truncate_for_embedding(
+                    post.title, limit=MAX_TITLE_EMBED_CHARS,
+                )
+                for post in posts
+            ],
         )
-        for post, title_embedding, html_embedding in zip(
-            posts,
-            title_embeddings,
-            html_embeddings,
-            strict=True,
+        html_embeddings = await asyncio.to_thread(
+            embedder.embed_texts,
+            [
+                _truncate_for_embedding(post.html, limit=MAX_HTML_EMBED_CHARS)
+                for post in posts
+            ],
         )
-    ]
+        posts = [
+            post._replace(
+                title_embedding=title_embedding,
+                html_embedding=html_embedding,
+            )
+            for post, title_embedding, html_embedding in zip(
+                posts,
+                title_embeddings,
+                html_embeddings,
+                strict=True,
+            )
+        ]
 
-    rows: list[dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
 
-    for post in posts:
-        row = post._asdict()
-        row["title_embedding"] = list(post.title_embedding)
-        row["html_embedding"] = list(post.html_embedding)
-        rows.append(row)
+        for post in posts:
+            row = post._asdict()
+            row["title_embedding"] = list(post.title_embedding)
+            row["html_embedding"] = list(post.html_embedding)
+            rows.append(row)
 
-    await clickhouse_client.insert_rows(
-        "posts",
-        rows,
-    )
+        await clickhouse_client.insert_rows(
+            "posts",
+            rows,
+        )
 
 
 def _truncate_for_embedding(value: str, *, limit: int) -> str:

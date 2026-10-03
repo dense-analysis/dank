@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from dank.model import AssetDiscovery, RawAsset
+from dank.progress import Progress
 
 from .audio_video import download_audio_video_asset
 from .http import download_file_http
@@ -83,8 +84,21 @@ async def download_assets(
                     timestamp=timestamp,
                 )
 
-    results = await asyncio.gather(
-        *(_download(discovery) for discovery in unique.values()),
-    )
+    if not unique:
+        return []
+
+    domains = ", ".join(sorted({item.domain for item in unique.values()}))
+    progress = Progress(f"Downloading media for {domains}", len(unique))
+
+    async def _tracked_download(discovery: AssetDiscovery) -> RawAsset | None:
+        result = await _download(discovery)
+        progress.advance()
+
+        return result
+
+    async with progress:
+        results = await asyncio.gather(
+            *(_tracked_download(item) for item in unique.values()),
+        )
 
     return [result for result in results if result is not None]

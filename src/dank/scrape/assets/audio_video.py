@@ -139,11 +139,17 @@ def _download_audio_video_asset_sync(
     local_path = _extract_download_path(info, target_dir)
 
     if local_path is None:
+        logger.warning("No downloaded media file found for %s", url)
+
         return None
 
     if max_asset_bytes is not None and max_asset_bytes > 0:
         if local_path.stat().st_size > max_asset_bytes:
             local_path.unlink(missing_ok=True)
+            logger.warning(
+                "Media exceeds %d-byte limit; skipped %s",
+                max_asset_bytes, url,
+            )
 
             return None
 
@@ -234,11 +240,10 @@ def _download_with_yt_dlp(arguments: list[str]) -> dict[str, object] | None:
                 parsed_options.urls[0],
                 download=True,
             )
-    except Exception:
-        logger.debug(
-            "Failed to download %s",
-            parsed_options.urls[0],
-            exc_info=True,
+    except Exception as error:
+        logger.warning(
+            "Media not downloaded: %s (%s: %s)",
+            parsed_options.urls[0], type(error).__name__, error,
         )
 
         return None

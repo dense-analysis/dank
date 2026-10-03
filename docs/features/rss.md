@@ -62,3 +62,39 @@ schedule a retry. If the feed itself cannot be fetched or parsed, there are
 no entries to retain.
 
 See the [README](../../README.md) for ClickHouse setup and shared settings.
+
+## Progress and errors
+
+Both native and Docker runs show source numbers, feed discovery, article-fetch
+counts and media progress. Updates repeat every five seconds while a stage is
+pending, followed by saved-post and available-file totals at completion.
+
+Fetch failures include the URL and HTTP status at warning level, including
+`Retry-After` when a server supplies it. A source with no usable feeds is
+explicitly reported as skipped. This makes failed discovery distinguishable
+from a source that simply has no entries.
+
+Normal progress uses stdout; warnings and errors use stderr. Both remain in
+the configured log file, and `logging.level` controls verbosity. To capture
+separate streams:
+
+**Native**
+
+```sh
+make scrape MODE=native >scrape.out 2>scrape.err
+```
+
+**Docker**
+
+```sh
+make scrape >scrape.out 2>scrape.err
+```
+
+Docker Make commands disable pseudo-TTY allocation to preserve the streams.
+Compose's own container-startup messages may also appear in stderr.
+
+A completed fetch count includes failed attempts; the article batch summary
+reports successful and failed page fetches separately. Media counts are for
+unique URLs in each batch. "Available" includes reused local files; "not
+downloaded" includes failed downloads, size-limit skips and reference-only
+assets. Scraping does not run the separate processing command.

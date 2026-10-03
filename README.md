@@ -75,6 +75,11 @@ The [feature guides](#features) also show the equivalent direct commands.
 Docker's `dank` is the service name; `run --rm` starts a one-off container and removes it on exit,
 while named data volumes persist.
 
+Scrape and process progress appears in the terminal. Normal messages go to
+stdout; warnings and errors go to stderr. Both streams also go to the configured
+log file. Pending stages report elapsed time every five seconds. See
+[RSS progress](docs/features/rss.md#progress-and-errors) for the counts.
+
 ## Make commands
 
 Make defaults to Docker. Add `MODE=native` to run an application command with

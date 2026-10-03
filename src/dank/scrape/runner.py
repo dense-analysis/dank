@@ -5,6 +5,7 @@ import datetime
 import logging
 import pathlib
 import re
+import time
 from collections.abc import AsyncIterator
 from typing import cast
 
@@ -13,6 +14,7 @@ import aiohttp
 from dank.config import Settings, SourceConfig, load_settings
 from dank.logging_setup import configure_logging
 from dank.model import AssetDiscovery, RawPost
+from dank.progress import Progress
 from dank.scrape.assets import download_assets
 from dank.scrape.rss import (
     FeedLink,
@@ -20,7 +22,7 @@ from dank.scrape.rss import (
     fetch_feed_links,
     scrape_feed_batches,
 )
-from dank.scrape.types import ScrapeBatch
+from dank.scrape.types import ScrapeBatch, ScrapeTotals
 from dank.scrape.x import scrape_x_accounts
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient
@@ -34,12 +36,18 @@ async def run_scrape(
     headless: bool = False,
     batch_size: int = 50,
 ) -> None:
+    started = time.monotonic()
     logger.info(
-        "Starting scrape run headless=%s batch_size=%d sources=%d",
+        "Starting scrape: %d sources (headless=%s, batch size=%d)",
+        len(settings.sources),
         headless,
         batch_size,
-        len(settings.sources),
     )
+
+    if not settings.sources:
+        logger.warning("No sources selected; check sources and --domains.")
+
+        return
 
     if batch_size <= 0:
         batch_size = 1
@@ -85,7 +93,14 @@ async def run_scrape(
         )
 
         try:
-            for source in settings.sources:
+            for index, source in enumerate(settings.sources, 1):
+                logger.info(
+                    "[%d/%d] %s: starting collection",
+                    index, len(settings.sources), source.domain,
+                )
+                source_posts = 0
+                source_assets = 0
+
                 async for batch in _discover_source_batches(
                     settings,
                     source,
@@ -95,12 +110,26 @@ async def run_scrape(
                     feed_staleness=feed_staleness,
                     batch_size=batch_size,
                 ):
+                    source_posts += len(batch.posts)
+                    source_assets += len(batch.assets)
                     await queue.put(batch)
-        finally:
-            await queue.put(None)
-            await processor_task
 
-        logger.info("Scrape run complete")
+                logger.info(
+                    "[%d/%d] %s: queued %d posts and %d media references",
+                    index, len(settings.sources), source.domain,
+                    source_posts, source_assets,
+                )
+        finally:
+            logger.info("Finishing queued downloads and database writes")
+            await queue.put(None)
+            totals = await processor_task
+
+        logger.info(
+            "Scrape complete in %.1fs: %d posts saved; "
+            "%d assets available; %d not downloaded",
+            time.monotonic() - started, totals.posts,
+            totals.assets_available, totals.assets_unavailable,
+        )
 
 
 async def _discover_source_batches(
@@ -138,6 +167,13 @@ async def _discover_source_batches(
                 source.domain,
             )
 
+            if not feed_urls:
+                logger.warning(
+                    "%s: no usable feeds; source skipped", source.domain,
+                )
+
+                return
+
             batches_iter = scrape_feed_batches(
                 http_client,
                 domain=source.domain,
@@ -167,7 +203,10 @@ async def _process_batches(
     browser_profile_dir: pathlib.Path,
     max_asset_bytes: int | None,
     batch_size: int,
-) -> None:
+) -> ScrapeTotals:
+    saved_posts = 0
+    available_assets = 0
+    unavailable_assets = 0
     pending_posts: list[RawPost] = []
     pending_discoveries: list[AssetDiscovery] = []
 
@@ -183,10 +222,10 @@ async def _process_batches(
                 pending_discoveries.extend(batch.assets)
 
         if batch is None or len(pending_posts) >= batch_size:
-            await _flush_posts(clickhouse_client, pending_posts)
+            saved_posts += await _flush_posts(clickhouse_client, pending_posts)
 
         if batch is None or len(pending_discoveries) >= batch_size:
-            await _flush_assets(
+            assets = await _flush_assets(
                 clickhouse_client,
                 http_client,
                 pending_discoveries,
@@ -194,25 +233,32 @@ async def _process_batches(
                 browser_profile_dir=browser_profile_dir,
                 max_asset_bytes=max_asset_bytes,
             )
+            available_assets += assets.assets_available
+            unavailable_assets += assets.assets_unavailable
 
         if batch is None:
             # Break when there's nothing left.
             break
 
+    return ScrapeTotals(saved_posts, available_assets, unavailable_assets)
+
 
 async def _flush_posts(
     clickhouse_client: ClickHouseClient,
     pending_posts: list[RawPost],
-) -> None:
+) -> int:
     if not pending_posts:
-        return
+        return 0
 
+    count = len(pending_posts)
     await clickhouse_client.insert_rows(
         "raw_posts",
         [post._asdict() for post in pending_posts],
     )
-    logger.info("Flushed %d raw posts", len(pending_posts))
+    logger.info("Saved %d raw posts", count)
     pending_posts.clear()
+
+    return count
 
 
 async def _flush_assets(
@@ -223,9 +269,9 @@ async def _flush_assets(
     assets_dir: pathlib.Path,
     browser_profile_dir: pathlib.Path,
     max_asset_bytes: int | None,
-) -> None:
+) -> ScrapeTotals:
     if not discoveries:
-        return
+        return ScrapeTotals()
 
     downloaded = await download_assets(
         discoveries,
@@ -237,13 +283,20 @@ async def _flush_assets(
     discoveries.clear()
 
     if not downloaded:
-        return
+        return ScrapeTotals()
 
     await clickhouse_client.insert_rows(
         "raw_assets",
         [asset._asdict() for asset in downloaded],
     )
-    logger.info("Flushed %d raw assets", len(downloaded))
+    available = sum(bool(asset.local_path) for asset in downloaded)
+    unavailable = len(downloaded) - available
+    logger.info(
+        "Saved %d media references: %d files available; %d not downloaded",
+        len(downloaded), available, unavailable,
+    )
+
+    return ScrapeTotals(0, available, unavailable)
 
 
 async def _refresh_site_feeds(
@@ -256,9 +309,14 @@ async def _refresh_site_feeds(
     recent = await _load_recent_site_feeds(clickhouse_client, domain, cutoff)
 
     if recent:
+        logger.info("%s: using %d cached feed URLs", domain, len(recent))
+
         return
 
-    discovered = await fetch_feed_links(domain)
+    async with Progress(f"Discovering feeds for {domain}"):
+        discovered = await fetch_feed_links(domain)
+
+    logger.info("%s: discovered %d feed URLs", domain, len(discovered))
 
     if not discovered:
         return
@@ -337,11 +395,10 @@ def run_scrape_from_config(
     domain_regex: re.Pattern[str] | None = None,
 ) -> None:
     settings = load_settings(path)
+    configure_logging(settings.logging, component="scrape")
 
     if domain_regex:
         settings = filter_settings_sources(settings, domain_regex)
-
-    configure_logging(settings.logging, component="scrape")
 
     asyncio.run(run_scrape(settings, headless=headless))
 

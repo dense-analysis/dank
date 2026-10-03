@@ -17,6 +17,7 @@ import aiohttp
 
 from dank.html_utils import is_youtube_url
 from dank.model import AssetDiscovery, RawPost
+from dank.progress import Progress
 from dank.scrape.types import ScrapeBatch
 
 logger = logging.getLogger(__name__)
@@ -280,6 +281,8 @@ def parse_feed_entries(
     root = _parse_xml_root(xml)
 
     if root is None:
+        logger.warning("%s: invalid RSS/Atom XML", domain)
+
         return []
 
     feed_type = _feed_type_from_root(root)
@@ -293,6 +296,7 @@ def parse_feed_entries(
         case "rss1":
             entries = _parse_rss1_entries(root, root_url)
         case _:
+            logger.warning("%s: unsupported feed root <%s>", domain, root.tag)
             entries = []
 
     return [
@@ -453,6 +457,8 @@ async def scrape_feed_batches(
         concurrency=concurrency,
     )
 
+    logger.info("%s: found %d article links", domain, len(page_discoveries))
+
     # We batch page fetches separately from feed fetches.
     for page_chunk in itertools.batched(page_discoveries, batch_size):
         discoveries = [discovery.page for discovery in page_chunk]
@@ -460,6 +466,11 @@ async def scrape_feed_batches(
             http_client,
             discoveries,
             concurrency=concurrency,
+        )
+        fetched = sum(bool(page_html) for _, page_html in page_results)
+        logger.info(
+            "%s: article batch fetched=%d, failed=%d",
+            domain, fetched, len(page_results) - fetched,
         )
         # Index by page URL so we can preserve feed URL provenance per post.
         page_html_map = {
@@ -499,6 +510,7 @@ async def _fetch_feed_page_discoveries(
 ) -> list[_FeedPageDiscovery]:
     seen_urls: set[str] = set()
     semaphore = asyncio.Semaphore(concurrency)
+    progress = Progress(f"Fetching feeds for {domain}", len(feed_urls))
 
     async def _fetch_feed(feed_url: str) -> list[_FeedPageDiscovery]:
         # Feed fetches are bounded so many-feed domains do not spike traffic.
@@ -509,6 +521,8 @@ async def _fetch_feed_page_discoveries(
                 accept=FEED_ACCEPT,
             )
 
+        progress.advance()
+
         if not feed_xml:
             return []
 
@@ -518,14 +532,17 @@ async def _fetch_feed_page_discoveries(
             root_url=root_url,
         )
 
+        logger.info("Feed %s: %d article links", feed_url, len(discoveries))
+
         return [
             _FeedPageDiscovery(feed_url=feed_url, page=discovery)
             for discovery in discoveries
         ]
 
-    all_discoveries = await asyncio.gather(
-        *(_fetch_feed(feed_url) for feed_url in feed_urls),
-    )
+    async with progress:
+        all_discoveries = await asyncio.gather(
+            *(_fetch_feed(feed_url) for feed_url in feed_urls),
+        )
     unique: list[_FeedPageDiscovery] = []
 
     # Prevent duplicates from overlapping feeds from double-scraping.
@@ -710,6 +727,9 @@ async def _fetch_pages(
         return []
 
     semaphore = asyncio.Semaphore(concurrency)
+    progress = Progress(
+        f"Fetching articles for {discoveries[0].domain}", len(discoveries),
+    )
 
     async def _fetch(
         discovery: PageDiscovery,
@@ -721,11 +741,14 @@ async def _fetch_pages(
                 accept=HTML_ACCEPT,
             )
 
+        progress.advance()
+
         return discovery, html
 
-    return await asyncio.gather(
-        *(_fetch(discovery) for discovery in discoveries),
-    )
+    async with progress:
+        return await asyncio.gather(
+            *(_fetch(discovery) for discovery in discoveries),
+        )
 
 
 async def _fetch_text(
@@ -744,11 +767,26 @@ async def _fetch_text(
         ) as response:
             response.raise_for_status()
 
-            return await response.text()
-    except Exception:
-        logger.debug("Failed to fetch %s", url, exc_info=True)
+            text = await response.text()
 
-        return None
+            if not text:
+                logger.warning("Empty response fetching %s", url)
+
+            return text
+    except aiohttp.ClientResponseError as error:
+        retry_after = (error.headers or {}).get("Retry-After")
+        logger.warning(
+            "HTTP %d fetching %s: %s%s",
+            error.status, url, error.message,
+            f"; Retry-After: {retry_after}" if retry_after else "",
+        )
+    except Exception as error:
+        logger.warning(
+            "Failed to fetch %s: %s: %s",
+            url, type(error).__name__, error,
+        )
+
+    return None
 
 
 def _parse_datetime(value: str | None) -> datetime.datetime | None:

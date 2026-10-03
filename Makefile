@@ -6,7 +6,7 @@ ARGS ?=
 
 ifeq ($(MODE),docker)
 CONFIG_TEMPLATE := config.example.toml
-RUN := $(COMPOSE) run --rm dank
+RUN := $(COMPOSE) run --rm -T dank
 SCRAPE := $(RUN) scrape --headless
 WEB := $(COMPOSE) up --build --wait
 else ifeq ($(MODE),native)
