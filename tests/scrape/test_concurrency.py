@@ -260,8 +260,9 @@ async def test_cancellation_releases_http_slots() -> None:
         pass
 
 
+@pytest.mark.parametrize("limit", [2, 6])
 async def test_media_limit_is_shared_across_source_batches(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, limit: int,
 ) -> None:
     active = peak = 0
 
@@ -274,7 +275,7 @@ async def test_media_limit_is_shared_across_source_batches(
 
     monkeypatch.setattr("dank.scrape.assets._download_one", download)
     token = current_limiter.set(RequestLimiter(ScrapeSettings(
-        media_concurrency=2,
+        media_concurrency=limit,
     )))
 
     try:
@@ -287,5 +288,35 @@ async def test_media_limit_is_shared_across_source_batches(
     finally:
         current_limiter.reset(token)
 
-    assert peak == 2
+    assert peak == limit
     assert active == 0
+
+
+async def test_large_media_batch_allows_another_source_to_download(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    calls: list[str] = []
+
+    async def download(
+        discovery: AssetDiscovery, *args: Any, **kwargs: Any,
+    ) -> None:
+        calls.append(discovery.domain)
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr("dank.scrape.assets._download_one", download)
+    token = current_limiter.set(RequestLimiter(ScrapeSettings(
+        media_concurrency=1,
+    )))
+
+    try:
+        await gather_tasks(asyncio.create_task(download_assets(
+            [AssetDiscovery(
+                "rss", host, str(i), f"https://{host}/{i}", "image", None,
+            ) for i in range(size)],
+            assets_dir=tmp_path, http_client=cast(Any, None),
+        )) for host, size in (("large.test", 100), ("small.test", 1)))
+    finally:
+        current_limiter.reset(token)
+
+    assert calls.index("small.test") <= 4
+    assert len(calls) == 101

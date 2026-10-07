@@ -201,3 +201,44 @@ async def test_no_selected_sources_warns_without_connecting(
     await run_scrape(_make_settings()._replace(sources=()))
 
     assert "No sources selected" in caplog.text
+
+
+async def test_articles_are_saved_before_waiting_for_media(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    saved: list[str] = []
+    downloading = asyncio.Event()
+    release = asyncio.Event()
+    now = datetime.datetime.now(datetime.UTC)
+
+    class _Client:
+        async def insert_rows(self, table: str, rows: object) -> None:
+            saved.append(table)
+
+    async def download(*args: Any, **kwargs: Any) -> list[RawAsset]:
+        downloading.set()
+        await release.wait()
+
+        return []
+
+    monkeypatch.setattr("dank.scrape.runner.download_assets", download)
+    queue: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
+    await queue.put(ScrapeBatch(
+        [RawPost("test", "post", "https://test/post", now, now,
+                 "rss", "https://test/feed", "{}")],
+        [AssetDiscovery("rss", "test", "post", f"https://test/{i}",
+                        "image", None) for i in range(2)],
+    ))
+    await queue.put(None)
+    task = asyncio.create_task(_process_batches(
+        queue, cast(Any, _Client()), cast(Any, None), assets_dir=tmp_path,
+        browser_profile_dir=tmp_path, max_asset_bytes=None, batch_size=2,
+    ))
+
+    try:
+        await asyncio.wait_for(downloading.wait(), timeout=1)
+        assert saved == ["raw_posts"]
+        assert not task.done()
+    finally:
+        release.set()
+        await task

@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import pathlib
 from collections.abc import Iterable
+from contextlib import nullcontext
 from urllib.parse import urlparse
 
 import aiohttp
@@ -46,7 +47,11 @@ async def download_assets(
             unique.setdefault(discovery.url, discovery)
 
     limiter = current_limiter.get()
-    semaphore = limiter.media if limiter else asyncio.Semaphore(concurrency)
+    # Limit each batch's waiters so one large source cannot monopolise the run.
+    semaphore = asyncio.Semaphore(
+        limiter.settings.media_concurrency if limiter else concurrency,
+    )
+    shared = limiter.media if limiter else nullcontext()
 
 
     if not unique:
@@ -60,7 +65,7 @@ async def download_assets(
         token = current_source.set(source)
 
         try:
-            async with semaphore:
+            async with semaphore, shared:
                 if source is not None:
                     source.active_media += 1
 

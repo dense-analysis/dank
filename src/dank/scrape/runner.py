@@ -385,11 +385,14 @@ async def _process_batches(
             if batch.assets:
                 pending_discoveries.extend(batch.assets)
 
-        if batch is None or len(pending_posts) >= batch_size:
+        # Persist articles before waiting on a potentially slow media batch.
+        flush_media = batch is None or len(pending_discoveries) >= batch_size
+
+        if batch is None or len(pending_posts) >= batch_size or flush_media:
             saved_posts += await _flush_posts(clickhouse_client, pending_posts)
             _records_persisted(post_owners, "posts_saved")
 
-        if batch is None or len(pending_discoveries) >= batch_size:
+        if flush_media:
             assets = await _flush_assets(
                 clickhouse_client,
                 http_client,
