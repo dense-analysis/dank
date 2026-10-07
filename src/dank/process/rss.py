@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple, cast
 
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
-from dank.html_utils import remove_page_noise
+from dank.html_utils import html_base_url, remove_page_noise
 from dank.model import Post, RawPost
 from dank.process.page import (
     extract_article_html,
@@ -31,6 +31,12 @@ RSS2_NAMESPACES = {
 }
 
 
+class _RSSPayload(NamedTuple):
+    feed_xml: str
+    page_html: str
+    page_final_url: str = ""
+
+
 class _ParsedItem(NamedTuple):
     title: str
     text: str
@@ -47,8 +53,8 @@ class _PageDerivedValues(NamedTuple):
 
 
 def convert_raw_post(row: RawPost) -> Post | None:
-    feed_xml, page_html = _split_payload(row.payload)
-    root = _parse_xml_root(feed_xml)
+    payload = _split_payload(row.payload)
+    root = _parse_xml_root(payload.feed_xml)
 
     if root is None:
         return None
@@ -62,7 +68,8 @@ def convert_raw_post(row: RawPost) -> Post | None:
             return None
 
     page_derived = _derive_page_values(
-        page_html,
+        payload.page_html,
+        page_url=payload.page_final_url or row.url,
         title=parsed.title,
         author=parsed.author,
         published_at=row.post_created_at or parsed.created_at,
@@ -104,6 +111,7 @@ def convert_raw_post(row: RawPost) -> Post | None:
 def _derive_page_values(
     page_html: str,
     *,
+    page_url: str,
     title: str,
     author: str,
     published_at: datetime.datetime | None,
@@ -123,13 +131,15 @@ def _derive_page_values(
         if published_at is None:
             published_at = page_metadata.published_at
 
+    base_url: str | None = None
     # Full feed bodies include comment text and must not become whole pages.
     if page_html and not (full_content and content_html):
         content_html = (
             extract_article_html(page_html) or page_html
         )
+        base_url = html_base_url(page_html, page_url)
 
-    content_html = remove_page_noise(content_html)
+    content_html = remove_page_noise(content_html, base_url=base_url)
 
     return _PageDerivedValues(
         title=title,
@@ -146,26 +156,31 @@ def _parse_xml_root(xml: str) -> ElementTree.Element | None:
         return None
 
 
-def _split_payload(payload: str) -> tuple[str, str]:
+def _split_payload(payload: str) -> _RSSPayload:
     if not payload:
-        return "", ""
+        return _RSSPayload("", "")
 
     try:
         parsed = json.loads(payload)
     except ValueError:
-        return payload, ""
+        return _RSSPayload(payload, "")
 
     if not isinstance(parsed, dict):
-        return payload, ""
+        return _RSSPayload(payload, "")
 
     parsed_dict = cast(dict[str, Any], parsed)
     feed_xml = parsed_dict.get("feed_xml")
     page_html = parsed_dict.get("page_html")
+    page_final_url = parsed_dict.get("page_final_url")
 
     if isinstance(feed_xml, str):
-        return feed_xml, page_html if isinstance(page_html, str) else ""
+        return _RSSPayload(
+            feed_xml,
+            page_html if isinstance(page_html, str) else "",
+            page_final_url if isinstance(page_final_url, str) else "",
+        )
 
-    return payload, ""
+    return _RSSPayload(payload, "")
 
 
 def _strip_xml_namespace(tag: str) -> str:

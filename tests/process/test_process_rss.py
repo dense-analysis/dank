@@ -2,6 +2,8 @@ import datetime
 import json
 import xml.etree.ElementTree as ElementTree
 
+import pytest
+
 from dank.model import RawPost
 from dank.process.rss import convert_raw_post
 
@@ -311,3 +313,46 @@ def test_summary_uses_article_body_and_keeps_escaped_code() -> None:
     assert "Navigation" not in post.html and "Footer" not in post.html
     assert "tracking" not in post.html and "track()" not in post.html
     assert "Short teaser" not in post.html
+
+
+@pytest.mark.parametrize("extra, expected", [
+    ({"page_final_url": "https://blog.test/posts/article/"},
+     "https://blog.test/posts/article/cover.png"),
+    ({}, "https://short.test/cover.png"),
+    ({"page_final_url": 123}, "https://short.test/cover.png"),
+])
+def test_article_display_resolves_urls_without_changing_provenance(
+    extra: dict[str, object], expected: str,
+) -> None:
+    page = '<html><article><img src="cover.png"><a href="more">More</a>' \
+           '</article></html>'
+    payload = json.dumps({
+        "feed_xml": "<item><title>Title</title></item>", "page_html": page,
+        **extra,
+    })
+    raw = _raw_post(
+        payload=payload, url="https://short.test/abc",
+        scraped_at=datetime.datetime.now(datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+    assert post is not None
+    assert f'src="{expected}"' in post.html
+    assert post.url == raw.url and post.post_id == raw.post_id
+    assert raw.payload == payload
+
+
+def test_article_display_honours_base_from_original_page_head() -> None:
+    raw = _raw_post(
+        payload=json.dumps({
+            "feed_xml": "<item><title>Title</title></item>",
+            "page_html": '<head><base href="../assets/"></head>'
+                         '<article><img src="cover.png"></article>',
+            "page_final_url": "https://blog.test/posts/article/",
+        }),
+        url="https://short.test/abc",
+        scraped_at=datetime.datetime.now(datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+    assert post is not None
+    assert 'src="https://blog.test/posts/assets/cover.png"' in post.html
+    assert '<base' not in post.html

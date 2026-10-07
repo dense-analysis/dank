@@ -15,7 +15,7 @@ from urllib.parse import urldefrag, urljoin, urlparse
 
 import aiohttp
 
-from dank.html_utils import is_youtube_url
+from dank.html_utils import html_base_url, is_youtube_url
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
 from dank.scrape.http import (
@@ -76,9 +76,15 @@ class PageDiscovery(NamedTuple):
     payload: str
 
 
+class FetchedText(NamedTuple):
+    text: str
+    url: str
+
+
 class _FeedPageDiscovery(NamedTuple):
     feed_url: str
     page: PageDiscovery
+    feed_final_url: str
 
 
 class FeedLink(NamedTuple):
@@ -248,17 +254,20 @@ async def fetch_feed_links(
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=timeout_seconds),
     ) as http_client:
-        html = await _fetch_text(http_client, root_url, accept=["text/html"])
+        fetched = await _fetch_text(
+            http_client, root_url, accept=["text/html"],
+        )
 
-    if not html:
+    if fetched is None or not fetched.text:
         logger.warning("No HTML received for %s", root_url)
 
         return []
 
-    return discover_feed_links(html, root_url)
+    return discover_feed_links(fetched.text, fetched.url)
 
 
 def discover_feed_links(html: str, root_url: str) -> list[FeedLink]:
+    root_url = html_base_url(html, root_url)
     parser = _HeadFeedLinkParser()
     parser.feed(html)
     links: list[FeedLink] = []
@@ -466,11 +475,9 @@ async def scrape_feed_batches(
     if not feed_urls:
         return
 
-    root_url = f"https://{domain}"
     page_discoveries = await _fetch_feed_page_discoveries(
         http_client,
         domain=domain,
-        root_url=root_url,
         feed_urls=feed_urls,
         concurrency=concurrency,
         max_entries_per_feed=max_entries_per_feed,
@@ -486,30 +493,30 @@ async def scrape_feed_batches(
             discoveries,
             concurrency=concurrency,
         )
-        fetched = sum(bool(page_html) for _, page_html in page_results)
+        fetched = sum(bool(page and page.text) for _, page in page_results)
         logger.info(
             "%s: article batch fetched=%d, failed=%d",
             domain, fetched, len(page_results) - fetched,
         )
         # Index by page URL so we can preserve feed URL provenance per post.
-        page_html_map = {
-            discovery.url: page_html
-            for discovery, page_html in page_results
+        page_fetches = {
+            discovery.url: page for discovery, page in page_results
         }
         raw_posts: list[RawPost] = []
         asset_discoveries: list[AssetDiscovery] = []
         scraped_at = datetime.datetime.now(datetime.UTC)
 
         for feed_discovery in page_chunk:
-            page_html = page_html_map.get(feed_discovery.page.url)
+            page = page_fetches.get(feed_discovery.page.url)
 
-            if not page_html and not keep_feed_on_fetch_failure:
+            if not (page and page.text) and not keep_feed_on_fetch_failure:
                 continue
 
             raw_post, assets = _build_raw_post(
                 feed_discovery.page,
-                page_html or "",
+                page,
                 request_url=feed_discovery.feed_url,
+                feed_final_url=feed_discovery.feed_final_url,
                 scraped_at=scraped_at,
             )
             raw_posts.append(raw_post)
@@ -523,7 +530,6 @@ async def _fetch_feed_page_discoveries(
     http_client: aiohttp.ClientSession,
     *,
     domain: str,
-    root_url: str,
     feed_urls: list[str],
     concurrency: int,
     max_entries_per_feed: int = 0,
@@ -535,7 +541,7 @@ async def _fetch_feed_page_discoveries(
     async def _fetch_feed(feed_url: str) -> list[_FeedPageDiscovery]:
         # Feed fetches are bounded so many-feed domains do not spike traffic.
         async with semaphore:
-            feed_xml = await _fetch_text(
+            feed = await _fetch_text(
                 http_client,
                 feed_url,
                 accept=FEED_ACCEPT,
@@ -543,13 +549,11 @@ async def _fetch_feed_page_discoveries(
 
         progress.advance()
 
-        if not feed_xml:
+        if feed is None or not feed.text:
             return []
 
         discoveries = parse_feed_entries(
-            feed_xml,
-            domain=domain,
-            root_url=root_url,
+            feed.text, domain=domain, root_url=feed.url,
         )
 
         total = len(discoveries)
@@ -566,7 +570,7 @@ async def _fetch_feed_page_discoveries(
         )
 
         return [
-            _FeedPageDiscovery(feed_url=feed_url, page=discovery)
+            _FeedPageDiscovery(feed_url, discovery, feed.url)
             for discovery in discoveries
         ]
 
@@ -603,11 +607,14 @@ def _entry_recency(
 
 def _build_raw_post(
     discovery: PageDiscovery,
-    page_html: str,
+    page: FetchedText | None,
     *,
     request_url: str,
+    feed_final_url: str,
     scraped_at: datetime.datetime,
 ) -> tuple[RawPost, list[AssetDiscovery]]:
+    page_html = page.text if page else ""
+    page_final_url = page.url if page else None
     post_id = _hash_post_id(discovery.url)
     raw_post = RawPost(
         domain=discovery.domain,
@@ -617,13 +624,16 @@ def _build_raw_post(
         scraped_at=scraped_at,
         source="rss",
         request_url=request_url,
-        payload=_compose_payload(discovery.payload, page_html),
+        payload=_compose_payload(
+            discovery.payload, page_html,
+            page_final_url=page_final_url, feed_final_url=feed_final_url,
+        ),
     )
     assets = _extract_page_assets(
         page_html,
         domain=discovery.domain,
         post_id=post_id,
-        base_url=discovery.url,
+        base_url=page_final_url or discovery.url,
     )
 
     return raw_post, assets
@@ -643,8 +653,17 @@ def dedupe_discoveries(
     return list(unique.values())
 
 
-def _compose_payload(feed_xml: str, page_html: str) -> str:
-    payload = {"feed_xml": feed_xml, "page_html": page_html}
+def _compose_payload(
+    feed_xml: str, page_html: str, *,
+    page_final_url: str | None, feed_final_url: str,
+) -> str:
+    payload = {
+        "feed_xml": feed_xml, "page_html": page_html,
+        "feed_final_url": feed_final_url,
+    }
+
+    if page_final_url:
+        payload["page_final_url"] = page_final_url
 
     if not page_html:
         # Preserve the article failure alongside the retained feed entry.
@@ -667,7 +686,9 @@ def _extract_page_assets(
     if not page_html:
         return []
 
-    parser = _PageAssetParser(base_url or f"https://{domain}")
+    parser = _PageAssetParser(html_base_url(
+        page_html, base_url or f"https://{domain}",
+    ))
     parser.feed(page_html)
 
     return [
@@ -766,7 +787,7 @@ async def _fetch_pages(
     discoveries: list[PageDiscovery],
     *,
     concurrency: int,
-) -> list[tuple[PageDiscovery, str | None]]:
+) -> list[tuple[PageDiscovery, FetchedText | None]]:
     if not discoveries:
         return []
 
@@ -779,22 +800,22 @@ async def _fetch_pages(
         f"Fetching articles for {discoveries[0].domain}", len(page_urls),
     )
 
-    async def _fetch(url: str) -> tuple[str, str | None]:
+    async def _fetch(url: str) -> tuple[str, FetchedText | None]:
         async with semaphore:
-            html = await _fetch_text(http_client, url, accept=HTML_ACCEPT)
+            page = await _fetch_text(http_client, url, accept=HTML_ACCEPT)
 
         progress.advance()
 
-        return url, html
+        return url, page
 
     async with progress:
-        page_html = dict(await gather_tasks(
+        pages = dict(await gather_tasks(
             asyncio.create_task(_fetch(url)) for url in page_urls
         ))
 
     # Preserve each entry's URL and payload even when its page was shared.
     return [
-        (discovery, page_html[urldefrag(discovery.url).url])
+        (discovery, pages[urldefrag(discovery.url).url])
         for discovery in discoveries
     ]
 
@@ -804,13 +825,13 @@ async def _fetch_text(
     url: str,
     *,
     accept: list[str],
-) -> str | None:
-    text = await _fetch_text_with_retries(http_client, url, accept=accept)
+) -> FetchedText | None:
+    fetched = await _fetch_text_with_retries(http_client, url, accept=accept)
 
-    if not text:
+    if fetched is None or not fetched.text:
         count("fetch_failures")
 
-    return text
+    return fetched
 
 
 async def _fetch_text_with_retries(
@@ -818,7 +839,7 @@ async def _fetch_text_with_retries(
     url: str,
     *,
     accept: list[str],
-) -> str | None:
+) -> FetchedText | None:
     if not url:
         return None
 
@@ -839,7 +860,7 @@ async def _fetch_text_with_retries(
                         url, retry,
                     )
 
-                return text
+                return FetchedText(text, str(response.url))
         except aiohttp.ClientResponseError as error:
             if error.status == 429:
                 count("http_429")

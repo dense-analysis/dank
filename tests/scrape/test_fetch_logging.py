@@ -103,7 +103,7 @@ async def test_empty_fetch_is_visible_at_warning(
         accept=["text/html"],
     )
 
-    assert result == ""
+    assert result is not None and result.text == ""
     assert "Empty response fetching https://example.test/empty" in caplog.text
 
 
@@ -162,7 +162,7 @@ async def test_rate_limit_recovers_with_exponential_waits(
         accept=["application/rss+xml"],
     )
 
-    assert result == "<rss/>"
+    assert result is not None and result.text == "<rss/>"
     assert delays == [2, 4]
     assert len(client.responses) == 3
     assert client.headers == [{"Accept": "application/rss+xml"}] * 3
@@ -211,7 +211,7 @@ async def test_retry_after_controls_wait_without_disabling_backoff(
         accept=["text/html"],
     )
 
-    assert result == "ok"
+    assert result is not None and result.text == "ok"
     assert len(client.responses) == 2
     sleep.assert_awaited_once_with(delay)
 
@@ -230,7 +230,7 @@ async def test_retry_after_http_date_is_respected(
         accept=["text/html"],
     )
 
-    assert result == "ok"
+    assert result is not None and result.text == "ok"
     sleep.assert_awaited_once()
     assert 18 <= sleep.await_args_list[0].args[0] <= 20
 
@@ -269,7 +269,8 @@ async def test_other_statuses_do_not_retry(
         accept=["text/html"],
     )
 
-    assert result == ("ok" if status == 200 else None)
+    expected = "ok" if status == 200 else None
+    assert (result.text if result else None) == expected
     assert len(client.responses) == 1
     sleep.assert_not_awaited()
 

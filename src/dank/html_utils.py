@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 YOUTUBE_HOSTS = {
     "youtube.com",
@@ -45,11 +45,46 @@ TEXT_BLOCKS = {
 }
 
 
+class _BaseURLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.href: str | None = None
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag == "base" and self.href is None:
+            for key, value in attrs:
+                if key == "href":
+                    self.href = value or ""
+                    break
+
+
+def html_base_url(value: str, response_url: str) -> str:
+    parser = _BaseURLParser()
+    parser.feed(value)
+
+    try:
+        base_url = urljoin(response_url, parser.href or "")
+        parsed = urlparse(base_url)
+        _ = parsed.port
+
+        if parsed.scheme in {"http", "https"} and parsed.hostname:
+            return base_url
+    except ValueError:
+        pass
+
+    return response_url
+
+
 class _ReadableHTML(HTMLParser):
-    def __init__(self, *, text_only: bool = False) -> None:
+    def __init__(
+        self, *, text_only: bool = False, base_url: str | None = None,
+    ) -> None:
         super().__init__()
         self.parts: list[str] = []
         self.text_only = text_only
+        self.base_url = base_url
         self.skip: str | None = None
 
     def handle_starttag(
@@ -67,7 +102,7 @@ class _ReadableHTML(HTMLParser):
             if tag in TEXT_BLOCKS:
                 self.parts.append("\n")
         else:
-            self.parts.append(self.get_starttag_text() or "")
+            self.parts.append(self._start_tag(tag, attrs))
 
     def handle_startendtag(
         self, tag: str, attrs: list[tuple[str, str | None]],
@@ -79,7 +114,37 @@ class _ReadableHTML(HTMLParser):
             if tag in TEXT_BLOCKS:
                 self.parts.append("\n")
         else:
-            self.parts.append(self.get_starttag_text() or "")
+            self.parts.append(self._start_tag(tag, attrs, self_closing=True))
+
+    def _start_tag(
+        self, tag: str, attrs: list[tuple[str, str | None]],
+        *, self_closing: bool = False,
+    ) -> str:
+        if not self.base_url:
+            return self.get_starttag_text() or ""
+
+        resolved: list[tuple[str, str | None]] = []
+
+        for key, value in attrs:
+            if key in {"href", "src", "poster"} and value:
+                try:
+                    value = urljoin(self.base_url, value)
+                except ValueError:
+                    pass
+
+            resolved.append((key, value))
+
+        if resolved == attrs:
+            return self.get_starttag_text() or ""
+
+        attributes = "".join(
+            f' {key}="{html.escape(value, quote=True)}"'
+            if value is not None else f" {key}"
+            for key, value in resolved
+        )
+        suffix = " />" if self_closing else ">"
+
+        return f"<{tag}{attributes}{suffix}"
 
     def handle_endtag(self, tag: str) -> None:
         if self.skip:
@@ -98,8 +163,8 @@ class _ReadableHTML(HTMLParser):
             )
 
 
-def remove_page_noise(value: str) -> str:
-    parser = _ReadableHTML()
+def remove_page_noise(value: str, *, base_url: str | None = None) -> str:
+    parser = _ReadableHTML(base_url=base_url)
     parser.feed(value)
 
     return "".join(parser.parts).strip()

@@ -91,3 +91,8 @@ feed supplies only a summary, it extracts the article body from the fetched
 page when possible. Page headers, scripts and styles are removed from
 processed content and previews. Embeddings use readable text rather than
 HTML markup. Original feed XML and page HTML remain in raw storage.
+
+Links and media in extracted page HTML resolve against `page_final_url`,
+including a valid HTML `<base href>`, so relative URLs work in the viewer.
+Older captures without this metadata fall back to the original article URL;
+redirected articles need a new scrape and processing run to use the final URL.

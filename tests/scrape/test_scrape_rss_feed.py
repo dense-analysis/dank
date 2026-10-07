@@ -89,7 +89,8 @@ PAGE_THREE_HTML = """
 
 
 class _FakeResponse:
-    def __init__(self, body: str, status: int) -> None:
+    def __init__(self, body: str, status: int, url: str) -> None:
+        self.url = url
         self._body = body
         self._status = status
 
@@ -128,9 +129,9 @@ class _FakeClient:
         body = self._responses.get(url)
 
         if body is None:
-            return _FakeResponse("", 404)
+            return _FakeResponse("", 404, url)
 
-        return _FakeResponse(body, 200)
+        return _FakeResponse(body, 200, url)
 
 
 async def test_scrape_feed_batches_yields_posts_and_assets() -> None:

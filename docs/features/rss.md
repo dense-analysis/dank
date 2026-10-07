@@ -79,6 +79,13 @@ publication time when available, and a JSON payload containing the individual
 feed entry's XML and fetched article HTML. Images, audio, video and supported
 embeds found on article pages enter the [media download](media.md) workflow.
 
+Relative feed/article links and media URLs use the final response URL after
+redirects. HTML pages can override this with their first `<base href>` when
+it resolves to an HTTP(S) URL. Raw payloads record `feed_final_url` and
+`page_final_url` where available. The original requested feed URL and entry URL
+(including comment fragments) remain the post's provenance and identity;
+raw feed XML and page HTML are preserved.
+
 ## Rate limits
 
 Homepage, feed and article requests retry HTTP 429 responses up to three

@@ -28,6 +28,7 @@ from dank.scrape.http import (
 )
 from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.rss import (
+    FetchedText,
     _fetch_text,  # pyright: ignore[reportPrivateUsage]
     fetch_feed_links,
 )
@@ -158,7 +159,7 @@ async def test_cooldown_releases_capacity_and_applies_to_other_urls(
 
     monkeypatch.setattr("dank.scrape.http.retry_sleep", sleep)
     first = asyncio.create_task(_fetch_text(cast(Any, client), url, accept=[]))
-    second: asyncio.Task[str | None] | None = None
+    second: asyncio.Task[FetchedText | None] | None = None
 
     try:
         await asyncio.wait_for(waiting.wait(), timeout=1)
