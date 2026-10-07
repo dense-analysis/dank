@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import logging
 import pathlib
+import uuid
 from urllib.parse import urlparse
 
 import aiohttp
@@ -11,6 +13,17 @@ from dank.model import AssetDiscovery, RawAsset
 from dank.scrape.metrics import count, request_metrics
 
 logger = logging.getLogger(__name__)
+
+
+def http_asset_path(target_dir: pathlib.Path, url: str) -> pathlib.Path:
+    # The query string can identify an entirely different image on a CDN.
+    digest = hashlib.sha256(url.encode()).hexdigest()
+    suffix = pathlib.PurePosixPath(urlparse(url).path).suffix
+
+    if len(suffix) > 16:
+        suffix = ""
+
+    return target_dir / f"{digest}{suffix}"
 
 
 async def download_file_http(
@@ -23,15 +36,15 @@ async def download_file_http(
 ) -> RawAsset | None:
     target_dir.mkdir(parents=True, exist_ok=True)  # noqa
 
-    parsed = urlparse(discovery.url)
-    filename = pathlib.Path(parsed.path).name or "asset"
-    target_path = target_dir / filename
+    target_path = http_asset_path(target_dir, discovery.url)
 
     # Only download assets if we don't already have them.
     if not target_path.exists():
         # Create a temporary path for the download.
         # We'll move completed downloads to the real path when they are done.
-        temp_path = target_path.with_suffix(f"{target_path.suffix}.part")
+        temp_path = target_path.with_name(
+            f"{target_path.name}.{uuid.uuid4().hex}.part",
+        )
 
         try:
             with request_metrics():
@@ -79,6 +92,7 @@ async def download_file_http(
                                 f"and {bytes_read} bytes downloaded"
                             ),
                         )
+            temp_path.replace(target_path)
         except Exception as error:
             if (
                 isinstance(error, aiohttp.ClientResponseError)
@@ -91,11 +105,10 @@ async def download_file_http(
                 discovery.url, type(error).__name__, error,
             )
 
-            # Delete partial downloads when downloading fails.
-            temp_path.unlink(missing_ok=True)
             target_path = None
-        else:
-            temp_path.replace(target_path)
+        finally:
+            # Each request owns its temporary file, including on cancellation.
+            temp_path.unlink(missing_ok=True)
 
     return RawAsset(
         domain=discovery.domain,

@@ -14,6 +14,7 @@ from dank.config import Settings, SourceConfig, load_settings
 from dank.model import AssetDiscovery, RawAsset, RawPost
 from dank.runtime import RuntimeInfo
 from dank.scrape.assets import download_assets
+from dank.scrape.assets.http import http_asset_path
 from dank.scrape.metrics import SourceMetrics, count, current_source
 from dank.scrape.runner import run_scrape
 from dank.scrape.types import ScrapeBatch
@@ -240,13 +241,13 @@ async def test_file_measurements_distinguish_cached_new_failed_and_skipped(
     ]
     directory = tmp_path / "one.test/post"
     directory.mkdir(parents=True)
-    (directory / "cached.jpg").write_bytes(b"cached")
+    http_asset_path(directory, assets[0].url).write_bytes(b"cached")
 
     async def download(
         *, discovery: AssetDiscovery, timestamp: datetime.datetime,
         **kwargs: Any,
     ) -> RawAsset:
-        path = directory / discovery.url.rsplit("/", 1)[-1]
+        path = http_asset_path(directory, discovery.url)
         local_path = ""
 
         if not discovery.url.endswith("fail.jpg"):

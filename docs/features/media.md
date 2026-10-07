@@ -26,7 +26,10 @@ data_dir = "data"
 max_asset_bytes = 10485760
 ```
 
-Files are stored under `<data_dir>/assets/<domain>/<post_id>/`. Native runs
+Files are stored under `<data_dir>/assets/<domain>/<post_id>/`. HTTP filenames
+use a hash of the full URL, including query parameters, to avoid collisions
+between CDN resources. Existing records keep their paths; older filenames
+may be downloaded again once into the new layout. Native runs
 use the host path in `storage.data_dir`; a relative `data` path is beneath
 your working directory. Docker resolves `data` to `/app/data` in its persistent
 volume. See [setup](../setup.md) for configuration and storage differences.

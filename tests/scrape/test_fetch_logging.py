@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import os
 import pathlib
 from email.utils import format_datetime
 from typing import Any, cast
@@ -140,7 +141,7 @@ async def test_asset_http_error_is_visible_and_partial_file_is_removed(
 
     assert result is not None and result.local_path == ""
     assert "403" in caplog.text and url in caplog.text
-    assert not (tmp_path / "image.jpg.part").exists()
+    assert await asyncio.to_thread(os.listdir, tmp_path) == []
 
 
 async def test_rate_limit_recovers_with_exponential_waits(

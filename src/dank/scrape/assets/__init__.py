@@ -18,7 +18,7 @@ from dank.scrape.metrics import (
 )
 
 from .audio_video import download_audio_video_asset
-from .http import download_file_http
+from .http import download_file_http, http_asset_path
 
 SKIP_ASSET_TYPES = {"iframe", "link"}
 ASSET_FILENAMES_TO_NEVER_DOWNLOAD = {
@@ -92,11 +92,28 @@ async def download_assets(
 
 
     async with progress:
-        results = await asyncio.gather(
-            *(_tracked_download(item) for item in unique.values()),
-        )
+        tasks = [
+            asyncio.create_task(_tracked_download(item))
+            for item in unique.values()
+        ]
+
+        results = await _gather_downloads(tasks)
 
     return [result for result in results if result is not None]
+
+
+async def _gather_downloads(
+    tasks: list[asyncio.Task[RawAsset | None]],
+) -> list[RawAsset | None]:
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        # gather does not cancel siblings when one task fails.
+        for task in tasks:
+            task.cancel()
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 async def _download_one(
@@ -159,8 +176,7 @@ def _existing_files(
     if discovery.asset_type == "youtube":
         return {path.resolve() for path in target.glob("*")}
 
-    filename = pathlib.Path(urlparse(discovery.url).path).name or "asset"
-    path = target / filename
+    path = http_asset_path(target, discovery.url)
 
     return {path.resolve()} if path.exists() else set()
 
