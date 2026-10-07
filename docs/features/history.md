@@ -32,6 +32,9 @@ a running row contains the configured URLs; automatic URLs are recorded in
 the final row. Existing history rows have empty arrays for previously
 unrecorded values. `scrape_runs.max_entries_per_feed` records the global entry
 limit; zero means unlimited, including older runs.
+`media_download_types` snapshots the allowed download types; an empty array
+means downloads were disabled. Older runs default to all three types, matching
+the behaviour before this option existed.
 
 ## Timing and counts
 
@@ -46,7 +49,8 @@ limit; zero means unlimited, including older runs.
   did exist before their download job. `downloaded_file_bytes` is retained
   new-file size, not total network traffic or discarded download bytes.
 - `files_failed` and `media_skipped` separate unsuccessful downloads from
-  intentionally retained references and ignored assets.
+  intentionally retained references, disabled media types and ignored assets.
+  Intentional skips do not make a run partial or failed.
 - `http_requests`, `http_429`, `retries`, `fetch_failures` and
   `parse_failures` explain incomplete results. HTTP counters cover RSS and
   direct media requests made through aiohttp; Chromium and yt-dlp's internal

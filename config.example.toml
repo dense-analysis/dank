@@ -16,6 +16,10 @@ password = ""
 secure = false
 use_http = true
 
+[media]
+# Use ["image"] for images only, or [] to keep references without downloads.
+download_types = ["image", "audio", "video"]
+
 [storage]
 data_dir = "data"
 max_asset_bytes = 10485760

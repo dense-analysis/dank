@@ -454,7 +454,7 @@ def test_extract_posts_and_assets_from_watcher_guru_payload() -> None:
                         "amplify_video_thumb/2019503894544474112/img/"
                         "X1bFYVOwf_Q3ZjJC.jpg"
                     ),
-                    asset_type="video",
+                    asset_type="photo",
                     should_download=True,
                 ),
                 XAsset(

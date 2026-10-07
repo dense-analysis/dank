@@ -14,6 +14,10 @@ password = ""
 secure = false
 use_http = true
 
+[media]
+# Use ["image"] for images only, or [] to keep references without downloads.
+download_types = ["image", "audio", "video"]
+
 [storage]
 # Relative to the directory where you run DANK, or use your existing host path.
 data_dir = "data"

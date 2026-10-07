@@ -1,6 +1,9 @@
 import logging
 from typing import Any, NamedTuple, cast
 
+import pytest
+
+from dank.config import MEDIA_DOWNLOAD_TYPES
 from dank.model import AssetDiscovery
 from dank.scrape.assets import download_assets
 
@@ -15,9 +18,11 @@ class _UnusedHttpClient:
         raise AssertionError("HTTP client should not be used for yt-dlp")
 
 
+@pytest.mark.parametrize("download_types", [MEDIA_DOWNLOAD_TYPES, ("video",)])
 async def test_download_assets_uses_yt_dlp_library_for_youtube(
     monkeypatch: Any,
     tmp_path: Any,
+    download_types: tuple[str, ...],
 ) -> None:
     assets_dir = tmp_path / "assets"
     browser_profile_dir = tmp_path / "browser-profile"
@@ -78,12 +83,15 @@ async def test_download_assets_uses_yt_dlp_library_for_youtube(
         browser_profile_dir=browser_profile_dir,
         http_client=cast(Any, _UnusedHttpClient()),
         max_asset_bytes=1_024,
+        download_types=download_types,
     )
 
     assert assets
     assert assets[0].local_path == str(created_path.resolve())
     assert "--add-metadata" in parsed_arguments
-    assert "--write-thumbnail" in parsed_arguments
+    assert ("--write-thumbnail" in parsed_arguments) == (
+        "image" in download_types
+    )
     assert "--write-info-json" in parsed_arguments
     assert "--max-filesize" in parsed_arguments
     assert "--cookies-from-browser" in parsed_arguments

@@ -83,6 +83,7 @@ async def download_audio_video_asset(
     browser_profile_dir: pathlib.Path | None,
     max_asset_bytes: int | None,
     timestamp: datetime.datetime,
+    download_thumbnail: bool = True,
 ) -> RawAsset:
     local_path = await asyncio.to_thread(
         _download_audio_video_asset_sync,
@@ -90,6 +91,7 @@ async def download_audio_video_asset(
         target_dir=target_dir,
         browser_profile_dir=browser_profile_dir,
         max_asset_bytes=max_asset_bytes,
+        download_thumbnail=download_thumbnail,
     )
 
     return RawAsset(
@@ -109,6 +111,7 @@ def _download_audio_video_asset_sync(
     target_dir: pathlib.Path,
     browser_profile_dir: pathlib.Path | None,
     max_asset_bytes: int | None,
+    download_thumbnail: bool = True,
 ) -> str | None:
     # Create the download directory if it doesn't already exist.
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +124,7 @@ def _download_audio_video_asset_sync(
         target_dir=target_dir,
         max_asset_bytes=max_asset_bytes,
         cookies_from_browser=cookies_from_browser,
+        download_thumbnail=download_thumbnail,
     )
     info = _download_with_yt_dlp(arguments)
 
@@ -130,6 +134,7 @@ def _download_audio_video_asset_sync(
             target_dir=target_dir,
             max_asset_bytes=max_asset_bytes,
             cookies_from_browser=None,
+            download_thumbnail=download_thumbnail,
         )
         info = _download_with_yt_dlp(fallback_arguments)
 
@@ -162,6 +167,7 @@ def _build_yt_dlp_arguments(
     target_dir: pathlib.Path,
     max_asset_bytes: int | None,
     cookies_from_browser: str | None,
+    download_thumbnail: bool = True,
 ) -> list[str]:
     output_template = target_dir / "%(id)s.%(ext)s"
     arguments = [
@@ -170,7 +176,7 @@ def _build_yt_dlp_arguments(
         "--no-overwrites",
         "--restrict-filenames",
         "--add-metadata",
-        "--write-thumbnail",
+        *(["--write-thumbnail"] if download_thumbnail else []),
         "--write-info-json",
         "--format",
         AUDIO_VIDEO_FORMAT_SELECTOR,

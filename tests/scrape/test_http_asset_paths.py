@@ -119,7 +119,7 @@ async def test_cancelled_batch_stops_its_other_downloads(
     stopped = asyncio.Event()
 
     async def download(
-        discovery: AssetDiscovery, *args: Any,
+        discovery: AssetDiscovery, *args: Any, **kwargs: Any,
     ) -> None:
         if discovery.url.endswith("fail"):
             await started.wait()

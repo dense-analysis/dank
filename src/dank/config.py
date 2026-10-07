@@ -5,6 +5,8 @@ import tomllib
 from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
 
+MEDIA_DOWNLOAD_TYPES = ("image", "audio", "video")
+
 
 class ConfigError(RuntimeError):
     pass
@@ -75,6 +77,7 @@ class Settings(NamedTuple):
     keep_feed_on_fetch_failure: bool = False
     max_entries_per_feed: int = 0
     scrape: ScrapeSettings = ScrapeSettings()
+    media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -184,6 +187,30 @@ def _parse_feed_entry_limit(value: object) -> int:
         )
 
     return value
+
+
+def _parse_media_download_types(value: object) -> tuple[str, ...]:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("media must be a table")
+
+    if "download_types" not in data:
+        return MEDIA_DOWNLOAD_TYPES
+
+    values = _as_list(data["download_types"])
+
+    if values is None or any(not isinstance(item, str) for item in values):
+        raise ConfigError("media.download_types must be an array of strings")
+
+    types = tuple(dict.fromkeys(str(item).strip().lower() for item in values))
+
+    if any(kind not in MEDIA_DOWNLOAD_TYPES for kind in types):
+        raise ConfigError(
+            "media.download_types accepts only image, audio and video",
+        )
+
+    return types
 
 
 def _parse_scrape_settings(value: object) -> ScrapeSettings:
@@ -346,4 +373,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         keep_feed_on_fetch_failure=keep_feed_on_fetch_failure,
         max_entries_per_feed=max_entries_per_feed,
         scrape=_parse_scrape_settings(data.get("scrape", {})),
+        media_download_types=_parse_media_download_types(
+            data.get("media", {}),
+        ),
     )

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import NamedTuple
 
-from dank.config import ScrapeSettings, SourceConfig
+from dank.config import MEDIA_DOWNLOAD_TYPES, ScrapeSettings, SourceConfig
 from dank.runtime import RuntimeInfo
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ class ScrapeOptions(NamedTuple):
     x_max_scrolls: int = 20
     x_scroll_pause_seconds: float = 1.5
     max_entries_per_feed: int = 0
+    media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
 
 
 class SourceMetrics:
@@ -102,11 +103,12 @@ class SourceMetrics:
         self.error_type = error_type or self.error_type
         logger.info(
             "%s: %s in %.1fs; collection=%.1fs; posts=%d; "
-            "files=%d new/%d cached/%d failed; retries=%d",
+            "files=%d new/%d cached/%d failed; media skipped=%d; retries=%d",
             self.source.domain, status, self.elapsed_ms / 1000,
             (self.collection_ms or 0) / 1000, self.counts["posts_saved"],
             self.counts["files_downloaded"], self.counts["files_cached"],
-            self.counts["files_failed"], self.counts["retries"],
+            self.counts["files_failed"], self.counts["media_skipped"],
+            self.counts["retries"],
         )
 
     def row(self, run_id: uuid.UUID, version: int) -> dict[str, object]:
@@ -205,6 +207,7 @@ class RunMetrics:
             "batch_size": self.batch_size, "headless": int(self.headless),
             "version": version,
             **self.options._asdict(),
+            "media_download_types": list(self.options.media_download_types),
             **{name: counts[name] for name in COUNTERS},
         }
 
@@ -216,7 +219,8 @@ class RunMetrics:
             logger.info(
                 "Run %s: elapsed=%.1fs; sources=%d/%d finished (%d active); "
                 "HTTP=%d active; media=%d active; retries=%d waiting; "
-                "queued batches=%d; pending records=%d; posts saved=%d",
+                "queued batches=%d; pending records=%d; posts saved=%d; "
+                "media skipped=%d",
                 str(self.run_id)[:8], elapsed_ms(self.started) / 1000,
                 sum(source.finished_at is not None for source in sources),
                 self.source_count,
@@ -225,7 +229,7 @@ class RunMetrics:
                 sum(source.active_media for source in sources),
                 sum(source.waiting_retries for source in sources),
                 self.queue_size, sum(source.pending for source in sources),
-                counts["posts_saved"],
+                counts["posts_saved"], counts["media_skipped"],
             )
 
 

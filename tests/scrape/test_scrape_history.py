@@ -119,7 +119,7 @@ async def test_history_tracks_source_completion_after_persistence(
     runs = harness.client.rows["scrape_runs"]
     sources = harness.client.rows["scrape_source_runs"]
     final = runs[-1]
-    assert len(harness.client.statements) == 5
+    assert len(harness.client.statements) == 6
     assert runs[0]["status"] == "running"
     assert runs[0]["finished_at"] is None
     assert final["version"] == 2
@@ -133,6 +133,7 @@ async def test_history_tracks_source_completion_after_persistence(
     assert final["http_per_host"] == 2
     assert final["media_concurrency"] == 4
     assert final["queue_batches"] == 2
+    assert final["media_download_types"] == ["image", "audio", "video"]
     assert final["code_version"] == "test-code"
     completed = [row for row in sources if row["version"] == 2]
     assert [row["status"] for row in completed] == ["completed", "partial"]
@@ -368,10 +369,11 @@ async def test_history_snapshots_source_options_and_limit_between_runs(
     )
     await run_scrape(harness.settings._replace(
         sources=(source,), max_entries_per_feed=20,
+        media_download_types=("image",),
     ))
     await run_scrape(harness.settings._replace(
         sources=(source._replace(tags=("architecture",)),),
-        max_entries_per_feed=5,
+        max_entries_per_feed=5, media_download_types=(),
     ))
     sources = [
         row for row in harness.client.rows["scrape_source_runs"]
@@ -386,6 +388,7 @@ async def test_history_snapshots_source_options_and_limit_between_runs(
         row["feed_urls"] == ["https://one.test/feed"] for row in sources
     )
     assert [row["max_entries_per_feed"] for row in runs] == [20, 5]
+    assert [row["media_download_types"] for row in runs] == [["image"], []]
 
 
 async def test_fast_source_is_saved_while_another_source_waits(
@@ -527,3 +530,44 @@ async def test_full_queue_stops_producer_and_cleans_up_on_failure(
     final = harness.client.rows["scrape_runs"][-1]
     assert final["posts_saved"] == 0
     assert final["status"] == ("cancelled" if cancel else "failed")
+
+
+async def test_disabled_media_is_saved_as_references_without_failing_run(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+
+    async def discover(
+        settings: Settings, source: SourceConfig, *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        yield ScrapeBatch([_post(source.domain)], [
+            AssetDiscovery("rss", source.domain, "post", f"https://one/{kind}",
+                           kind, None)
+            for kind in ("image", "audio", "video", "youtube")
+        ])
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    http = AsyncMock(side_effect=AssertionError("HTTP must not be used"))
+    youtube = AsyncMock(side_effect=AssertionError("yt-dlp must not be used"))
+    monkeypatch.setattr("dank.scrape.assets.download_file_http", http)
+    monkeypatch.setattr(
+        "dank.scrape.assets.download_audio_video_asset", youtube,
+    )
+    await run_scrape(harness.settings._replace(media_download_types=()))
+    http.assert_not_called()
+    youtube.assert_not_called()
+    final = harness.client.rows["scrape_runs"][-1]
+    assert final["status"] == "completed"
+    assert final["media_download_types"] == []
+    assert final["media_skipped"] == 8
+    assert final["files_failed"] == final["files_downloaded"] == 0
+    assert final["asset_records_saved"] == 8
+    assert final["posts_saved"] == 2
+    assert len(harness.client.rows["raw_assets"]) == 8
+    assert all(row["local_path"] == "" for row in
+               harness.client.rows["raw_assets"])
+    assert "Media downloads: disabled" in caplog.text
+    assert "media skipped=8" in caplog.text

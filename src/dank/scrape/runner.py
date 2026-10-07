@@ -11,7 +11,12 @@ from typing import cast
 
 import aiohttp
 
-from dank.config import Settings, SourceConfig, load_settings
+from dank.config import (
+    MEDIA_DOWNLOAD_TYPES,
+    Settings,
+    SourceConfig,
+    load_settings,
+)
 from dank.logging_setup import configure_logging
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
@@ -59,7 +64,7 @@ async def run_scrape(
             int(settings.keep_feed_on_fetch_failure), settings.max_asset_bytes,
             settings.feed_staleness_days, settings.x.max_posts,
             settings.x.max_scrolls, settings.x.scroll_pause_seconds,
-            settings.max_entries_per_feed,
+            settings.max_entries_per_feed, settings.media_download_types,
         ),
     )
     memory = history.runtime.memory_limit_bytes
@@ -81,6 +86,10 @@ async def run_scrape(
         settings.scrape.http_per_host, RSS_CONCURRENCY,
         settings.scrape.media_concurrency, batch_size,
         settings.scrape.queue_batches, headless,
+    )
+    logger.info(
+        "Media downloads: %s",
+        ", ".join(settings.media_download_types) or "disabled",
     )
     data_dir = pathlib.Path(settings.data_dir)
     assets_dir = data_dir / "assets"
@@ -128,10 +137,11 @@ async def run_scrape(
     counts = history.counts()
     logger.info(
         "Scrape %s in %.1fs: %d posts saved; %d files new/%d cached/"
-        "%d failed; run=%s",
+        "%d failed; media skipped=%d; run=%s",
         history.status, (history.elapsed_ms or 0) / 1000,
         counts["posts_saved"], counts["files_downloaded"],
-        counts["files_cached"], counts["files_failed"], history.run_id,
+        counts["files_cached"], counts["files_failed"],
+        counts["media_skipped"], history.run_id,
     )
 
 
@@ -251,6 +261,7 @@ async def _collect_source(
             browser_profile_dir=profile_dir,
             max_asset_bytes=settings.max_asset_bytes,
             batch_size=history.batch_size, history=history,
+            download_types=settings.media_download_types,
         )
 
     await gather_tasks([
@@ -357,6 +368,7 @@ async def _process_batches(
     max_asset_bytes: int | None,
     batch_size: int,
     history: RunMetrics | None = None,
+    download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
 ) -> ScrapeTotals:
     saved_posts = 0
     available_assets = 0
@@ -401,6 +413,7 @@ async def _process_batches(
                 browser_profile_dir=browser_profile_dir,
                 max_asset_bytes=max_asset_bytes,
                 owners=_asset_owner_map(pending_discoveries, asset_owners),
+                download_types=download_types,
             )
             _records_persisted(asset_owners)
             available_assets += assets.assets_available
@@ -465,6 +478,7 @@ async def _flush_assets(
     browser_profile_dir: pathlib.Path,
     max_asset_bytes: int | None,
     owners: dict[AssetDiscovery, SourceMetrics] | None = None,
+    download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
 ) -> ScrapeTotals:
     if not discoveries:
         return ScrapeTotals()
@@ -476,6 +490,7 @@ async def _flush_assets(
         http_client=http_client,
         max_asset_bytes=max_asset_bytes,
         owners=owners,
+        download_types=download_types,
     )
     discoveries.clear()
 

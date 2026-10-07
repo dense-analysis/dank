@@ -6,22 +6,49 @@ metadata for files that are available locally.
 
 ## Supported assets
 
-| Asset | Handling |
-| --- | --- |
-| Images and video posters | Downloaded over HTTP |
-| Direct audio and video files | Downloaded over HTTP |
-| Recognised YouTube embeds | Downloaded with yt-dlp |
-| Other iframes and external links | Retained as references |
+| Asset | Download type | Handling |
+| --- | --- | --- |
+| Images, X photos and video posters | `image` | HTTP |
+| Direct audio files | `audio` | HTTP |
+| Direct videos and X video/animated clips | `video` | HTTP |
+| Recognised YouTube embeds | `video` | yt-dlp |
+| Other iframes and external links | — | References only |
 
 The YouTube downloader prefers an MP4 format and falls back to the best
-available combined format. It also requests a thumbnail and metadata JSON.
-When available, it uses the saved Chromium profile's cookies and detected
-Node or Deno runtimes.
+available combined format. It also requests metadata JSON and, when `image`
+is enabled, a thumbnail. When available, it uses the saved Chromium profile's
+cookies and detected Node or Deno runtimes.
 
 Downloads share the run's media-job limit and direct HTTP limits with RSS
 collection. A direct media 429 also pauses new requests to that host; the
 failed media download itself is not retried in that run. See
 [concurrency settings](history.md#concurrency).
+
+## Choose downloads
+
+Add this to your private `config.toml` for image downloads only. It applies to
+RSS and X in both native and Docker runs:
+
+```toml
+[media]
+download_types = ["image"]
+```
+
+Omitting the setting allows all three types: `["image", "audio", "video"]`.
+Use `[]` to disable media downloads while still collecting posts and media
+references. Values are case-insensitive; duplicates are ignored and unknown
+values are rejected. `audio` covers direct audio files; it does not extract
+soundtracks from videos.
+
+Types come from discovery metadata. When restricting types, unclassified media
+is retained as a reference. Disabled types do not invoke HTTP or yt-dlp, including
+for cached files. Their new raw references have an empty `local_path`; existing
+files and previously processed media remain available. Re-enabling a type makes
+it eligible when rediscovered in a future scrape.
+
+Terminal summaries and `media_skipped` in [run history](history.md) count these
+intentional skips separately from download failures. Each run also records
+`media_download_types` so comparisons can use the same download policy.
 
 ## Configure storage
 

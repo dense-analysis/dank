@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS dank.scrape_runs (
     keep_feed_on_fetch_failure UInt8,
     max_entries_per_feed UInt64 DEFAULT 0,
     max_asset_bytes Nullable(Int64),
+    media_download_types Array(String) DEFAULT ['image', 'audio', 'video'],
     feed_staleness_days Int64,
     x_max_posts Int64,
     x_max_scrolls Int64,
@@ -201,3 +202,7 @@ ALTER TABLE dank.scrape_runs
     ADD COLUMN IF NOT EXISTS http_concurrency UInt32 DEFAULT 0,
     ADD COLUMN IF NOT EXISTS http_per_host UInt32 DEFAULT 0,
     ADD COLUMN IF NOT EXISTS queue_batches UInt32 DEFAULT 0;
+
+ALTER TABLE dank.scrape_runs
+    ADD COLUMN IF NOT EXISTS media_download_types Array(String)
+    DEFAULT ['image', 'audio', 'video'];

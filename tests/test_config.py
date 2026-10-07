@@ -174,3 +174,39 @@ def test_scrape_limits_are_optional_and_configurable(tmp_path: pathlib.Path):
     path.write_text("[scrape]\nsource_concurrency = 1\nhttp_per_host = 1\n")
     changed = load_settings(path).scrape
     assert tuple(changed) == (1, 16, 1, 4, 2)
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("", ("image", "audio", "video")),
+    ("[media]", ("image", "audio", "video")),
+    ('[media]\ndownload_types = ["image"]', ("image",)),
+    ('[media]\ndownload_types = [" Video ", "IMAGE", "video"]',
+     ("video", "image")),
+    ('[media]\ndownload_types = []', ()),
+])
+def test_media_download_types_configuration(
+    tmp_path: pathlib.Path, text: str, expected: tuple[str, ...],
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(text)
+    assert load_settings(path).media_download_types == expected
+
+
+@pytest.mark.parametrize("text", [
+    'media = false', 'media = ["image"]',
+    '[media]\ndownload_types = "image"',
+    '[media]\ndownload_types = false',
+    '[media]\ndownload_types = [1]',
+    '[media]\ndownload_types = ["image", true]',
+    '[media]\ndownload_types = ["image", "youtube"]',
+    '[media]\ndownload_types = [" "]',
+    '[media]\ndownload_types = ["images"]',
+])
+def test_invalid_media_download_types_are_rejected(
+    tmp_path: pathlib.Path, text: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(text)
+
+    with pytest.raises(ConfigError, match="media"):
+        load_settings(path)

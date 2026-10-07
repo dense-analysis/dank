@@ -418,7 +418,8 @@ def _extract_media(
             assets.append(
                 XAsset(
                     url=media_url,
-                    asset_type=str(media_type),
+                    # media_url is an image, including video/GIF posters.
+                    asset_type="photo",
                     should_download=True,
                 ),
             )
