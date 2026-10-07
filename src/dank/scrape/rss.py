@@ -456,6 +456,7 @@ async def scrape_feed_batches(
     batch_size: int = 50,
     concurrency: int = RSS_CONCURRENCY,
     keep_feed_on_fetch_failure: bool = False,
+    max_entries_per_feed: int = 0,
 ) -> AsyncIterator[ScrapeBatch]:
     if not feed_urls:
         return
@@ -467,6 +468,7 @@ async def scrape_feed_batches(
         root_url=root_url,
         feed_urls=feed_urls,
         concurrency=concurrency,
+        max_entries_per_feed=max_entries_per_feed,
     )
 
     logger.info("%s: found %d article links", domain, len(page_discoveries))
@@ -519,6 +521,7 @@ async def _fetch_feed_page_discoveries(
     root_url: str,
     feed_urls: list[str],
     concurrency: int,
+    max_entries_per_feed: int = 0,
 ) -> list[_FeedPageDiscovery]:
     seen_urls: set[str] = set()
     semaphore = asyncio.Semaphore(concurrency)
@@ -544,7 +547,18 @@ async def _fetch_feed_page_discoveries(
             root_url=root_url,
         )
 
-        logger.info("Feed %s: %d article links", feed_url, len(discoveries))
+        total = len(discoveries)
+
+        if max_entries_per_feed:
+            discoveries = sorted(
+                discoveries, key=_entry_recency, reverse=True,
+            )[:max_entries_per_feed]
+
+        logger.info(
+            "Feed %s: selected %d of %d entries (limit=%s)",
+            feed_url, len(discoveries), total,
+            max_entries_per_feed or "unlimited",
+        )
 
         return [
             _FeedPageDiscovery(feed_url=feed_url, page=discovery)
@@ -567,6 +581,18 @@ async def _fetch_feed_page_discoveries(
                 unique.append(feed_discovery)
 
     return unique
+
+
+def _entry_recency(
+    entry: PageDiscovery,
+) -> tuple[bool, datetime.datetime]:
+    # Dated entries come first; stable sorting preserves undated/tied order.
+    date = entry.created_at or datetime.datetime.min
+
+    if date.tzinfo is None:
+        date = date.replace(tzinfo=datetime.UTC)
+
+    return entry.created_at is not None, date
 
 
 def _build_raw_post(

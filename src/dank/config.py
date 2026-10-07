@@ -3,6 +3,7 @@ from __future__ import annotations
 import pathlib
 import tomllib
 from typing import Any, NamedTuple, cast
+from urllib.parse import urlsplit
 
 
 class ConfigError(RuntimeError):
@@ -31,6 +32,8 @@ class ClickHouseSettings(NamedTuple):
 class SourceConfig(NamedTuple):
     domain: str
     accounts: tuple[str, ...]
+    feed_urls: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
 
 
 class BrowserSettings(NamedTuple):
@@ -62,6 +65,7 @@ class Settings(NamedTuple):
     email: EmailSettings | None
     logging: LoggingSettings
     keep_feed_on_fetch_failure: bool = False
+    max_entries_per_feed: int = 0
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -108,11 +112,69 @@ def _parse_sources(raw_sources: object) -> tuple[SourceConfig, ...]:
         ]
 
         if domain:
-            parsed.append(
-                SourceConfig(domain=domain, accounts=tuple(accounts)),
-            )
+            options = _as_dict(item) or {}
+            feeds = _parse_feed_urls(options.get("feed_urls", []))
+            tags = tuple(dict.fromkeys(
+                tag.lower() for tag in _source_strings(
+                    options.get("tags", []), "tags",
+                )
+            ))
+
+            if domain == "x.com" and feeds:
+                raise ConfigError(
+                    "sources.feed_urls is not supported for x.com",
+                )
+
+            parsed.append(SourceConfig(domain, tuple(accounts), feeds, tags))
 
     return tuple(parsed)
+
+
+def _source_strings(value: object, field: str) -> tuple[str, ...]:
+    values = _as_list(value)
+
+    if values is None or any(
+        not isinstance(item, str) or not item.strip() for item in values
+    ):
+        raise ConfigError(
+            f"sources.{field} must be an array of non-empty strings",
+        )
+
+    return tuple(dict.fromkeys(str(item).strip() for item in values))
+
+
+def _parse_feed_urls(value: object) -> tuple[str, ...]:
+    urls = _source_strings(value, "feed_urls")
+
+    for url in urls:
+        try:
+            parsed = urlsplit(url)
+            valid = (
+                parsed.scheme in {"http", "https"}
+                and bool(parsed.hostname)
+                and not any(char.isspace() for char in url)
+            )
+            # Accessing the port validates malformed host:port combinations.
+            _ = parsed.port
+        except ValueError:
+            valid = False
+
+        if not valid:
+            raise ConfigError("sources.feed_urls must contain HTTP(S) URLs")
+
+    return urls
+
+
+def _parse_feed_entry_limit(value: object) -> int:
+    if (
+        not isinstance(value, int) or isinstance(value, bool)
+        or not 0 <= value < 2 ** 64
+    ):
+        raise ConfigError(
+            "rss.max_entries_per_feed must be a non-negative 64-bit integer",
+        )
+
+    return value
 
 
 def _parse_path(value: object) -> pathlib.Path | None:
@@ -190,6 +252,9 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     if not isinstance(keep_feed_on_fetch_failure, bool):
         raise ConfigError("rss.keep_feed_on_fetch_failure must be a boolean")
 
+    max_entries_per_feed = _parse_feed_entry_limit(
+        rss_data.get("max_entries_per_feed", 0),
+    )
     feed_staleness_days = int(rss_data.get("feed_staleness_days", 14))
 
     if feed_staleness_days <= 0:
@@ -246,4 +311,5 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         email=email_settings,
         logging=logging_settings,
         keep_feed_on_fetch_failure=keep_feed_on_fetch_failure,
+        max_entries_per_feed=max_entries_per_feed,
     )

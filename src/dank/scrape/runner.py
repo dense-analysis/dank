@@ -56,6 +56,7 @@ async def run_scrape(
             int(settings.keep_feed_on_fetch_failure), settings.max_asset_bytes,
             settings.feed_staleness_days, settings.x.max_posts,
             settings.x.max_scrolls, settings.x.scroll_pause_seconds,
+            settings.max_entries_per_feed,
         ),
     )
     memory = history.runtime.memory_limit_bytes
@@ -244,15 +245,13 @@ async def _discover_source_batches(
             )
         case _:
             logger.info("Scraping RSS feeds for domain=%s", source.domain)
-            await _refresh_site_feeds(
-                clickhouse_client,
-                source.domain,
-                feed_staleness,
+            feed_urls = await _source_feed_urls(
+                clickhouse_client, source, feed_staleness,
             )
-            feed_urls = await _load_site_feed_urls(
-                clickhouse_client,
-                source.domain,
-            )
+            stats = current_source.get()
+
+            if stats is not None:
+                stats.feed_urls = tuple(feed_urls)
 
             if not feed_urls:
                 stats = current_source.get()
@@ -274,6 +273,7 @@ async def _discover_source_batches(
                 keep_feed_on_fetch_failure=(
                     settings.keep_feed_on_fetch_failure
                 ),
+                max_entries_per_feed=settings.max_entries_per_feed,
             )
 
     async for batch in batches_iter:
@@ -284,6 +284,24 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _source_feed_urls(
+    client: ClickHouseClient,
+    source: SourceConfig,
+    staleness: datetime.timedelta,
+) -> list[str]:
+    if source.feed_urls:
+        logger.info(
+            "%s: using %d explicit feed URLs",
+            source.domain, len(source.feed_urls),
+        )
+
+        return list(source.feed_urls)
+
+    await _refresh_site_feeds(client, source.domain, staleness)
+
+    return await _load_site_feed_urls(client, source.domain)
 
 
 async def _process_batches(

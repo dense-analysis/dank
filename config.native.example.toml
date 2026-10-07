@@ -1,6 +1,8 @@
 # Copy to config.toml for native execution with uv.
 # Keep an existing native config.toml and its connection/data settings.
 # Example: sources = ["blog.codinghorror.com"]
+# Domain strings and tables with feed_urls/tags can be mixed.
+# See docs/features/rss.md for examples.
 sources = []
 
 [clickhouse]
@@ -20,6 +22,8 @@ max_asset_bytes = 10485760
 [rss]
 feed_staleness_days = 14
 keep_feed_on_fetch_failure = false
+# Zero or omitted preserves unlimited fetching; use 20 for a bounded run.
+max_entries_per_feed = 0
 
 [logging]
 file = "data/dank.log"

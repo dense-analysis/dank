@@ -115,7 +115,7 @@ async def test_history_tracks_source_completion_after_persistence(
     runs = harness.client.rows["scrape_runs"]
     sources = harness.client.rows["scrape_source_runs"]
     final = runs[-1]
-    assert len(harness.client.statements) == 2
+    assert len(harness.client.statements) == 4
     assert runs[0]["status"] == "running"
     assert runs[0]["finished_at"] is None
     assert final["version"] == 2
@@ -278,9 +278,10 @@ async def test_file_measurements_distinguish_cached_new_failed_and_skipped(
 def test_history_schema_matches_fresh_database_schema() -> None:
     root = pathlib.Path(__file__).resolve().parents[2]
     schema = (root / "src/dank/scrape/history.sql").read_text()
-    assert schema.replace(
+    qualified = schema.replace(
         "IF NOT EXISTS scrape_", "IF NOT EXISTS dank.scrape_",
-    ) in (root / "schema.sql").read_text()
+    ).replace("ALTER TABLE scrape_", "ALTER TABLE dank.scrape_")
+    assert qualified in (root / "schema.sql").read_text()
     assert "history.sql" in (root / "pyproject.toml").read_text()
 
 
@@ -340,3 +341,39 @@ async def test_x_missing_accounts_and_login_failure_have_correct_outcomes(
     assert stats.status == ("failed" if accounts else "skipped")
     assert stats.counts["fetch_failures"] == int(bool(accounts))
     assert stats.error_type == ("LoginRequiredError" if accounts else "")
+
+
+async def test_history_snapshots_source_options_and_limit_between_runs(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def discover(
+        *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        yield ScrapeBatch([_post("one.test")], [])
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    source = SourceConfig(
+        "one.test", (), ("https://one.test/feed",), ("ddd",),
+    )
+    await run_scrape(harness.settings._replace(
+        sources=(source,), max_entries_per_feed=20,
+    ))
+    await run_scrape(harness.settings._replace(
+        sources=(source._replace(tags=("architecture",)),),
+        max_entries_per_feed=5,
+    ))
+    sources = [
+        row for row in harness.client.rows["scrape_source_runs"]
+        if row["version"] == 2
+    ]
+    runs = [
+        row for row in harness.client.rows["scrape_runs"]
+        if row["version"] == 2
+    ]
+    assert [row["tags"] for row in sources] == [["ddd"], ["architecture"]]
+    assert all(
+        row["feed_urls"] == ["https://one.test/feed"] for row in sources
+    )
+    assert [row["max_entries_per_feed"] for row in runs] == [20, 5]

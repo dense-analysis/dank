@@ -72,6 +72,10 @@ make scrape
 make process ARGS='--age 24h'
 ```
 
+Source arrays can mix domain strings with tables containing optional
+`feed_urls` and `tags`. `[rss].max_entries_per_feed` limits each feed per run;
+omitting it preserves unlimited fetching. See [RSS configuration](docs/features/rss.md#configure).
+
 The [feature guides](#features) also show the equivalent direct commands.
 Docker's `dank` is the service name; `run --rm` starts a one-off container and removes it on exit,
 while named data volumes persist.

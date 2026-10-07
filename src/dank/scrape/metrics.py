@@ -34,12 +34,14 @@ class ScrapeOptions(NamedTuple):
     x_max_posts: int = 200
     x_max_scrolls: int = 20
     x_scroll_pause_seconds: float = 1.5
+    max_entries_per_feed: int = 0
 
 
 class SourceMetrics:
     def __init__(self, index: int, source: SourceConfig) -> None:
         self.index = index
         self.source = source
+        self.feed_urls = source.feed_urls
         self.started_at = datetime.datetime.now(datetime.UTC)
         self.started = time.monotonic()
         self.finished_at: datetime.datetime | None = None
@@ -113,6 +115,8 @@ class SourceMetrics:
             "domain": self.source.domain,
             "source": "x" if self.source.domain == "x.com" else "rss",
             "accounts": list(self.source.accounts),
+            "tags": list(self.source.tags),
+            "feed_urls": list(self.feed_urls),
             "started_at": self.started_at, "finished_at": self.finished_at,
             "elapsed_ms": self.elapsed_ms, "collection_ms": self.collection_ms,
             "status": self.status, "error_type": self.error_type,

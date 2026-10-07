@@ -1,8 +1,8 @@
 # RSS and Atom feeds
 
 DANK collects posts from websites with RSS 1.0, RSS 2.0 or Atom feeds.
-For configured domains other than `x.com`, it discovers feeds from the site's
-homepage, reads their entries and fetches the linked article pages.
+For configured domains other than `x.com`, it reads selected or discovered
+feeds and fetches their linked article pages.
 
 ## Configure
 
@@ -11,22 +11,49 @@ Add domains and RSS options to `config.toml` in the checkout root. Use the
 to both modes and show their default values:
 
 ```toml
-sources = ["blog.codinghorror.com"]
+sources = [
+    "blog.codinghorror.com",
+    { domain = "martinfowler.com", tags = ["architecture", "ddd"] },
+    { domain = "order-order.com", feed_urls = ["https://order-order.com/feed/"], tags = ["news"] },
+]
 
 [rss]
 feed_staleness_days = 14
 keep_feed_on_fetch_failure = false
+max_entries_per_feed = 0
 ```
 
-Feed URLs are cached in ClickHouse. `feed_staleness_days` controls when DANK
+Plain domain strings remain supported. A non-empty `feed_urls` array selects
+only those HTTP(S) feeds, bypassing homepage discovery and its cache. Omitted
+or empty arrays use automatic discovery. Feeds may live on another host.
+Explicit feeds are not written to the discovery cache, so two source entries
+on the same domain can select different feeds independently.
+
+Optional `tags` are manual source labels: trimmed, lowercased and deduplicated.
+They are saved with effective feed URLs in [source history](history.md), not
+inferred as article topics or applied as article-search filters. Tags also
+work for X sources; explicit RSS feeds are not supported for `x.com`.
+
+Automatically discovered feed URLs are cached in ClickHouse. `feed_staleness_days` controls when DANK
 refreshes feed discovery; it does not schedule scraping. Each scrape run reads
 the cached feeds and collects their current entries. Duplicate article URLs
 across feeds are fetched once per domain during a run. Within each article
 batch, links that differ only by a fragment such as `#comment-123` share one
 page fetch while retaining their separate feed entries and original URLs.
 
-The BBC uses a built-in set of feed URLs. Other sites need discoverable feed
-links on their homepage.
+In automatic mode, the BBC uses built-in feed URLs; other sites need
+discoverable feed links on their homepage.
+
+Set `[rss].max_entries_per_feed = 20` to select at most 20 entries from each
+feed on every run. Zero or omission preserves unlimited fetching and feed
+order. With a positive limit, dated entries are selected newest first;
+undated entries fill remaining places in feed order. Ties preserve feed
+order, and dates without a timezone are treated as UTC.
+
+The limit is applied before article requests, media discovery and cross-feed
+URL deduplication. It is an entry limit, not a successful-download target, and
+is not a cursor through the backlog. Feed documents are still downloaded in
+full. Selection counts and the effective limit appear in logs and history.
 
 ## Collect and process
 

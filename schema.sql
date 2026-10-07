@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS dank.scrape_runs (
     batch_size UInt32,
     headless UInt8,
     keep_feed_on_fetch_failure UInt8,
+    max_entries_per_feed UInt64 DEFAULT 0,
     max_asset_bytes Nullable(Int64),
     feed_staleness_days Int64,
     x_max_posts Int64,
@@ -157,6 +158,8 @@ CREATE TABLE IF NOT EXISTS dank.scrape_source_runs (
     domain LowCardinality(String),
     source LowCardinality(String),
     accounts Array(String),
+    tags Array(String) DEFAULT [],
+    feed_urls Array(String) DEFAULT [],
     started_at DateTime64(3, 'UTC'),
     finished_at Nullable(DateTime64(3, 'UTC')),
     elapsed_ms Nullable(UInt64),
@@ -183,3 +186,10 @@ CREATE TABLE IF NOT EXISTS dank.scrape_source_runs (
 )
 ENGINE = ReplacingMergeTree(version)
 ORDER BY (domain, started_at, run_id, source_index);
+
+-- Upgrade existing history tables without rewriting previous observations.
+ALTER TABLE dank.scrape_runs
+    ADD COLUMN IF NOT EXISTS max_entries_per_feed UInt64 DEFAULT 0;
+ALTER TABLE dank.scrape_source_runs
+    ADD COLUMN IF NOT EXISTS tags Array(String) DEFAULT [],
+    ADD COLUMN IF NOT EXISTS feed_urls Array(String) DEFAULT [];

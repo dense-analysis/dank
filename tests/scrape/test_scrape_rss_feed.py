@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 
 from dank.config import load_settings
+from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.rss import scrape_feed_batches
 from dank.scrape.runner import (
     _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
@@ -114,6 +115,7 @@ class _FakeResponse:
 class _FakeClient:
     def __init__(self, responses: dict[str, str]) -> None:
         self._responses = responses
+        self.requests: list[str] = []
 
     def get(
         self,
@@ -121,6 +123,7 @@ class _FakeClient:
         headers: dict[str, str],
     ) -> _FakeResponse:
         del headers
+        self.requests.append(url)
         body = self._responses.get(url)
 
         if body is None:
@@ -390,3 +393,183 @@ async def test_comment_entries_share_page_fetch_but_keep_their_identity(
 
         if failed:
             assert payload["page_fetch_status"] == "failed"
+
+
+async def test_explicit_feeds_bypass_discovery_and_cached_comments(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [{ domain = "example.test", '
+        'feed_urls = ["https://provider.test/feed"], '
+        'tags = ["engineering"] }]\n[rss]\nmax_entries_per_feed = 1\n',
+    )
+    settings = load_settings(path)
+    client = _FakeClient({
+        "https://provider.test/feed": RSS_XML,
+        "https://example.test/post-two": PAGE_TWO_HTML,
+    })
+
+    class _ForbiddenCache:
+        async def fetch_json(self, *args: Any) -> QueryResult:
+            raise AssertionError("Explicit feeds must bypass cache reads")
+
+        async def insert_rows(self, *args: Any) -> None:
+            raise AssertionError("Explicit feeds must bypass cache writes")
+
+    stats = SourceMetrics(1, settings.sources[0])
+    token = current_source.set(stats)
+
+    try:
+        batches = [
+            batch async for batch in _discover_source_batches(
+                settings, settings.sources[0], cast(Any, _ForbiddenCache()),
+                cast(Any, client), cast(Any, None),
+                feed_staleness=datetime.timedelta(days=14), batch_size=50,
+            )
+        ]
+    finally:
+        current_source.reset(token)
+
+    assert client.requests == [
+        "https://provider.test/feed", "https://example.test/post-two",
+    ]
+    assert [post.url for post in batches[0].posts] == [
+        "https://example.test/post-two",
+    ]
+    assert stats.feed_urls == ("https://provider.test/feed",)
+    assert stats.source.tags == ("engineering",)
+
+
+async def test_tag_only_source_keeps_cached_automatic_discovery(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text('sources = [{ domain = "example.test", tags = ["ddd"] }]')
+    settings = load_settings(path)
+    client = _FakeClient({
+        "https://example.test/feed.xml": RSS_XML,
+        "https://example.test/post-one": PAGE_ONE_HTML,
+        "https://example.test/post-two": PAGE_TWO_HTML,
+    })
+    stats = SourceMetrics(1, settings.sources[0])
+    token = current_source.set(stats)
+
+    try:
+        batches = [
+            batch async for batch in _discover_source_batches(
+                settings, settings.sources[0], cast(Any, _FakeFeedCache()),
+                cast(Any, client), cast(Any, None),
+                feed_staleness=datetime.timedelta(days=14), batch_size=50,
+            )
+        ]
+    finally:
+        current_source.reset(token)
+
+    assert len(batches[0].posts) == 2
+    assert stats.feed_urls == ("https://example.test/feed.xml",)
+    assert client.requests == [
+        "https://example.test/feed.xml", "https://example.test/post-one",
+        "https://example.test/post-two",
+    ]
+
+
+def _dated_feed(items: list[tuple[str, str | None]]) -> str:
+    root = ElementTree.Element("rss", version="2.0")
+    channel = ElementTree.SubElement(root, "channel")
+
+    for url, date in items:
+        item = ElementTree.SubElement(channel, "item")
+        ElementTree.SubElement(item, "link").text = url
+
+        if date is not None:
+            ElementTree.SubElement(item, "pubDate").text = date
+
+    return ElementTree.tostring(root, encoding="unicode")
+
+
+@pytest.mark.parametrize("limit, expected", [
+    (0, ["old", "undated", "offset", "new", "tied", "invalid"]),
+    (2, ["new", "tied"]),
+    (4, ["new", "tied", "offset", "old"]),
+    (6, ["new", "tied", "offset", "old", "undated", "invalid"]),
+])
+async def test_entry_selection_handles_dates_timezones_and_stable_order(
+    limit: int, expected: list[str],
+) -> None:
+    entries = [
+        ("old", "2026-01-01T00:00:00Z"), ("undated", None),
+        ("offset", "2026-03-01T00:00:00+02:00"),
+        ("new", "2026-03-01T00:00:00Z"),
+        ("tied", "2026-03-01T00:00:00"), ("invalid", "not a date"),
+    ]
+    prefix = "https://example.test/"
+    feed_url = prefix + "feed.xml"
+    responses = {feed_url: _dated_feed([
+        (prefix + name, date) for name, date in entries
+    ])}
+    responses.update({prefix + name: PAGE_ONE_HTML for name, _ in entries})
+    client = _FakeClient(responses)
+    batches = [
+        batch async for batch in scrape_feed_batches(
+            cast(Any, client), domain="example.test", feed_urls=[feed_url],
+            max_entries_per_feed=limit,
+        )
+    ]
+    assert client.requests == [feed_url, *(prefix + name for name in expected)]
+    assert [post.url for post in batches[0].posts] == [
+        prefix + name for name in expected
+    ]
+
+
+async def test_limit_is_per_feed_before_cross_feed_deduplication() -> None:
+    prefix = "https://example.test/"
+    first, second = prefix + "first-feed", prefix + "second-feed"
+    client = _FakeClient({
+        first: _dated_feed([(prefix + name, None) for name in (
+            "shared", "first", "excluded-a",
+        )]),
+        second: _dated_feed([(prefix + name, None) for name in (
+            "shared", "second", "excluded-b",
+        )]),
+        prefix + "shared": PAGE_ONE_HTML,
+        prefix + "first": PAGE_ONE_HTML,
+        prefix + "second": PAGE_TWO_HTML,
+    })
+    batches = [
+        batch async for batch in scrape_feed_batches(
+            cast(Any, client), domain="example.test",
+            feed_urls=[first, second],
+            max_entries_per_feed=2,
+        )
+    ]
+    assert client.requests == [
+        first, second, prefix + "shared", prefix + "first", prefix + "second",
+    ]
+    assert len(batches[0].posts) == 3
+    assert batches[0].posts[0].request_url == first
+
+
+@pytest.mark.parametrize("keep", [False, True])
+async def test_failed_selected_entry_does_not_fetch_an_older_replacement(
+    *, keep: bool,
+) -> None:
+    client = _FakeClient({
+        "https://example.test/feed": RSS_XML,
+        "https://example.test/post-one": PAGE_ONE_HTML,
+    })
+    batches = [
+        batch async for batch in scrape_feed_batches(
+            cast(Any, client), domain="example.test",
+            feed_urls=["https://example.test/feed"], max_entries_per_feed=1,
+            keep_feed_on_fetch_failure=keep,
+        )
+    ]
+    assert client.requests == [
+        "https://example.test/feed", "https://example.test/post-two",
+    ]
+    assert bool(batches) is keep
+
+    if keep:
+        payload = json.loads(batches[0].posts[0].payload)
+        assert payload["page_fetch_status"] == "failed"

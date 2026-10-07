@@ -4,7 +4,7 @@ Each scrape with selected sources creates a run ID and records its outcome in
 ClickHouse. History starts with this feature; previous log files are not imported.
 The scraper automatically creates missing history tables in the configured
 database, including existing Docker volumes. The database user needs permission
-to create these tables on first use.
+to create these tables on first use and add columns when the schema grows.
 
 ## What is recorded
 
@@ -24,6 +24,13 @@ feeds is skipped unless a fetch/parse failure
 was observed. A valid empty feed can complete with zero posts. A hard kill or
 database outage can leave a `running` row: this means no final outcome was
 recorded, not necessarily that the process is still alive.
+
+Source records snapshot `tags` and the effective `feed_urls` for that run.
+Changing configuration does not relabel older runs. Before feed selection,
+a running row contains the configured URLs; automatic URLs are recorded in
+the final row. Existing history rows have empty arrays for previously
+unrecorded values. `scrape_runs.max_entries_per_feed` records the global entry
+limit; zero means unlimited, including older runs.
 
 ## Timing and counts
 
@@ -65,7 +72,7 @@ use stderr; both streams also go to the configured log file.
 
 The existing scheduling remains: one source collecting at a time, up to four
 RSS requests and four media jobs, with an unbounded batch queue. The recorded
-limits, RSS/file-size settings, X collection limits and source-code fingerprint
+limits, RSS entry/file-size settings, X collection limits and source-code fingerprint
 (`code_version`, including the dependency lock when available) provide a
 baseline for comparing later changes. Browser collection and embedding work
 are not newly parallelised; processing remains a separate command.
@@ -75,16 +82,19 @@ are not newly parallelised; processing remains a separate command.
 **Native**
 
 ```sh
-make query MODE=native ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
+make query MODE=native ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, max_entries_per_feed, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
 make query MODE=native ARGS='-q "SELECT run_id, domain, status, collection_ms / 1000 AS collection_seconds, elapsed_ms / 1000 AS total_seconds, posts_saved, files_downloaded, files_cached, http_429, retries FROM scrape_source_runs FINAL ORDER BY started_at DESC LIMIT 20"'
 ```
 
 **Docker**
 
 ```sh
-make query ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
+make query ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, max_entries_per_feed, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
 make query ARGS='-q "SELECT run_id, domain, status, collection_ms / 1000 AS collection_seconds, elapsed_ms / 1000 AS total_seconds, posts_saved, files_downloaded, files_cached, http_429, retries FROM scrape_source_runs FINAL ORDER BY started_at DESC LIMIT 20"'
 ```
+
+Query `tags` and `feed_urls` in `scrape_source_runs` to inspect source labels
+and selected feeds. These are source-level snapshots, not article topic labels.
 
 Compare equivalent source selections, outcomes and file reuse before judging
 speed. Use `run_id` to join source records to their runtime settings.

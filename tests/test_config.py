@@ -2,7 +2,7 @@ import pathlib
 
 import pytest
 
-from dank.config import ConfigError, load_settings
+from dank.config import ConfigError, SourceConfig, load_settings
 
 
 @pytest.mark.parametrize(
@@ -38,3 +38,112 @@ def test_feed_failure_retention_requires_boolean(
 
     with pytest.raises(ConfigError, match="must be a boolean"):
         load_settings(config_path)
+
+
+def test_domain_only_sources_keep_existing_defaults(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = ["blog.codinghorror.com", "nichegamer.com", '
+        '"order-order.com"]\n',
+    )
+    settings = load_settings(path)
+    assert settings.sources == tuple(
+        SourceConfig(domain, ()) for domain in (
+            "blog.codinghorror.com", "nichegamer.com", "order-order.com",
+        )
+    )
+    assert settings.max_entries_per_feed == 0
+
+
+def test_sources_can_mix_legacy_accounts_tags_and_explicit_feeds(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [\n'
+        '  "old.test",\n'
+        '  { domain = "Tagged.Test ", tags = [" DDD ", "ddd", '
+        '"Architecture"] },\n'
+        '  { domain = "feeds.test", feed_urls = ['
+        '" https://provider.test/rss ", "https://provider.test/rss", '
+        '"http://provider.test/atom"], tags = ["Web"] },\n'
+        '  { domain = "x.com", accounts = ["person"], tags = ["News"] },\n'
+        ']\n[rss]\nmax_entries_per_feed = 20\n',
+    )
+    settings = load_settings(path)
+    assert settings.sources == (
+        SourceConfig("old.test", ()),
+        SourceConfig("tagged.test", (), (), ("ddd", "architecture")),
+        SourceConfig("feeds.test", (), (
+            "https://provider.test/rss", "http://provider.test/atom",
+        ), ("web",)),
+        SourceConfig("x.com", ("person",), (), ("news",)),
+    )
+    assert settings.max_entries_per_feed == 20
+
+
+@pytest.mark.parametrize("field, value", [
+    ("tags", '"ddd"'), ("tags", '[" "]'), ("tags", '[1]'),
+    ("feed_urls", '"https://example.test/feed"'),
+    ("feed_urls", '[""]'), ("feed_urls", '[true]'),
+    ("feed_urls", '["ftp://example.test/feed"]'),
+    ("feed_urls", '["/feed.xml"]'),
+    ("feed_urls", '["https:///feed.xml"]'),
+    ("feed_urls", '["https://example.test:bad/feed"]'),
+    ("feed_urls", '["https://example.test/feed path"]'),
+])
+def test_invalid_source_options_are_rejected(
+    tmp_path: pathlib.Path, field: str, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        f'sources = [{{ domain = "example.test", {field} = {value} }}]',
+    )
+
+    with pytest.raises(ConfigError, match=field):
+        load_settings(path)
+
+
+def test_empty_optional_arrays_use_automatic_discovery(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [{ domain = "example.test", tags = [], feed_urls = [] }]',
+    )
+    assert load_settings(path).sources == (SourceConfig("example.test", ()),)
+
+
+@pytest.mark.parametrize("value", [
+    "-1", '"20"', "1.5", "true", "false", "18446744073709551616",
+])
+def test_entry_limit_requires_a_nonnegative_integer(
+    tmp_path: pathlib.Path, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[rss]\nmax_entries_per_feed = {value}\n")
+
+    with pytest.raises(ConfigError, match="max_entries_per_feed"):
+        load_settings(path)
+
+
+@pytest.mark.parametrize("value", [0, 1, 20])
+def test_explicit_entry_limit(tmp_path: pathlib.Path, value: int) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[rss]\nmax_entries_per_feed = {value}\n")
+    assert load_settings(path).max_entries_per_feed == value
+
+
+def test_x_cannot_silently_ignore_explicit_rss_feeds(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [{ domain = "x.com", '
+        'feed_urls = ["https://example.test/rss"] }]',
+    )
+
+    with pytest.raises(ConfigError, match=r"not supported for x\.com"):
+        load_settings(path)
