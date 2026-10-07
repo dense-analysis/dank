@@ -6,6 +6,7 @@ import logging
 import pathlib
 import re
 from collections.abc import AsyncIterator
+from contextlib import nullcontext
 from typing import cast
 
 import aiohttp
@@ -16,8 +17,8 @@ from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
 from dank.runtime import runtime_info
 from dank.scrape.assets import download_assets
+from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.metrics import (
-    MEDIA_CONCURRENCY,
     RSS_CONCURRENCY,
     RunMetrics,
     ScrapeOptions,
@@ -30,6 +31,7 @@ from dank.scrape.rss import (
     fetch_feed_links,
     scrape_feed_batches,
 )
+from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
 from dank.scrape.x import scrape_x_accounts
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
@@ -52,6 +54,7 @@ async def run_scrape(
     batch_size = max(1, batch_size)
     history = RunMetrics(
         runtime_info(), len(settings.sources), batch_size, headless=headless,
+        limits=settings.scrape,
         options=ScrapeOptions(
             int(settings.keep_feed_on_fetch_failure), settings.max_asset_bytes,
             settings.feed_staleness_days, settings.x.max_posts,
@@ -71,9 +74,13 @@ async def run_scrape(
         f"{memory / 1024 ** 3:.1f} GiB" if memory else "unknown",
     )
     logger.info(
-        "Limits: sources=1; RSS requests=%d; media jobs=%d; "
-        "batch size=%d; queue=unbounded; headless=%s",
-        RSS_CONCURRENCY, MEDIA_CONCURRENCY, batch_size, headless,
+        "Limits: sources=%d; HTTP=%d total/%d per host; "
+        "RSS requests=%d per source; media jobs=%d total; "
+        "batch size=%d; queue=%d batches per source; headless=%s",
+        history.source_concurrency, settings.scrape.http_concurrency,
+        settings.scrape.http_per_host, RSS_CONCURRENCY,
+        settings.scrape.media_concurrency, batch_size,
+        settings.scrape.queue_batches, headless,
     )
     data_dir = pathlib.Path(settings.data_dir)
     assets_dir = data_dir / "assets"
@@ -141,6 +148,7 @@ async def _save_history(
 ) -> None:
     rows = [
         source.row(history.run_id, 2) for source in history.sources.values()
+        if source.index not in history.saved_sources
     ]
 
     if rows:
@@ -158,32 +166,63 @@ async def _collect_with_history(
     assets_dir: pathlib.Path,
     profile_dir: pathlib.Path,
 ) -> None:
-    queue: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
-    processor = asyncio.create_task(_process_batches(
-        queue, client, http_client, assets_dir=assets_dir,
-        browser_profile_dir=profile_dir,
-        max_asset_bytes=settings.max_asset_bytes,
-        batch_size=history.batch_size, history=history,
-    ))
+    sources = iter(enumerate(settings.sources, 1))
+    browser_lock = asyncio.Lock()
+    token = current_limiter.set(RequestLimiter(settings.scrape))
     progress = asyncio.create_task(history.report_progress())
 
+    async def worker() -> None:
+        # No await while claiming the next source from the shared iterator.
+        for index, source in sources:
+            await _collect_source(
+                settings, source, index, client, http_client, session,
+                history, assets_dir, profile_dir, browser_lock,
+            )
+
     try:
-        for index, source in enumerate(settings.sources, 1):
-            if processor.done():
-                await processor
+        await gather_tasks(
+            asyncio.create_task(worker())
+            for _ in range(history.source_concurrency)
+        )
+    finally:
+        progress.cancel()
+        await asyncio.gather(progress, return_exceptions=True)
+        current_limiter.reset(token)
 
-            stats = SourceMetrics(index, source)
-            history.sources[index] = stats
-            await client.insert_rows(
-                "scrape_source_runs", [stats.row(history.run_id, 1)],
-            )
-            logger.info(
-                "[%d/%d] %s: starting collection",
-                index, len(settings.sources), source.domain,
-            )
-            token = current_source.set(stats)
 
-            try:
+async def _collect_source(
+    settings: Settings,
+    source: SourceConfig,
+    index: int,
+    client: ClickHouseClient,
+    http_client: aiohttp.ClientSession,
+    session: BrowserSession,
+    history: RunMetrics,
+    assets_dir: pathlib.Path,
+    profile_dir: pathlib.Path,
+    browser_lock: asyncio.Lock,
+) -> None:
+    stats = SourceMetrics(index, source)
+    history.sources[index] = stats
+    await client.insert_rows(
+        "scrape_source_runs", [stats.row(history.run_id, 1)],
+    )
+    logger.info(
+        "[%d/%d] %s: starting collection",
+        index, len(settings.sources), source.domain,
+    )
+    queue: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue(
+        maxsize=settings.scrape.queue_batches,
+    )
+
+    async def produce() -> None:
+        token = current_source.set(stats)
+
+        try:
+            # X collectors share one browser/profile and its login state.
+            async with (
+                browser_lock if source.domain == "x.com" else nullcontext()
+            ):
                 async for batch in _discover_source_batches(
                     settings, source, client, http_client, session,
                     feed_staleness=datetime.timedelta(
@@ -191,14 +230,9 @@ async def _collect_with_history(
                     ),
                     batch_size=history.batch_size,
                 ):
-                    if processor.done():
-                        await processor
-
                     stats.discovered(len(batch.posts), len(batch.assets))
                     await queue.put(batch._replace(source_index=index))
-                    history.queue_size = queue.qsize()
-            finally:
-                current_source.reset(token)
+                    history.queue_size += 1
 
             stats.collected()
             logger.info(
@@ -207,17 +241,26 @@ async def _collect_with_history(
                 source.domain, stats.counts["posts_queued"],
                 stats.counts["media_references"], stats.pending,
             )
+            await queue.put(None)
+        finally:
+            current_source.reset(token)
 
-        logger.info("Finishing queued downloads and database writes")
-        await queue.put(None)
-        await processor
-    finally:
-        progress.cancel()
+    async def consume() -> None:
+        await _process_batches(
+            queue, client, http_client, assets_dir=assets_dir,
+            browser_profile_dir=profile_dir,
+            max_asset_bytes=settings.max_asset_bytes,
+            batch_size=history.batch_size, history=history,
+        )
 
-        if not processor.done():
-            processor.cancel()
-
-        await asyncio.gather(progress, processor, return_exceptions=True)
+    await gather_tasks([
+        asyncio.create_task(produce()), asyncio.create_task(consume()),
+    ])
+    # A completed source is visible in history while other sources still run.
+    await client.insert_rows(
+        "scrape_source_runs", [stats.row(history.run_id, 2)],
+    )
+    history.saved_sources.add(index)
 
 
 async def _discover_source_batches(
@@ -327,8 +370,8 @@ async def _process_batches(
         # A None value signals we've stopped sending content to process.
         batch = await queue.get()
 
-        if history:
-            history.queue_size = queue.qsize()
+        if history and batch is not None:
+            history.queue_size -= 1
 
         if batch is not None:
             owner = (

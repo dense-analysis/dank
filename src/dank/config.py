@@ -54,6 +54,14 @@ class LoggingSettings(NamedTuple):
     level: str
 
 
+class ScrapeSettings(NamedTuple):
+    source_concurrency: int = 4
+    http_concurrency: int = 16
+    http_per_host: int = 2
+    media_concurrency: int = 4
+    queue_batches: int = 2
+
+
 class Settings(NamedTuple):
     clickhouse: ClickHouseSettings
     x: XSettings
@@ -66,6 +74,7 @@ class Settings(NamedTuple):
     logging: LoggingSettings
     keep_feed_on_fetch_failure: bool = False
     max_entries_per_feed: int = 0
+    scrape: ScrapeSettings = ScrapeSettings()
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -175,6 +184,30 @@ def _parse_feed_entry_limit(value: object) -> int:
         )
 
     return value
+
+
+def _parse_scrape_settings(value: object) -> ScrapeSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("scrape must be a table")
+
+    values: dict[str, int] = {}
+
+    for key, default in ScrapeSettings()._asdict().items():
+        setting = data.get(key, default)
+
+        if (
+            not isinstance(setting, int) or isinstance(setting, bool)
+            or not 1 <= setting < 2 ** 32
+        ):
+            raise ConfigError(
+                f"scrape.{key} must be a positive 32-bit integer",
+            )
+
+        values[key] = setting
+
+    return ScrapeSettings(**values)
 
 
 def _parse_path(value: object) -> pathlib.Path | None:
@@ -312,4 +345,5 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         logging=logging_settings,
         keep_feed_on_fetch_failure=keep_feed_on_fetch_failure,
         max_entries_per_feed=max_entries_per_feed,
+        scrape=_parse_scrape_settings(data.get("scrape", {})),
     )

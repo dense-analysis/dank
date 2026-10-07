@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import NamedTuple
 
-from dank.config import SourceConfig
+from dank.config import ScrapeSettings, SourceConfig
 from dank.runtime import RuntimeInfo
 
 logger = logging.getLogger(__name__)
@@ -129,6 +129,7 @@ class RunMetrics:
     def __init__(
         self, runtime: RuntimeInfo, source_count: int, batch_size: int,
         *, headless: bool, options: ScrapeOptions,
+        limits: ScrapeSettings | None = None,
     ) -> None:
         self.run_id = uuid.uuid4()
         self.started_at = datetime.datetime.now(datetime.UTC)
@@ -142,6 +143,11 @@ class RunMetrics:
         self.batch_size = batch_size
         self.headless = headless
         self.options = options
+        self.limits = limits or ScrapeSettings()
+        self.source_concurrency = min(
+            self.limits.source_concurrency, source_count,
+        )
+        self.saved_sources: set[int] = set()
         self.sources: dict[int, SourceMetrics] = {}
         self.queue_size = 0
 
@@ -193,8 +199,9 @@ class RunMetrics:
             "cpu_limit": self.runtime.cpu_limit,
             "memory_limit_bytes": self.runtime.memory_limit_bytes,
             "code_version": self.runtime.code_version,
-            "source_concurrency": 1, "rss_concurrency": RSS_CONCURRENCY,
-            "media_concurrency": MEDIA_CONCURRENCY,
+            **self.limits._asdict(),
+            "source_concurrency": self.source_concurrency,
+            "rss_concurrency": RSS_CONCURRENCY,
             "batch_size": self.batch_size, "headless": int(self.headless),
             "version": version,
             **self.options._asdict(),
@@ -207,12 +214,13 @@ class RunMetrics:
             sources = list(self.sources.values())
             counts = self.counts()
             logger.info(
-                "Run %s: elapsed=%.1fs; sources=%d/%d finished; "
+                "Run %s: elapsed=%.1fs; sources=%d/%d finished (%d active); "
                 "HTTP=%d active; media=%d active; retries=%d waiting; "
                 "queued batches=%d; pending records=%d; posts saved=%d",
                 str(self.run_id)[:8], elapsed_ms(self.started) / 1000,
                 sum(source.finished_at is not None for source in sources),
                 self.source_count,
+                sum(source.finished_at is None for source in sources),
                 sum(source.active_http for source in sources),
                 sum(source.active_media for source in sources),
                 sum(source.waiting_retries for source in sources),

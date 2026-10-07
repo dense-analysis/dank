@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from dank.config import Settings, SourceConfig, load_settings
+from dank.config import ScrapeSettings, Settings, SourceConfig, load_settings
 from dank.model import AssetDiscovery, RawAsset, RawPost
 from dank.runtime import RuntimeInfo
 from dank.scrape.assets import download_assets
@@ -26,7 +26,7 @@ class _Client:
         self.statements: list[str] = []
         self.fail_posts = False
         self.fail_history = False
-        self.last_write: datetime.datetime | None = None
+        self.last_write: dict[str, datetime.datetime] = {}
 
     async def __aenter__(self) -> _Client:
         return self
@@ -50,7 +50,10 @@ class _Client:
         self.rows.setdefault(table, []).extend(dict(row) for row in rows)
 
         if table == "raw_posts":
-            self.last_write = datetime.datetime.now(datetime.UTC)
+            for row in rows:
+                self.last_write[row["domain"]] = datetime.datetime.now(
+                    datetime.UTC,
+                )
 
 
 class _Browser:
@@ -116,7 +119,7 @@ async def test_history_tracks_source_completion_after_persistence(
     runs = harness.client.rows["scrape_runs"]
     sources = harness.client.rows["scrape_source_runs"]
     final = runs[-1]
-    assert len(harness.client.statements) == 4
+    assert len(harness.client.statements) == 5
     assert runs[0]["status"] == "running"
     assert runs[0]["finished_at"] is None
     assert final["version"] == 2
@@ -125,7 +128,11 @@ async def test_history_tracks_source_completion_after_persistence(
     assert final["http_requests"] == 4
     assert final["cpu_limit"] == 0.5
     assert final["memory_limit_bytes"] == 1024 ** 3
-    assert final["source_concurrency"] == 1
+    assert final["source_concurrency"] == 2
+    assert final["http_concurrency"] == 16
+    assert final["http_per_host"] == 2
+    assert final["media_concurrency"] == 4
+    assert final["queue_batches"] == 2
     assert final["code_version"] == "test-code"
     completed = [row for row in sources if row["version"] == 2]
     assert [row["status"] for row in completed] == ["completed", "partial"]
@@ -133,7 +140,8 @@ async def test_history_tracks_source_completion_after_persistence(
     assert [row["posts_saved"] for row in completed] == [1, 1]
     assert all(row["elapsed_ms"] >= row["collection_ms"] for row in completed)
     assert all(
-        row["finished_at"] >= harness.client.last_write for row in completed
+        row["finished_at"] >= harness.client.last_write[row["domain"]]
+        for row in completed
     )
     assert current_source.get() is None
 
@@ -378,3 +386,144 @@ async def test_history_snapshots_source_options_and_limit_between_runs(
         row["feed_urls"] == ["https://one.test/feed"] for row in sources
     )
     assert [row["max_entries_per_feed"] for row in runs] == [20, 5]
+
+
+async def test_fast_source_is_saved_while_another_source_waits(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slow_started = asyncio.Event()
+    release_slow = asyncio.Event()
+    fast_saved = asyncio.Event()
+    insert = harness.client.insert_rows
+
+    async def insert_rows(table: str, rows: list[dict[str, Any]]) -> None:
+        await insert(table, rows)
+
+        if table == "scrape_source_runs" and any(
+            row["domain"] == "two.test" and row["status"] == "completed"
+            for row in rows
+        ):
+            fast_saved.set()
+
+    async def discover(
+        settings: Settings, source: SourceConfig, *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        if source.domain == "one.test":
+            slow_started.set()
+            await release_slow.wait()
+        else:
+            await slow_started.wait()
+
+        yield ScrapeBatch([_post(source.domain)], [])
+
+    monkeypatch.setattr(harness.client, "insert_rows", insert_rows)
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    task = asyncio.create_task(run_scrape(harness.settings))
+
+    try:
+        await asyncio.wait_for(fast_saved.wait(), timeout=2)
+        assert not task.done()
+        assert [row["domain"] for row in harness.client.rows["raw_posts"]] == [
+            "two.test",
+        ]
+    finally:
+        release_slow.set()
+        await task
+
+
+@pytest.mark.parametrize("limit", [1, 3])
+async def test_source_concurrency_is_bounded_and_x_is_serialized(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch, limit: int,
+) -> None:
+    active = peak = browsers = browser_peak = 0
+
+    async def discover(
+        settings: Settings, source: SourceConfig, *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        nonlocal active, peak, browsers, browser_peak
+        active += 1
+        browsers += int(source.domain == "x.com")
+        peak = max(peak, active)
+        browser_peak = max(browser_peak, browsers)
+        await asyncio.sleep(0.01)
+        yield ScrapeBatch([_post(source.domain)], [])
+        active -= 1
+        browsers -= int(source.domain == "x.com")
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    settings = harness.settings._replace(
+        sources=tuple(SourceConfig(domain, ()) for domain in (
+            "x.com", "a.test", "x.com", "b.test", "c.test", "d.test",
+        )),
+        scrape=ScrapeSettings(source_concurrency=limit),
+    )
+    await run_scrape(settings)
+    assert peak == limit
+    assert browser_peak == 1
+    final = harness.client.rows["scrape_runs"][-1]
+    assert final["posts_saved"] == 6
+    assert final["sources_started"] == 6
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_full_queue_stops_producer_and_cleans_up_on_failure(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch, *, cancel: bool,
+) -> None:
+    produced = 0
+    writing = asyncio.Event()
+    release_writer = asyncio.Event()
+    closed = asyncio.Event()
+    insert = harness.client.insert_rows
+    tasks_before = asyncio.all_tasks()
+
+    async def insert_rows(table: str, rows: list[dict[str, Any]]) -> None:
+        if table == "raw_posts":
+            writing.set()
+            await release_writer.wait()
+            raise RuntimeError("writer failed")
+
+        await insert(table, rows)
+
+    async def discover(
+        *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        nonlocal produced
+
+        try:
+            for _ in range(1000):
+                produced += 1
+                yield ScrapeBatch([_post("one.test")], [])
+        finally:
+            closed.set()
+
+    monkeypatch.setattr(harness.client, "insert_rows", insert_rows)
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    settings = harness.settings._replace(
+        sources=(SourceConfig("one.test", ()),),
+        scrape=ScrapeSettings(queue_batches=2),
+    )
+    task = asyncio.create_task(run_scrape(settings, batch_size=1))
+    await asyncio.wait_for(writing.wait(), timeout=2)
+    await asyncio.sleep(0.01)
+    # One in the writer, two queued, one blocked in queue.put.
+    assert produced == 4
+
+    if cancel:
+        task.cancel()
+    else:
+        release_writer.set()
+
+    with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
+        await asyncio.wait_for(task, timeout=2)
+
+    await asyncio.wait_for(closed.wait(), timeout=2)
+    assert asyncio.all_tasks() == tasks_before
+    final = harness.client.rows["scrape_runs"][-1]
+    assert final["posts_saved"] == 0
+    assert final["status"] == ("cancelled" if cancel else "failed")

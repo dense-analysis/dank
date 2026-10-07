@@ -87,6 +87,13 @@ times after the initial attempt, waiting 2, 4 and 8 seconds. A valid
 30 seconds. Longer requested waits skip the URL rather than retrying early.
 Missing or invalid headers use the exponential delays.
 
+A 429 starts a shared cooldown for that hostname. New homepage, feed, article
+and direct media requests to it wait without occupying global HTTP slots;
+other hosts can continue and save results. Requests already in flight finish.
+Each request waits at most 30 seconds for a shared cooldown, including any
+extensions; longer waits fail that URL without sending it early.
+See [concurrency settings](history.md#concurrency) to adjust the worker limits.
+
 These defaults apply to native and Docker runs without configuration changes.
 Retries, wait durations and exhausted limits appear in the terminal; progress
 updates continue while waiting. Other HTTP errors are not retried. Requests

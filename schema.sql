@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS dank.scrape_runs (
     source_concurrency UInt32,
     rss_concurrency UInt32,
     media_concurrency UInt32,
+    http_concurrency UInt32 DEFAULT 0,
+    http_per_host UInt32 DEFAULT 0,
+    queue_batches UInt32 DEFAULT 0,
     batch_size UInt32,
     headless UInt8,
     keep_feed_on_fetch_failure UInt8,
@@ -193,3 +196,8 @@ ALTER TABLE dank.scrape_runs
 ALTER TABLE dank.scrape_source_runs
     ADD COLUMN IF NOT EXISTS tags Array(String) DEFAULT [],
     ADD COLUMN IF NOT EXISTS feed_urls Array(String) DEFAULT [];
+
+ALTER TABLE dank.scrape_runs
+    ADD COLUMN IF NOT EXISTS http_concurrency UInt32 DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS http_per_host UInt32 DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS queue_batches UInt32 DEFAULT 0;

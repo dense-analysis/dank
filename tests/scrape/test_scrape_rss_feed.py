@@ -121,6 +121,7 @@ class _FakeClient:
         self,
         url: str,
         headers: dict[str, str],
+        **kwargs: object,
     ) -> _FakeResponse:
         del headers
         self.requests.append(url)
@@ -359,7 +360,9 @@ async def test_comment_entries_share_page_fetch_but_keep_their_identity(
             super().__init__(responses)
             self.urls: list[str] = []
 
-        def get(self, url: str, headers: dict[str, str]) -> _FakeResponse:
+        def get(
+            self, url: str, headers: dict[str, str], **kwargs: object,
+        ) -> _FakeResponse:
             self.urls.append(url)
 
             return super().get(url, headers)

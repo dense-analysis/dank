@@ -10,6 +10,7 @@ import aiohttp
 
 from dank.model import AssetDiscovery, RawAsset
 from dank.progress import Progress
+from dank.scrape.http import current_limiter
 from dank.scrape.metrics import (
     MEDIA_CONCURRENCY,
     SourceMetrics,
@@ -44,7 +45,8 @@ async def download_assets(
         if discovery.url:
             unique.setdefault(discovery.url, discovery)
 
-    semaphore = asyncio.Semaphore(concurrency)
+    limiter = current_limiter.get()
+    semaphore = limiter.media if limiter else asyncio.Semaphore(concurrency)
 
 
     if not unique:

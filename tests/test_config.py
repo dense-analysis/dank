@@ -147,3 +147,30 @@ def test_x_cannot_silently_ignore_explicit_rss_feeds(
 
     with pytest.raises(ConfigError, match=r"not supported for x\.com"):
         load_settings(path)
+
+
+@pytest.mark.parametrize("field", [
+    "source_concurrency", "http_concurrency", "http_per_host",
+    "media_concurrency", "queue_batches",
+])
+@pytest.mark.parametrize("value", [
+    "0", "-1", "true", "1.5", '"4"', "4294967296",
+])
+def test_invalid_scrape_limits(
+    tmp_path: pathlib.Path, field: str, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[scrape]\n{field} = {value}\n")
+
+    with pytest.raises(ConfigError, match=f"scrape.{field}"):
+        load_settings(path)
+
+
+def test_scrape_limits_are_optional_and_configurable(tmp_path: pathlib.Path):
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("")
+    limits = load_settings(path).scrape
+    assert tuple(limits) == (4, 16, 2, 4, 2)
+    path.write_text("[scrape]\nsource_concurrency = 1\nhttp_per_host = 1\n")
+    changed = load_settings(path).scrape
+    assert tuple(changed) == (1, 16, 1, 4, 2)

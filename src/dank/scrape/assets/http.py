@@ -10,7 +10,8 @@ from urllib.parse import urlparse
 import aiohttp
 
 from dank.model import AssetDiscovery, RawAsset
-from dank.scrape.metrics import count, request_metrics
+from dank.scrape.http import http_response
+from dank.scrape.metrics import count
 
 logger = logging.getLogger(__name__)
 
@@ -47,51 +48,48 @@ async def download_file_http(
         )
 
         try:
-            with request_metrics():
-                async with http_client.get(
-                    discovery.url,
-                    allow_redirects=True,
-                    max_redirects=5,
-                ) as response:
-                    response.raise_for_status()
-                    content_length = response.content_length
-                    bytes_read = 0
-                    exceeded_limit = (
-                        max_asset_bytes is not None
-                        and content_length is not None
-                        and content_length > max_asset_bytes
-                    )
+            async with http_response(
+                http_client, discovery.url,
+            ) as response:
+                response.raise_for_status()
+                content_length = response.content_length
+                bytes_read = 0
+                exceeded_limit = (
+                    max_asset_bytes is not None
+                    and content_length is not None
+                    and content_length > max_asset_bytes
+                )
 
-                    # Stream bytes while staying within the download limit.
-                    if not exceeded_limit:
-                        with temp_path.open("wb") as file:
-                            async for chunk in response.content.iter_chunked(
-                                65536,
+                # Stream bytes while staying within the download limit.
+                if not exceeded_limit:
+                    with temp_path.open("wb") as file:
+                        async for chunk in response.content.iter_chunked(
+                            65536,
+                        ):
+                            if not chunk:
+                                continue
+
+                            bytes_read += len(chunk)
+
+                            # Enforce the limit even for a wrong header.
+                            if (
+                                max_asset_bytes is not None
+                                and bytes_read > max_asset_bytes
                             ):
-                                if not chunk:
-                                    continue
+                                exceeded_limit = True
+                                break
 
-                                bytes_read += len(chunk)
+                            file.write(chunk)
 
-                                # Enforce the limit even for a wrong header.
-                                if (
-                                    max_asset_bytes is not None
-                                    and bytes_read > max_asset_bytes
-                                ):
-                                    exceeded_limit = True
-                                    break
-
-                                file.write(chunk)
-
-                    if exceeded_limit:
-                        raise OSError(
-                            (
-                                f"Exceeded maximum download size "
-                                f"of {max_asset_bytes} "
-                                f"with Content-Length: {content_length} "
-                                f"and {bytes_read} bytes downloaded"
-                            ),
-                        )
+                if exceeded_limit:
+                    raise OSError(
+                        (
+                            f"Exceeded maximum download size "
+                            f"of {max_asset_bytes} "
+                            f"with Content-Length: {content_length} "
+                            f"and {bytes_read} bytes downloaded"
+                        ),
+                    )
             temp_path.replace(target_path)
         except Exception as error:
             if (

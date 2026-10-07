@@ -84,6 +84,8 @@ Scrape and process progress appears in the terminal. Normal messages go to
 stdout; warnings and errors go to stderr. Both streams also go to the configured
 log file. Pending stages report elapsed time every five seconds. See
 [RSS progress](docs/features/rss.md#progress-and-errors) for the counts.
+Sources run concurrently with shared per-host request limits and bounded queues.
+See [concurrency settings](docs/features/history.md#concurrency) for defaults and tuning.
 
 ## Make commands
 

@@ -19,6 +19,14 @@ use_http = true
 data_dir = "data"
 max_asset_bytes = 10485760
 
+# Optional; these concurrency limits apply in both native and Docker runs.
+[scrape]
+source_concurrency = 4
+http_concurrency = 16
+http_per_host = 2
+media_concurrency = 4
+queue_batches = 2
+
 [rss]
 feed_staleness_days = 14
 keep_feed_on_fetch_failure = false

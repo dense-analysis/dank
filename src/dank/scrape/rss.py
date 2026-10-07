@@ -18,12 +18,17 @@ import aiohttp
 from dank.html_utils import is_youtube_url
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
+from dank.scrape.http import (
+    current_limiter,
+    http_response,
+    retry_after_seconds,
+)
 from dank.scrape.metrics import (
     RSS_CONCURRENCY,
     count,
-    request_metrics,
     retry_sleep,
 )
+from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch
 
 logger = logging.getLogger(__name__)
@@ -566,8 +571,9 @@ async def _fetch_feed_page_discoveries(
         ]
 
     async with progress:
-        all_discoveries = await asyncio.gather(
-            *(_fetch_feed(feed_url) for feed_url in feed_urls),
+        all_discoveries = await gather_tasks(
+            asyncio.create_task(_fetch_feed(feed_url))
+            for feed_url in feed_urls
         )
     unique: list[_FeedPageDiscovery] = []
 
@@ -782,8 +788,8 @@ async def _fetch_pages(
         return url, html
 
     async with progress:
-        page_html = dict(await asyncio.gather(
-            *(_fetch(url) for url in page_urls),
+        page_html = dict(await gather_tasks(
+            asyncio.create_task(_fetch(url)) for url in page_urls
         ))
 
     # Preserve each entry's URL and payload even when its page was shared.
@@ -818,23 +824,22 @@ async def _fetch_text_with_retries(
 
     for retry in range(RATE_LIMIT_RETRIES + 1):
         try:
-            with request_metrics(retry=retry > 0):
-                async with http_client.get(
-                    url,
-                    headers={"Accept": ", ".join(accept)},
-                ) as response:
-                    response.raise_for_status()
-                    text = await response.text()
+            async with http_response(
+                http_client, url, headers={"Accept": ", ".join(accept)},
+                retry=retry,
+            ) as response:
+                response.raise_for_status()
+                text = await response.text()
 
-                    if not text:
-                        logger.warning("Empty response fetching %s", url)
-                    elif retry:
-                        logger.info(
-                            "Fetched %s after %d rate-limit retries",
-                            url, retry,
-                        )
+                if not text:
+                    logger.warning("Empty response fetching %s", url)
+                elif retry:
+                    logger.info(
+                        "Fetched %s after %d rate-limit retries",
+                        url, retry,
+                    )
 
-                    return text
+                return text
         except aiohttp.ClientResponseError as error:
             if error.status == 429:
                 count("http_429")
@@ -849,13 +854,8 @@ async def _fetch_text_with_retries(
             if error.status != 429:
                 return None
 
-            delay = _rate_limit_delay(url, retry, retry_after)
-
-            if delay is None:
+            if not await _wait_for_retry(url, retry, retry_after):
                 return None
-
-            # Release the response before sleeping; cancellation propagates.
-            await retry_sleep(delay)
         except Exception as error:
             logger.warning(
                 "Failed to fetch %s: %s: %s",
@@ -865,6 +865,21 @@ async def _fetch_text_with_retries(
             return None
 
     return None
+
+
+async def _wait_for_retry(
+    url: str, retry: int, retry_after: str | None,
+) -> bool:
+    delay = _rate_limit_delay(url, retry, retry_after)
+
+    if delay is None:
+        return False
+
+    # The run limiter waits before the next request, without holding a slot.
+    if current_limiter.get() is None:
+        await retry_sleep(delay)
+
+    return True
 
 
 def _rate_limit_delay(
@@ -882,7 +897,7 @@ def _rate_limit_delay(
 
     delay = max(
         RATE_LIMIT_BACKOFF_SECONDS * 2 ** retry,
-        _retry_after_seconds(retry_after),
+        retry_after_seconds(retry_after),
     )
 
     if delay > MAX_RATE_LIMIT_DELAY_SECONDS:
@@ -899,29 +914,6 @@ def _rate_limit_delay(
     )
 
     return delay
-
-
-def _retry_after_seconds(value: str | None) -> float:
-    if not value:
-        return 0.0
-
-    value = value.strip()
-
-    if value.isascii() and value.isdecimal():
-        return float(value)
-
-    try:
-        date = parsedate_to_datetime(value)
-
-        if date.tzinfo is not None:
-            return max(
-                0.0,
-                (date - datetime.datetime.now(datetime.UTC)).total_seconds(),
-            )
-    except (TypeError, ValueError, OverflowError):
-        pass
-
-    return 0.0
 
 
 def _parse_datetime(value: str | None) -> datetime.datetime | None:

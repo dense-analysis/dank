@@ -18,6 +18,11 @@ available combined format. It also requests a thumbnail and metadata JSON.
 When available, it uses the saved Chromium profile's cookies and detected
 Node or Deno runtimes.
 
+Downloads share the run's media-job limit and direct HTTP limits with RSS
+collection. A direct media 429 also pauses new requests to that host; the
+failed media download itself is not retried in that run. See
+[concurrency settings](history.md#concurrency).
+
 ## Configure storage
 
 ```toml

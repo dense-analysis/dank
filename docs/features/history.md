@@ -14,8 +14,9 @@ to create these tables on first use and add columns when the schema grows.
 | `scrape_source_runs` | One configured source within a run: timing and counters |
 
 Both tables use versioned replacement rows. Query with `FINAL` to see the latest
-state per run/source. Running rows are written at startup and final rows when
-the run ends. Each new invocation gets a new ID, preserving previous runs.
+state per run/source. A running row is written when a run or source starts;
+its final row is written when it finishes. Completed sources are visible while
+other sources continue. Each new invocation preserves previous runs.
 
 Outcomes are `completed`, `partial`, `failed`, `skipped` or `cancelled`.
 A partial result has saved records and unsuccessful fetches or downloads.
@@ -49,7 +50,7 @@ limit; zero means unlimited, including older runs.
 - `http_requests`, `http_429`, `retries`, `fetch_failures` and
   `parse_failures` explain incomplete results. HTTP counters cover RSS and
   direct media requests made through aiohttp; Chromium and yt-dlp's internal
-  requests are not included.
+  requests are not included. Redirect hops count as separate HTTP requests.
 - `request_ms` and `retry_wait_ms` sum individual request/wait durations.
   They can overlap and must not be added to derive elapsed time.
 
@@ -70,12 +71,38 @@ waiting retries, queued batches, pending records and saved posts. Source
 summaries appear after their pending records are saved. Warnings/errors still
 use stderr; both streams also go to the configured log file.
 
-The existing scheduling remains: one source collecting at a time, up to four
-RSS requests and four media jobs, with an unbounded batch queue. The recorded
-limits, RSS entry/file-size settings, X collection limits and source-code fingerprint
-(`code_version`, including the dependency lock when available) provide a
-baseline for comparing later changes. Browser collection and embedding work
-are not newly parallelised; processing remains a separate command.
+## Concurrency
+
+These optional settings have the same defaults in native and Docker runs:
+
+```toml
+[scrape]
+source_concurrency = 4
+http_concurrency = 16
+http_per_host = 2
+media_concurrency = 4
+queue_batches = 2
+```
+
+Up to four source pipelines collect, download and save independently. Each
+has at most two queued batches; a full queue pauses its producer. Batch sizes
+vary with discovered media, so this bounds the backlog, not memory in bytes.
+A source slot is reused after its downloads and writes finish. Set
+`source_concurrency = 1` for sequential sources.
+
+The HTTP limits are shared across homepage, feed, article and direct media
+requests, including redirect destinations. Hosts are grouped by hostname,
+including across configured sources. Four RSS fetch jobs per source and four
+media jobs across the run provide additional bounds. X collectors share one
+browser and run one at a time. Chromium and yt-dlp's internal HTTP requests
+are outside the direct HTTP limiter; processing remains a separate command.
+
+All values must be positive integers. CPU/memory capacity is reported for
+tuning; limits do not automatically grow with core count. `scrape_runs` records
+the effective source worker count, HTTP/media limits and per-source queue
+capacity. Older rows have zero for unrecorded HTTP limits and the previously
+unbounded queue. Limits, entry/file-size settings and `code_version` (including
+the dependency lock) make comparisons reproducible.
 
 ## Query history
 
