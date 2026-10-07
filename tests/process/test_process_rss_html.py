@@ -98,3 +98,21 @@ def test_extract_page_metadata_author_from_twitter_label() -> None:
     metadata = extract_page_metadata(HTML_TWITTER_AUTHOR)
 
     assert metadata.author == "Twitter Author"
+
+
+
+def test_nested_entry_body_wins_over_article_and_main_navigation() -> None:
+    page = (
+        '<main>Breadcrumbs<article><header>Social links</header>'
+        '<div class="entry-content"><p>Actual article.</p></div>'
+        '<footer>Related posts</footer></article></main>'
+    )
+    assert extract_article_html(page) == '<p>Actual article.</p>'
+
+
+def test_main_is_a_fallback_when_no_article_container_exists() -> None:
+    page = (
+        '<header>Navigation</header><main><p>Body.</p></main>'
+        '<footer>Footer</footer>'
+    )
+    assert extract_article_html(page) == '<p>Body.</p>'

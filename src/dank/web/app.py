@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from dank.config import Settings
 from dank.embeddings import get_embedding_model
+from dank.html_utils import html_text, remove_page_noise
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
 DEFAULT_PAGE_SIZE = 50
@@ -817,7 +818,7 @@ def _asset_view(
 
 def _sanitize_html(raw_html: str) -> str:
     return bleach.clean(
-        raw_html,
+        remove_page_noise(raw_html),
         tags=ALLOWED_TAGS,
         attributes=ALLOWED_ATTRIBUTES,
         strip=True,
@@ -825,7 +826,7 @@ def _sanitize_html(raw_html: str) -> str:
 
 
 def _summarize_html(raw_html: str, *, limit: int = 280) -> str:
-    text = bleach.clean(raw_html, tags=[], attributes={}, strip=True)
+    text = html_text(raw_html)
     text = " ".join(text.split())
 
     if len(text) <= limit:

@@ -7,11 +7,11 @@ from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple, cast
 
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
+from dank.html_utils import remove_page_noise
 from dank.model import Post, RawPost
 from dank.process.page import (
     extract_article_html,
     extract_page_metadata,
-    extract_youtube_iframes,
     strip_html,
 )
 
@@ -36,6 +36,7 @@ class _ParsedItem(NamedTuple):
     text: str
     author: str
     created_at: datetime.datetime | None
+    full_content: bool = False
 
 
 class _PageDerivedValues(NamedTuple):
@@ -66,6 +67,7 @@ def convert_raw_post(row: RawPost) -> Post | None:
         author=parsed.author,
         published_at=row.post_created_at or parsed.created_at,
         content_html=parsed.text,
+        full_content=parsed.full_content,
     )
     title = page_derived.title
     author = page_derived.author
@@ -106,6 +108,7 @@ def _derive_page_values(
     author: str,
     published_at: datetime.datetime | None,
     content_html: str,
+    full_content: bool = False,
 ) -> _PageDerivedValues:
     # Parse heavyweight HTML only when RSS fields are missing information.
     if page_html and (not title or not author or published_at is None):
@@ -120,18 +123,13 @@ def _derive_page_values(
         if published_at is None:
             published_at = page_metadata.published_at
 
-    # Keep full page HTML when scraper already fetched it.
-    if page_html and content_html:
-        content_html = page_html
+    # Full feed bodies include comment text and must not become whole pages.
+    if page_html and not (full_content and content_html):
+        content_html = (
+            extract_article_html(page_html) or page_html
+        )
 
-    if page_html and not content_html:
-        content_html = extract_article_html(page_html)
-
-        if not content_html:
-            content_html = page_html
-
-        if not content_html:
-            content_html = extract_youtube_iframes(page_html)
+    content_html = remove_page_noise(content_html)
 
     return _PageDerivedValues(
         title=title,
@@ -202,6 +200,7 @@ def _parse_atom_entry(entry: ElementTree.Element) -> _ParsedItem:
         text=text or "",
         author=author or "",
         created_at=created_at,
+        full_content=bool(_text(entry, "atom:content", ATOM_NAMESPACES)),
     )
 
 
@@ -233,6 +232,7 @@ def _parse_rss_item(item: ElementTree.Element) -> _ParsedItem:
         text=text or "",
         author=author or "",
         created_at=created_at,
+        full_content=bool(_text(item, "content:encoded", RSS2_NAMESPACES)),
     )
 
 

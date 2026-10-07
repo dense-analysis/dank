@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any, NamedTuple, cast
 
-from dank.html_utils import is_youtube_url
+from dank.html_utils import html_text, is_youtube_url
 
 
 class PageMetadata(NamedTuple):
@@ -62,6 +62,7 @@ CONTENT_PRIORITY = (
     "article-main",
     "article",
     "content-block",
+    "main",
 )
 MEDIA_SCOPE_CLASSES = {
     "article-body",
@@ -176,77 +177,60 @@ class _ContentExtractor(HTMLParser):
         super().__init__()
 
         self.candidates: list[_ContentCandidate] = []
-        self._capture: _ContentCapture | None = None
+        self._captures: list[_ContentCapture] = []
         self._stack: list[str] = []
 
     def handle_starttag(
-        self,
-        tag: str,
-        attrs: list[tuple[str, str | None]],
+        self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
-        tag = tag.lower()
-        attr_map = _attrs_to_map(attrs)
-        candidate_kind = None
-
-        if self._capture is None:
-            candidate_kind = _content_candidate_kind(
-                tag, attr_map, self._stack,
-            )
-
+        kind = _content_candidate_kind(tag, _attrs_to_map(attrs), self._stack)
         is_void = tag in VOID_TAGS
+
+        for capture in self._captures:
+            capture.parts.append(_render_start_tag(tag, attrs))
+
+            if not is_void:
+                capture.depth += 1
+
+        # Capture nested bodies as well, so entry-content can outrank article.
+        if kind:
+            self._captures.append(_ContentCapture(kind, tag))
 
         if not is_void:
             self._stack.append(tag)
 
-        if candidate_kind and self._capture is None:
-            self._capture = _ContentCapture(candidate_kind, tag)
-
-            return
-
-        if self._capture is None:
-            return
-
-        self._capture.parts.append(_render_start_tag(tag, attrs))
-
-        if not is_void:
-            self._capture.depth += 1
-
     def handle_startendtag(
-        self,
-        tag: str,
-        attrs: list[tuple[str, str | None]],
+        self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
-        if self._capture is None:
-            return
-
-        self._capture.parts.append(
-            _render_start_tag(tag, attrs, self_closing=True),
-        )
+        for capture in self._captures:
+            capture.parts.append(
+                _render_start_tag(tag, attrs, self_closing=True),
+            )
 
     def handle_endtag(self, tag: str) -> None:
-        tag = tag.lower()
+        remaining: list[_ContentCapture] = []
 
-        if self._capture is not None:
-            if tag == self._capture.tag and self._capture.depth == 0:
-                html_value = "".join(self._capture.parts).strip()
-                if html_value:
+        for capture in self._captures:
+            if tag == capture.tag and capture.depth == 0:
+                value = "".join(capture.parts).strip()
+
+                if value:
                     self.candidates.append(
-                        _ContentCandidate(self._capture.kind, html_value),
+                        _ContentCandidate(capture.kind, value),
                     )
-                self._capture = None
             else:
-                self._capture.parts.append(f"</{tag}>")
-                if self._capture.depth > 0:
-                    self._capture.depth -= 1
+                capture.parts.append(f"</{tag}>")
+                capture.depth = max(0, capture.depth - 1)
+                remaining.append(capture)
+
+        self._captures = remaining
 
         if self._stack and self._stack[-1] == tag:
             self._stack.pop()
 
     def handle_data(self, data: str) -> None:
-        if self._capture is None:
-            return
-
-        self._capture.parts.append(data)
+        for capture in self._captures:
+            capture.parts.append(html.escape(data, quote=False))
 
 
 class _YouTubeEmbedParser(HTMLParser):
@@ -270,17 +254,6 @@ class _YouTubeEmbedParser(HTMLParser):
             return
 
         self.iframes.append(_render_start_tag(tag, attrs) + "</iframe>")
-
-
-class _TextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.parts: list[str] = []
-
-    def handle_data(self, data: str) -> None:
-        if data:
-            self.parts.append(data)
 
 
 def extract_page_metadata(page_html: str) -> PageMetadata:
@@ -330,13 +303,7 @@ def extract_youtube_iframes(page_html: str) -> str:
 
 
 def strip_html(value: str) -> str:
-    if not value:
-        return ""
-
-    extractor = _TextExtractor()
-    extractor.feed(value)
-
-    return "".join(extractor.parts).strip()
+    return html_text(value)
 
 
 def _select_author(meta: dict[str, str], jsonld_author: str) -> str:
@@ -464,6 +431,9 @@ def _content_candidate_kind(
         element_id = attr_map.get("id", "")
         if _id_has_content_key(element_id):
             return "content-block"
+
+    if tag == "main":
+        return "main"
 
     return None
 

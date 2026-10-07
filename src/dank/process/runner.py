@@ -10,6 +10,7 @@ from typing import Any
 
 from dank.config import Settings, load_settings
 from dank.embeddings import EmbeddingModel, get_embedding_model
+from dank.html_utils import html_text
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
@@ -263,7 +264,9 @@ async def _insert_posts(
         html_embeddings = await asyncio.to_thread(
             embedder.embed_texts,
             [
-                _truncate_for_embedding(post.html, limit=MAX_HTML_EMBED_CHARS)
+                _truncate_for_embedding(
+                    html_text(post.html), limit=MAX_HTML_EMBED_CHARS,
+                )
                 for post in posts
             ],
         )

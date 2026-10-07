@@ -267,3 +267,47 @@ def test_convert_raw_post_preserves_feed_content_on_fetch_failure() -> None:
         2026, 2, 1, 1, tzinfo=datetime.UTC,
     )
     assert post.updated_at == scraped_at
+
+
+def test_full_feed_keeps_comment_instead_of_parent_article() -> None:
+    feed = (
+        '<item xmlns:content="http://purl.org/rss/1.0/modules/content/">'
+        '<title>A comment</title><description>Comment excerpt</description>'
+        '<content:encoded><![CDATA[<p>The complete comment.</p>]]>'
+        '</content:encoded></item>'
+    )
+    payload = json.dumps({
+        "feed_xml": feed,
+        "page_html": "<html><article>Parent article</article></html>",
+    })
+    raw = _raw_post(
+        payload=payload, url="https://example.com/article#comment-1",
+        scraped_at=datetime.datetime.now(datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+    assert post is not None
+    assert post.html == "<p>The complete comment.</p>"
+    assert raw.payload == payload
+
+
+def test_summary_uses_article_body_and_keeps_escaped_code() -> None:
+    raw = _raw_post(
+        payload=json.dumps({
+            "feed_xml": "<item><title>Article</title>"
+                        "<description>Short teaser</description></item>",
+            "page_html": "<html><head><style>.tracking{}</style>"
+                         "<script>track()</script></head><body>Navigation"
+                         "<article><p>Complete article.</p>"
+                         "<pre>&lt;script&gt;example()&lt;/script&gt;</pre>"
+                         "</article>Footer</body></html>",
+        }),
+        url="https://example.com/article",
+        scraped_at=datetime.datetime.now(datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+    assert post is not None
+    assert "Complete article." in post.html
+    assert "&lt;script&gt;example()&lt;/script&gt;" in post.html
+    assert "Navigation" not in post.html and "Footer" not in post.html
+    assert "tracking" not in post.html and "track()" not in post.html
+    assert "Short teaser" not in post.html

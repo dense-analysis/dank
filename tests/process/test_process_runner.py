@@ -211,3 +211,32 @@ async def test_process_source_assets_only_selects_unprocessed_assets() -> None:
     assert "LIMIT 1 BY post_id, url" in client.query
     assert "LEFT JOIN" in client.query
     assert "raw.scraped_at > processed.updated_at" in client.query
+
+
+async def test_embeddings_use_readable_text_instead_of_page_code() -> None:
+    client = _InsertClient()
+    calls: list[list[str]] = []
+
+    class _SpyEmbedder:
+        def embed_texts(self, items: list[str]) -> list[tuple[float, ...]]:
+            calls.append(items)
+
+            return [(1.0,) for _ in items]
+
+    def converter(_raw: Any) -> Post:
+        now = datetime.datetime.now(datetime.UTC)
+
+        return Post(
+            domain="example.com", post_id="1", url="https://example.com/1",
+            created_at=now, updated_at=now, author="author", title="Title",
+            title_embedding=(), html_embedding=(), source="rss",
+            html="<head><style>tracking css</style></head>"
+                 "<p>Readable <strong>article</strong>.</p>",
+        )
+
+    await process_source_posts(
+        cast(Any, client), "example.com", converter,
+        since=datetime.datetime.now(datetime.UTC),
+        embedder=cast(Any, _SpyEmbedder()),
+    )
+    assert calls == [["Title"], ["Readable article."]]

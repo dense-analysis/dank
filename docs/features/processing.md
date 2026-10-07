@@ -84,3 +84,10 @@ writes also report elapsed time every five seconds while pending. Warnings
 and errors go to stderr; both streams are retained in the configured log file.
 The same output is available through `make process` and
 `make process MODE=native`.
+
+
+RSS processing preserves full feed bodies, including comment text. When a
+feed supplies only a summary, it extracts the article body from the fetched
+page when possible. Page headers, scripts and styles are removed from
+processed content and previews. Embeddings use readable text rather than
+HTML markup. Original feed XML and page HTML remain in raw storage.
