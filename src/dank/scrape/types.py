@@ -16,6 +16,7 @@ class ScrapeBatch(NamedTuple):
     """
     posts: list[RawPost]
     assets: list[AssetDiscovery]
+    source_index: int = 0
 
 
 class ScrapeTotals(NamedTuple):

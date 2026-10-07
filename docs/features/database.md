@@ -9,6 +9,8 @@ tables automatically. See [setup](../setup.md) for both modes.
 
 | Table | Contents |
 | --- | --- |
+| `scrape_runs` | Run timings, outcomes, totals and runtime limits |
+| `scrape_source_runs` | Per-source timings, outcomes and counters |
 | `site_feeds` | Discovered feed URLs and discovery timestamps |
 | `raw_posts` | Source IDs, URLs, timestamps and retained payloads |
 | `raw_assets` | Discovered asset references and download paths |
@@ -20,6 +22,9 @@ Raw tables retain repeated captures. Processed tables use replacement engines
 to keep the latest version per identity: `(domain, post_id)` for posts and
 `(domain, post_id, url)` for assets. Use `FINAL` when querying processed tables
 to resolve replacement versions at read time.
+
+See [scrape history](history.md) for run comparisons. History tables also require
+`FINAL` to resolve their running and final versions.
 
 ## Query from the command line
 

@@ -102,3 +102,84 @@ CREATE TABLE IF NOT EXISTS dank.web_embedding_cache (
 ENGINE = ReplacingMergeTree(created_at)
 ORDER BY (model_name, search_text)
 TTL toDateTime(created_at) + INTERVAL 6 HOUR DELETE;
+
+-- Scrape history; kept in sync with src/dank/scrape/history.sql.
+CREATE TABLE IF NOT EXISTS dank.scrape_runs (
+    run_id UUID,
+    started_at DateTime64(3, 'UTC'),
+    finished_at Nullable(DateTime64(3, 'UTC')),
+    elapsed_ms Nullable(UInt64),
+    status LowCardinality(String),
+    error_type LowCardinality(String),
+    sources_selected UInt32,
+    sources_started UInt32,
+    runtime LowCardinality(String),
+    platform LowCardinality(String),
+    python_version LowCardinality(String),
+    cpu_limit Float64,
+    memory_limit_bytes Nullable(UInt64),
+    code_version LowCardinality(String),
+    source_concurrency UInt32,
+    rss_concurrency UInt32,
+    media_concurrency UInt32,
+    batch_size UInt32,
+    headless UInt8,
+    keep_feed_on_fetch_failure UInt8,
+    max_asset_bytes Nullable(Int64),
+    feed_staleness_days Int64,
+    x_max_posts Int64,
+    x_max_scrolls Int64,
+    x_scroll_pause_seconds Float64,
+    version UInt64,
+    posts_queued UInt64,
+    posts_saved UInt64,
+    media_references UInt64,
+    asset_records_saved UInt64,
+    files_downloaded UInt64,
+    files_cached UInt64,
+    files_failed UInt64,
+    media_skipped UInt64,
+    downloaded_file_bytes UInt64,
+    http_requests UInt64,
+    http_429 UInt64,
+    retries UInt64,
+    fetch_failures UInt64,
+    parse_failures UInt64,
+    request_ms UInt64,
+    retry_wait_ms UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (started_at, run_id);
+
+CREATE TABLE IF NOT EXISTS dank.scrape_source_runs (
+    run_id UUID,
+    source_index UInt32,
+    domain LowCardinality(String),
+    source LowCardinality(String),
+    accounts Array(String),
+    started_at DateTime64(3, 'UTC'),
+    finished_at Nullable(DateTime64(3, 'UTC')),
+    elapsed_ms Nullable(UInt64),
+    collection_ms Nullable(UInt64),
+    status LowCardinality(String),
+    error_type LowCardinality(String),
+    version UInt64,
+    posts_queued UInt64,
+    posts_saved UInt64,
+    media_references UInt64,
+    asset_records_saved UInt64,
+    files_downloaded UInt64,
+    files_cached UInt64,
+    files_failed UInt64,
+    media_skipped UInt64,
+    downloaded_file_bytes UInt64,
+    http_requests UInt64,
+    http_429 UInt64,
+    retries UInt64,
+    fetch_failures UInt64,
+    parse_failures UInt64,
+    request_ms UInt64,
+    retry_wait_ms UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (domain, started_at, run_id, source_index);

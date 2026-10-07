@@ -5,6 +5,9 @@ package-dir = { "" = "src" }
 # turn on automatic package discovery
 packages = { find = { where = ["src"], include = ["*"] } }
 
+[tool.setuptools.package-data]
+"dank.scrape" = ["history.sql"]
+
 [build-system]
 # NOTE: We should *not* add "wheel" here!
 # See: https://www.reddit.com/r/Python/comments/1jwbymm/psa_you_should_remove_wheel_from_your/

@@ -10,6 +10,12 @@ import aiohttp
 
 from dank.model import AssetDiscovery, RawAsset
 from dank.progress import Progress
+from dank.scrape.metrics import (
+    MEDIA_CONCURRENCY,
+    SourceMetrics,
+    count,
+    current_source,
+)
 
 from .audio_video import download_audio_video_asset
 from .http import download_file_http
@@ -27,8 +33,9 @@ async def download_assets(
     browser_profile_dir: pathlib.Path | None = None,
     http_client: aiohttp.ClientSession,
     max_asset_bytes: int | None = None,
-    concurrency: int = 4,
+    concurrency: int = MEDIA_CONCURRENCY,
     scraped_at: datetime.datetime | None = None,
+    owners: dict[AssetDiscovery, SourceMetrics] | None = None,
 ) -> list[RawAsset]:
     timestamp = scraped_at or datetime.datetime.now(datetime.UTC)
     unique: dict[str, AssetDiscovery] = {}
@@ -39,50 +46,6 @@ async def download_assets(
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def _download(discovery: AssetDiscovery) -> RawAsset | None:
-        target_dir = assets_dir / discovery.domain / discovery.post_id
-        asset_filename = pathlib.Path(urlparse(discovery.url).path).name
-
-        if asset_filename.lower() in ASSET_FILENAMES_TO_NEVER_DOWNLOAD:
-            return RawAsset(
-                domain=discovery.domain,
-                post_id=discovery.post_id,
-                url=discovery.url,
-                asset_type=discovery.asset_type,
-                scraped_at=timestamp,
-                source=discovery.source,
-                local_path="",
-            )
-        elif discovery.asset_type in SKIP_ASSET_TYPES:
-            return RawAsset(
-                domain=discovery.domain,
-                post_id=discovery.post_id,
-                url=discovery.url,
-                asset_type=discovery.asset_type,
-                scraped_at=timestamp,
-                source=discovery.source,
-                local_path="",
-            )
-        elif discovery.asset_type == "youtube":
-            # Download YouTube assets with yt-dlp.
-            async with semaphore:
-                return await download_audio_video_asset(
-                    discovery=discovery,
-                    target_dir=target_dir,
-                    browser_profile_dir=browser_profile_dir,
-                    max_asset_bytes=max_asset_bytes,
-                    timestamp=timestamp,
-                )
-        else:
-            async with semaphore:
-                # Default to downloading assets with the HTTP client.
-                return await download_file_http(
-                    discovery=discovery,
-                    target_dir=target_dir,
-                    http_client=http_client,
-                    max_asset_bytes=max_asset_bytes,
-                    timestamp=timestamp,
-                )
 
     if not unique:
         return []
@@ -91,10 +54,42 @@ async def download_assets(
     progress = Progress(f"Downloading media for {domains}", len(unique))
 
     async def _tracked_download(discovery: AssetDiscovery) -> RawAsset | None:
-        result = await _download(discovery)
-        progress.advance()
+        source = (owners or {}).get(discovery)
+        token = current_source.set(source)
 
-        return result
+        try:
+            async with semaphore:
+                if source is not None:
+                    source.active_media += 1
+
+                try:
+                    before: set[pathlib.Path] = set()
+
+                    if source is not None:
+                        before = await asyncio.to_thread(
+                            _existing_files, assets_dir, discovery,
+                        )
+
+                    result = await _download_one(
+                        discovery, assets_dir, browser_profile_dir,
+                        http_client, max_asset_bytes, timestamp,
+                    )
+
+                    if source is not None:
+                        outcome, size = await asyncio.to_thread(
+                            _download_outcome, discovery, result, before,
+                        )
+                        count(outcome)
+                        count("downloaded_file_bytes", size)
+
+                    return result
+                finally:
+                    if source is not None:
+                        source.active_media -= 1
+        finally:
+            current_source.reset(token)
+            progress.advance()
+
 
     async with progress:
         results = await asyncio.gather(
@@ -102,3 +97,95 @@ async def download_assets(
         )
 
     return [result for result in results if result is not None]
+
+
+async def _download_one(
+    discovery: AssetDiscovery,
+    assets_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path | None,
+    http_client: aiohttp.ClientSession,
+    max_asset_bytes: int | None,
+    timestamp: datetime.datetime,
+) -> RawAsset | None:
+    target_dir = assets_dir / discovery.domain / discovery.post_id
+    asset_filename = pathlib.Path(urlparse(discovery.url).path).name
+
+    if asset_filename.lower() in ASSET_FILENAMES_TO_NEVER_DOWNLOAD:
+        return RawAsset(
+            domain=discovery.domain,
+            post_id=discovery.post_id,
+            url=discovery.url,
+            asset_type=discovery.asset_type,
+            scraped_at=timestamp,
+            source=discovery.source,
+            local_path="",
+        )
+    elif discovery.asset_type in SKIP_ASSET_TYPES:
+        return RawAsset(
+            domain=discovery.domain,
+            post_id=discovery.post_id,
+            url=discovery.url,
+            asset_type=discovery.asset_type,
+            scraped_at=timestamp,
+            source=discovery.source,
+            local_path="",
+        )
+    elif discovery.asset_type == "youtube":
+        # Download YouTube assets with yt-dlp.
+        return await download_audio_video_asset(
+            discovery=discovery,
+            target_dir=target_dir,
+            browser_profile_dir=browser_profile_dir,
+            max_asset_bytes=max_asset_bytes,
+            timestamp=timestamp,
+        )
+    else:
+        # Default to downloading assets with the HTTP client.
+        return await download_file_http(
+            discovery=discovery,
+            target_dir=target_dir,
+            http_client=http_client,
+            max_asset_bytes=max_asset_bytes,
+            timestamp=timestamp,
+        )
+
+
+
+def _existing_files(
+    assets_dir: pathlib.Path, discovery: AssetDiscovery,
+) -> set[pathlib.Path]:
+    target = assets_dir / discovery.domain / discovery.post_id
+
+    if discovery.asset_type == "youtube":
+        return {path.resolve() for path in target.glob("*")}
+
+    filename = pathlib.Path(urlparse(discovery.url).path).name or "asset"
+    path = target / filename
+
+    return {path.resolve()} if path.exists() else set()
+
+
+def _download_outcome(
+    discovery: AssetDiscovery,
+    result: RawAsset | None,
+    before: set[pathlib.Path],
+) -> tuple[str, int]:
+    if (
+        discovery.asset_type in SKIP_ASSET_TYPES
+        or pathlib.Path(urlparse(discovery.url).path).name.lower()
+        in ASSET_FILENAMES_TO_NEVER_DOWNLOAD
+    ):
+        return "media_skipped", 0
+
+    if result is None or not result.local_path:
+        return "files_failed", 0
+
+    path = pathlib.Path(result.local_path)
+
+    if path.resolve() in before:
+        return "files_cached", 0
+
+    try:
+        return "files_downloaded", path.stat().st_size
+    except OSError:
+        return "files_downloaded", 0

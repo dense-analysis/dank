@@ -15,6 +15,7 @@ from zendriver import Element, cdp
 from dank.config import EmailSettings, XSettings
 from dank.model import AssetDiscovery, RawPost
 from dank.scrape.imap_email import EmailSearchFilters, wait_for_code
+from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
     BrowserSession,
@@ -53,6 +54,11 @@ async def scrape_x_accounts(
     browser = await session.get_browser()
 
     if not accounts:
+        stats = current_source.get()
+
+        if stats is not None:
+            stats.skipped = True
+
         logger.warning("No X accounts configured")
         return
 
@@ -72,6 +78,12 @@ async def scrape_x_accounts(
             ):
                 yield batch
         except LoginRequiredError:
+            count("fetch_failures")
+            stats = current_source.get()
+
+            if stats is not None:
+                stats.error_type = "LoginRequiredError"
+
             logger.warning(
                 "X login required; stopping scrape.",
             )

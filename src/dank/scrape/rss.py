@@ -18,6 +18,12 @@ import aiohttp
 from dank.html_utils import is_youtube_url
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
+from dank.scrape.metrics import (
+    RSS_CONCURRENCY,
+    count,
+    request_metrics,
+    retry_sleep,
+)
 from dank.scrape.types import ScrapeBatch
 
 logger = logging.getLogger(__name__)
@@ -285,6 +291,7 @@ def parse_feed_entries(
     root = _parse_xml_root(xml)
 
     if root is None:
+        count("parse_failures")
         logger.warning("%s: invalid RSS/Atom XML", domain)
 
         return []
@@ -300,6 +307,7 @@ def parse_feed_entries(
         case "rss1":
             entries = _parse_rss1_entries(root, root_url)
         case _:
+            count("parse_failures")
             logger.warning("%s: unsupported feed root <%s>", domain, root.tag)
             entries = []
 
@@ -446,7 +454,7 @@ async def scrape_feed_batches(
     domain: str,
     feed_urls: list[str],
     batch_size: int = 50,
-    concurrency: int = 4,
+    concurrency: int = RSS_CONCURRENCY,
     keep_feed_on_fetch_failure: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
     if not feed_urls:
@@ -765,27 +773,46 @@ async def _fetch_text(
     *,
     accept: list[str],
 ) -> str | None:
+    text = await _fetch_text_with_retries(http_client, url, accept=accept)
+
+    if not text:
+        count("fetch_failures")
+
+    return text
+
+
+async def _fetch_text_with_retries(
+    http_client: aiohttp.ClientSession,
+    url: str,
+    *,
+    accept: list[str],
+) -> str | None:
     if not url:
         return None
 
     for retry in range(RATE_LIMIT_RETRIES + 1):
         try:
-            async with http_client.get(
-                url,
-                headers={"Accept": ", ".join(accept)},
-            ) as response:
-                response.raise_for_status()
-                text = await response.text()
+            with request_metrics(retry=retry > 0):
+                async with http_client.get(
+                    url,
+                    headers={"Accept": ", ".join(accept)},
+                ) as response:
+                    response.raise_for_status()
+                    text = await response.text()
 
-                if not text:
-                    logger.warning("Empty response fetching %s", url)
-                elif retry:
-                    logger.info(
-                        "Fetched %s after %d rate-limit retries", url, retry,
-                    )
+                    if not text:
+                        logger.warning("Empty response fetching %s", url)
+                    elif retry:
+                        logger.info(
+                            "Fetched %s after %d rate-limit retries",
+                            url, retry,
+                        )
 
-                return text
+                    return text
         except aiohttp.ClientResponseError as error:
+            if error.status == 429:
+                count("http_429")
+
             retry_after = (error.headers or {}).get("Retry-After")
             logger.warning(
                 "HTTP %d fetching %s: %s%s",
@@ -802,7 +829,7 @@ async def _fetch_text(
                 return None
 
             # Release the response before sleeping; cancellation propagates.
-            await asyncio.sleep(delay)
+            await retry_sleep(delay)
         except Exception as error:
             logger.warning(
                 "Failed to fetch %s: %s: %s",
