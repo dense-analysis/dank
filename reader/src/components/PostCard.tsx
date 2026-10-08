@@ -1,10 +1,10 @@
-import { Bookmark, Check, ExternalLink, ImageOff } from "lucide-react";
+import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useState } from "react";
-import type { Post } from "../lib/types";
-
-export function sourceName(domain: string) {
-  return domain.replace(/^www\./, "").replace(/\.(com|org|net|co\.uk|io)$/, "");
-}
+import type { Filters, Post } from "../lib/types";
+import { AuthorLink } from "./AuthorLink";
+import { HighlightedText } from "./HighlightedText";
+import { ReaderLink } from "./ReaderLink";
+import { SourceLink, sourceName } from "./SourceLink";
 export function readingTime(post: Post) {
   return Math.max(
     1,
@@ -18,8 +18,12 @@ export function dateLabel(date: string) {
   return Number.isNaN(value.getTime())
     ? "Date unavailable"
     : new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
         month: "short",
         day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
       }).format(value);
 }
 export function safeUrl(url: string) {
@@ -44,16 +48,22 @@ export function SourceMark({ domain }: { domain: string }) {
 }
 export function PostCard({
   post,
-  saved,
   read,
   open,
-  toggleSave,
+  href,
+  selectSource,
+  query,
+  filters,
+  selectAuthor,
 }: {
   post: Post;
-  saved: boolean;
   read: boolean;
   open: () => void;
-  toggleSave: () => void;
+  href: string;
+  selectSource: (domain: string) => void;
+  query: string;
+  filters: Filters;
+  selectAuthor: (author: string) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
@@ -61,7 +71,7 @@ export function PostCard({
     <article className={`post-card ${read ? "is-read" : ""}`}>
       <div className="post-meta">
         <SourceMark domain={post.domain} />
-        <strong title={post.domain}>{sourceName(post.domain)}</strong>
+        <SourceLink domain={post.domain} select={selectSource} />
         <span className="meta-dot">·</span>
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
         <span className="source-kind">
@@ -69,20 +79,30 @@ export function PostCard({
         </span>
       </div>
       <div className="post-main">
-        <button
-          type="button"
+        <ReaderLink
+          href={href}
           className="post-open"
-          onClick={open}
+          onNavigate={open}
           aria-label={`Read ${post.title || "Untitled post"}`}
         >
-          <h2>{post.title || "Untitled post"}</h2>
-          <p>{post.excerpt || "Open to read this story."}</p>
-        </button>
+          <h2>
+            <HighlightedText
+              text={post.title || "Untitled post"}
+              query={query}
+            />
+          </h2>
+          <p>
+            <HighlightedText
+              text={post.excerpt || "Open to read this story."}
+              query={query}
+            />
+          </p>
+        </ReaderLink>
         {thumbnail && (
-          <button
-            type="button"
+          <ReaderLink
+            href={href}
             className="thumbnail"
-            onClick={open}
+            onNavigate={open}
             aria-label={`Open image and story: ${post.title}`}
             tabIndex={-1}
           >
@@ -96,11 +116,16 @@ export function PostCard({
                 onError={() => setImageFailed(true)}
               />
             )}
-          </button>
+          </ReaderLink>
         )}
       </div>
       <div className="post-bottom">
-        <span className="author">{post.author || post.domain}</span>
+        <AuthorLink
+          author={post.author}
+          fallback={post.domain}
+          filters={filters}
+          select={selectAuthor}
+        />
         <span className="meta-dot">·</span>
         <span>{readingTime(post)} min read</span>
         {read && (
@@ -119,16 +144,6 @@ export function PostCard({
           >
             <ExternalLink size={15} />
           </a>
-          <button
-            type="button"
-            className={`icon-button ${saved ? "is-saved" : ""}`}
-            onClick={toggleSave}
-            aria-label={`${saved ? "Unsave" : "Save"} ${post.title}`}
-            aria-pressed={saved}
-            title={saved ? "Remove bookmark" : "Save for later"}
-          >
-            <Bookmark size={17} fill={saved ? "currentColor" : "none"} />
-          </button>
         </div>
       </div>
     </article>

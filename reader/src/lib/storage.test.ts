@@ -1,118 +1,92 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Library } from "./storage";
-import { defaultFilters, loadLibrary, postKey, saveLibrary } from "./storage";
-import type { Post } from "./types";
+import { loadReadPosts, postKey, saveReadPosts } from "./storage";
 
-const post: Post = {
-  id: "123",
-  domain: "example.com",
-  url: "https://example.com/123",
-  author: "Author",
-  title: "An article",
-  excerpt: "The first sentence.",
-  html: "<p>The article.</p>",
-  created_at: "2026-10-08T10:00:00Z",
-  source: "Example",
-  thumbnail: null,
-  media: [],
-};
-
-const empty: Library = { version: 1, feeds: [], bookmarks: [], read: [] };
-let persisted: string | null;
+const readKey = "dank-reader:read:v1";
+const legacyKey = "dank-reader:library:v1";
+let stored: Map<string, string>;
 
 beforeEach(() => {
-  persisted = null;
+  stored = new Map();
   vi.stubGlobal("localStorage", {
-    getItem: vi.fn(() => persisted),
-    setItem: vi.fn((_key: string, value: string) => {
-      persisted = value;
+    getItem: vi.fn((key: string) => stored.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      stored.set(key, value);
     }),
   });
 });
-
 afterEach(() => vi.unstubAllGlobals());
 
-describe("library persistence", () => {
-  it("preserves saved definitions, complete bookmarks, and read state across reloads", () => {
-    const library: Library = {
-      version: 1,
-      feeds: [
-        {
-          id: "politics",
-          name: "Politics",
-          filters: { ...defaultFilters, tags: ["politics"] },
-        },
-      ],
-      bookmarks: [post],
-      read: [postKey(post)],
-    };
-
-    expect(saveLibrary(library)).toBe(true);
-    expect(loadLibrary()).toEqual(library);
+describe("read markers", () => {
+  it("persists source-specific identities across reloads", () => {
+    const read = [postKey({ domain: "example.com", id: "123" })];
+    expect(saveReadPosts(read)).toBe(true);
+    expect(loadReadPosts()).toEqual(read);
     expect(globalThis.localStorage.setItem).toHaveBeenCalledWith(
-      "dank-reader:library:v1",
-      expect.any(String),
+      readKey,
+      JSON.stringify(read),
     );
   });
 
-  it.each(["not JSON", "null", '{"version":2}', '{"version":1,"feeds":[]}'])(
-    "recovers safely from corrupt or unsupported storage: %s",
+  it("carries over read markers without modifying stored bookmarks or feeds", () => {
+    const legacy = JSON.stringify({
+      version: 1,
+      feeds: [{ id: "old-feed", name: "Old feed" }],
+      bookmarks: [{ id: "saved-story" }],
+      read: ["read-story"],
+    });
+    stored.set(legacyKey, legacy);
+    expect(loadReadPosts()).toEqual(["read-story"]);
+    saveReadPosts([...loadReadPosts(), "another-story"]);
+    expect(loadReadPosts()).toEqual(["read-story", "another-story"]);
+    expect(stored.get(legacyKey)).toBe(legacy);
+    expect(globalThis.localStorage.setItem).not.toHaveBeenCalledWith(
+      legacyKey,
+      expect.anything(),
+    );
+  });
+
+  it("uses the new read state once present instead of reloading old markers", () => {
+    stored.set(legacyKey, JSON.stringify({ version: 1, read: ["old"] }));
+    saveReadPosts([]);
+    expect(loadReadPosts()).toEqual([]);
+  });
+
+  it.each(["not JSON", "null", "{}", "123"])(
+    "recovers from malformed read storage: %s",
     (value) => {
-      persisted = value;
-      expect(loadLibrary()).toEqual(empty);
+      stored.set(readKey, value);
+      expect(loadReadPosts()).toEqual([]);
     },
   );
 
-  it("discards malformed entries while retaining valid user data", () => {
-    persisted = JSON.stringify({
-      version: 1,
-      feeds: [
-        { id: "good", name: "Politics", filters: defaultFilters },
-        {
-          id: "bad",
-          name: "Broken",
-          filters: { ...defaultFilters, tags: [42] },
-        },
-        {
-          id: "bad-date",
-          name: "Broken date",
-          filters: { ...defaultFilters, after: "2026-02-30" },
-        },
-      ],
-      bookmarks: [post, { ...post, id: "bad", media: [null] }],
-      read: [postKey(post), 42, null, postKey(post)],
-    });
-
-    expect(loadLibrary()).toEqual({
-      version: 1,
-      feeds: [{ id: "good", name: "Politics", filters: defaultFilters }],
-      bookmarks: [post],
-      read: [postKey(post)],
-    });
+  it("handles corrupt legacy storage without overwriting it", () => {
+    stored.set(legacyKey, "not JSON");
+    expect(loadReadPosts()).toEqual([]);
+    saveReadPosts(["new"]);
+    expect(stored.get(legacyKey)).toBe("not JSON");
   });
 
-  it("retains the most recent 5,000 unique read identities", () => {
-    const read = Array.from({ length: 5_020 }, (_, index) =>
-      postKey({ domain: "example.com", id: String(index) }),
+  it("filters invalid markers and limits storage to 5,000 unique identities", () => {
+    const read = Array.from({ length: 5020 }, (_, i) =>
+      postKey({ domain: "example.com", id: String(i) }),
     );
-    saveLibrary({ ...empty, read });
-    expect(loadLibrary().read).toEqual(read.slice(20));
+    stored.set(readKey, JSON.stringify([null, 12, ...read, read[5019]]));
+    expect(loadReadPosts()).toEqual(read.slice(20));
   });
 
-  it("handles storage being unavailable and reports unsuccessful saves", () => {
-    vi.stubGlobal("localStorage", undefined);
-    expect(loadLibrary()).toEqual(empty);
-    expect(saveLibrary(empty)).toBe(false);
-  });
-
-  it("reports quota errors without destroying the previous saved library", () => {
-    saveLibrary({ ...empty, bookmarks: [post] });
+  it("reports quota failure without losing prior read state", () => {
+    saveReadPosts(["previous"]);
     vi.mocked(globalThis.localStorage.setItem).mockImplementation(() => {
       throw new Error("Quota exceeded");
     });
+    expect(saveReadPosts(["new"])).toBe(false);
+    expect(loadReadPosts()).toEqual(["previous"]);
+  });
 
-    expect(saveLibrary(empty)).toBe(false);
-    expect(loadLibrary().bookmarks).toEqual([post]);
+  it("handles unavailable browser storage", () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect(loadReadPosts()).toEqual([]);
+    expect(saveReadPosts(["new"])).toBe(false);
   });
 });
 

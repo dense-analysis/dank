@@ -1,88 +1,51 @@
-import type { Filters, Post, SavedFeed } from "./types";
-import { isFilters, isPost, isRecord } from "./validation";
-
-export interface Library {
-  version: 1;
-  feeds: SavedFeed[];
-  bookmarks: Post[];
-  read: string[];
-}
+import type { Filters, Post } from "./types";
+import { isRecord } from "./validation";
 
 export const defaultFilters: Filters = {
   q: "",
-  mode: "words",
   sort: "newest",
   domains: [],
   tags: [],
   author: "",
+  authorExact: false,
   after: "",
   before: "",
 };
-
-const STORAGE_KEY = "dank-reader:library:v1";
+const READ_KEY = "dank-reader:read:v1";
+const LEGACY_KEY = "dank-reader:library:v1";
 const MAX_READ = 5_000;
 
 export function postKey(post: Pick<Post, "domain" | "id">): string {
   return JSON.stringify([post.domain, post.id]);
 }
 
-function isSavedFeed(value: unknown): value is SavedFeed {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    value.id.trim().length > 0 &&
-    typeof value.name === "string" &&
-    value.name.trim().length > 0 &&
-    isFilters(value.filters)
-  );
+function parseRead(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [
+        ...new Set(value.filter((id): id is string => typeof id === "string")),
+      ].slice(-MAX_READ)
+    : [];
 }
 
-function emptyLibrary(): Library {
-  return { version: 1, feeds: [], bookmarks: [], read: [] };
-}
-
-function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
-  return [...new Map(items.map((item) => [key(item), item])).values()];
-}
-
-function parseLibrary(value: unknown): Library {
-  if (
-    !isRecord(value) ||
-    value.version !== 1 ||
-    !Array.isArray(value.feeds) ||
-    !Array.isArray(value.bookmarks) ||
-    !Array.isArray(value.read)
-  ) {
-    return emptyLibrary();
-  }
-
-  return {
-    version: 1,
-    feeds: uniqueBy(value.feeds.filter(isSavedFeed), (feed) => feed.id),
-    bookmarks: uniqueBy(value.bookmarks.filter(isPost), postKey),
-    read: [
-      ...new Set(
-        value.read.filter((id): id is string => typeof id === "string"),
-      ),
-    ].slice(-MAX_READ),
-  };
-}
-
-export function loadLibrary(): Library {
+export function loadReadPosts(): string[] {
   try {
-    const value = globalThis.localStorage.getItem(STORAGE_KEY);
-    return value ? parseLibrary(JSON.parse(value)) : emptyLibrary();
-  } catch {
-    return emptyLibrary();
-  }
-}
-
-export function saveLibrary(library: Library): boolean {
-  try {
-    globalThis.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(parseLibrary(library)),
+    const current = globalThis.localStorage.getItem(READ_KEY);
+    if (current !== null) return parseRead(JSON.parse(current));
+    // Keep previous bookmarks and feeds untouched while carrying over read markers.
+    const legacy: unknown = JSON.parse(
+      globalThis.localStorage.getItem(LEGACY_KEY) ?? "null",
     );
+    return isRecord(legacy) && legacy.version === 1
+      ? parseRead(legacy.read)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveReadPosts(read: string[]): boolean {
+  try {
+    globalThis.localStorage.setItem(READ_KEY, JSON.stringify(parseRead(read)));
     return true;
   } catch {
     return false;

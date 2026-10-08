@@ -27,9 +27,7 @@ export function SourcesView({
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
-      <p className="sources-intro">
-        The voices in your library. Open a source to explore its stories.
-      </p>
+      <p className="sources-intro">Select a source to view its stories.</p>
       {matches.map((source) => (
         <button
           type="button"

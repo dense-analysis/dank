@@ -1,34 +1,39 @@
 import { useQuery } from "@tanstack/react-query";
-import DOMPurify from "dompurify";
-import { ArrowLeft, Bookmark, ExternalLink, Minus, Plus } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ExternalLink, Minus, Plus } from "lucide-react";
+import { useEffect } from "react";
+import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { fetchPost } from "../lib/api";
-import type { Post } from "../lib/types";
-import { Modal } from "./Modal";
-import {
-  dateLabel,
-  readingTime,
-  SourceMark,
-  safeUrl,
-  sourceName,
-} from "./PostCard";
+import type { Filters, Post } from "../lib/types";
+import { ArticleBody } from "./ArticleBody";
+import { AuthorLink } from "./AuthorLink";
+import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { SourceLink } from "./SourceLink";
 
-export function ArticleDialog({
+export function ArticleView({
   domain,
   id,
   initial,
-  saved,
   close,
-  toggleSave,
+  selectSource,
+  markRead,
+  filters,
+  selectAuthor,
 }: {
   domain: string;
   id: string;
   initial?: Post;
-  saved: boolean;
   close: () => void;
-  toggleSave: (post: Post) => void;
+  selectSource: (domain: string) => void;
+  markRead: (post: Post) => void;
+  filters: Filters;
+  selectAuthor: (author: string) => void;
 }) {
-  const [fontSize, setFontSize] = useState(19);
+  const { preferences, updatePreferences, preferencesError } =
+    useReaderPreferences();
+  const { fontSize } = preferences;
+  function setFontSize(size: number) {
+    updatePreferences({ ...preferences, fontSize: size });
+  }
   const {
     data: post,
     isPending,
@@ -39,10 +44,18 @@ export function ArticleDialog({
     queryFn: ({ signal }) => fetchPost(domain, id, signal),
     initialData: initial,
   });
+  useEffect(() => {
+    if (post) markRead(post);
+  }, [post, markRead]);
   return (
-    <Modal onClose={close} label="Article reader" className="article-dialog">
+    <main id="main" className="article-page" aria-label="Article reader">
       <div className="reader-toolbar">
-        <button type="button" className="back-button" onClick={close}>
+        <button
+          type="button"
+          className="back-button"
+          onClick={close}
+          data-page-focus
+        >
           <ArrowLeft size={17} />
           Back to stories
         </button>
@@ -67,18 +80,13 @@ export function ArticleDialog({
             <Plus size={14} />
           </button>
         </div>
-        {post && (
-          <button
-            type="button"
-            className={`icon-button ${saved ? "is-saved" : ""}`}
-            aria-label={saved ? "Remove bookmark" : "Save article"}
-            aria-pressed={saved}
-            onClick={() => toggleSave(post)}
-          >
-            <Bookmark size={18} fill={saved ? "currentColor" : "none"} />
-          </button>
-        )}
       </div>
+      {preferencesError && (
+        <div className="error-banner" role="alert">
+          Browser storage is unavailable or full. Text size changes will last
+          until this page closes.
+        </div>
+      )}
       {isPending && (
         <div className="empty-state" role="status">
           Opening your story…
@@ -101,13 +109,18 @@ export function ArticleDialog({
         <div className="article-inner">
           <div className="post-meta">
             <SourceMark domain={post.domain} />
-            <strong>{sourceName(post.domain)}</strong>
+            <SourceLink domain={post.domain} select={selectSource} />
             <span className="meta-dot">·</span>
-            <span>{dateLabel(post.created_at)}</span>
+            <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
           </div>
           <h1>{post.title || "Untitled post"}</h1>
           <div className="article-byline">
-            <span>{post.author || post.domain}</span>
+            <AuthorLink
+              author={post.author}
+              fallback={post.domain}
+              filters={filters}
+              select={selectAuthor}
+            />
             <span> {readingTime(post)} min read</span>
           </div>
           <a
@@ -119,27 +132,7 @@ export function ArticleDialog({
             Read at {post.domain}
             <ExternalLink size={13} />
           </a>
-          {/* Stored articles are untrusted; sanitize again at the rendering boundary. */}
-          <div
-            className="article-body"
-            style={{ fontSize }}
-            ref={(element) => {
-              if (!element) return;
-              element.innerHTML = DOMPurify.sanitize(post.html, {
-                USE_PROFILES: { html: true },
-                FORBID_TAGS: ["form", "input", "button", "iframe", "style"],
-                FORBID_ATTR: ["style", "id", "name"],
-              });
-              for (const link of element.querySelectorAll("a")) {
-                link.target = "_blank";
-                link.rel = "noopener noreferrer";
-              }
-              for (const image of element.querySelectorAll("img")) {
-                image.loading = "lazy";
-                image.referrerPolicy = "no-referrer";
-              }
-            }}
-          />
+          <ArticleBody html={post.html} />
           {!post.html.trim() && (
             <p className="article-body">
               The full article wasn’t collected. You can read it at the original
@@ -190,6 +183,6 @@ export function ArticleDialog({
           </div>
         </div>
       )}
-    </Modal>
+    </main>
   );
 }

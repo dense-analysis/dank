@@ -1,4 +1,4 @@
-import type { Filters, Post, Source } from "./types";
+import type { Post, Source } from "./types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18,20 +18,6 @@ export function isDateFilter(value: unknown): value is string {
   const date = new Date(`${value}T00:00:00Z`);
   return (
     !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value
-  );
-}
-
-export function isFilters(value: unknown): value is Filters {
-  return (
-    isRecord(value) &&
-    typeof value.q === "string" &&
-    (value.mode === "words" || value.mode === "meaning") &&
-    ["newest", "oldest", "relevance"].includes(String(value.sort)) &&
-    isStringArray(value.domains) &&
-    isStringArray(value.tags) &&
-    typeof value.author === "string" &&
-    isDateFilter(value.after) &&
-    isDateFilter(value.before)
   );
 }
 

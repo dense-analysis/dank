@@ -1,3 +1,5 @@
+import pathlib
+
 import pytest
 
 from dank.html_utils import html_base_url, html_text, remove_page_noise
@@ -87,3 +89,60 @@ def test_resolved_links_preserve_entities_code_and_non_http_links() -> None:
     assert 'poster="https://blog.test/posts/article/poster.jpg"' in result
     assert 'href="mailto:person@example.test"' in result
     assert '&lt;img src="example.png"&gt;' in result
+
+
+@pytest.mark.parametrize("tag", ["pre", "code"])
+def test_code_language_metadata_survives_sanitizing(tag: str) -> None:
+    document = (
+        f'<{tag} class="language-sql" data-lang="sql" data-language="sql"'
+        ' style="color:red" onclick="alert(1)" data-unrelated="discard">'
+        'SELECT &lt;example&gt; &amp; 1;'
+        f'</{tag}>'
+    )
+
+    assert _sanitize_html(document) == (
+        f'<{tag} class="language-sql" data-lang="sql" data-language="sql">'
+        'SELECT &lt;example&gt; &amp; 1;'
+        f'</{tag}>'
+    )
+
+
+def test_language_metadata_is_not_allowed_on_other_elements() -> None:
+    document = '<p data-lang="sql" data-language="sql">Article body</p>'
+
+    assert _sanitize_html(document) == '<p>Article body</p>'
+
+
+def test_standard_table_structure_survives_sanitizing() -> None:
+    document = (pathlib.Path(__file__).parent / "fixtures"
+                / "reader-table.html").read_text()
+    cleaned = _sanitize_html(document)
+    for markup in (
+        '<caption>Benchmark comparison</caption>',
+        '<colgroup span="2">', '<col span="4">', '<thead>', '<tbody>',
+        '<tfoot>', '<th colspan="2" scope="colgroup">',
+        '<th rowspan="2" scope="rowgroup">',
+        '<th scope="col" abbr="Alpha">', '<td colspan="6">',
+        '<em>Tools benchmark</em>',
+    ):
+        assert markup in cleaned
+
+    assert html_text(cleaned).split() == html_text(document).split()
+    assert "onclick" not in cleaned and "style=" not in cleaned
+
+
+@pytest.mark.parametrize("tag", ["td", "th"])
+@pytest.mark.parametrize("rowspan", ["0", "2"])
+def test_table_cell_spans_are_preserved(tag: str, rowspan: str) -> None:
+    document = (
+        f'<table><tbody><tr><{tag} colspan="2" rowspan="{rowspan}"'
+        f' onclick="attack()">Cell</{tag}></tr></tbody></table>'
+    )
+    result = _sanitize_html(document)
+    assert f'<{tag} colspan="2" rowspan="{rowspan}">' in result
+    assert "onclick" not in result
+
+
+def test_table_attributes_are_not_globally_allowed() -> None:
+    document = '<p colspan="2" rowspan="2" scope="row">Text</p>'
+    assert _sanitize_html(document) == '<p>Text</p>'

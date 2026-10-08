@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import pathlib
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
@@ -76,22 +77,26 @@ def row(domain: str, post_id: str = "same") -> dict[str, Any]:
     {"after": "2026-02-30"}, {"after": "20261008"},
     {"after": "2026-10-09", "before": "2026-10-08"},
     {"cursor": "bad"}, {"tag": ""}, {"unknown": "value"},
+    {"author_match": "typo"},
 ])
 def test_invalid_filters_are_rejected(query: dict[str, str]) -> None:
     with pytest.raises(ValueError):
         parse_filters(MultiDict(query))
 
 
-def test_filter_groups_are_intersected_and_all_words_are_literal() -> None:
+@pytest.mark.parametrize("mode", ["words", "combined"])
+def test_filter_groups_are_intersected_and_all_words_are_literal(
+    mode: str,
+) -> None:
     filters = parse_filters(MultiDict([
         ("domain", "news.example"), ("domain", "politics.example"),
         ("tag", "Politics"), ("author", "O'Reilly"),
-        ("q", "50% x_y 'OR'"), ("after", "2026-10-01"),
+        ("q", "50% x_y 'OR'"), ("mode", mode), ("after", "2026-10-01"),
         ("before", "2026-10-08"),
     ]))
     query, params = build_query(filters, (
         SourceConfig("politics.example", (), tags=("politics",)),
-    ))
+    ), (0.1, 0.2))
     assert "domain IN %(domains)s AND domain IN %(tag_domains)s" in query
     assert params["tag_domains"] == ["politics.example"]
     assert params["domains"] == ["news.example", "politics.example"]
@@ -111,15 +116,40 @@ def test_unknown_tag_does_not_fall_back_to_unfiltered_collection() -> None:
     assert "WHERE 0" in query
 
 
+def test_exact_author_name_is_parameterized() -> None:
+    filters = parse_filters(MultiDict({
+        "author": " O'Reilly ", "author_match": "exact",
+        "domain": "news.example", "after": "2026-10-01",
+    }))
+    query, params = build_query(filters, ())
+    assert "lowerUTF8(trimBoth(author)) = lowerUTF8(%(author)s)" in query
+    assert "positionCaseInsensitiveUTF8(author" not in query
+    assert params["author"] == "O'Reilly"
+    assert "O'Reilly" not in query
+    assert params["domains"] == ["news.example"]
+    assert "created_at >=" in query
+    partial, _ = build_query(filters._replace(author_match="contains"), ())
+    assert "positionCaseInsensitiveUTF8(author, %(author)s) > 0" in partial
+
+
+def test_author_match_mode_is_part_of_cursor_identity() -> None:
+    filters = ReaderFilters(author="Ada", author_match="exact")
+    created = dt.datetime(2026, 10, 8, tzinfo=dt.UTC)
+    cursor = encode_cursor(filters, created, "example.com", "1")
+    with pytest.raises(ValueError, match="Invalid cursor"):
+        decode_cursor(filters._replace(author_match="contains", cursor=cursor))
+
+
 @pytest.mark.parametrize("sort,operator", [("newest", "<"), ("oldest", ">")])
+@pytest.mark.parametrize("mode", ["words", "meaning", "combined"])
 def test_cursor_uses_domain_id_and_preserves_timestamp_precision(
-    sort: str, operator: str,
+    sort: str, operator: str, mode: str,
 ) -> None:
-    filters = ReaderFilters(sort=sort)
+    filters = ReaderFilters(q="article", mode=mode, sort=sort)
     created_at = dt.datetime(2026, 10, 8, 12, 30, 45, 123000, dt.UTC)
     token = encode_cursor(filters, created_at, "b.example", "same")
     paged = filters._replace(cursor=token)
-    query, params = build_query(paged, ())
+    query, params = build_query(paged, (), (0.1, 0.2))
     assert f"(created_at, domain, post_id) {operator}" in query
     assert params["cursor_time"] == "2026-10-08 12:30:45.123000"
     assert params["cursor_domain"] == "b.example"
@@ -143,6 +173,83 @@ def test_meaning_filters_before_ranking_and_requires_embedding() -> None:
 
     with pytest.raises(RuntimeError, match="unavailable"):
         build_query(filters, ())
+
+
+def test_combined_search_prioritizes_literal_then_title_matches() -> None:
+    filters = parse_filters(MultiDict({
+        "q": "domain driven design", "mode": "combined", "sort": "relevance",
+    }))
+    query, params = build_query(filters, (), (1.0, 0.0))
+    assert query.startswith("WITH ")
+    assert ") > 0 AND positionCaseInsensitiveUTF8" in query
+    assert "if(reader_literal_match, -toInt32(" in query
+    assert "(reader_literal_match OR reader_distance <= 1.0)" in query
+    assert (
+        "ORDER BY reader_literal_match DESC, reader_title_score ASC, "
+        "reader_score ASC, created_at DESC, domain DESC, post_id DESC" in query
+    )
+    assert "FROM posts FINAL" in query
+    assert "UNION" not in query
+    assert [params[f"term_{index}"] for index in range(3)] == [
+        "domain", "driven", "design",
+    ]
+    # Missing or incompatible vectors cannot disqualify a literal match.
+    assert "WHERE (reader_literal_match OR reader_distance <= 1.0)" in query
+    assert query.count("cosineDistance(if(length(title_embedding)") == 2
+    assert ", 2.0) AS reader_distance" in query
+
+    with pytest.raises(RuntimeError, match="unavailable"):
+        build_query(filters, ())
+
+
+async def test_combined_posts_requests_embedding_and_reports_relevance_cap(
+    app: web.Application, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    embed = AsyncMock(return_value=(1.0, 0.0))
+    monkeypatch.setattr(reader_api, "_search_embedding", embed)
+    fake = FakeClickHouse([row("b.example"), row("a.example")], [])
+    app["clickhouse"] = fake
+    response = await request(
+        app,
+        "/api/reader/posts?q=article&mode=combined&sort=relevance&limit=1",
+    )
+    data = json.loads(response.text or "")
+    embed.assert_awaited_once_with(fake, search_text="article")
+    assert response.status == 200
+    assert len(data["posts"]) == 1
+    assert data["limited"] is True
+    assert data["next_cursor"] is None
+    assert fake.calls[0][1]["embedding"] == [1.0, 0.0]
+    assert "reader_literal_match DESC" in fake.calls[0][0]
+
+
+@pytest.mark.parametrize("mode", ["words", "meaning", "combined"])
+async def test_browsing_needs_no_embedding(
+    mode: str, app: web.Application, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    embed = AsyncMock(side_effect=RuntimeError("Embedding unavailable"))
+    monkeypatch.setattr(reader_api, "_search_embedding", embed)
+    fake = FakeClickHouse([])
+    app["clickhouse"] = fake
+    response = await request(app, f"/api/reader/posts?mode={mode}")
+    assert response.status == 200
+    embed.assert_not_awaited()
+    assert "cosineDistance" not in fake.calls[0][0]
+
+
+@pytest.mark.parametrize("embedding", [None, ()])
+async def test_combined_embedding_unavailable_is_an_explicit_error(
+    embedding: tuple[float, ...] | None, app: web.Application,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    embed = AsyncMock(return_value=embedding)
+    monkeypatch.setattr(reader_api, "_search_embedding", embed)
+    fake = FakeClickHouse([])
+    app["clickhouse"] = fake
+    response = await request(app, "/api/reader/posts?q=article&mode=combined")
+    assert response.status == 503
+    assert "error" in json.loads(response.text or "")
+    assert fake.calls == []
 
 
 async def test_sources_include_empty_configured_and_collected_sources(
@@ -265,6 +372,25 @@ def test_article_sanitization_safe_urls_and_thumbnail(
         post._replace(url="javascript:alert(1)"), [], tmp_path,
     )
     assert unsafe["url"] == ""
+
+
+def test_reader_payload_retains_table_groups_and_merged_cells(
+    tmp_path: pathlib.Path,
+) -> None:
+    body = (pathlib.Path(__file__).parents[1] / "fixtures"
+            / "reader-table.html").read_text()
+    now = dt.datetime.now(dt.UTC)
+    post = PostRow(
+        "example.com", "table", "https://example.com/table", "", "Table",
+        body, now, now, "rss",
+    )
+    payload = reader_api.post_payload(post, [], tmp_path)
+    assert '<th colspan="2" scope="colgroup">' in payload["html"]
+    assert '<th rowspan="2" scope="rowgroup">' in payload["html"]
+    assert '<caption>Benchmark comparison</caption>' in payload["html"]
+    assert '<tfoot>' in payload["html"]
+    assert "onclick" not in payload["html"]
+    assert "style=" not in payload["html"]
 
 
 def test_body_lead_image_wins_and_downloaded_images_are_reused(

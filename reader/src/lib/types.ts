@@ -21,19 +21,13 @@ export interface Source {
 
 export interface Filters {
   q: string;
-  mode: "words" | "meaning";
   sort: "newest" | "oldest" | "relevance";
   domains: string[];
   tags: string[];
   author: string;
+  authorExact: boolean;
   after: string;
   before: string;
-}
-
-export interface SavedFeed {
-  id: string;
-  name: string;
-  filters: Filters;
 }
 
 export interface PostPage {

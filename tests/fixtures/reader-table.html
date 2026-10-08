@@ -1,0 +1,30 @@
+<table style="position:fixed" onclick="window.tableAttack=true">
+  <caption>Benchmark comparison</caption>
+  <colgroup span="2"></colgroup>
+  <colgroup><col span="4"></colgroup>
+  <thead>
+    <tr>
+      <th colspan="2" scope="colgroup">Task</th>
+      <th scope="col" abbr="Alpha">Model Alpha</th>
+      <th scope="col">Model Beta</th>
+      <th scope="col">Model Gamma</th>
+      <th scope="col">Model Delta</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th colspan="2" scope="row">Knowledge work<br><em>Reasoning benchmark</em></th>
+      <td>101</td><td>202</td><td>303</td><td>404</td>
+    </tr>
+    <tr>
+      <th rowspan="2" scope="rowgroup">Problem solving<br><em>Tools benchmark</em></th>
+      <th scope="row">No tools</th>
+      <td onclick="window.tableAttack=true">11</td><td>22</td><td>33</td><td>44</td>
+    </tr>
+    <tr>
+      <th scope="row">With tools</th>
+      <td>55</td><td>66</td><td>77</td><td>88</td>
+    </tr>
+  </tbody>
+  <tfoot><tr><td colspan="6">Higher scores are better.</td></tr></tfoot>
+</table>

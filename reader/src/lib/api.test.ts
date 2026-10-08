@@ -5,11 +5,12 @@ import { defaultFilters } from "./storage";
 function respond(body: unknown, status = 200): void {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      }),
+    vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        }),
     ),
   );
 }
@@ -27,6 +28,7 @@ describe("reader API", () => {
         domains: ["example.com", "example.org"],
         tags: ["news", "science & technology"],
         author: "Ada",
+        authorExact: true,
       },
       "a+b/=?",
       signal,
@@ -44,9 +46,33 @@ describe("reader API", () => {
       "science & technology",
     ]);
     expect(url.searchParams.get("q")).toBe("politics & science");
+    expect(url.searchParams.get("mode")).toBe("combined");
+    expect(url.searchParams.get("author_match")).toBe("exact");
     expect(url.searchParams.get("cursor")).toBe("a+b/=?");
     expect(url.searchParams.get("limit")).toBe("30");
     expect(options?.signal).toBe(signal);
+  });
+
+  it("requests combined relevance search and keeps ordinary browsing free of search modes", async () => {
+    respond({ posts: [], next_cursor: null, limited: false });
+    await fetchPosts({
+      ...defaultFilters,
+      q: "domain driven design",
+      sort: "relevance",
+    });
+    const search = new URL(
+      String(vi.mocked(fetch).mock.calls[0][0]),
+      "https://reader.test",
+    );
+    expect(search.searchParams.get("mode")).toBe("combined");
+    expect(search.searchParams.get("sort")).toBe("relevance");
+    await fetchPosts(defaultFilters);
+    const browse = new URL(
+      String(vi.mocked(fetch).mock.calls[1][0]),
+      "https://reader.test",
+    );
+    expect(browse.searchParams.has("mode")).toBe(false);
+    expect(browse.searchParams.has("q")).toBe(false);
   });
 
   it("validates source counts before returning them", async () => {

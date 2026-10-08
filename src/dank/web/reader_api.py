@@ -27,6 +27,7 @@ from dank.web.app import (
     _search_embedding,  # pyright: ignore[reportPrivateUsage]
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_query import build_query, encode_cursor, parse_filters
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ async def handle_posts(request: web.Request) -> web.Response:
     client: ClickHouseClient = request.app["clickhouse"]
     embedding = None
 
-    if filters.q and filters.mode == "meaning":
+    if filters.q and filters.mode in {"meaning", "combined"}:
         embedding = await _search_embedding(client, search_text=filters.q)
 
     query, params = build_query(filters, state.settings.sources, embedding)
@@ -119,7 +120,9 @@ async def handle_posts(request: web.Request) -> web.Response:
         )
 
     return web.json_response({
-        "posts": await _post_payloads(client, posts, state.assets_dir),
+        "posts": await _post_payloads(
+            client, posts, state.assets_dir, filters.q,
+        ),
         "next_cursor": cursor,
         "limited": has_more and filters.sort == "relevance",
     })
@@ -148,6 +151,7 @@ async def handle_post(request: web.Request) -> web.Response:
 
 async def _post_payloads(
     client: ClickHouseClient, posts: list[PostRow], assets_dir: pathlib.Path,
+    query: str = "",
 ) -> list[dict[str, Any]]:
     if not posts:
         return []
@@ -166,6 +170,7 @@ async def _post_payloads(
     return [
         post_payload(
             post, assets.get((post.domain, post.post_id), []), assets_dir,
+            query,
         )
         for post in posts
     ]
@@ -173,6 +178,7 @@ async def _post_payloads(
 
 def post_payload(
     post: PostRow, assets: list[AssetRow], assets_dir: pathlib.Path,
+    query: str = "",
 ) -> dict[str, Any]:
     source_url = _http_url(post.url) or ""
     body = _sanitize_html(remove_page_noise(post.html, base_url=source_url))
@@ -202,7 +208,8 @@ def post_payload(
     return {
         "id": post.post_id, "domain": post.domain, "url": source_url,
         "author": post.author, "title": post.title,
-        "excerpt": _summarize_html(body), "html": body,
+        "excerpt": search_excerpt(body, query) or _summarize_html(body),
+        "html": body,
         "created_at": created_at.isoformat(), "source": post.source,
         "thumbnail": images.thumbnail, "media": media,
     }

@@ -15,7 +15,7 @@ perception and evolving narratives.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
 - [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
-- [DANK reader](reader/README.md) — the new reader with saved feeds and bookmarks.
+- [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
 - [Database queries](docs/features/database.md) — inspect collected and processed data.
 

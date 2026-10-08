@@ -24,6 +24,7 @@ class ReaderFilters(NamedTuple):
     domains: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     author: str = ""
+    author_match: str = "contains"
     after: dt.datetime | None = None
     before: dt.datetime | None = None
     limit: int = 30
@@ -43,7 +44,7 @@ class ReaderFilters(NamedTuple):
 def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
-        "limit", "cursor",
+        "limit", "cursor", "author_match",
     }
 
     if unknown:
@@ -60,6 +61,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         domains=_choices(query.getall("domain", [])),
         tags=_choices(query.getall("tag", [])),
         author=query.get("author", "").strip(),
+        author_match=query.get("author_match", "contains"),
         after=_date(query.get("after", "")),
         before=_date(query.get("before", "")),
         limit=_limit(query.get("limit", "30")),
@@ -107,8 +109,8 @@ def _limit(value: str) -> int:
 
 
 def _validate(filters: ReaderFilters) -> None:
-    if filters.mode not in {"words", "meaning"}:
-        raise ValueError("mode must be words or meaning")
+    if filters.mode not in {"words", "meaning", "combined"}:
+        raise ValueError("mode must be words, meaning or combined")
 
     if filters.sort not in {"newest", "oldest", "relevance"}:
         raise ValueError("sort must be newest, oldest or relevance")
@@ -121,6 +123,9 @@ def _validate(filters: ReaderFilters) -> None:
 
     if len(filters.author) > 300:
         raise ValueError("Author filter is limited to 300 characters")
+
+    if filters.author_match not in {"contains", "exact"}:
+        raise ValueError("author_match must be contains or exact")
 
     if filters.after and filters.before and filters.after > filters.before:
         raise ValueError("after must not be later than before")
@@ -177,25 +182,51 @@ def build_query(
 ) -> tuple[str, dict[str, Any]]:
     conditions, params = _conditions(filters, sources)
     score = "0"
+    expressions: list[str] = []
+    relevance_priority = ""
 
-    if filters.q and filters.mode == "meaning":
+    if filters.q and filters.mode in {"meaning", "combined"}:
         if not embedding:
-            raise RuntimeError("Meaning search embedding is unavailable")
+            raise RuntimeError("Search embedding is unavailable")
 
         params["embedding"] = list(embedding)
-        conditions.extend([
+        lengths = [
             "length(title_embedding) = length(%(embedding)s)",
             "length(html_embedding) = length(%(embedding)s)",
-        ])
+        ]
         distance = (
             "cosineDistance(title_embedding, %(embedding)s) * 0.65 + "
             "cosineDistance(html_embedding, %(embedding)s) * 0.35"
         )
+
+        if filters.mode == "combined":
+            literal_conditions: list[str] = []
+            title_score = _word_conditions(
+                filters.q, literal_conditions, params,
+            )
+            expressions.extend([
+                "(" + " AND ".join(literal_conditions)
+                + ") AS reader_literal_match",
+                f"if(reader_literal_match, {title_score}, 0) "
+                "AS reader_title_score",
+                _guarded_distance(lengths) + " AS reader_distance",
+            ])
+            conditions.append(
+                "(reader_literal_match OR reader_distance <= 1.0)",
+            )
+            # Separate sort keys guarantee literal priority over any distance.
+            relevance_priority = (
+                "reader_literal_match DESC, reader_title_score ASC, "
+            )
+            distance = "reader_distance"
+        else:
+            conditions.extend(lengths)
+            conditions.append(f"({distance}) <= 1.0")
+
         score = (
             f"({distance}) - 0.3 * exp(-greatest("
             "dateDiff('second', created_at, now64(3)), 0) / 86400.0 / 21.0)"
         )
-        conditions.append(f"({distance}) <= 1.0")
     elif filters.q:
         score = _word_conditions(filters.q, conditions, params)
 
@@ -203,7 +234,7 @@ def build_query(
     ordering = f"created_at {order}, domain {order}, post_id {order}"
 
     if filters.sort == "relevance":
-        ordering = "reader_score ASC, " + ordering
+        ordering = relevance_priority + "reader_score ASC, " + ordering
 
     if filters.cursor:
         created_at, domain, post_id = decode_cursor(filters)
@@ -219,13 +250,29 @@ def build_query(
         )
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    prefix = "WITH " + ", ".join(expressions) + " " if expressions else ""
     query = (
-        f"SELECT {POST_COLUMNS}, {score} AS reader_score FROM posts FINAL"
+        f"{prefix}SELECT {POST_COLUMNS}, {score} AS reader_score "
+        "FROM posts FINAL"
         f"{where} ORDER BY {ordering} LIMIT %(limit)s"
     )
     params["limit"] = filters.limit + 1
 
     return query, params
+
+
+def _guarded_distance(lengths: list[str]) -> str:
+    valid = " AND ".join(lengths)
+    distances = [
+        "cosineDistance("
+        f"if({valid}, {column}, %(embedding)s), %(embedding)s) * {weight}"
+        for column, weight in (
+            ("title_embedding", 0.65), ("html_embedding", 0.35),
+        )
+    ]
+    # Guard the inputs too: ClickHouse may eagerly evaluate both if branches.
+
+    return f"if({valid}, " + " + ".join(distances) + ", 2.0)"
 
 
 def _conditions(
@@ -249,7 +296,9 @@ def _conditions(
 
     if filters.author:
         conditions.append(
-            "positionCaseInsensitiveUTF8(author, %(author)s) > 0",
+            "lowerUTF8(trimBoth(author)) = lowerUTF8(%(author)s)"
+            if filters.author_match == "exact"
+            else "positionCaseInsensitiveUTF8(author, %(author)s) > 0",
         )
         params["author"] = filters.author
 

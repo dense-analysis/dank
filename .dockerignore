@@ -7,6 +7,17 @@
 !src/**
 !static/
 !static/**
+!reader/
+reader/**
+!reader/package.json
+!reader/package-lock.json
+!reader/index.html
+!reader/tsconfig.json
+!reader/vite.config.ts
+!reader/src/
+!reader/src/**
+!reader/public/
+!reader/public/**
 
 **/__pycache__/
 **/*.py[cod]

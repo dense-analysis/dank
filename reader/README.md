@@ -1,7 +1,7 @@
 # DANK reader
 
-DANK's new reader frontend: compact stories, focused articles, Words / Meaning
-search, source filters, bookmarks and named feeds. The original viewer remains
+DANK's new reader frontend: compact stories, focused articles, combined search,
+source filters and reading preferences. The original viewer remains
 at `/`; the new reader lives at `/reader/`. Both belong to this repository.
 
 ## Develop
@@ -23,10 +23,9 @@ Open [localhost:5174/reader/](http://127.0.0.1:5174/reader/).
 The development server proxies the reader API and downloaded media to DANK on
 port 8091. Configure DANK normally before starting it; see the main setup guide.
 
-For a single server, run `npm run build`, then start DANK. The same web process
-serves the built reader at `/reader/`. The existing Docker image does not build
-the reader; build it locally and mount `reader/dist` at `/app/reader/dist` if
-using a container.
+For a single native server, run `npm run build`, then start DANK. The same web
+process serves the reader at `/reader/`. Docker builds and includes the reader
+automatically; open `/reader/` on the normal DANK server.
 
 ## Checks
 
@@ -42,19 +41,30 @@ browser channel. No live collection is needed for the fixture tests.
 
 - Source tags select publishers, not article topics. Choices within a source or
   tag group are OR; groups, author, dates and search combine with AND.
-- **Words** matches every whitespace-separated term literally, ignoring case,
-  in article titles or text. **Meaning** uses DANK's embedding model.
+- Search combines word matches with related ideas. Relevance puts stories
+  containing every search term first, then related results from DANK's embedding
+  model. Source, tag, author and date filters apply to both.
+- Search previews show matching passages and highlight the search terms.
 - Date bounds include the entire selected UTC calendar day. Newest and oldest
   orders paginate; relevance shows up to 30 best matches and labels the cap.
-- Feeds save definitions, so reopening or refreshing them fetches matching
-  collected posts. They do not add sources for collection.
-- Feeds, bookmarks and read markers live in this browser's local storage.
-  Bookmarks retain collected article content. They are not synced across devices;
-  the app reports storage failures. Search and filter state lives in the URL.
-- Articles open above the existing timeline. Closing, Escape and browser Back
-  preserve filters, loaded pages and scroll position.
-- Briefings, scheduling and delivery are future work. They have no placeholder
-  controls in this reader.
+- Author names apply an exact name filter while preserving the current view's
+  search and filters. Author and date chips can be removed individually; date
+  shortcuts select today or the past 7 / 30 UTC calendar days, including today.
+- Read markers, article positions and reading preferences stay in this browser.
+  Search and filter state lives in the URL.
+- Articles have a dedicated reading page with a shareable URL. Back to stories
+  and browser Back restore filters, loaded pages, keyboard focus and scroll
+  position; browser Forward returns to the article.
+- Article titles support opening new tabs. Source names filter to that source;
+  unlinked article images open at full size in a new tab.
+- Reopening an article resumes where you left off.
+- Code blocks use their declared language for syntax highlighting, with copy
+  controls and horizontal scrolling. Unsupported or unlabelled code stays plain.
+- Tables retain merged cells, captions and row/column groups, with horizontal
+  scrolling when they are wider than the reading column.
+- Settings offer DM Sans, Newsreader and Georgia, plus article text size
+  and a live preview. Preferences save in this browser and also apply to the
+  article toolbar. The interface uses a charcoal dark theme with mint accents.
 
 ## Structure
 

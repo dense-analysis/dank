@@ -1,24 +1,27 @@
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { calendarDate, recentDates } from "../lib/dateRanges";
 import type { Filters, Source } from "../lib/types";
 
 export function FeedToolbar({
   filters,
   sources,
   change,
-  saveFeed,
 }: {
   filters: Filters;
   sources: Source[];
   change: (filters: Filters) => void;
-  saveFeed: () => void;
 }) {
   const [draft, setDraft] = useState(filters.q);
+  const [authorDraft, setAuthorDraft] = useState(filters.author);
   const [expanded, setExpanded] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setDraft(filters.q);
   }, [filters.q]);
+  useEffect(() => {
+    setAuthorDraft(filters.author);
+  }, [filters.author]);
   useEffect(() => {
     function key(event: KeyboardEvent) {
       if (
@@ -52,10 +55,7 @@ export function FeedToolbar({
           change({
             ...filters,
             q: draft.trim(),
-            sort:
-              draft.trim() && filters.mode === "meaning"
-                ? "relevance"
-                : filters.sort,
+            sort: draft.trim() ? "relevance" : "newest",
           });
         }}
       >
@@ -64,7 +64,7 @@ export function FeedToolbar({
           ref={input}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Find your next good read"
+          placeholder="Search stories"
           aria-label="Search stories"
         />
         {draft && (
@@ -86,32 +86,6 @@ export function FeedToolbar({
         </button>
       </form>
       <div className="filter-row">
-        <fieldset className="segmented" aria-label="Search method">
-          <button
-            type="button"
-            className={filters.mode === "words" ? "selected" : ""}
-            aria-pressed={filters.mode === "words"}
-            onClick={() =>
-              change({ ...filters, mode: "words", sort: "newest" })
-            }
-          >
-            Words
-          </button>
-          <button
-            type="button"
-            className={filters.mode === "meaning" ? "selected" : ""}
-            aria-pressed={filters.mode === "meaning"}
-            onClick={() =>
-              change({
-                ...filters,
-                mode: "meaning",
-                sort: filters.q ? "relevance" : "newest",
-              })
-            }
-          >
-            Meaning
-          </button>
-        </fieldset>
         <button
           type="button"
           className={`filter-button ${activeCount ? "has-filters" : ""}`}
@@ -147,6 +121,7 @@ export function FeedToolbar({
                   domains: [],
                   tags: [],
                   author: "",
+                  authorExact: false,
                   after: "",
                   before: "",
                 })
@@ -181,19 +156,49 @@ export function FeedToolbar({
           <label>
             Author
             <input
-              value={filters.author}
+              value={authorDraft}
               placeholder="Name or account"
-              onChange={(event) =>
-                change({ ...filters, author: event.target.value })
-              }
+              onChange={(event) => {
+                setAuthorDraft(event.target.value);
+                change({
+                  ...filters,
+                  author: event.target.value,
+                  authorExact: false,
+                });
+              }}
             />
           </label>
+          <fieldset className="date-shortcuts">
+            <legend>
+              Date range <span>UTC</span>
+            </legend>
+            <div className="tag-options">
+              {([1, 7, 30] as const).map((days) => {
+                const range = recentDates(days);
+                const selected =
+                  filters.after === range.after &&
+                  filters.before === range.before;
+                return (
+                  <button
+                    key={days}
+                    type="button"
+                    className={`tag ${selected ? "chosen" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => change({ ...filters, ...recentDates(days) })}
+                  >
+                    {days === 1 ? "Today" : `Past ${days} days`}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
           <label>
             From
             <input
               type="date"
               aria-label="From date"
               value={filters.after}
+              max={filters.before || undefined}
               onChange={(event) =>
                 change({ ...filters, after: event.target.value })
               }
@@ -234,32 +239,58 @@ export function FeedToolbar({
                   </button>
                 ))}
               </div>
-              <p>
-                Tags select sources. Search finds words or meaning in their
-                stories.
-              </p>
+              <p>Tags filter sources, not story topics.</p>
             </fieldset>
           )}
-          <button
-            type="button"
-            className="text-button filter-save"
-            onClick={saveFeed}
-          >
-            Save these filters as a feed →
-          </button>
         </div>
       )}
       {(filters.q || activeCount > 0) && (
-        <div className="active-filters">
-          <span>
-            {filters.q
-              ? `${filters.mode === "words" ? "Words containing" : "Meaning similar to"} “${filters.q}”`
-              : "Filtered view"}
-          </span>
+        <fieldset className="active-filters" aria-label="Active filters">
+          <span>{filters.q ? `Search: “${filters.q}”` : "Filtered view"}</span>
+          {filters.author && (
+            <button
+              type="button"
+              aria-label="Remove author filter"
+              title={filters.author}
+              onClick={() =>
+                change({ ...filters, author: "", authorExact: false })
+              }
+            >
+              <span className="filter-chip-label">
+                Author: {filters.author}
+              </span>
+              <X size={12} />
+            </button>
+          )}
+          {filters.after && (
+            <button
+              type="button"
+              aria-label="Remove start date filter"
+              onClick={() => change({ ...filters, after: "" })}
+            >
+              <span className="filter-chip-label">
+                From: {calendarDate(filters.after)} UTC
+              </span>
+              <X size={12} />
+            </button>
+          )}
+          {filters.before && (
+            <button
+              type="button"
+              aria-label="Remove end date filter"
+              onClick={() => change({ ...filters, before: "" })}
+            >
+              <span className="filter-chip-label">
+                Through: {calendarDate(filters.before)} UTC
+              </span>
+              <X size={12} />
+            </button>
+          )}
           {filters.domains.map((domain) => (
             <button
               type="button"
               key={domain}
+              aria-label={`Remove source filter: ${domain}`}
               onClick={() =>
                 change({
                   ...filters,
@@ -267,7 +298,7 @@ export function FeedToolbar({
                 })
               }
             >
-              {domain}
+              <span className="filter-chip-label">Source: {domain}</span>
               <X size={12} />
             </button>
           ))}
@@ -275,6 +306,7 @@ export function FeedToolbar({
             <button
               type="button"
               key={tag}
+              aria-label={`Remove tag filter: ${tag}`}
               onClick={() =>
                 change({
                   ...filters,
@@ -282,11 +314,11 @@ export function FeedToolbar({
                 })
               }
             >
-              Source: {tag}
+              <span className="filter-chip-label">Tag: {tag}</span>
               <X size={12} />
             </button>
           ))}
-        </div>
+        </fieldset>
       )}
     </div>
   );

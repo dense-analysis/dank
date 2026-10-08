@@ -59,7 +59,10 @@ ALLOWED_TAGS = [
     "a",
     "blockquote",
     "br",
+    "caption",
     "code",
+    "col",
+    "colgroup",
     "del",
     "em",
     "h1",
@@ -78,6 +81,7 @@ ALLOWED_TAGS = [
     "table",
     "tbody",
     "td",
+    "tfoot",
     "th",
     "thead",
     "tr",
@@ -86,8 +90,12 @@ ALLOWED_TAGS = [
 ALLOWED_ATTRIBUTES = {
     "a": ["href", "title", "rel"],
     "img": ["src", "alt", "title"],
-    "code": ["class"],
-    "pre": ["class"],
+    "code": ["class", "data-lang", "data-language"],
+    "pre": ["class", "data-lang", "data-language"],
+    "td": ["colspan", "rowspan"],
+    "th": ["colspan", "rowspan", "scope", "abbr"],
+    "col": ["span"],
+    "colgroup": ["span"],
 }
 
 

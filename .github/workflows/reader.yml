@@ -2,9 +2,9 @@ name: Reader
 
 on:
   pull_request:
-    paths: ["reader/**", ".github/workflows/reader.yml"]
+    paths: ["reader/**", "tests/fixtures/reader-table.html", ".github/workflows/reader.yml"]
   push:
-    paths: ["reader/**", ".github/workflows/reader.yml"]
+    paths: ["reader/**", "tests/fixtures/reader-table.html", ".github/workflows/reader.yml"]
 
 permissions:
   contents: read
