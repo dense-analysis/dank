@@ -106,6 +106,10 @@ Retries, wait durations and exhausted limits appear in the terminal; progress
 updates continue while waiting. Other HTTP errors are not retried. Requests
 retain their existing timeouts, and Ctrl+C can interrupt retry waits.
 
+Direct HTTP requests accept response header fields up to 16 KiB, including
+on redirect responses. This accommodates larger site security policies while
+keeping a finite header limit.
+
 ## Article fetch failures
 
 By default, entries whose article fetch fails or returns an empty body are

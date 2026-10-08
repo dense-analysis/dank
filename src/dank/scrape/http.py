@@ -16,6 +16,8 @@ from dank.config import ScrapeSettings
 from dank.scrape.metrics import request_metrics, retry_sleep
 
 MAX_COOLDOWN_WAIT = 30.0
+# Security policies can exceed aiohttp's default 8 KiB header field limit.
+MAX_HEADER_FIELD_BYTES = 16 * 1024
 
 
 class HostCooldownError(Exception):
@@ -123,6 +125,7 @@ async def http_response(
         with request_metrics(retry=retry > 0):
             async with client.get(
                 url, headers=headers, max_redirects=max_redirects,
+                max_field_size=MAX_HEADER_FIELD_BYTES,
             ) as response:
                 yield response
 
@@ -134,6 +137,7 @@ async def http_response(
             with request_metrics(retry=retry > 0):
                 async with client.get(
                     url, headers=headers, allow_redirects=False,
+                    max_field_size=MAX_HEADER_FIELD_BYTES,
                 ) as response:
                     if response.status == 429:
                         limiter.cool_down(url, max(
