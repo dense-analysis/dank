@@ -254,12 +254,14 @@ def _conditions(
         params["author"] = filters.author
 
     if filters.after:
-        conditions.append("created_at >= %(after)s")
-        params["after"] = filters.after
+        conditions.append("created_at >= toDateTime64(%(after)s, 3, 'UTC')")
+        params["after"] = filters.after.strftime("%Y-%m-%d %H:%M:%S")
 
     if filters.before:
-        conditions.append("created_at < %(before)s")
-        params["before"] = filters.before + dt.timedelta(days=1)
+        conditions.append("created_at < toDateTime64(%(before)s, 3, 'UTC')")
+        params["before"] = (filters.before + dt.timedelta(days=1)).strftime(
+            "%Y-%m-%d %H:%M:%S",
+        )
 
     return conditions, params
 

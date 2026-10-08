@@ -13,7 +13,7 @@ from multidict import MultiDict
 from dank.config import SourceConfig, load_settings
 from dank.storage.clickhouse import QueryResult
 from dank.web import reader_api
-from dank.web.app import PostRow, create_app
+from dank.web.app import AssetRow, PostRow, create_app
 from dank.web.reader_query import (
     ReaderFilters,
     build_query,
@@ -102,8 +102,8 @@ def test_filter_groups_are_intersected_and_all_words_are_literal() -> None:
     assert "50%" not in query and "O'Reilly" not in query
     assert "extractTextFromHTML(html)" in query
     assert "decodeHTMLComponent" in query
-    assert "created_at < %(before)s" in query
-    assert params["before"] == dt.datetime(2026, 10, 9, tzinfo=dt.UTC)
+    assert "created_at < toDateTime64(%(before)s, 3, 'UTC')" in query
+    assert params["before"] == "2026-10-09 00:00:00"
 
 
 def test_unknown_tag_does_not_fall_back_to_unfiltered_collection() -> None:
@@ -170,9 +170,12 @@ async def test_posts_paginate_without_cross_domain_asset_collisions(
     assets = tmp_path / "assets"
     assets.mkdir()
     (assets / "b.jpg").touch()
+    article = row("b.example")
+    article["html"] = '<img src="https://example.com/b.jpg"><p>Body</p>'
     fake = FakeClickHouse(
-        [row("c.example"), row("b.example"), row("a.example")],
-        [{"domain": "b.example", "post_id": "same", "url": "unused",
+        [row("c.example"), article, row("a.example")],
+        [{"domain": "b.example", "post_id": "same",
+          "url": "https://example.com/b.jpg",
           "local_path": str(assets / "b.jpg"), "content_type": "image/jpeg",
           "size_bytes": 0}],
     )
@@ -262,6 +265,33 @@ def test_article_sanitization_safe_urls_and_thumbnail(
         post._replace(url="javascript:alert(1)"), [], tmp_path,
     )
     assert unsafe["url"] == ""
+
+
+def test_body_lead_image_wins_and_downloaded_images_are_reused(
+    tmp_path: pathlib.Path,
+) -> None:
+    for name in ("unrelated.jpg", "portrait.jpg", "lead.jpg"):
+        (tmp_path / name).touch()
+
+    assets = [
+        AssetRow("1", f"https://example.com/{name}",
+                 str(tmp_path / name), "image/jpeg", 0)
+        for name in ("unrelated.jpg", "portrait.jpg", "lead.jpg")
+    ]
+    now = dt.datetime.now(dt.UTC)
+    post = PostRow("example.com", "1", "https://example.com/story", "", "",
+                   '<img src="/logo.svg"><img src="/author-photo.jpg">'
+                   '<img src="/lead.jpg" alt="A &amp; B"><p>Story</p>',
+                   now, now, "rss")
+    payload = reader_api.post_payload(post, assets, tmp_path)
+    assert payload["thumbnail"] == "/assets/lead.jpg"
+    assert '<img src="/assets/lead.jpg" alt="A &amp; B">' in payload["html"]
+    assert "https://example.com/lead.jpg" not in payload["html"]
+    assert "unrelated.jpg" not in payload["html"]
+    no_image = reader_api.post_payload(
+        post._replace(html="<p>No lead image</p>"), assets, tmp_path,
+    )
+    assert no_image["thumbnail"] is None
 
 
 async def test_built_reader_routes_and_existing_viewer_are_independent(

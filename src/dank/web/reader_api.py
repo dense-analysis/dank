@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import logging
 import pathlib
 from collections.abc import Awaitable, Callable
@@ -176,25 +177,22 @@ def post_payload(
     source_url = _http_url(post.url) or ""
     body = _sanitize_html(remove_page_noise(post.html, base_url=source_url))
     media: list[dict[str, str]] = []
+    local_urls: dict[str, str] = {}
 
     for asset in assets:
         view = _asset_view(asset, assets_dir=assets_dir)
 
         if view and view["kind"] in {"image", "audio", "video"}:
+            local_urls[asset.url] = view["url"]
             media.append({
                 "url": view["url"], "content_type": view["content_type"],
             })
 
-    thumbnail = next((
-        item["url"] for item in media
-        if item["content_type"].startswith("image/")
-        and "svg" not in item["content_type"]
-    ), None)
+    images = _ArticleImages(local_urls)
+    images.feed(body)
 
-    if thumbnail is None:
-        parser = _ThumbnailParser()
-        parser.feed(body)
-        thumbnail = parser.url
+    for original, replacement in images.replacements.items():
+        body = body.replace(original, replacement)
 
     created_at = post.created_at
 
@@ -206,7 +204,7 @@ def post_payload(
         "author": post.author, "title": post.title,
         "excerpt": _summarize_html(body), "html": body,
         "created_at": created_at.isoformat(), "source": post.source,
-        "thumbnail": thumbnail, "media": media,
+        "thumbnail": images.thumbnail, "media": media,
     }
 
 
@@ -222,26 +220,53 @@ def _http_url(value: str) -> str | None:
     return None
 
 
-class _ThumbnailParser(HTMLParser):
-    def __init__(self) -> None:
+class _ArticleImages(HTMLParser):
+    def __init__(self, local_urls: dict[str, str]) -> None:
         super().__init__()
-        self.url: str | None = None
+        self.local_urls = local_urls
+        self.replacements: dict[str, str] = {}
+        self.thumbnail: str | None = None
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
-        if tag != "img" or self.url:
+        if tag != "img":
             return
 
         value = dict(attrs).get("src") or ""
+        local_url = self.local_urls.get(value)
 
-        if not _http_url(value):
-            return
+        if local_url:
+            # Rewrite only image tags; preserve all other sanitized markup.
+            rewritten = [
+                (key, local_url if key == "src" else text)
+                for key, text in attrs
+            ]
+            attributes = "".join(
+                f' {key}="{html.escape(text, quote=True)}"'
+                for key, text in rewritten if text is not None
+            )
+            self.replacements[self.get_starttag_text() or ""] = (
+                f"<img{attributes}>"
+            )
 
-        path = urlsplit(value).path.lower()
+        if self.thumbnail is None and _is_lead_image(value):
+            self.thumbnail = local_url or value
 
-        if not path.endswith(".svg") and "logo" not in path:
-            self.url = _http_url(value)
+
+def _is_lead_image(value: str) -> bool:
+    if not _http_url(value):
+        return False
+
+    url = urlsplit(value)
+    path = url.path.lower()
+
+    return not path.endswith(".svg") and not any(
+        marker in path
+        for marker in (
+            "logo", "avatar", "profile", "author", "advert", "/ads/",
+        )
+    ) and "gravatar" not in url.netloc.lower()
 
 
 def _reader_file(path: str) -> pathlib.Path | None:
