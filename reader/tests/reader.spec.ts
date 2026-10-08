@@ -442,3 +442,64 @@ test("keeps source tags distinct from Words and Meaning search", async ({
   expect(parseFilters(new URL(page.url()).searchParams).mode).toBe("words");
   expect(new URL(page.url()).searchParams.getAll("tag")).toEqual(["politics"]);
 });
+
+test("replaces mobile navigation with the feed editor and leaves no overlay after cancel or save", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockReader(page);
+  await page.goto("/reader/");
+  await expect(story(page)).toBeVisible();
+
+  const navigation = page.getByRole("dialog", {
+    name: "Navigation",
+    exact: true,
+  });
+  const editor = page.getByRole("dialog", {
+    name: "Create a feed",
+    exact: true,
+  });
+  const openNavigation = page.getByRole("button", {
+    name: "Open navigation",
+    exact: true,
+  });
+  await openNavigation.click();
+  await navigation
+    .getByRole("button", { name: "Create a feed", exact: true })
+    .first()
+    .click();
+  await expect(editor).toBeVisible();
+  await expect(navigation).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await editor.getByRole("button", { name: "Close feed editor" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+  await expect(
+    page.getByRole("heading", { name: "All stories", exact: true }),
+  ).toBeVisible();
+
+  await openNavigation.click();
+  await navigation
+    .getByRole("button", { name: "Create a feed", exact: true })
+    .last()
+    .click();
+  await expect(editor).toBeVisible();
+  await expect(navigation).toHaveCount(0);
+  await editor
+    .getByRole("textbox", { name: "Feed name" })
+    .fill("Mobile politics");
+  await editor.getByRole("checkbox", { name: /Example News/ }).check();
+  await editor
+    .getByRole("button", { name: "Create feed", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+  await expect(
+    page.getByRole("heading", { name: "Mobile politics", exact: true }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await story(page).click();
+  await expect(
+    page.getByRole("dialog", { name: "Article reader" }),
+  ).toBeVisible();
+});
