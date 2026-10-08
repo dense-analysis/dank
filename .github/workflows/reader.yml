@@ -1,0 +1,28 @@
+name: Reader
+
+on:
+  pull_request:
+    paths: ["reader/**", ".github/workflows/reader.yml"]
+  push:
+    paths: ["reader/**", ".github/workflows/reader.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reader
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: reader/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chrome
+      - run: npm run test:e2e

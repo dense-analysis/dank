@@ -1,0 +1,10 @@
+node_modules/
+dist/
+playwright-report/
+test-results/
+*.tsbuildinfo
+!package.json
+!package-lock.json
+!tsconfig.json
+!biome.json
+artifacts/
