@@ -111,6 +111,11 @@ blocks matching the entire feed text in order (ignoring whitespace) are
 accepted. Unrelated page content is excluded. Formatted feeds and bodies
 without a complete match retain their original content.
 
+Figures and standalone images between matching text blocks in the same
+article container are retained in place, including their source captions
+and credits. Media in other containers or outside the matched passage is
+excluded. The reader uses downloaded copies when available.
+
 Links and media in extracted page HTML resolve against `page_final_url`,
 including a valid HTML `<base href>`, so relative URLs work in the viewer.
 Older captures without this metadata fall back to the original article URL;

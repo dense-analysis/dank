@@ -65,6 +65,8 @@ ALLOWED_TAGS = [
     "colgroup",
     "del",
     "em",
+    "figcaption",
+    "figure",
     "h1",
     "h2",
     "h3",

@@ -901,6 +901,14 @@ input[type="checkbox"] {
   display: block;
   margin: 20px auto;
 }
+.article-body figure {
+  margin-inline: 0;
+}
+.article-body figcaption {
+  color: var(--muted);
+  font-size: 0.8em;
+  line-height: 1.5;
+}
 .article-image-link {
   display: block;
   cursor: zoom-in;

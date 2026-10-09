@@ -54,6 +54,72 @@ def test_keeps_nested_quotes_lists_tables_and_escaped_code() -> None:
     assert " ".join(html_text(recovered).split()) == text
 
 
+@pytest.mark.parametrize("media", [
+    '<figure><div><picture><source srcset="/large.webp 2x">'
+    '<img src="/diagram.webp" alt="Diagram"></picture></div>'
+    '<figcaption>Screenshot credit: Example Lab</figcaption></figure>',
+    '<picture><source srcset="/large.webp 2x">'
+    '<img src="/diagram.webp" alt="Diagram"></picture>',
+    '<img src="/diagram.webp" alt="Diagram">',
+    '<img src="/diagram.webp" alt="Diagram" />',
+])
+def test_recovers_media_between_matching_sibling_paragraphs(
+    media: str,
+) -> None:
+    page = '<article><p>Before.</p>' + media + '<p>After.</p></article>'
+    recovered = recover_feed_html("Before. After.", page)
+
+    assert 'src="/diagram.webp"' in recovered
+    assert recovered.index("Before.") < recovered.index("/diagram.webp")
+    assert recovered.index("/diagram.webp") < recovered.index("After.")
+
+    if "figcaption" in media:
+        assert '<figcaption>Screenshot credit: Example Lab</figcaption>' in (
+            recovered
+        )
+
+
+@pytest.mark.parametrize("page", [
+    '<img src="/outside.png"><p>Before.</p><p>After.</p>',
+    '<p>Before.</p><p>After.</p><img src="/outside.png">',
+    '<p>Before.</p><aside><figure><img src="/outside.png">'
+    '</figure></aside><p>After.</p>',
+    '<div><p>Before.</p></div><div><img src="/outside.png">'
+    '</div><div><p>After.</p></div>',
+    '<p>Before.</p><p>Unrelated news.</p><img src="/outside.png">'
+    '<p>After.</p>',
+    '<p>Before.</p><img src="/outside.png"><p>Unrelated news.</p>'
+    '<p>After.</p>',
+    '<p>Before.</p><img src="/outside.png" width="1" height="1">'
+    '<p>After.</p>',
+    '<p>Before.</p><img src="/outside.png" hidden><p>After.</p>',
+])
+def test_media_outside_the_matched_passage_is_not_imported(page: str) -> None:
+    recovered = recover_feed_html(
+        "Before. After.", f"<article>{page}</article>",
+    )
+
+    assert recovered == '<p>Before.</p>\n<p>After.</p>'
+
+
+def test_figure_caption_already_in_feed_is_not_duplicated() -> None:
+    page = '<article><p>Before.</p><figure><img src="/diagram.png">' \
+           '<figcaption>Credit.</figcaption></figure><p>After.</p></article>'
+    recovered = recover_feed_html("Before. Credit. After.", page)
+
+    assert recovered.count("Credit.") == 1
+    assert recovered.count('<img') == 1
+    assert " ".join(html_text(recovered).split()) == "Before. Credit. After."
+
+
+def test_media_cannot_rescue_an_incomplete_feed_match() -> None:
+    assert recover_feed_html(
+        "Before. After.",
+        '<article><p>Before.</p><figure><img src="/diagram.png">'
+        '<figcaption>Credit.</figcaption></figure><p>Changed.</p></article>',
+    ) == ""
+
+
 @pytest.mark.parametrize("feed", [
     '<p>First.</p><p>Second.</p>',
     '<a href="/feed-link">First.</a> Second.',

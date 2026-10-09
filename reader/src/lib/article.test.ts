@@ -3,6 +3,23 @@ import { renderArticle } from "./article";
 import { highlightCode } from "./highlightCode";
 
 describe("article code rendering", () => {
+  it("retains figure captions and opens the local image at full size", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      '<p>Before.</p><figure onclick="attack()"><img src="/assets/diagram.png" alt="Diagram" onerror="attack()"><figcaption style="position:fixed">Credit: Lab</figcaption></figure><p>After.</p>',
+    );
+    const figure = body.querySelector("figure");
+    expect(figure?.previousElementSibling?.textContent).toBe("Before.");
+    expect(figure?.nextElementSibling?.textContent).toBe("After.");
+    expect(figure?.querySelector("figcaption")?.textContent).toBe(
+      "Credit: Lab",
+    );
+    expect(figure?.querySelector("a")?.getAttribute("href")).toBe(
+      new URL("/assets/diagram.png", window.location.origin).href,
+    );
+    expect(body.querySelector("[onclick], [onerror], [style]")).toBeNull();
+  });
   it("preserves table structure while isolating scrolling from the table grid", () => {
     const body = document.createElement("div");
     renderArticle(

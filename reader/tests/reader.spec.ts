@@ -519,6 +519,42 @@ test("sanitizes article markup while preserving safe content and keyboard naviga
   await expect(trigger).toBeFocused();
 });
 
+test("shows inline figures and credits at desktop and mobile widths", async ({
+  page,
+}) => {
+  const state = await mockReader(page);
+  state.posts[0] = {
+    ...article,
+    html: '<p>Before the illustration.</p><figure><img src="/assets/diagram.svg" alt="Article diagram"><figcaption>Screenshot credit: Example Lab</figcaption></figure><p>After the illustration.</p>',
+  };
+  await page.route("**/assets/diagram.svg", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="548"><rect width="960" height="548" fill="#eee"/><text x="30" y="70" fill="#111" font-size="32">Article diagram</text></svg>',
+    }),
+  );
+  await page.goto("/reader/?article=shared-id&article_source=example.com");
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const figure = page.locator(".article-body figure");
+    const image = figure.getByRole("img", { name: "Article diagram" });
+    await image.scrollIntoViewIfNeeded();
+    await expect(image).toBeVisible();
+    await expect(figure.locator("figcaption")).toHaveText(
+      "Screenshot credit: Example Lab",
+    );
+    expect(
+      await image.evaluate((element: HTMLImageElement) => element.naturalWidth),
+    ).toBe(960);
+    await expect(figure.locator("a")).toHaveAttribute(
+      "href",
+      /\/assets\/diagram.svg$/,
+    );
+    await expect(figure).toHaveCSS("margin-left", "0px");
+    await expectNoHorizontalOverflow(page);
+  }
+});
+
 test("supports mobile navigation and article reading without horizontal overflow", async ({
   page,
 }) => {

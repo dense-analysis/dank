@@ -12,6 +12,8 @@ from aiohttp.test_utils import make_mocked_request
 from multidict import MultiDict
 
 from dank.config import SourceConfig, load_settings
+from dank.model import RawPost
+from dank.process.rss import convert_raw_post
 from dank.storage.clickhouse import QueryResult
 from dank.web import reader_api
 from dank.web.app import AssetRow, PostRow, create_app
@@ -418,6 +420,49 @@ def test_body_lead_image_wins_and_downloaded_images_are_reused(
         post._replace(html="<p>No lead image</p>"), assets, tmp_path,
     )
     assert no_image["thumbnail"] is None
+
+
+def test_recovered_figure_reaches_reader_with_caption_and_local_image(
+    tmp_path: pathlib.Path,
+) -> None:
+    now = dt.datetime.now(dt.UTC)
+    raw = RawPost(
+        domain="example.com", post_id="figure", url="https://example.com/1",
+        post_created_at=now, scraped_at=now, source="rss", request_url="",
+        payload=json.dumps({
+            "feed_xml": '<item xmlns:c="http://purl.org/rss/1.0/modules/'
+            'content/"><title>Diagram</title><c:encoded>Before. After.'
+            '</c:encoded></item>',
+            "page_html": '<article><p>Before.</p><figure onclick="attack()">'
+            '<picture><source srcset="/large.png 2x">'
+            '<img src="/diagram.png" alt="The diagram" onerror="attack()">'
+            '</picture><figcaption style="position:fixed">Credit: Lab'
+            '</figcaption></figure><p>After.</p></article>',
+        }),
+    )
+    processed = convert_raw_post(raw)
+    assert processed is not None
+    image = tmp_path / "diagram.png"
+    image.touch()
+    post = PostRow(
+        processed.domain, processed.post_id, processed.url, processed.author,
+        processed.title, processed.html, now, now, processed.source,
+    )
+    payload = reader_api.post_payload(post, [AssetRow(
+        "figure", "https://example.com/diagram.png", str(image),
+        "image/png", 0,
+    )], tmp_path)
+
+    assert '<figure>' in payload["html"]
+    assert '<img src="/assets/diagram.png" alt="The diagram">' in (
+        payload["html"]
+    )
+    assert '<figcaption>Credit: Lab</figcaption>' in payload["html"]
+    assert payload["html"].index("Before.") < payload["html"].index("<figure>")
+    assert payload["html"].index("</figure>") < payload["html"].index("After.")
+    assert all(unsafe not in payload["html"] for unsafe in (
+        "onclick", "onerror", "position:fixed", "<source", "srcset",
+    ))
 
 
 async def test_built_reader_routes_and_existing_viewer_are_independent(
