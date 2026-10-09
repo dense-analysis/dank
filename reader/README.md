@@ -47,6 +47,8 @@ browser channel. No live collection is needed for the fixture tests.
 - Search previews show matching passages and highlight the search terms.
 - Date bounds include the entire selected UTC calendar day. Newest and oldest
   orders paginate; relevance shows up to 30 best matches and labels the cap.
+- Scrolling near the bottom loads more stories automatically. If loading fails,
+  existing stories stay visible and the next page can be retried.
 - Author names apply an exact name filter while preserving the current view's
   search and filters. Author and date chips can be removed individually; date
   shortcuts select today or the past 7 / 30 UTC calendar days, including today.

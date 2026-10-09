@@ -7,7 +7,13 @@ import {
   Menu,
   RefreshCw,
 } from "lucide-react";
-import { type CSSProperties, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArticleView } from "./components/ArticleView";
 import { FeedToolbar } from "./components/FeedToolbar";
 import { Modal } from "./components/Modal";
@@ -46,6 +52,41 @@ export function App() {
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: section === "all",
   });
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const { fetchNextPage, hasNextPage, isFetching, isError } = posts;
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (
+      !target ||
+      section !== "all" ||
+      readingArticle ||
+      !hasNextPage ||
+      isFetching ||
+      isError ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        void fetchNextPage({ cancelRefetch: false });
+      },
+      { rootMargin: "0px 0px 240px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [
+    section,
+    readingArticle,
+    hasNextPage,
+    isFetching,
+    isError,
+    fetchNextPage,
+  ]);
+
   const timeline = useMemo(() => {
     const unique = new Map<string, Post>();
     for (const page of posts.data?.pages ?? [])
@@ -224,7 +265,7 @@ export function App() {
                   </div>
                   {posts.isPending ? (
                     <Loading />
-                  ) : posts.isError ? (
+                  ) : posts.isError && !posts.isFetchNextPageError ? (
                     <ErrorState
                       message={posts.error.message}
                       retry={() => void posts.refetch()}
@@ -263,18 +304,29 @@ export function App() {
                     </div>
                   )}
                   {posts.hasNextPage && (
-                    <div className="load-more">
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={posts.isFetchingNextPage}
-                        onClick={() => void posts.fetchNextPage()}
-                      >
-                        {posts.isFetchingNextPage
-                          ? "Loading stories…"
-                          : "More stories"}
-                        <ArrowDown size={15} />
-                      </button>
+                    <div className="load-more" ref={loadMoreRef}>
+                      {posts.isFetchNextPageError ? (
+                        <ErrorState
+                          message={posts.error.message}
+                          retry={() =>
+                            void posts.fetchNextPage({ cancelRefetch: false })
+                          }
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={posts.isFetching}
+                          onClick={() =>
+                            void posts.fetchNextPage({ cancelRefetch: false })
+                          }
+                        >
+                          {posts.isFetchingNextPage
+                            ? "Loading stories…"
+                            : "More stories"}
+                          <ArrowDown size={15} />
+                        </button>
+                      )}
                     </div>
                   )}
                   {posts.data?.pages.some((page) => page.limited) && (

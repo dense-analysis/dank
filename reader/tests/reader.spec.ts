@@ -170,7 +170,8 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
     parseFilters(filters),
   );
 
-  await page.getByRole("button", { name: "More stories" }).click();
+  await page.locator(".load-more").scrollIntoViewIfNeeded();
+  await expect(page.locator(".post-card")).toHaveCount(10);
   const target = story(page, "Housing report 5");
   await target.scrollIntoViewIfNeeded();
   const scroll = await page.evaluate(() => window.scrollY);
@@ -220,6 +221,179 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
     .click();
   await expect(target).toBeFocused();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scroll);
+});
+
+for (const width of [1280, 390]) {
+  test(`loads successive pages on scroll and stops at the end at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await mockReader(page);
+    state.pageSize = 5;
+    await page.goto("/reader/");
+    const cards = page.locator(".post-card");
+    await expect(cards).toHaveCount(5);
+    const initialRequests = state.requests.length;
+    await page.locator(".load-more").scrollIntoViewIfNeeded();
+    await expect(cards).toHaveCount(10);
+    await expect(story(page)).toHaveCount(1);
+    await expect(story(page, socialPost.title)).toHaveCount(1);
+    const scroll = await page.evaluate(() => window.scrollY);
+    expect(scroll).toBeGreaterThan(0);
+    await page.screenshot({ path: testInfo.outputPath("scrolled-feed.png") });
+    await expectNoHorizontalOverflow(page);
+    await page.locator(".load-more").scrollIntoViewIfNeeded();
+    await expect(cards).toHaveCount(15);
+    await expect(page.locator(".load-more")).toHaveCount(0);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(250);
+    expect(
+      state.requests
+        .slice(initialRequests)
+        .filter((url) => url.pathname.endsWith("/posts"))
+        .map((url) => url.searchParams.get("cursor")),
+    ).toEqual(["5", "10"]);
+  });
+}
+
+test("loads short pages until the viewport is filled or the feed ends", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 1200 });
+  const state = await mockReader(page);
+  state.pageSize = 1;
+  state.posts = state.posts.slice(0, 3);
+  await page.goto("/reader/");
+  await expect(page.locator(".post-card")).toHaveCount(3);
+  await expect(page.locator(".load-more")).toHaveCount(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  expect(
+    state.requests
+      .filter((url) => url.searchParams.has("cursor"))
+      .map((url) => url.searchParams.get("cursor")),
+  ).toEqual(["1", "2"]);
+});
+
+test("keeps one next-page request in flight while the bottom remains visible", async ({
+  page,
+}) => {
+  const state = await mockReader(page);
+  state.pageSize = 5;
+  await page.goto("/reader/");
+  await expect(page.locator(".post-card")).toHaveCount(5);
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let requests = 0;
+  await page.route("**/api/reader/posts?**", async (route) => {
+    if (new URL(route.request().url()).searchParams.has("cursor")) {
+      requests += 1;
+      await pending;
+    }
+    await route.fallback();
+  });
+  await page.locator(".load-more").scrollIntoViewIfNeeded();
+  await expect(
+    page.getByRole("button", { name: "Loading stories" }),
+  ).toBeDisabled();
+  for (let index = 0; index < 3; index += 1) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator(".load-more").scrollIntoViewIfNeeded();
+  }
+  expect(requests).toBe(1);
+  release();
+  await expect(page.locator(".post-card")).toHaveCount(10);
+  expect(requests).toBe(1);
+});
+
+test("preserves loaded stories on a next-page error and retries only on request", async ({
+  page,
+}) => {
+  const state = await mockReader(page);
+  state.pageSize = 5;
+  await page.goto("/reader/");
+  await expect(page.locator(".post-card")).toHaveCount(5);
+  state.failPosts = true;
+  await page.locator(".load-more").scrollIntoViewIfNeeded();
+  await expect(page.getByRole("alert")).toContainText(
+    "Collection temporarily unavailable.",
+  );
+  await expect(page.locator(".post-card")).toHaveCount(5);
+  const requests = state.requests.length;
+  await page.waitForTimeout(1500);
+  expect(state.requests).toHaveLength(requests);
+  state.failPosts = false;
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(page.locator(".post-card")).toHaveCount(10);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(
+    state.requests
+      .filter((url) => url.pathname.endsWith("/posts"))
+      .at(-1)
+      ?.searchParams.get("cursor"),
+  ).toBe("5");
+});
+
+test("does not load hidden feed pages while reading an article", async ({
+  page,
+}) => {
+  const state = await mockReader(page);
+  state.pageSize = 1;
+  await page.goto("/reader/?article=article-0&article_source=example.com");
+  await expect(
+    page.getByRole("main", { name: "Article reader" }),
+  ).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(250);
+  expect(state.requests.some((url) => url.searchParams.has("cursor"))).toBe(
+    false,
+  );
+});
+
+test("starts a fresh cursor sequence after filters change", async ({
+  page,
+}) => {
+  const state = await mockReader(page);
+  state.pageSize = 5;
+  await page.goto("/reader/");
+  await expect(page.locator(".post-card")).toHaveCount(5);
+  const initialRequests = state.requests.length;
+  await page.locator(".load-more").scrollIntoViewIfNeeded();
+  await expect(page.locator(".post-card")).toHaveCount(10);
+  await page.getByRole("textbox", { name: "Search stories" }).fill("report");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.locator(".post-card")).toHaveCount(5);
+  await expect(story(page)).toHaveCount(0);
+  await page.locator(".load-more").scrollIntoViewIfNeeded();
+  await expect(page.locator(".post-card")).toHaveCount(10);
+  expect(
+    state.requests
+      .slice(initialRequests)
+      .filter((url) => url.pathname.endsWith("/posts"))
+      .map((url) => [
+        url.searchParams.get("q"),
+        url.searchParams.get("cursor"),
+      ]),
+  ).toEqual([
+    [null, "5"],
+    ["report", null],
+    ["report", "5"],
+  ]);
+});
+
+test("keeps manual pagination available without IntersectionObserver", async ({
+  page,
+}) => {
+  const state = await mockReader(page);
+  state.pageSize = 5;
+  await page.addInitScript(() => {
+    Reflect.deleteProperty(window, "IntersectionObserver");
+  });
+  await page.goto("/reader/");
+  await expect(page.locator(".post-card")).toHaveCount(5);
+  await page.getByRole("button", { name: "More stories", exact: true }).click();
+  await expect(page.locator(".post-card")).toHaveCount(10);
 });
 
 test("opens source-specific deep links and returns to their filtered timeline", async ({
