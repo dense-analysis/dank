@@ -6,8 +6,8 @@ import html
 from html.parser import HTMLParser
 from typing import NamedTuple
 
-from dank.html_utils import html_text, remove_page_noise
-from dank.process.page import VOID_TAGS, extract_article_html
+from dank.html_utils import VOID_TAGS, html_text, remove_page_noise
+from dank.process.page import extract_article_html
 
 BODY_BLOCKS = {
     "p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol",

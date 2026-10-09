@@ -129,6 +129,10 @@ article container are retained in place, including their source captions
 and credits. Media in other containers or outside the matched passage is
 excluded. The reader uses downloaded copies when available.
 
+WordPress caption containers become standard figures and captions during
+processing and when serving saved posts. Ordinary image-adjacent paragraphs
+keep their original structure.
+
 Links and media in extracted page HTML resolve against `page_final_url`,
 including a valid HTML `<base href>`, so relative URLs work in the viewer.
 Older captures without this metadata fall back to the original article URL;

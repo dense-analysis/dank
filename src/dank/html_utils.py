@@ -39,9 +39,14 @@ def is_youtube_url(url: str) -> bool:
 
 
 NOISE_TAGS = {"head", "script", "style", "noscript"}
+VOID_TAGS = {
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+    "meta", "param", "source", "track", "wbr",
+}
 TEXT_BLOCKS = {
-    "article", "blockquote", "br", "div", "h1", "h2", "h3", "h4", "h5",
-    "h6", "li", "main", "ol", "p", "pre", "section", "td", "tr", "ul",
+    "article", "blockquote", "br", "div", "figcaption", "figure", "h1",
+    "h2", "h3", "h4", "h5", "h6", "li", "main", "ol", "p", "pre",
+    "section", "td", "tr", "ul",
 }
 
 
@@ -86,6 +91,7 @@ class _ReadableHTML(HTMLParser):
         self.text_only = text_only
         self.base_url = base_url
         self.skip: str | None = None
+        self._tags: list[tuple[str, str]] = []
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]],
@@ -102,7 +108,22 @@ class _ReadableHTML(HTMLParser):
             if tag in TEXT_BLOCKS:
                 self.parts.append("\n")
         else:
-            self.parts.append(self._start_tag(tag, attrs))
+            output_tag = tag
+            classes = (dict(attrs).get("class") or "").split()
+
+            # Keep explicit caption semantics when sanitizers strip classes.
+            if tag == "div" and "wp-caption" in classes:
+                output_tag = "figure"
+            elif (tag == "p" and "wp-caption-text" in classes
+                  and self._tags and self._tags[-1][1] == "figure"):
+                output_tag = "figcaption"
+
+            self.parts.append(self._start_tag(
+                output_tag, attrs, renamed=output_tag != tag,
+            ))
+
+            if tag not in VOID_TAGS:
+                self._tags.append((tag, output_tag))
 
     def handle_startendtag(
         self, tag: str, attrs: list[tuple[str, str | None]],
@@ -118,15 +139,15 @@ class _ReadableHTML(HTMLParser):
 
     def _start_tag(
         self, tag: str, attrs: list[tuple[str, str | None]],
-        *, self_closing: bool = False,
+        *, self_closing: bool = False, renamed: bool = False,
     ) -> str:
-        if not self.base_url:
+        if not self.base_url and not renamed:
             return self.get_starttag_text() or ""
 
         resolved: list[tuple[str, str | None]] = []
 
         for key, value in attrs:
-            if key in {"href", "src", "poster"} and value:
+            if self.base_url and key in {"href", "src", "poster"} and value:
                 try:
                     value = urljoin(self.base_url, value)
                 except ValueError:
@@ -134,7 +155,7 @@ class _ReadableHTML(HTMLParser):
 
             resolved.append((key, value))
 
-        if resolved == attrs:
+        if resolved == attrs and not renamed:
             return self.get_starttag_text() or ""
 
         attributes = "".join(
@@ -152,7 +173,15 @@ class _ReadableHTML(HTMLParser):
                 self.skip = None
         elif tag not in NOISE_TAGS:
             if not self.text_only:
-                self.parts.append(f"</{tag}>")
+                output_tag = tag
+
+                for index in range(len(self._tags) - 1, -1, -1):
+                    if self._tags[index][0] == tag:
+                        output_tag = self._tags[index][1]
+                        del self._tags[index:]
+                        break
+
+                self.parts.append(f"</{output_tag}>")
             elif tag in TEXT_BLOCKS:
                 self.parts.append("\n")
 

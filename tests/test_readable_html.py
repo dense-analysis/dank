@@ -146,3 +146,76 @@ def test_table_cell_spans_are_preserved(tag: str, rowspan: str) -> None:
 def test_table_attributes_are_not_globally_allowed() -> None:
     document = '<p colspan="2" rowspan="2" scope="row">Text</p>'
     assert _sanitize_html(document) == '<p>Text</p>'
+
+
+@pytest.mark.parametrize("wrapper", ["div", "figure"])
+@pytest.mark.parametrize("base_url", [None, "https://example.test/story"])
+def test_wordpress_captions_become_semantic_figures(
+    wrapper: str, base_url: str | None,
+) -> None:
+    document = (
+        f'<{wrapper} class="aligncenter wp-caption" id="attachment_1">'
+        '<div><a href="/image.png"><picture><source srcset="/large.png 2x">'
+        '<img src="/image.png" alt="Diagram" /></picture></a></div>'
+        '<p class="wp-caption-text" id="caption-attachment-1">'
+        'Credit: <a href="/credit">A &amp; B</a><br>More detail.</p>'
+        f'</{wrapper}><p>Following article paragraph.</p>'
+    )
+    cleaned = remove_page_noise(document, base_url=base_url)
+    assert cleaned.startswith('<figure class="aligncenter wp-caption"')
+    assert '<figcaption class="wp-caption-text"' in cleaned
+    assert 'More detail.</figcaption></figure><p>Following' in cleaned
+    prefix = "https://example.test" if base_url else ""
+    assert f'href="{prefix}/credit">A &amp; B</a>' in cleaned
+    assert f'src="{prefix}/image.png"' in cleaned
+    assert html_text(cleaned).split() == html_text(document).split()
+    assert remove_page_noise(cleaned, base_url=base_url) == cleaned
+
+
+@pytest.mark.parametrize("document", [
+    '<div><img src="/image.png"><p>Normal article text.</p></div>',
+    '<div class="wp-caption-other"><img src="/image.png">'
+    '<p class="wp-caption-text">Not a caption container.</p></div>',
+    '<p class="wp-caption-text">An orphan paragraph.</p>',
+    '<div class="wp-caption"><img src="/image.png">'
+    '<p class="wp-caption-text-other">Normal article text.</p></div>',
+    '<div class="wp-caption"><div><p class="wp-caption-text">'
+    'Unrelated nested text.</p></div></div>',
+])
+def test_caption_normalization_does_not_guess_from_image_adjacency(
+    document: str,
+) -> None:
+    cleaned = remove_page_noise(document)
+    assert '<figcaption' not in cleaned
+    assert html_text(cleaned).split() == html_text(document).split()
+
+
+def test_native_figures_and_escaped_markup_stay_intact() -> None:
+    document = (
+        '<figure><img src="/image.png"><figcaption>Existing credit.'
+        '</figcaption></figure><pre>&lt;div class="wp-caption"&gt;'
+        '&lt;p class="wp-caption-text"&gt;Code example&lt;/p&gt;'
+        '&lt;/div&gt;</pre>'
+    )
+    assert remove_page_noise(document) == document
+
+
+def test_figure_text_keeps_boundaries_without_source_whitespace() -> None:
+    assert html_text(
+        'Before<figure><img src="/image.png"><figcaption>Credit'
+        '</figcaption></figure>After',
+    ).split() == ['Before', 'Credit', 'After']
+
+
+def test_wordpress_captions_preserve_sanitizer_boundary() -> None:
+    document = (
+        '<div class="wp-caption" style="width:600px" onclick="attack()">'
+        '<img src="/image.png" onerror="attack()">'
+        '<p class="wp-caption-text" id="credit" style="position:fixed">'
+        'Credit: <a href="javascript:attack()">unsafe</a> '
+        '<em>A &amp; B</em><script>attack()</script></p></div>'
+    )
+    assert _sanitize_html(document) == (
+        '<figure><img src="/image.png"><figcaption>Credit: '
+        '<a>unsafe</a> <em>A &amp; B</em></figcaption></figure>'
+    )

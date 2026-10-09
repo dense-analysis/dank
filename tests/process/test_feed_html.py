@@ -62,6 +62,8 @@ def test_keeps_nested_quotes_lists_tables_and_escaped_code() -> None:
     '<img src="/diagram.webp" alt="Diagram"></picture>',
     '<img src="/diagram.webp" alt="Diagram">',
     '<img src="/diagram.webp" alt="Diagram" />',
+    '<div class="wp-caption aligncenter"><img src="/diagram.webp">'
+    '<p class="wp-caption-text">Screenshot credit: Example Lab</p></div>',
 ])
 def test_recovers_media_between_matching_sibling_paragraphs(
     media: str,
@@ -73,10 +75,9 @@ def test_recovers_media_between_matching_sibling_paragraphs(
     assert recovered.index("Before.") < recovered.index("/diagram.webp")
     assert recovered.index("/diagram.webp") < recovered.index("After.")
 
-    if "figcaption" in media:
-        assert '<figcaption>Screenshot credit: Example Lab</figcaption>' in (
-            recovered
-        )
+    if "figcaption" in media or "wp-caption-text" in media:
+        assert '<figcaption' in recovered
+        assert 'Screenshot credit: Example Lab</figcaption>' in recovered
 
 
 @pytest.mark.parametrize("page", [

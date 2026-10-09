@@ -422,6 +422,32 @@ def test_body_lead_image_wins_and_downloaded_images_are_reused(
     assert no_image["thumbnail"] is None
 
 
+def test_stored_wordpress_caption_reaches_reader_without_reprocessing(
+    tmp_path: pathlib.Path,
+) -> None:
+    now = dt.datetime.now(dt.UTC)
+    post = PostRow(
+        "example.com", "caption", "https://example.com/story", "", "Caption",
+        '<p>Before.</p><div class="wp-caption aligncenter"'
+        ' style="width:600px">'
+        '<img src="/image.png" alt="Diagram" aria-describedby="caption-1">'
+        '<p class="wp-caption-text" id="caption-1">Credit: '
+        '<a href="/credit">Example Lab</a></p></div><p>After.</p>',
+        now, now, "rss",
+    )
+    image = tmp_path / "image.png"
+    image.touch()
+    payload = reader_api.post_payload(post, [AssetRow(
+        "caption", "https://example.com/image.png", str(image), "image/png", 0,
+    )], tmp_path)
+
+    assert payload["html"] == (
+        '<p>Before.</p><figure><img src="/assets/image.png" alt="Diagram">'
+        '<figcaption>Credit: <a href="https://example.com/credit">Example Lab'
+        '</a></figcaption></figure><p>After.</p>'
+    )
+
+
 def test_recovered_figure_reaches_reader_with_caption_and_local_image(
     tmp_path: pathlib.Path,
 ) -> None:

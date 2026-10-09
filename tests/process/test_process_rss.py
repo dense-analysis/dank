@@ -103,6 +103,37 @@ def _raw_post(
     )
 
 
+@pytest.mark.parametrize("full_feed", [False, True])
+def test_wordpress_captions_survive_feed_and_page_processing(
+    *, full_feed: bool,
+) -> None:
+    body = (
+        '<p>Before.</p><div class="wp-caption aligncenter">'
+        '<img src="https://example.com/image.png">'
+        '<p class="wp-caption-text">Image <em>credit</em>.</p></div>'
+        '<p>After.</p>'
+    )
+    feed = ('<item xmlns:c="http://purl.org/rss/1.0/modules/content/">'
+            '<title>Caption example</title>')
+    feed += (f'<c:encoded><![CDATA[{body}]]></c:encoded>' if full_feed
+             else '<description>Summary.</description>')
+    payload = json.dumps({
+        'feed_xml': feed + '</item>',
+        'page_html': f'<article>{body}</article>',
+    })
+    raw = _raw_post(
+        payload=payload, url="https://example.com/story",
+        scraped_at=datetime.datetime(2026, 10, 9, tzinfo=datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert '<figure class="wp-caption aligncenter">' in post.html
+    assert ('<figcaption class="wp-caption-text">Image <em>credit</em>.'
+            '</figcaption></figure><p>After.</p>') in post.html
+    assert raw.payload == payload
+
+
 def test_convert_raw_post_atom_entry() -> None:
     scraped_at = datetime.datetime(2026, 2, 1, 2, 0, tzinfo=datetime.UTC)
     raw = _raw_post(

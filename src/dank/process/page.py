@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any, NamedTuple, cast
 
-from dank.html_utils import html_text, is_youtube_url
+from dank.html_utils import VOID_TAGS, html_text, is_youtube_url
 
 
 class PageMetadata(NamedTuple):
@@ -21,22 +21,6 @@ class _ContentCandidate(NamedTuple):
     html: str
 
 
-VOID_TAGS = {
-    "area",
-    "base",
-    "br",
-    "col",
-    "embed",
-    "hr",
-    "img",
-    "input",
-    "link",
-    "meta",
-    "param",
-    "source",
-    "track",
-    "wbr",
-}
 CONTENT_CLASS_KEYS = {
     "article-body",
     "article-content",
