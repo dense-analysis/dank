@@ -1,9 +1,14 @@
 import datetime
+import re
 from typing import Any, NamedTuple, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from dank.config import SourceConfig
 from dank.model import Post
+from dank.process import runner
+from dank.process.rss import convert_raw_post
 from dank.process.runner import (
     parse_age_window,
     process_source_assets,
@@ -157,6 +162,53 @@ async def test_process_source_posts_only_selects_unprocessed_posts() -> None:
     assert "LIMIT 1 BY post_id" in client.query
     assert "LEFT JOIN" in client.query
     assert "raw.scraped_at > processed.updated_at" in client.query
+    assert client.params["reprocess"] is False
+
+
+async def test_reprocess_keeps_domain_and_age_bounds() -> None:
+    client = _DummyClient()
+    since = datetime.datetime(2026, 10, 1, tzinfo=datetime.UTC)
+
+    await process_source_posts(
+        cast(Any, client), "publisher.test", lambda _row: None,
+        since=since, embedder=cast(Any, _DummyEmbedder()), reprocess=True,
+    )
+
+    assert "WHERE %(reprocess)s OR" in client.query
+    assert "WHERE domain = %(domain)s AND scraped_at >= %(since)s" in (
+        client.query
+    )
+    assert "LIMIT 1 BY post_id" in client.query
+    assert client.params == {
+        "domain": "publisher.test", "since": since, "reprocess": True,
+    }
+
+
+async def test_process_run_scopes_reprocessing_to_selected_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = MagicMock()
+    settings.sources = (
+        SourceConfig(domain="www.theregister.com", accounts=()),
+        SourceConfig(domain="other.test", accounts=()),
+    )
+    posts = AsyncMock(return_value=1)
+    assets = AsyncMock(return_value=0)
+    monkeypatch.setattr(runner, "process_source_posts", posts)
+    monkeypatch.setattr(runner, "process_source_assets", assets)
+    monkeypatch.setattr(runner, "ClickHouseClient", MagicMock())
+
+    assert await runner.run_process(
+        settings, age="168h", reprocess=True,
+        domain_regex=re.compile(r"^www\.theregister\.com$"),
+    ) == 1
+
+    posts.assert_awaited_once()
+    assert posts.call_args.args[1] == "www.theregister.com"
+    assert posts.call_args.kwargs["reprocess"] is True
+    assets.assert_awaited_once()
+    assert assets.call_args.args[1] == "www.theregister.com"
+    assert "reprocess" not in assets.call_args.kwargs
 
 
 async def test_insert_posts_writes_embedding_arrays() -> None:
@@ -211,6 +263,41 @@ async def test_process_source_assets_only_selects_unprocessed_assets() -> None:
     assert "LIMIT 1 BY post_id, url" in client.query
     assert "LEFT JOIN" in client.query
     assert "raw.scraped_at > processed.updated_at" in client.query
+
+
+@pytest.mark.parametrize(("feed_author", "expected"), [
+    ("", "Known Writer"),
+    ("New Writer", "New Writer"),
+])
+async def test_reprocessing_retains_author_when_new_capture_omits_it(
+    feed_author: str, expected: str,
+) -> None:
+    class Client(_InsertClient):
+        async def fetch_json(
+            self, query: str, params: dict[str, object] | None = None,
+        ) -> _Result:
+            result = await super().fetch_json(query, params)
+            result.rows[0].update({
+                "payload": f"<item><title>Article</title>"
+                f"<author>{feed_author}</author>"
+                "<description>Feed text.</description></item>",
+                "previous_author": "Known Writer",
+            })
+
+            return result
+
+    client = Client()
+    await process_source_posts(
+        cast(Any, client), "publisher.test", convert_raw_post,
+        since=datetime.datetime(2026, 2, 1, tzinfo=datetime.UTC),
+        embedder=cast(Any, _DummyEmbedder()), reprocess=True,
+    )
+
+    assert client.rows[0]["author"] == expected
+    assert "FROM posts FINAL" in client.query
+    assert client.rows[0]["updated_at"] == datetime.datetime(
+        2026, 2, 1, tzinfo=datetime.UTC,
+    )
 
 
 async def test_embeddings_use_readable_text_instead_of_page_code() -> None:

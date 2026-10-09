@@ -9,6 +9,7 @@ from typing import Any, NamedTuple, cast
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
 from dank.html_utils import html_base_url, remove_page_noise
 from dank.model import Post, RawPost
+from dank.process.feed_html import recover_feed_html
 from dank.process.page import (
     extract_article_html,
     extract_page_metadata,
@@ -132,8 +133,14 @@ def _derive_page_values(
             published_at = page_metadata.published_at
 
     base_url: str | None = None
-    # Full feed bodies include comment text and must not become whole pages.
-    if page_html and not (full_content and content_html):
+    # Recover flat feed structure only when the page matches its entire text.
+    if page_html and full_content and content_html:
+        recovered = recover_feed_html(content_html, page_html)
+
+        if recovered:
+            content_html = recovered
+            base_url = html_base_url(page_html, page_url)
+    elif page_html:
         content_html = (
             extract_article_html(page_html) or page_html
         )

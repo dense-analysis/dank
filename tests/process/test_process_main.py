@@ -1,0 +1,39 @@
+import sys
+from unittest.mock import MagicMock
+
+import pytest
+
+from dank.process import __main__ as cli
+
+
+def test_cli_passes_scoped_reprocessing_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = MagicMock()
+    monkeypatch.setattr(cli, "run_process_from_config", run)
+    monkeypatch.setattr(sys, "argv", [
+        "process", "--config", "test.toml", "--age", "168h",
+        "--domains", r"^www\.theregister\.com$", "--reprocess",
+    ])
+    cli.main()
+
+    run.assert_called_once()
+    assert run.call_args.args == ("test.toml",)
+    assert run.call_args.kwargs["age"] == "168h"
+    assert run.call_args.kwargs["reprocess"] is True
+    regex = run.call_args.kwargs["domain_regex"]
+    assert regex.search("www.theregister.com")
+    assert not regex.search("other.test")
+
+
+def test_cli_rejects_invalid_domain_regex_before_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = MagicMock()
+    monkeypatch.setattr(cli, "run_process_from_config", run)
+    monkeypatch.setattr(sys, "argv", ["process", "--domains", "["])
+
+    with pytest.raises(SystemExit, match="2"):
+        cli.main()
+
+    run.assert_not_called()

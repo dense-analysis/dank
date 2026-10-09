@@ -32,6 +32,19 @@ and skips it if its collection time is not newer than the stored processed
 version. Increasing `--age` includes older captures but does not force
 unchanged records through an updated processor.
 
+Use `--reprocess` to rebuild saved posts after a processing fix, without
+scraping again. Limit the run with `--domains` (a regex over configured
+sources) and `--age`, for example:
+
+```sh
+uv run process --reprocess --domains '^www\.theregister\.com$' --age 168h
+```
+
+The same flags work with `docker compose run --rm dank process`. Reprocessing
+rebuilds post HTML and embeddings; asset processing remains incremental.
+Original captures, post identities and source timestamps are preserved.
+Known authors are retained when a newer capture omits the byline.
+
 ## Produced data
 
 - RSS/Atom entries become posts using feed metadata and available article HTML.
@@ -91,6 +104,12 @@ feed supplies only a summary, it extracts the article body from the fetched
 page when possible. Page headers, scripts and styles are removed from
 processed content and previews. Embeddings use readable text rather than
 HTML markup. Original feed XML and page HTML remain in raw storage.
+
+When a full feed body is plain text, processing can recover paragraphs,
+headings, lists and quotations from the saved article page. Only complete
+blocks matching the entire feed text in order (ignoring whitespace) are
+accepted. Unrelated page content is excluded. Formatted feeds and bodies
+without a complete match retain their original content.
 
 Links and media in extracted page HTML resolve against `page_final_url`,
 including a valid HTML `<base href>`, so relative URLs work in the viewer.

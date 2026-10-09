@@ -35,6 +35,7 @@ async def process_source_posts(
     since: datetime.datetime,
     batch_size: int = 250,
     embedder: EmbeddingModel,
+    reprocess: bool = False,
 ) -> int:
     query = (
         "SELECT "
@@ -45,7 +46,8 @@ async def process_source_posts(
         "raw.scraped_at AS scraped_at, "
         "raw.source AS source, "
         "raw.request_url AS request_url, "
-        "raw.payload AS payload "
+        "raw.payload AS payload, "
+        "processed.author AS previous_author "
         "FROM ("
         "SELECT "
         "domain, "
@@ -63,26 +65,24 @@ async def process_source_posts(
         "LIMIT 1 BY post_id"
         ") AS raw "
         "LEFT JOIN ("
-        "SELECT domain, post_id, updated_at "
-        "FROM posts "
+        "SELECT domain, post_id, updated_at, author "
+        "FROM posts FINAL "
         "WHERE domain = %(domain)s "
-        "ORDER BY updated_at DESC "
-        "LIMIT 1 BY post_id"
         ") AS processed "
         "ON raw.domain = processed.domain "
         "AND raw.post_id = processed.post_id "
-        "WHERE processed.updated_at IS NULL "
+        "WHERE %(reprocess)s OR processed.updated_at IS NULL "
         "OR raw.scraped_at > processed.updated_at "
         "ORDER BY raw.scraped_at DESC "
     )
     query_started_at = time.perf_counter()
     result = await clickhouse_client.fetch_json(
         query,
-        {"domain": domain, "since": since},
+        {"domain": domain, "since": since, "reprocess": reprocess},
     )
     query_seconds = time.perf_counter() - query_started_at
     logger.info(
-        "Loaded %d unprocessed raw posts for domain=%s since=%s in %.3fs",
+        "Loaded %d raw posts for domain=%s since=%s in %.3fs",
         len(result.rows),
         domain,
         since.isoformat(),
@@ -99,6 +99,10 @@ async def process_source_posts(
         if post is None:
             continue
 
+        # A failed or incomplete newer page must not erase a known byline.
+        post = post._replace(
+            author=post.author or str(row.get("previous_author") or ""),
+        )
         batch.append(post)
         converted += 1
 
@@ -305,21 +309,28 @@ async def run_process(
     settings: Settings,
     *,
     age: str = "24h",
+    domain_regex: re.Pattern[str] | None = None,
+    reprocess: bool = False,
 ) -> int:
     window = parse_age_window(age)
     since = datetime.datetime.now(datetime.UTC) - window
     total_posts = 0
     total_assets = 0
+    sources = tuple(
+        source for source in settings.sources
+        if domain_regex is None or domain_regex.search(source.domain)
+    )
     embedder = get_embedding_model()
     logger.info(
-        "Starting process run age=%s since=%s sources=%d",
+        "Starting process run age=%s since=%s sources=%d reprocess=%s",
         age,
         since.isoformat(),
-        len(settings.sources),
+        len(sources),
+        reprocess,
     )
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
-        for source in settings.sources:
+        for source in sources:
             converter = (
                 convert_raw_x_post
                 if source.domain == "x.com"
@@ -333,6 +344,7 @@ async def run_process(
                 converter,
                 since=since,
                 embedder=embedder,
+                reprocess=reprocess,
             )
 
             total_assets += await process_source_assets(
@@ -356,11 +368,15 @@ def run_process_from_config(
     path: str = "config.toml",
     *,
     age: str = "24h",
+    domain_regex: re.Pattern[str] | None = None,
+    reprocess: bool = False,
 ) -> int:
     settings = load_settings(path)
     configure_logging(settings.logging, component="process")
 
-    return asyncio.run(run_process(settings, age=age))
+    return asyncio.run(run_process(
+        settings, age=age, domain_regex=domain_regex, reprocess=reprocess,
+    ))
 
 
 def parse_age_window(value: str) -> datetime.timedelta:
