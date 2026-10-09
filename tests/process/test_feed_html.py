@@ -7,7 +7,7 @@ import pytest
 from dank.html_utils import html_text
 from dank.model import RawPost
 from dank.process.feed_html import recover_feed_html
-from dank.process.rss import convert_raw_post
+from dank.process.rss import convert_raw_post, recover_post_from_page
 
 
 def test_recovers_paragraphs_and_inline_markup_without_page_noise() -> None:
@@ -186,3 +186,37 @@ def test_full_feed_processing_recovers_structure_and_resolves_links(
     assert post.created_at == now
     assert post.updated_at == now
     assert raw.payload == payload
+
+
+def test_older_page_recovers_current_text_without_reverting_metadata() -> None:
+    now = datetime.datetime(2026, 10, 9, tzinfo=datetime.UTC)
+    raw = RawPost(
+        domain="example.test", post_id="1", url="https://example.test/new",
+        post_created_at=now, scraped_at=now, source="rss", request_url="",
+        payload='<item xmlns:c="http://purl.org/rss/1.0/modules/content/">'
+        '<title>Current title</title><author>Current author</author>'
+        '<c:encoded>First. Second.</c:encoded></item>',
+    )
+    post = convert_raw_post(raw)
+    assert post is not None
+    previous = json.dumps({
+        "feed_xml": "<item><title>Old title</title></item>",
+        "page_html": '<head><base href="/assets/"></head><article>'
+        '<p><a href="source">First.</a></p><p>Second.</p></article>',
+        "page_final_url": "https://publisher.test/old/",
+    })
+    recovered = recover_post_from_page(
+        post, previous, "https://example.test/old",
+    )
+
+    assert recovered == post._replace(
+        html='<p><a href="https://publisher.test/assets/source">First.</a>'
+        '</p>\n<p>Second.</p>',
+    )
+
+    for unsuitable in (
+        "not JSON", json.dumps({"page_html": "<head>Challenge</head>"}),
+        json.dumps({"page_html": '<article><p>First.</p>'
+                    '<p>Outdated second paragraph.</p></article>'}),
+    ):
+        assert recover_post_from_page(post, unsuitable, raw.url) == post

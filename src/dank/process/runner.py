@@ -14,7 +14,10 @@ from dank.html_utils import html_text
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
-from dank.process.rss import convert_raw_post as convert_raw_rss_post
+from dank.process.rss import (
+    convert_raw_post as convert_raw_rss_post,
+    recover_post_from_page,
+)
 from dank.process.x import convert_raw_x_post
 from dank.progress import Progress
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
@@ -255,6 +258,8 @@ async def _insert_posts(
     posts: list[Post],
     embedder: EmbeddingModel,
 ) -> None:
+    posts = await _recover_saved_pages(clickhouse_client, posts)
+
     async with Progress(f"Embedding and saving {len(posts)} posts"):
         title_embeddings = await asyncio.to_thread(
             embedder.embed_texts,
@@ -301,6 +306,51 @@ async def _insert_posts(
         )
 
 
+async def _recover_saved_pages(
+    client: ClickHouseClient, posts: list[Post],
+) -> list[Post]:
+    # The latest page can be a challenge even when older captures are usable.
+    pending = {
+        (post.domain, post.post_id): post for post in posts
+        if post.source == "rss" and post.html and "<" not in post.html
+    }
+
+    if not pending:
+        return posts
+
+    result = await client.fetch_json(
+        "SELECT domain, post_id, url, payload FROM raw_posts "
+        "WHERE (domain, post_id) IN %(post_keys)s "
+        "ORDER BY scraped_at DESC",
+        {"post_keys": list(pending)},
+    )
+    recovered: dict[tuple[str, str], Post] = {}
+
+    for row in result.rows:
+        key = (str(row["domain"]), str(row["post_id"]))
+        post = pending.get(key)
+
+        if post is None:
+            continue
+
+        candidate = recover_post_from_page(
+            post, str(row.get("payload") or ""), str(row["url"]),
+        )
+
+        if candidate.html != post.html:
+            recovered[key] = candidate
+            del pending[key]
+
+        if not pending:
+            break
+
+    logger.info(
+        "Recovered article structure from saved pages: %d", len(recovered),
+    )
+
+    return [recovered.get((post.domain, post.post_id), post) for post in posts]
+
+
 def _truncate_for_embedding(value: str, *, limit: int) -> str:
     return value.strip()[:limit]
 
@@ -312,8 +362,12 @@ async def run_process(
     domain_regex: re.Pattern[str] | None = None,
     reprocess: bool = False,
 ) -> int:
-    window = parse_age_window(age)
-    since = datetime.datetime.now(datetime.UTC) - window
+    # DateTime64 supports captures from 1900 onward; keep the query bounded.
+    since = (
+        datetime.datetime(1900, 1, 1, tzinfo=datetime.UTC)
+        if age.strip().lower() == "all"
+        else datetime.datetime.now(datetime.UTC) - parse_age_window(age)
+    )
     total_posts = 0
     total_assets = 0
     sources = tuple(

@@ -156,6 +156,23 @@ def _derive_page_values(
     )
 
 
+def recover_post_from_page(
+    post: Post, previous_payload: str, previous_url: str,
+) -> Post:
+    """Reuse a saved page only when it matches the current post's full text."""
+    payload = _split_payload(previous_payload)
+    recovered = recover_feed_html(post.html, payload.page_html)
+
+    if not recovered:
+        return post
+
+    base_url = html_base_url(
+        payload.page_html, payload.page_final_url or previous_url,
+    )
+
+    return post._replace(html=remove_page_noise(recovered, base_url=base_url))
+
+
 def _parse_xml_root(xml: str) -> ElementTree.Element | None:
     try:
         return ElementTree.fromstring(xml)

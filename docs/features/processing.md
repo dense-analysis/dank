@@ -45,6 +45,19 @@ rebuilds post HTML and embeddings; asset processing remains incremental.
 Original captures, post identities and source timestamps are preserved.
 Known authors are retained when a newer capture omits the byline.
 
+To rebuild all saved posts from every configured source, without an age
+cutoff:
+
+```sh
+make process ARGS='--reprocess --age all'
+```
+
+For native execution, add `MODE=native`. Processing also checks older saved
+pages when the newest capture leaves a feed body unformatted, for example
+after a site returns a challenge page. An older page is used only if it
+matches the current feed text; current post metadata and raw records are
+preserved. A new scrape is needed only when no matching saved page exists.
+
 ## Produced data
 
 - RSS/Atom entries become posts using feed metadata and available article HTML.

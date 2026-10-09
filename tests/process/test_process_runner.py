@@ -1,4 +1,5 @@
 import datetime
+import json
 import re
 from typing import Any, NamedTuple, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -10,6 +11,7 @@ from dank.model import Post
 from dank.process import runner
 from dank.process.rss import convert_raw_post
 from dank.process.runner import (
+    _recover_saved_pages,  # pyright: ignore[reportPrivateUsage]
     parse_age_window,
     process_source_assets,
     process_source_posts,
@@ -209,6 +211,72 @@ async def test_process_run_scopes_reprocessing_to_selected_sources(
     assets.assert_awaited_once()
     assert assets.call_args.args[1] == "www.theregister.com"
     assert "reprocess" not in assets.call_args.kwargs
+
+
+async def test_all_age_processes_every_configured_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = MagicMock()
+    settings.sources = (
+        SourceConfig(domain="first.test", accounts=()),
+        SourceConfig(domain="second.test", accounts=()),
+    )
+    posts = AsyncMock(return_value=1)
+    assets = AsyncMock(return_value=0)
+    monkeypatch.setattr(runner, "process_source_posts", posts)
+    monkeypatch.setattr(runner, "process_source_assets", assets)
+    monkeypatch.setattr(runner, "ClickHouseClient", MagicMock())
+
+    assert await runner.run_process(settings, age="all", reprocess=True) == 2
+    assert [call.args[1] for call in posts.call_args_list] == [
+        "first.test", "second.test",
+    ]
+
+    for call in posts.call_args_list + assets.call_args_list:
+        assert call.kwargs["since"] == datetime.datetime(
+            1900, 1, 1, tzinfo=datetime.UTC,
+        )
+
+
+async def test_saved_pages_use_newest_match_and_source_identity() -> None:
+    now = datetime.datetime(2026, 10, 9, tzinfo=datetime.UTC)
+    post = Post(
+        "a.test", "same", "https://a.test/latest", now, now, "Author",
+        "Current title", (), "First. Second.", (), "rss",
+    )
+    other = post._replace(domain="b.test")
+    formatted = post._replace(post_id="formatted", html="<p>Already HTML</p>")
+    social = post._replace(domain="x.com", source="x")
+    client = MagicMock()
+    client.fetch_json = AsyncMock(return_value=_Result([
+        {"domain": "a.test", "post_id": "same", "url": post.url,
+         "payload": json.dumps({"page_html": "<head>Challenge</head>"})},
+        {"domain": "a.test", "post_id": "same", "url": post.url,
+         "payload": json.dumps({"feed_xml": "<item/>",
+                                "page_html": '<article><p>First.</p>'
+                                '<p><em>Second.</em></p></article>'})},
+        {"domain": "a.test", "post_id": "same", "url": post.url,
+         "payload": json.dumps({"feed_xml": "<item/>",
+                                "page_html": '<article><p>First.</p>'
+                                '<p>Second.</p></article>'})},
+    ]))
+    recovered = await _recover_saved_pages(
+        client, [post, other, formatted, social],
+    )
+
+    assert recovered == [post._replace(
+        html='<p>First.</p>\n<p><em>Second.</em></p>',
+    ), other, formatted, social]
+    query, params = client.fetch_json.call_args.args
+    assert "ORDER BY scraped_at DESC" in query
+    assert "since" not in query
+    assert params == {"post_keys": [("a.test", "same"), ("b.test", "same")]}
+
+    client.fetch_json.reset_mock()
+    assert await _recover_saved_pages(client, [formatted, social]) == [
+        formatted, social,
+    ]
+    client.fetch_json.assert_not_awaited()
 
 
 async def test_insert_posts_writes_embedding_arrays() -> None:

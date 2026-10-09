@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument(
         "--age",
         default="24h",
-        help="How far back to process (e.g. 30s, 10m, 2h)",
+        help="How far back to process (30s, 10m, 2h, or all saved captures)",
     )
     parser.add_argument(
         "--domains",
