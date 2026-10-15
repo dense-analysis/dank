@@ -73,6 +73,7 @@ indirection.
 * `make scrape` and `make process` archive timestamped output in
   `logs/scrape/` and `logs/process/`. Use these for recent-run comparisons;
   each log includes command, checkout revision, duration and exit status.
+  Search these Git-ignored archives with `rg --no-ignore`.
   `dank.log` remains the combined application log.
 * Query with `uv run clickhouse-query -q "<QUERY>"`
     * You can run only `SELECT`, `SHOW`, or `EXPLAIN` queries.

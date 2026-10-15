@@ -105,7 +105,7 @@ Find recent runs and review warnings, errors and outcomes:
 ```sh
 ls -t logs/scrape/*.log
 ls -t logs/process/*.log
-rg -n 'WARNING|ERROR|Traceback|Exit status:' logs/scrape logs/process
+rg --no-ignore -n 'WARNING|ERROR|Traceback|Exit status:' logs/scrape logs/process
 ```
 
 For a comparison, ask an agent to inspect these folders and compare matching
