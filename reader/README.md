@@ -59,6 +59,9 @@ browser channel. No live collection is needed for the fixture tests.
   position; browser Forward returns to the article.
 - Stories without collected article content have a “Not collected” badge and
   a separate notice linking to the original. Opening them does not mark them read.
+- Stories with available text but a failed article-page fetch have an
+  “Incomplete scrape” badge and notice: text, formatting or media may be missing.
+  The badge clears after a successful page retry is processed.
 - Article titles support opening new tabs. Source names filter to that source;
   unlinked article images open at full size in a new tab.
 - Transparent article images offer a **Light background** toggle on hover or

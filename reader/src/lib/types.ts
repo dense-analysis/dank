@@ -6,6 +6,7 @@ export interface Post {
   title: string;
   excerpt: string;
   html: string;
+  collection_incomplete?: boolean;
   created_at: string;
   source: string;
   thumbnail: string | null;

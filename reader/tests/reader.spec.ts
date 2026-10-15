@@ -154,6 +154,7 @@ for (const width of [1280, 390, 320]) {
       title: "Microsoft Defender for Linux",
       url: "https://techcommunity.microsoft.com/original-article",
       html: "\n\n\n\n\n\n",
+      collection_incomplete: true,
       excerpt: "",
     };
     state.posts = [missing, article];
@@ -213,6 +214,74 @@ for (const width of [1280, 390, 320]) {
       page.getByRole("complementary", { name: "Collection status" }),
     ).toHaveCount(0);
     await expect(page.getByText("YOU’VE REACHED THE END")).toBeVisible();
+  });
+}
+
+for (const width of [1280, 390, 320]) {
+  test(`shows available text with an incomplete scrape warning at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await mockReader(page);
+    const partial = {
+      ...article,
+      id: "incomplete",
+      title: "Article saved from its feed",
+      html: "The feed text is still available to read.",
+      collection_incomplete: true,
+    };
+    state.posts = [partial, article];
+    await page.goto("/reader/");
+    const card = page.locator(".post-card").filter({
+      has: story(page, partial.title),
+    });
+    await expect(
+      card.getByText("Incomplete scrape", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByText("Not collected", { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(card.getByText(/min read/)).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`incomplete-feed-${width}.png`),
+    });
+
+    await story(page, partial.title).click();
+    const notice = page.getByRole("complementary", {
+      name: "Collection status",
+    });
+    await expect(
+      notice.getByRole("heading", { name: "Incomplete scrape" }),
+    ).toBeVisible();
+    await expect(notice).toContainText(
+      "text, formatting or media may be missing",
+    );
+    await expect(page.locator(".article-body")).toHaveText(partial.html);
+    await expect(
+      page.getByRole("link", { name: "Read original", exact: true }),
+    ).toHaveAttribute("href", partial.url);
+    await expectNoHorizontalOverflow(page);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(`incomplete-article-${width}.png`),
+    });
+
+    state.posts[0] = {
+      ...partial,
+      html: "<p>The restored article has its paragraphs.</p><p>And its formatting.</p>",
+      collection_incomplete: false,
+    };
+    await page.reload();
+    await expect(notice).toHaveCount(0);
+    await expect(
+      page.getByText("Incomplete scrape", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator(".article-body p")).toHaveCount(2);
+    await page.getByRole("button", { name: "Back to your reading" }).click();
+    await expect(
+      card.getByText("Incomplete scrape", { exact: true }),
+    ).toHaveCount(0);
   });
 }
 

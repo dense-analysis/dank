@@ -896,6 +896,9 @@ input[type="checkbox"] {
   margin-top: 1px;
   color: var(--collection-text);
 }
+.collection-notice-partial {
+  margin: 0 0 28px;
+}
 .collection-notice h2 {
   color: var(--collection-text);
   font-size: 14px;
