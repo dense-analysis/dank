@@ -36,9 +36,12 @@ if [ -t 1 ]; then
 fi
 
 # We filter out noisy lines from Pyright AI agents don't need to read.
-uv run pyright | grep -v 'new pyright\|PYRIGHT_PYTHON_FORCE_VERSION\|^$\|errors,.*warnings,.*informations' || true
+set +e
+uv run pyright | grep -v 'new pyright\|PYRIGHT_PYTHON_FORCE_VERSION\|^$\|errors,.*warnings,.*informations'
+pyright_status=${PIPESTATUS[0]}
+set -e
 
-if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+if [ "$pyright_status" -ne 0 ]; then
     status=1
 fi
 
