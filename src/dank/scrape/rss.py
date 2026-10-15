@@ -15,7 +15,7 @@ from urllib.parse import urldefrag, urljoin, urlparse
 
 import aiohttp
 
-from dank.html_utils import html_base_url, is_youtube_url
+from dank.html_utils import html_base_url, is_page_challenge, is_youtube_url
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
 from dank.scrape.http import (
@@ -526,6 +526,50 @@ async def scrape_feed_batches(
             yield ScrapeBatch(posts=raw_posts, assets=asset_discoveries)
 
 
+async def retry_feed_pages(
+    http_client: aiohttp.ClientSession,
+    posts: list[RawPost],
+    *,
+    batch_size: int = 50,
+    concurrency: int = RSS_CONCURRENCY,
+) -> AsyncIterator[ScrapeBatch]:
+    """Refetch failed pages even when their entries have left the feeds."""
+    for chunk in itertools.batched(posts, batch_size):
+        pages = await _fetch_pages(
+            http_client,
+            [PageDiscovery(post.domain, post.url, post.post_created_at, "")
+             for post in chunk],
+            concurrency=concurrency,
+        )
+        recovered: list[RawPost] = []
+        assets: list[AssetDiscovery] = []
+        now = datetime.datetime.now(datetime.UTC)
+
+        for post, (_, page) in zip(chunk, pages, strict=True):
+            if not page or not page.text:
+                continue
+
+            payload: dict[str, object] = json.loads(post.payload)
+            payload.update(page_html=page.text, page_final_url=page.url)
+            payload.pop("page_fetch_status", None)
+            recovered.append(post._replace(
+                payload=json.dumps(payload, separators=(",", ":")),
+                scraped_at=now,
+            ))
+            assets.extend(_extract_page_assets(
+                page.text, domain=post.domain, post_id=post.post_id,
+                base_url=page.url,
+            ))
+
+        logger.info(
+            "Saved-page retry: recovered=%d, failed=%d", len(recovered),
+            len(chunk) - len(recovered),
+        )
+
+        if recovered:
+            yield ScrapeBatch(recovered, assets)
+
+
 async def _fetch_feed_page_discoveries(
     http_client: aiohttp.ClientSession,
     *,
@@ -827,6 +871,10 @@ async def _fetch_text(
     accept: list[str],
 ) -> FetchedText | None:
     fetched = await _fetch_text_with_retries(http_client, url, accept=accept)
+
+    if fetched and is_page_challenge(fetched.text):
+        logger.warning("Verification page returned fetching %s", url)
+        fetched = None
 
     if fetched is None or not fetched.text:
         count("fetch_failures")

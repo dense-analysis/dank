@@ -221,3 +221,22 @@ def test_older_page_recovers_current_text_without_reverting_metadata() -> None:
                     '<p>Outdated second paragraph.</p></article>'}),
     ):
         assert recover_post_from_page(post, unsuitable, raw.url) == post
+
+
+def test_verification_page_cannot_replace_feed_text_or_metadata() -> None:
+    now = datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC)
+    raw = RawPost(
+        "example.test", "1", "https://example.test/1", now, now, "rss", "",
+        json.dumps({
+            "feed_xml": '<item><title>Real story</title>'
+            '<description>Available feed text.</description></item>',
+            "page_html": '<head><title>Are we human?</title>'
+            '<script src="/_labrador/pow/slow.js"></script></head>'
+            '<body>Please verify that you are human.</body>',
+        }),
+    )
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert post.title == "Real story"
+    assert post.html == "Available feed text."

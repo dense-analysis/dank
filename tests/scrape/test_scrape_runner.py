@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
 import pathlib
 import re
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -17,7 +19,9 @@ from dank.config import (
     SourceConfig,
     XSettings,
 )
+from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.model import AssetDiscovery, RawAsset, RawPost
+from dank.scrape.rss import FetchedText
 from dank.scrape.runner import (
     _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
     _process_batches,  # pyright: ignore[reportPrivateUsage]
@@ -201,6 +205,62 @@ async def test_no_selected_sources_warns_without_connecting(
     await run_scrape(_make_settings()._replace(sources=()))
 
     assert "No sources selected" in caplog.text
+
+
+async def test_failed_page_mode_uses_saved_entries_without_feed_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC)
+    source = SourceConfig("example.com", (), ("https://example.com/feed",))
+
+    class _Client:
+        async def fetch_json(
+            self, query: str, params: dict[str, Any],
+        ) -> QueryResult:
+            assert "FROM raw_posts" in query
+            assert params == {"domain": source.domain,
+                              "feed_urls": list(source.feed_urls),
+                              "challenge_pattern": PAGE_CHALLENGE_PATTERN}
+
+            return QueryResult([{
+                "domain": source.domain, "post_id": "saved-id",
+                "url": "https://example.com/story",
+                "post_created_at": None, "scraped_at": now.isoformat(),
+                "source": "rss", "request_url": source.feed_urls[0],
+                "payload": json.dumps({
+                    "feed_xml": "<item><title>Saved story</title></item>",
+                    "page_html": "", "page_fetch_status": "failed",
+                }),
+            }])
+
+    fetch = AsyncMock(return_value=FetchedText(
+        "<article><p>Restored.</p></article>", "https://example.com/story",
+    ))
+    monkeypatch.setattr("dank.scrape.rss._fetch_text", fetch)
+    batches = [
+        batch async for batch in _discover_source_batches(
+            _make_settings(), source, cast(Any, _Client()), cast(Any, None),
+            cast(Any, None), feed_staleness=datetime.timedelta(days=14),
+            batch_size=50, retry_failed_pages=True,
+        )
+    ]
+
+    assert len(batches) == 1
+    assert batches[0].posts[0].post_id == "saved-id"
+    assert batches[0].posts[0].post_created_at is None
+    fetch.assert_awaited_once()
+    assert fetch.call_args.args[1] == "https://example.com/story"
+
+
+async def test_failed_page_mode_does_not_collect_x() -> None:
+    assert [
+        batch async for batch in _discover_source_batches(
+            _make_settings(), SourceConfig("x.com", ("writer",)),
+            cast(Any, None), cast(Any, None), cast(Any, None),
+            feed_staleness=datetime.timedelta(days=14), batch_size=50,
+            retry_failed_pages=True,
+        )
+    ] == []
 
 
 async def test_articles_are_saved_before_waiting_for_media(

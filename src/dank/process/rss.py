@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple, cast
 
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
-from dank.html_utils import html_base_url, remove_page_noise
+from dank.html_utils import html_base_url, is_page_challenge, remove_page_noise
 from dank.model import Post, RawPost
 from dank.process.feed_html import recover_feed_html
 from dank.process.page import (
@@ -119,6 +119,9 @@ def _derive_page_values(
     content_html: str,
     full_content: bool = False,
 ) -> _PageDerivedValues:
+    if is_page_challenge(page_html):
+        page_html = ""
+
     # Parse heavyweight HTML only when RSS fields are missing information.
     if page_html and (not title or not author or published_at is None):
         page_metadata = extract_page_metadata(page_html)

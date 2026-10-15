@@ -1,8 +1,9 @@
-import { Check, CircleDashed, ExternalLink, ImageOff } from "lucide-react";
+import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { hasArticleContent } from "../lib/article";
 import type { Filters, Post } from "../lib/types";
 import { AuthorLink } from "./AuthorLink";
+import { CollectionBadge } from "./CollectionBadge";
 import { HighlightedText } from "./HighlightedText";
 import { ReaderLink } from "./ReaderLink";
 import { SourceLink, sourceName } from "./SourceLink";
@@ -80,14 +81,8 @@ export function PostCard({
           <span className="source-kind">
             {post.source === "x" ? "Post" : "Article"}
           </span>
-          {!hasContent && (
-            <span
-              className="collection-badge"
-              title="Full text wasn’t collected. Read it at the original source."
-            >
-              <CircleDashed size={12} aria-hidden="true" />
-              Not collected
-            </span>
+          {(!hasContent || post.collection_incomplete) && (
+            <CollectionBadge incomplete={hasContent} />
           )}
         </span>
       </div>

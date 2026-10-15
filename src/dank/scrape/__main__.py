@@ -25,6 +25,11 @@ def main() -> None:
             "(for example, '^x\\.com$')"
         ),
     )
+    parser.add_argument(
+        "--retry-failed-pages",
+        action="store_true",
+        help="Retry saved RSS page failures instead of collecting feeds",
+    )
 
     args = parser.parse_args()
     domain_regex = None
@@ -39,6 +44,7 @@ def main() -> None:
         args.config,
         headless=args.headless,
         domain_regex=domain_regex,
+        retry_failed_pages=args.retry_failed_pages,
     )
 
 

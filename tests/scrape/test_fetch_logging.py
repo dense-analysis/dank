@@ -107,6 +107,25 @@ async def test_empty_fetch_is_visible_at_warning(
     assert "Empty response fetching https://example.test/empty" in caplog.text
 
 
+async def test_verification_page_is_a_failure_even_with_http_success(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    page = (
+        '<html><head><title>Are we human?</title>'
+        '<script defer src="/_labrador/pow/slow.js"></script></head>'
+        '<body><div class="wicketkeeper"></div></body></html>'
+    )
+    client = _Client(200, body=page)
+    result = await _fetch_text(
+        cast(Any, client), "https://example.test/article",
+        accept=["text/html"],
+    )
+
+    assert result is None
+    assert len(client.responses) == 1
+    assert "Verification page returned" in caplog.text
+
+
 async def test_timeout_is_visible_at_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

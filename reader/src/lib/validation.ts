@@ -35,6 +35,8 @@ export function isPost(value: unknown): value is Post {
       "created_at",
       "source",
     ].every((key) => typeof value[key] === "string") &&
+    (value.collection_incomplete === undefined ||
+      typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
     Array.isArray(value.media) &&
     value.media.every(

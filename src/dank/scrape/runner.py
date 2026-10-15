@@ -17,6 +17,7 @@ from dank.config import (
     SourceConfig,
     load_settings,
 )
+from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.logging_setup import configure_logging
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
@@ -34,13 +35,14 @@ from dank.scrape.rss import (
     FeedLink,
     FeedType,
     fetch_feed_links,
+    retry_feed_pages,
     scrape_feed_batches,
 )
 from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
 from dank.scrape.x import scrape_x_accounts
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
-from dank.storage.clickhouse import ClickHouseClient
+from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,7 @@ async def run_scrape(
     *,
     headless: bool = False,
     batch_size: int = 50,
+    retry_failed_pages: bool = False,
 ) -> None:
     if not settings.sources:
         logger.warning("No sources selected; check sources and --domains.")
@@ -120,6 +123,7 @@ async def run_scrape(
                 await _collect_with_history(
                     settings, clickhouse_client, http_client, session,
                     history, assets_dir, profile_dir,
+                    retry_failed_pages=retry_failed_pages,
                 )
         except BaseException as error:
             history.finish(error)
@@ -175,6 +179,8 @@ async def _collect_with_history(
     history: RunMetrics,
     assets_dir: pathlib.Path,
     profile_dir: pathlib.Path,
+    *,
+    retry_failed_pages: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     browser_lock = asyncio.Lock()
@@ -187,6 +193,7 @@ async def _collect_with_history(
             await _collect_source(
                 settings, source, index, client, http_client, session,
                 history, assets_dir, profile_dir, browser_lock,
+                retry_failed_pages=retry_failed_pages,
             )
 
     try:
@@ -211,6 +218,8 @@ async def _collect_source(
     assets_dir: pathlib.Path,
     profile_dir: pathlib.Path,
     browser_lock: asyncio.Lock,
+    *,
+    retry_failed_pages: bool = False,
 ) -> None:
     stats = SourceMetrics(index, source)
     history.sources[index] = stats
@@ -239,6 +248,7 @@ async def _collect_source(
                         days=settings.feed_staleness_days,
                     ),
                     batch_size=history.batch_size,
+                    retry_failed_pages=retry_failed_pages,
                 ):
                     stats.discovered(len(batch.posts), len(batch.assets))
                     await queue.put(batch._replace(source_index=index))
@@ -283,7 +293,23 @@ async def _discover_source_batches(
     *,
     feed_staleness: datetime.timedelta,
     batch_size: int,
+    retry_failed_pages: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
+    if retry_failed_pages:
+        if source.domain == "x.com":
+            return
+
+        posts = await _load_failed_rss_pages(clickhouse_client, source)
+        logger.info("%s: retrying %d saved article pages", source.domain,
+                    len(posts))
+
+        async for batch in retry_feed_pages(
+            http_client, posts, batch_size=batch_size,
+        ):
+            yield batch
+
+        return
+
     match source.domain:
         case "x.com":
             logger.info(
@@ -338,6 +364,39 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _load_failed_rss_pages(
+    client: ClickHouseClient, source: SourceConfig,
+) -> list[RawPost]:
+    # Filter after selecting the latest capture, so recovered pages stay out.
+    result = await client.fetch_json(
+        "SELECT * FROM ("
+        "SELECT domain, post_id, url, post_created_at, scraped_at, source, "
+        "request_url, payload FROM raw_posts "
+        "WHERE domain = %(domain)s AND source = 'rss' "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id"
+        ") WHERE (JSONExtractString(payload, 'page_fetch_status') = 'failed' "
+        "OR match(JSONExtractString(payload, 'page_html'), "
+        "%(challenge_pattern)s)) "
+        "AND JSONExtractString(payload, 'feed_xml') != '' "
+        "AND (empty(%(feed_urls)s) OR request_url IN %(feed_urls)s) "
+        "ORDER BY scraped_at, post_id",
+        {"domain": source.domain, "feed_urls": list(source.feed_urls),
+         "challenge_pattern": PAGE_CHALLENGE_PATTERN},
+    )
+
+    return [
+        RawPost(
+            domain=str(row["domain"]), post_id=str(row["post_id"]),
+            url=str(row["url"]),
+            post_created_at=parse_datetime(row["post_created_at"]),
+            scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+            source=str(row["source"]), request_url=str(row["request_url"]),
+            payload=str(row["payload"]),
+        )
+        for row in result.rows
+    ]
 
 
 async def _source_feed_urls(
@@ -616,6 +675,7 @@ def run_scrape_from_config(
     *,
     headless: bool = False,
     domain_regex: re.Pattern[str] | None = None,
+    retry_failed_pages: bool = False,
 ) -> None:
     settings = load_settings(path)
     configure_logging(settings.logging, component="scrape")
@@ -623,7 +683,9 @@ def run_scrape_from_config(
     if domain_regex:
         settings = filter_settings_sources(settings, domain_regex)
 
-    asyncio.run(run_scrape(settings, headless=headless))
+    asyncio.run(run_scrape(
+        settings, headless=headless, retry_failed_pages=retry_failed_pages,
+    ))
 
 
 def filter_settings_sources(

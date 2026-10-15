@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  CircleAlert,
   CircleDashed,
   ExternalLink,
   Minus,
@@ -13,6 +14,7 @@ import { hasArticleContent } from "../lib/article";
 import type { Filters, Post } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
+import { CollectionBadge } from "./CollectionBadge";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
 import { SourceLink } from "./SourceLink";
 
@@ -123,6 +125,9 @@ export function ArticleView({
             <SourceLink domain={post.domain} select={selectSource} />
             <span className="meta-dot">·</span>
             <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+            {hasContent && post.collection_incomplete && (
+              <CollectionBadge incomplete />
+            )}
           </div>
           <h1>{post.title || "Untitled post"}</h1>
           <div className="article-byline">
@@ -145,6 +150,26 @@ export function ArticleView({
                 Read original
                 <ExternalLink size={13} />
               </a>
+              {post.collection_incomplete && (
+                <aside
+                  className="collection-notice collection-notice-partial"
+                  aria-label="Collection status"
+                >
+                  <CircleAlert
+                    className="collection-notice-icon"
+                    size={20}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <h2>Incomplete scrape</h2>
+                    <p>
+                      The article page couldn’t be fetched. Available text is
+                      shown below, but some text, formatting or media may be
+                      missing. Read the original for the full article.
+                    </p>
+                  </div>
+                </aside>
+              )}
               <ArticleBody html={post.html} />
             </>
           ) : (
