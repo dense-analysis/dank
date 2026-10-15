@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { renderArticle } from "./article";
+import { hasArticleContent, renderArticle } from "./article";
 import { highlightCode } from "./highlightCode";
+
+describe("collected article content", () => {
+  it.each([
+    "",
+    "\n\n  ",
+    "<div><p>&nbsp;<br></p></div>",
+    '<script>articleData()</script><style>.loading {}</style><iframe src="https://example.com"></iframe>',
+    '<img src="javascript:attack()">',
+  ])("recognizes an empty or unreadable body: %s", (html) => {
+    expect(hasArticleContent(html)).toBe(false);
+  });
+
+  it.each([
+    "<p>A short article.</p>",
+    '<figure><img src="/assets/photo.png"></figure>',
+    '<video controls><source src="/assets/clip.mp4"></video>',
+    '<audio controls src="/assets/interview.mp3"></audio>',
+    "<pre>&lt;script&gt;Example code&lt;/script&gt;</pre>",
+  ])("recognizes readable text and media: %s", (html) => {
+    expect(hasArticleContent(html)).toBe(true);
+  });
+});
 
 describe("article code rendering", () => {
   it("retains figure captions and opens the local image at full size", () => {

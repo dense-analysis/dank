@@ -26,8 +26,8 @@ help:
 		'Docker is the default. Native mode uses uv on the host.' \
 		'' \
 		'  up, web         Start the viewer (Docker stack or native foreground)' \
-		'  scrape          Collect configured sources (Docker adds --headless)' \
-		'  process         Process collected posts and assets' \
+		'  scrape          Collect sources; save output under logs/scrape/' \
+		'  process         Process posts/assets; save output under logs/process/' \
 		'  query           Run clickhouse-query; pass -q and SQL through ARGS' \
 		'  embed           Run embed-text; pass quoted text through ARGS' \
 		'  download-model  Cache an embedding model' \
@@ -48,10 +48,10 @@ up web: config
 	$(WEB) $(value ARGS)
 
 scrape: config
-	$(SCRAPE) $(value ARGS)
+	@bash src/dank/run_logged.sh scrape $(MODE) $(SCRAPE) $(value ARGS)
 
 process: config
-	$(RUN) process $(value ARGS)
+	@bash src/dank/run_logged.sh process $(MODE) $(RUN) process $(value ARGS)
 
 query: config
 	$(RUN) clickhouse-query $(value ARGS)

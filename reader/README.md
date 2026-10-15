@@ -57,6 +57,8 @@ browser channel. No live collection is needed for the fixture tests.
 - Articles have a dedicated reading page with a shareable URL. Back to stories
   and browser Back restore filters, loaded pages, keyboard focus and scroll
   position; browser Forward returns to the article.
+- Stories without collected article content have a “Not collected” badge and
+  a separate notice linking to the original. Opening them does not mark them read.
 - Article titles support opening new tabs. Source names filter to that source;
   unlinked article images open at full size in a new tab.
 - Transparent article images offer a **Light background** toggle on hover or

@@ -142,6 +142,80 @@ async function expectNoHorizontalOverflow(page: Page) {
   ).toBe(true);
 }
 
+for (const width of [1280, 390, 320]) {
+  test(`distinguishes uncollected articles in the feed and reader at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await mockReader(page);
+    const missing = {
+      ...article,
+      id: "uncollected",
+      title: "Microsoft Defender for Linux",
+      url: "https://techcommunity.microsoft.com/original-article",
+      html: "\n\n\n\n\n\n",
+      excerpt: "",
+    };
+    state.posts = [missing, article];
+    await page.goto("/reader/");
+    const missingCard = page
+      .locator(".post-card")
+      .filter({ has: story(page, missing.title) });
+    const collectedCard = page
+      .locator(".post-card")
+      .filter({ has: story(page) });
+    const badge = missingCard.getByText("Not collected", { exact: true });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveAttribute("title", /Full text wasn’t collected/);
+    await expect(
+      missingCard.getByText(/min read|Open to read this story/),
+    ).toHaveCount(0);
+    await expect(collectedCard.getByText("Not collected")).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`collection-feed-${width}.png`),
+    });
+
+    await story(page, missing.title).click();
+    const notice = page.getByRole("complementary", {
+      name: "Collection status",
+    });
+    await expect(
+      notice.getByRole("heading", { name: "Full text not collected" }),
+    ).toBeVisible();
+    const original = notice.getByRole("link", {
+      name: "Read original article",
+    });
+    await expect(original).toHaveAttribute("href", missing.url);
+    await expect(original).toHaveAttribute("target", "_blank");
+    await original.focus();
+    await expect(original).toBeFocused();
+    await expect(page.locator(".article-body")).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("main", { name: "Article reader" })
+        .getByText(/min read|YOU’VE REACHED THE END/),
+    ).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(`collection-article-${width}.png`),
+    });
+
+    await page.getByRole("button", { name: "Back to your reading" }).click();
+    await expect(story(page, missing.title)).toBeFocused();
+    await expect(missingCard.getByText("Read", { exact: true })).toHaveCount(0);
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), readStorageKey),
+    ).toBeNull();
+    await story(page).click();
+    await expect(
+      page.getByRole("complementary", { name: "Collection status" }),
+    ).toHaveCount(0);
+    await expect(page.getByText("YOU’VE REACHED THE END")).toBeVisible();
+  });
+}
+
 test("opens a full article page and restores filters, loaded pages, focus and scroll through Back and Forward", async ({
   page,
 }) => {

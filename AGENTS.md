@@ -75,7 +75,11 @@ indirection.
 * You can process scraped data with `uv run process`.
     * You might want to pass `--age 10m` to process content scraped in the
       past 10 minutes, other other ages accepted by `parse_age_window`.
-* You can read recent scraper and processor logs from `dank.log`.
+* `make scrape` and `make process` archive timestamped output in
+  `logs/scrape/` and `logs/process/`. Use these for recent-run comparisons;
+  each log includes command, checkout revision, duration and exit status.
+  Search these Git-ignored archives with `rg --no-ignore`.
+  `dank.log` remains the combined application log.
 * Query with `uv run clickhouse-query -q "<QUERY>"`
     * You can run only `SELECT`, `SHOW`, or `EXPLAIN` queries.
     * Output is truncated by default. To see more information pass the `--full`

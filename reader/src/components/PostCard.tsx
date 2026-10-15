@@ -1,5 +1,6 @@
-import { Check, ExternalLink, ImageOff } from "lucide-react";
-import { useState } from "react";
+import { Check, CircleDashed, ExternalLink, ImageOff } from "lucide-react";
+import { useMemo, useState } from "react";
+import { hasArticleContent } from "../lib/article";
 import type { Filters, Post } from "../lib/types";
 import { AuthorLink } from "./AuthorLink";
 import { HighlightedText } from "./HighlightedText";
@@ -66,6 +67,7 @@ export function PostCard({
   selectAuthor: (author: string) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const hasContent = useMemo(() => hasArticleContent(post.html), [post.html]);
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
   return (
     <article className={`post-card ${read ? "is-read" : ""}`}>
@@ -74,8 +76,19 @@ export function PostCard({
         <SourceLink domain={post.domain} select={selectSource} />
         <span className="meta-dot">·</span>
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
-        <span className="source-kind">
-          {post.source === "x" ? "Post" : "Article"}
+        <span className="post-labels">
+          <span className="source-kind">
+            {post.source === "x" ? "Post" : "Article"}
+          </span>
+          {!hasContent && (
+            <span
+              className="collection-badge"
+              title="Full text wasn’t collected. Read it at the original source."
+            >
+              <CircleDashed size={12} aria-hidden="true" />
+              Not collected
+            </span>
+          )}
         </span>
       </div>
       <div className="post-main">
@@ -91,12 +104,14 @@ export function PostCard({
               query={query}
             />
           </h2>
-          <p>
-            <HighlightedText
-              text={post.excerpt || "Open to read this story."}
-              query={query}
-            />
-          </p>
+          {(post.excerpt || hasContent) && (
+            <p>
+              <HighlightedText
+                text={post.excerpt || "Open to read this story."}
+                query={query}
+              />
+            </p>
+          )}
         </ReaderLink>
         {thumbnail && (
           <ReaderLink
@@ -126,8 +141,12 @@ export function PostCard({
           filters={filters}
           select={selectAuthor}
         />
-        <span className="meta-dot">·</span>
-        <span>{readingTime(post)} min read</span>
+        {hasContent && (
+          <>
+            <span className="meta-dot">·</span>
+            <span>{readingTime(post)} min read</span>
+          </>
+        )}
         {read && (
           <span className="read-indicator">
             <Check size={12} /> Read

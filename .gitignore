@@ -7,4 +7,5 @@ config.toml
 data
 /examples
 *.log
+/logs/
 compose.local.yaml

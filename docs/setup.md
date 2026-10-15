@@ -22,7 +22,7 @@ configuration. Separate checkouts are simplest when using both modes.
 ## Native
 
 Install Python 3.13, uv and ClickHouse, and start your ClickHouse service.
-The Make shortcuts additionally require `make`.
+The Make shortcuts additionally require `make` and Bash.
 X collection needs an installed Chromium-based browser; media tools such as
 FFmpeg must also be installed on the host when needed.
 
@@ -51,6 +51,7 @@ configuration changes.
 
 ## Docker
 
+The Make shortcuts require `make` and Bash on the host.
 Start Docker and run `make up` from the checkout containing `compose.yaml`.
 It builds the image, starts ClickHouse, initialises tables and waits for the
 viewer. `make config` can create configuration without starting services.
