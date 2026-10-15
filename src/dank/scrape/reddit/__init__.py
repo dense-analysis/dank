@@ -26,6 +26,7 @@ from dank.scrape.zendriver import (
     NetworkResponse,
 )
 
+from .communities import discover_community
 from .html import extract_html_posts
 from .payloads import as_dict, extract_json_posts, text, timestamp
 
@@ -37,6 +38,15 @@ SNAPSHOT_SCRIPT = """JSON.stringify({
     url: location.href,
     title: document.title,
     text: (document.body?.innerText || '').slice(0, 4000),
+    community_html: Array.from(document.querySelectorAll(
+        'shreddit-subreddit-header-buttons, '
+        + '#subreddit-icon-img, #subreddit-icon-img-desktop'))
+        .filter(node => !node.closest(
+            'shreddit-post, shreddit-ad-post, [data-promoted="true"], '
+            + '[promoted]:not([promoted="false"]), '
+            + '[is-promoted]:not([is-promoted="false"]), '
+            + '[is-ad]:not([is-ad="false"])'))
+        .map(node => node.outerHTML).join('\\n'),
     html: Array.from(document.querySelectorAll('shreddit-post'))
         .filter(post => !post.closest(
             'shreddit-ad-post, [data-promoted="true"]'))
@@ -100,8 +110,15 @@ async def scrape_reddit_communities(
         browser = await session.get_browser()
         page = await browser.get("about:blank", new_tab=True)
 
+    visited: set[str] = set()
+
     try:
         for community in communities:
+            if community.casefold() in visited:
+                continue
+
+            visited.add(community.casefold())
+
             async for batch in _scrape_community(
                 page,
                 community,
@@ -139,6 +156,7 @@ async def _scrape_community(
     )
     seen_posts: set[str] = set()
     seen_assets: set[str] = set()
+    community_discovered = False
     idle_scrolls = 0
     stop_reason = "scroll limit"
     step = 0
@@ -181,6 +199,18 @@ async def _scrape_community(
                 request_url=text(snapshot.get("url")) or url,
             )
             _check_blocked(snapshot, community)
+
+            if not community_discovered and (
+                discovery := discover_community(
+                    responses,
+                    community,
+                    dom_html=text(snapshot.get("community_html")),
+                    request_url=text(snapshot.get("url")) or url,
+                )
+            ) is not None:
+                batch = batch._replace(communities=(discovery,))
+                community_discovered = True
+
             logger.info(
                 "Reddit r/%s scroll=%d new_posts=%d total_posts=%d",
                 community,
@@ -189,7 +219,7 @@ async def _scrape_community(
                 len(seen_posts),
             )
 
-            if batch.posts or batch.assets:
+            if batch.posts or batch.assets or batch.communities:
                 yield batch
 
             if batch.posts:
@@ -220,7 +250,7 @@ async def _scrape_community(
             limits.max_scrolls,
         )
 
-        if not seen_posts:
+        if not seen_posts and not community_discovered:
             raise RedditScrapeError(
                 f"No public posts found for r/{community}. Reddit may have "
                 "blocked access, the community may be empty, or its listing "
