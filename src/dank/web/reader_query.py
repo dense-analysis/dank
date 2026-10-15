@@ -6,6 +6,7 @@ import base64
 import datetime as dt
 import hashlib
 import json
+import re
 from typing import Any, NamedTuple, cast
 
 from multidict import MultiMapping
@@ -15,6 +16,7 @@ from dank.config import SourceConfig
 POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, source"
 )
+REDDIT_COMMUNITY_SQL = "lowerUTF8(extract(url, '/r/([^/]+)/comments/'))"
 
 
 class ReaderFilters(NamedTuple):
@@ -29,6 +31,8 @@ class ReaderFilters(NamedTuple):
     before: dt.datetime | None = None
     limit: int = 30
     cursor: str = ""
+    kind: str = ""
+    community: str = ""
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -44,7 +48,7 @@ class ReaderFilters(NamedTuple):
 def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
-        "limit", "cursor", "author_match",
+        "limit", "cursor", "author_match", "kind", "community",
     }
 
     if unknown:
@@ -66,6 +70,8 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         before=_date(query.get("before", "")),
         limit=_limit(query.get("limit", "30")),
         cursor=query.get("cursor", ""),
+        kind=query.get("kind", ""),
+        community=query.get("community", "").strip().lower(),
     )
     _validate(filters)
 
@@ -109,6 +115,8 @@ def _limit(value: str) -> int:
 
 
 def _validate(filters: ReaderFilters) -> None:
+    _validate_reddit_filters(filters)
+
     if filters.mode not in {"words", "meaning", "combined"}:
         raise ValueError("mode must be words, meaning or combined")
 
@@ -133,6 +141,16 @@ def _validate(filters: ReaderFilters) -> None:
     if filters.cursor:
         decode_cursor(filters)
 
+
+def _validate_reddit_filters(filters: ReaderFilters) -> None:
+    if filters.kind not in {"", "stories", "reddit"}:
+        raise ValueError("kind must be stories or reddit")
+
+    if filters.community and (
+        filters.kind != "reddit"
+        or not re.fullmatch(r"[a-z0-9_]{2,21}", filters.community)
+    ):
+        raise ValueError("community requires kind=reddit and a community name")
 
 def encode_cursor(
     filters: ReaderFilters, created_at: dt.datetime, domain: str, post_id: str,
@@ -280,6 +298,14 @@ def _conditions(
 ) -> tuple[list[str], dict[str, Any]]:
     conditions: list[str] = []
     params: dict[str, Any] = {}
+
+    if filters.kind:
+        operator = "=" if filters.kind == "reddit" else "!="
+        conditions.append(f"domain {operator} 'reddit.com'")
+
+    if filters.community:
+        conditions.append(f"{REDDIT_COMMUNITY_SQL} = %(community)s")
+        params["community"] = filters.community
 
     if filters.domains:
         conditions.append("domain IN %(domains)s")

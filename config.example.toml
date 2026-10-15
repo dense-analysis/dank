@@ -2,6 +2,7 @@
 # Edit config.toml; it is private and ignored by Git.
 # Example: sources = ["blog.codinghorror.com"]
 # X example: sources = [{ domain = "x.com", accounts = ["example"] }]
+# Reddit: sources = [{ domain = "reddit.com", feed_urls = ["r/LocalLLaMA"] }]
 # Domain strings and tables with feed_urls/tags can be mixed.
 # See docs/features/rss.md for examples.
 sources = []

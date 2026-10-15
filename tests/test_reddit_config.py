@@ -39,6 +39,7 @@ sources = [
     'accounts = ["LocalLLaMA"]',
     'feed_urls = ["r/python"], accounts = ["person"]',
     'feed_urls = ["https://evil.test/r/python/"]',
+    'feed_urls = ["https://[bad/r/python/"]',
     'feed_urls = ["https://reddit.com@evil.test/r/python/"]',
     'feed_urls = ["https://www.reddit.com/r/python/comments/abc/"]',
     'feed_urls = ["https://www.reddit.com/r/python/top/?t=day"]',

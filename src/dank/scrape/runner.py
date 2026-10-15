@@ -8,6 +8,7 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
 from typing import cast
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -30,6 +31,7 @@ from dank.scrape.metrics import (
     SourceMetrics,
     current_source,
 )
+from dank.scrape.reddit import scrape_reddit_communities
 from dank.scrape.rss import (
     FeedLink,
     FeedType,
@@ -229,9 +231,11 @@ async def _collect_source(
         token = current_source.set(stats)
 
         try:
-            # X collectors share one browser/profile and its login state.
+            # Browser collectors share one browser/profile and login state.
             async with (
-                browser_lock if source.domain == "x.com" else nullcontext()
+                browser_lock
+                if source.domain in {"x.com", "reddit.com"}
+                else nullcontext()
             ):
                 async for batch in _discover_source_batches(
                     settings, source, client, http_client, session,
@@ -285,6 +289,14 @@ async def _discover_source_batches(
     batch_size: int,
 ) -> AsyncIterator[ScrapeBatch]:
     match source.domain:
+        case "reddit.com":
+            communities = tuple(
+                urlsplit(url).path.split("/")[2] for url in source.feed_urls
+            )
+            batches_iter = scrape_reddit_communities(
+                settings.reddit, communities, session,
+                sort=source.reddit_sort, time_filter=source.reddit_time_filter,
+            )
         case "x.com":
             logger.info(
                 "Scraping X source accounts=%d",

@@ -115,7 +115,9 @@ class SourceMetrics:
         return {
             "run_id": run_id, "source_index": self.index,
             "domain": self.source.domain,
-            "source": "x" if self.source.domain == "x.com" else "rss",
+            "source": {
+                "x.com": "x", "reddit.com": "reddit",
+            }.get(self.source.domain, "rss"),
             "accounts": list(self.source.accounts),
             "tags": list(self.source.tags),
             "feed_urls": list(self.feed_urls),

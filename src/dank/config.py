@@ -194,7 +194,12 @@ def _reddit_feed_url(value: str) -> str:
     path = value
 
     if "://" in value:
-        parsed = urlsplit(value)
+        try:
+            parsed = urlsplit(value)
+        except ValueError:
+            raise ConfigError(
+                "sources.feed_urls must be Reddit community URLs",
+            ) from None
 
         if (
             parsed.scheme not in {"http", "https"}

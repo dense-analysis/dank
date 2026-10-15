@@ -14,6 +14,7 @@ from dank.html_utils import html_text
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
+from dank.process.reddit import convert_raw_reddit_post
 from dank.process.rss import (
     convert_raw_post as convert_raw_rss_post,
     recover_post_from_page,
@@ -370,10 +371,11 @@ async def run_process(
     )
     total_posts = 0
     total_assets = 0
-    sources = tuple(
-        source for source in settings.sources
+    # Collection can configure multiple listings per domain; process it once.
+    sources = tuple({
+        source.domain: source for source in settings.sources
         if domain_regex is None or domain_regex.search(source.domain)
-    )
+    }.values())
     embedder = get_embedding_model()
     logger.info(
         "Starting process run age=%s since=%s sources=%d reprocess=%s",
@@ -385,11 +387,10 @@ async def run_process(
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
         for source in sources:
-            converter = (
-                convert_raw_x_post
-                if source.domain == "x.com"
-                else convert_raw_rss_post
-            )
+            converter = {
+                "x.com": convert_raw_x_post,
+                "reddit.com": convert_raw_reddit_post,
+            }.get(source.domain, convert_raw_rss_post)
             logger.info("Processing source domain=%s", source.domain)
 
             total_posts += await process_source_posts(

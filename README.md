@@ -1,9 +1,9 @@
 # DANK - Dense Analysis Network Knowledge
 
 DANK is a locally hosted Dense Analysis tool for collecting and exploring
-public Internet content. It collects RSS/Atom articles and X posts, preserves
-raw source payloads, downloads media, and prepares posts for browsing and
-semantic search using local text embeddings.
+public Internet content. It collects RSS/Atom articles, X posts and Reddit
+community posts, preserves raw source payloads, downloads media, and prepares
+posts for browsing and semantic search using local text embeddings.
 
 The broader goal is to automate contextual understanding of trends, public
 perception and evolving narratives.
@@ -12,6 +12,7 @@ perception and evolving narratives.
 
 - [RSS and Atom feeds](docs/features/rss.md) — discover feeds and collect articles.
 - [X accounts](docs/features/x.md) — capture posts from configured accounts.
+- [Reddit communities](docs/features/reddit.md) — collect ranked community posts.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
 - [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
@@ -27,9 +28,9 @@ ClickHouse connection, configuration and data directory.
 
 ### Native
 
-Install Python 3.13, uv and ClickHouse; X collection also needs a Chromium-based
-browser. Follow [native setup](docs/setup.md#native) to create configuration
-and initialise a new database, then run:
+Install Python 3.13, uv and ClickHouse; X and Reddit collection also need a
+Chromium-based browser. Follow [native setup](docs/setup.md#native) to create
+configuration and initialise a new database, then run:
 
 ```sh
 uv sync --frozen
@@ -76,6 +77,8 @@ make process ARGS='--age 24h'
 Source arrays can mix domain strings with tables containing optional
 `feed_urls` and `tags`. `[rss].max_entries_per_feed` limits each feed per run;
 omitting it preserves unlimited fetching. See [RSS configuration](docs/features/rss.md#configure).
+Reddit sources use `feed_urls` for community URLs or `r/community` shorthand;
+see [Reddit configuration](docs/features/reddit.md#configure).
 `[media].download_types` selects which media to download; see
 [media controls](docs/features/media.md#choose-downloads).
 

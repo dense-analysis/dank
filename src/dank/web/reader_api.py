@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import json
 import logging
 import pathlib
 from collections.abc import Awaitable, Callable
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from aiohttp import web
@@ -28,7 +29,12 @@ from dank.web.app import (
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.web.reader_excerpt import search_excerpt
-from dank.web.reader_query import build_query, encode_cursor, parse_filters
+from dank.web.reader_query import (
+    REDDIT_COMMUNITY_SQL,
+    build_query,
+    encode_cursor,
+    parse_filters,
+)
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -81,12 +87,34 @@ async def handle_sources(request: web.Request) -> web.Response:
     for source in state.settings.sources:
         tags.setdefault(source.domain, set()).update(source.tags)
 
-    sources = [
+    sources: list[dict[str, Any]] = [
         {"domain": domain, "name": domain,
          "tags": sorted(tags.get(domain, [])),
          "count": counts.get(domain, 0)}
         for domain in sorted(counts.keys() | tags.keys())
     ]
+    names = (
+        urlsplit(url).path.split("/")[2]
+        for source in state.settings.sources if source.domain == "reddit.com"
+        for url in source.feed_urls
+    )
+    communities = {name.lower(): name for name in names}
+
+    if communities:
+        result = await client.fetch_json(
+            f"SELECT {REDDIT_COMMUNITY_SQL} AS community, count() AS count "
+            "FROM posts FINAL WHERE domain = 'reddit.com' GROUP BY community",
+        )
+        community_counts = {
+            str(row["community"]): int(row["count"]) for row in result.rows
+        }
+
+        for source in sources:
+            if source["domain"] == "reddit.com":
+                source.update(kind="reddit", communities=[
+                    {"name": name, "count": community_counts.get(key, 0)}
+                    for key, name in sorted(communities.items())
+                ])
 
     return web.json_response({
         "sources": sources,
@@ -167,13 +195,71 @@ async def _post_payloads(
         key = (str(row["domain"]), str(row["post_id"]))
         assets.setdefault(key, []).append(_parse_asset_row(row))
 
-    return [
+    payloads = [
         post_payload(
             post, assets.get((post.domain, post.post_id), []), assets_dir,
             query,
         )
         for post in posts
     ]
+    await _add_reddit_metadata(client, payloads)
+
+    return payloads
+
+
+async def _add_reddit_metadata(
+    client: ClickHouseClient, payloads: list[dict[str, Any]],
+) -> None:
+    reddit = [post for post in payloads if post["domain"] == "reddit.com"]
+
+    if not reddit:
+        return
+
+    # Fetch snapshots only for this page, from the original raw payloads.
+    result = await client.fetch_json(
+        "SELECT post_id, payload FROM raw_posts "
+        "WHERE domain = 'reddit.com' AND post_id IN %(reddit_ids)s "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id",
+        {"reddit_ids": [post["id"] for post in reddit]},
+    )
+    snapshots = {
+        str(row["post_id"]): _reddit_snapshot(row.get("payload"))
+        for row in result.rows
+    }
+
+    for post in reddit:
+        snapshot = snapshots.get(post["id"], {})
+        path = urlsplit(str(post["url"])).path.split("/")
+        community = path[2] if len(path) > 3 and path[1] == "r" else ""
+        flair = snapshot.get("link_flair_text")
+        post["reddit"] = {
+            "community": community,
+            "score": _reddit_count(snapshot.get("score")),
+            "comments": _reddit_count(snapshot.get("num_comments"), minimum=0),
+            "flair": flair if isinstance(flair, str) else None,
+        }
+
+
+def _reddit_snapshot(value: object) -> dict[str, Any]:
+    if not isinstance(value, str):
+        return {}
+
+    try:
+        payload = json.loads(value)
+    except (ValueError, TypeError):
+        return {}
+
+    return cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+
+
+def _reddit_count(
+    value: object, *, minimum: int = -(2 ** 53 - 1),
+) -> int | None:
+    return (
+        value if isinstance(value, int) and not isinstance(value, bool)
+        and minimum <= value < 2 ** 53
+        else None
+    )
 
 
 def post_payload(

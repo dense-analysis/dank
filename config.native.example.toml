@@ -3,6 +3,7 @@
 # Example: sources = ["blog.codinghorror.com"]
 # Domain strings and tables with feed_urls/tags can be mixed.
 # See docs/features/rss.md for examples.
+# Reddit: sources = [{ domain = "reddit.com", feed_urls = ["r/LocalLLaMA"] }]
 sources = []
 
 [clickhouse]

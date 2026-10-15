@@ -273,6 +273,113 @@ async def test_sources_include_empty_configured_and_collected_sources(
     assert data["sources"][2]["tags"] == ["politics"]
 
 
+async def test_reddit_sources_include_configured_empty_communities(
+    app: web.Application,
+) -> None:
+    state = app["state"]
+    app["state"] = state._replace(settings=state.settings._replace(sources=(
+        SourceConfig("reddit.com", (), feed_urls=(
+            "https://www.reddit.com/r/LocalLLaMA/",
+            "https://www.reddit.com/r/accelerate/",
+        )),
+    )))
+    fake = FakeClickHouse(
+        [{"domain": "reddit.com", "count": 7}],
+        [{"community": "localllama", "count": 7}],
+    )
+    app["clickhouse"] = fake
+    response = await request(app, "/api/reader/sources")
+    data = json.loads(response.text or "")
+    assert response.status == 200
+    assert data["sources"][0]["kind"] == "reddit"
+    assert data["sources"][0]["communities"] == [
+        {"name": "accelerate", "count": 0},
+        {"name": "LocalLLaMA", "count": 7},
+    ]
+
+
+def test_reddit_filters_are_separate_parameterized_and_case_insensitive():
+    filters = parse_filters(MultiDict({
+        "kind": "reddit", "community": "LocalLLaMA", "q": "model",
+    }))
+    query, params = build_query(filters, ())
+    assert "domain = 'reddit.com'" in query
+    assert "lowerUTF8(extract(url, '/r/([^/]+)/comments/'))" in query
+    assert params["community"] == "localllama"
+    assert "LocalLLaMA" not in query
+    stories, _ = build_query(ReaderFilters(kind="stories"), ())
+    assert "domain != 'reddit.com'" in stories
+
+
+@pytest.mark.parametrize("query", [
+    {"kind": "unknown"}, {"community": "python"},
+    {"kind": "stories", "community": "python"},
+    {"kind": "reddit", "community": "python' OR 1"},
+    {"kind": "reddit", "community": "r/python"},
+])
+def test_invalid_reddit_filters(query: dict[str, str]):
+    with pytest.raises(ValueError):
+        parse_filters(MultiDict(query))
+
+
+def test_reddit_cursor_cannot_leak_across_communities():
+    filters = ReaderFilters(kind="reddit", community="python")
+    token = encode_cursor(
+        filters, dt.datetime.now(dt.UTC), "reddit.com", "t3_a",
+    )
+
+    with pytest.raises(ValueError, match="Invalid cursor"):
+        decode_cursor(filters._replace(community="localllama", cursor=token))
+
+
+async def test_reddit_metadata_uses_latest_snapshot_and_retains_safe_html(
+    app: web.Application,
+) -> None:
+    post = row("reddit.com", "t3_abc")
+    post.update(
+        source="reddit",
+        url="https://www.reddit.com/r/LocalLLaMA/comments/abc/model/",
+        html='<p>Body</p><script>alert(1)</script>',
+    )
+    fake = FakeClickHouse([post], [], [{
+        "post_id": "t3_abc", "payload": json.dumps({
+            "subreddit": "other", "score": 123, "num_comments": 42,
+            "link_flair_text": "Discussion",
+        }),
+    }])
+    app["clickhouse"] = fake
+    response = await request(app, "/api/reader/posts?kind=reddit")
+    data = json.loads(response.text or "")
+    assert response.status == 200
+    assert data["posts"][0]["reddit"] == {
+        "community": "LocalLLaMA", "score": 123, "comments": 42,
+        "flair": "Discussion",
+    }
+    assert "<script>" not in data["posts"][0]["html"]
+    assert "ORDER BY scraped_at DESC LIMIT 1 BY post_id" in fake.calls[2][0]
+    assert fake.calls[2][1] == {"reddit_ids": ["t3_abc"]}
+
+
+@pytest.mark.parametrize("payload", [
+    "broken", "[]", '{"score":true}',
+    '{"score":9007199254740992,"num_comments":-1}',
+])
+async def test_reddit_posts_remain_readable_without_valid_metadata(
+    app: web.Application, payload: str,
+) -> None:
+    post = row("reddit.com", "t3_abc")
+    post["url"] = "https://www.reddit.com/r/python/comments/abc/title/"
+    app["clickhouse"] = FakeClickHouse([post], [], [{
+        "post_id": "t3_abc", "payload": payload,
+    }])
+    response = await request(app, "/api/reader/posts?kind=reddit")
+    assert response.status == 200
+    metadata = json.loads(response.text or "")["posts"][0]["reddit"]
+    assert metadata["score"] is None
+    assert metadata["comments"] is None
+    assert metadata["community"] == "python"
+
+
 async def test_posts_paginate_without_cross_domain_asset_collisions(
     app: web.Application, tmp_path: pathlib.Path,
 ) -> None:

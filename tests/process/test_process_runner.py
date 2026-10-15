@@ -238,6 +238,32 @@ async def test_all_age_processes_every_configured_source(
         )
 
 
+async def test_reddit_listings_are_processed_once_with_the_reddit_converter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = MagicMock()
+    settings.sources = (
+        SourceConfig("reddit.com", (), (
+            "https://www.reddit.com/r/python/",
+        )),
+        SourceConfig("reddit.com", (), (
+            "https://www.reddit.com/r/LocalLLaMA/",
+        ), reddit_sort="top"),
+    )
+    posts = AsyncMock(return_value=1)
+    assets = AsyncMock(return_value=0)
+    monkeypatch.setattr(runner, "process_source_posts", posts)
+    monkeypatch.setattr(runner, "process_source_assets", assets)
+    monkeypatch.setattr(runner, "ClickHouseClient", MagicMock())
+
+    assert await runner.run_process(settings, age="all", reprocess=True) == 1
+    posts.assert_awaited_once()
+    assert posts.call_args.args[1:3] == (
+        "reddit.com", runner.convert_raw_reddit_post,
+    )
+    assets.assert_awaited_once()
+
+
 async def test_saved_pages_use_newest_match_and_source_identity() -> None:
     now = datetime.datetime(2026, 10, 9, tzinfo=datetime.UTC)
     post = Post(
