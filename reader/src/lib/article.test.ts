@@ -71,18 +71,17 @@ describe("article code rendering", () => {
     ).not.toBeNull();
     expect(body.querySelector("a a, [href^='javascript:']")).toBeNull();
   });
-  it("sanitizes source markup before adding trusted code controls", () => {
+  it("sanitizes source markup before exposing hosts for React controls", () => {
     const body = document.createElement("div");
-    const blocks = renderArticle(
+    const { codeBlocks: blocks, images } = renderArticle(
       body,
-      `<pre onclick="attack()" style="position:fixed"><code class="language-sql">SELECT '&lt;script&gt;attack()&lt;/script&gt;' AS example;</code></pre><script>attack()</script><button onclick="attack()">Untrusted control</button>`,
+      `<pre onclick="attack()" style="position:fixed"><code class="language-sql">SELECT '&lt;script&gt;attack()&lt;/script&gt;' AS example;</code><img src="/inline.svg" onerror="attack()"></pre><script>attack()</script><button onclick="attack()">Untrusted control</button>`,
     );
     highlightCode(blocks);
     expect(body.querySelector("script, [onclick], [style]")).toBeNull();
-    expect(body.querySelectorAll("button")).toHaveLength(1);
-    expect(body.querySelector("button")?.getAttribute("aria-label")).toBe(
-      "Copy code",
-    );
+    expect(body.querySelector("button")).toBeNull();
+    expect(body.contains(blocks[0].controls)).toBe(true);
+    expect(images).toHaveLength(0);
     expect(blocks[0].code.textContent).toBe(
       "SELECT '<script>attack()</script>' AS example;",
     );
@@ -93,7 +92,7 @@ describe("article code rendering", () => {
 
   it("treats language metadata as data and ignores malformed labels", () => {
     const body = document.createElement("div");
-    const blocks = renderArticle(
+    const { codeBlocks: blocks } = renderArticle(
       body,
       `<pre data-lang="&lt;img src=x onerror=attack()&gt;">SELECT 1;</pre>`,
     );
@@ -106,19 +105,18 @@ describe("article code rendering", () => {
   it("retains oversized code unchanged as selectable plain text", () => {
     const source = "SELECT 1;\n".repeat(6000);
     const body = document.createElement("div");
-    const blocks = renderArticle(
+    const { codeBlocks: blocks } = renderArticle(
       body,
       `<pre><code class="language-sql">${source}</code></pre>`,
     );
     highlightCode(blocks);
     expect(blocks[0].code.textContent).toBe(source);
     expect(blocks[0].code.children).toHaveLength(0);
-    expect(blocks[0].copy.disabled).toBe(false);
   });
 
   it("keeps whitespace and language aliases when source spans are removed", () => {
     const body = document.createElement("div");
-    const blocks = renderArticle(
+    const { codeBlocks: blocks } = renderArticle(
       body,
       '<pre class="language-js"><code><span>const</span> example = "a &amp; b";\n\tconsole.log(example);\n</code></pre>',
     );

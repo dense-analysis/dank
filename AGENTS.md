@@ -55,8 +55,13 @@ indirection.
 * Store original payloads of data scraped from sites as JSON in the database.
 * Never use `os.environ` for configuration in code, because all configuration
   should belong in the TOML configuration.
-* Add simple single-line comments to involving parts of code to explain what
-  the code is supposed to be doing.
+* Use brief comments for non-obvious reasoning, constraints, and tradeoffs.
+  Link to an authoritative source beside a borrowed formula or algorithm.
+  Name tunable thresholds and distinguish project heuristics from constants
+  defined by a standard; explain what those choices are intended to achieve.
+* Separate calculations, I/O, and presentation where their responsibilities
+  differ. Extract functions, components, or modules to make ownership clearer;
+  keep abstractions proportional to the problem being solved.
 * Implement tests, especially unit tests for data processing.
 * Never use `importlib` in test code for importing private functions, and
   instead import with `# pyright: ignore[reportPrivateUsage]`
@@ -77,6 +82,8 @@ indirection.
       argument.
 
 ## Code Style
+
+These readability conventions apply to both Python and TypeScript.
 
 Keep blank lines before new blocks of code, and keep blank lines after new
 blocks of code, except when they are at the start or end of a level of

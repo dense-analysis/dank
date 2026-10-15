@@ -23,11 +23,13 @@ export type ReadingFont = keyof typeof readingFonts;
 export interface ReaderPreferences {
   font: ReadingFont;
   fontSize: number;
+  autoImageBackground: boolean;
 }
 
 export const defaultPreferences: ReaderPreferences = {
   font: "dm-sans",
   fontSize: 19,
+  autoImageBackground: false,
 };
 const preferencesKey = "dank-reader:preferences:v1";
 
@@ -51,6 +53,7 @@ export function loadPreferences(): ReaderPreferences {
         value.fontSize <= 26
           ? value.fontSize
           : defaultPreferences.fontSize,
+      autoImageBackground: value.autoImageBackground === true,
     };
   } catch {
     return { ...defaultPreferences };

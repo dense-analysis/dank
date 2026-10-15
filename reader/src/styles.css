@@ -917,6 +917,61 @@ input[type="checkbox"] {
   outline: 2px solid var(--green);
   outline-offset: 4px;
 }
+.article-image-host {
+  display: contents;
+}
+.article-body .article-image-frame {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 20px auto;
+}
+.article-image-frame img {
+  margin: 0;
+}
+.article-image-light {
+  background: #fff;
+}
+.image-background-toggle {
+  display: block;
+  margin: 6px 0 0 auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #49545f;
+  border-radius: 8px;
+  background: #1b2026;
+  color: #e7ebef;
+  box-shadow: 0 2px 8px #0003;
+  font-family: "DM Sans Variable", sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.image-background-toggle[aria-pressed="true"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+.image-background-toggle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .image-background-toggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    margin: 0;
+    min-height: 32px;
+    padding: 6px 10px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .article-image-frame:hover > .image-background-toggle,
+  .article-image-frame:has(:focus-visible) > .image-background-toggle {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .article-body pre {
   white-space: pre;
   overflow-wrap: normal;
@@ -1517,6 +1572,28 @@ input[type="checkbox"] {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
+}
+.image-background-setting {
+  margin: 32px 0;
+}
+.image-background-setting label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.image-background-setting input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+.image-background-setting .settings-help {
+  margin-left: 30px;
 }
 .reading-preview h2 {
   margin: 22px 0 16px;

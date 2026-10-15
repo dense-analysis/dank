@@ -59,6 +59,13 @@ browser channel. No live collection is needed for the fixture tests.
   position; browser Forward returns to the article.
 - Article titles support opening new tabs. Source names filter to that source;
   unlinked article images open at full size in a new tab.
+- Transparent article images offer a **Light background** toggle on hover or
+  keyboard focus, always visible on touch screens. Toggle it again to restore
+  the reader background. Images whose pixels cannot be inspected are left alone.
+- **Automatically improve image backgrounds** is off by default in Settings.
+  Enable it to give sparse transparent figures a light background when contrast
+  clearly improves. Mixed or uncertain images keep their original background;
+  the per-image toggle overrides the automatic choice while the article is open.
 - Reopening an article resumes where you left off.
 - Code blocks use their declared language for syntax highlighting, with copy
   controls and horizontal scrolling. Unsupported or unlabelled code stays plain.
@@ -78,6 +85,10 @@ for production.
 `src/components` owns presentation; `src/lib` owns API contracts, validation,
 URL filters and persistence; `src/hooks` bridges browser state. The additive
 Python API is in `src/dank/web/reader_api.py` and `reader_query.py` in DANK.
+
+The article adapter sanitizes imported HTML and creates hosts for React portals.
+Image toggles and code-copy controls own their state in React; image analysis is
+isolated in `src/lib/imageAnalysis.ts` with sources for its contrast formulas.
 
 Keep source identity as `(domain, post id)`. Treat all collected HTML and URLs
 as untrusted. Keep source selection distinct from collector configuration.
