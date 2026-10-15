@@ -211,7 +211,7 @@ requires-dist = [
     { name = "torch", marker = "sys_platform != 'darwin'", specifier = "==2.10.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "sys_platform == 'darwin'", specifier = "==2.10.0" },
     { name = "yt-dlp", specifier = "==2026.8.19" },
-    { name = "zendriver", specifier = "==0.13.0" },
+    { name = "zendriver", specifier = "==0.17.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -1429,7 +1429,7 @@ wheels = [
 
 [[package]]
 name = "zendriver"
-version = "0.13.0"
+version = "0.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "asyncio-atexit" },
@@ -1439,9 +1439,9 @@ dependencies = [
     { name = "mss" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/f8/ce3833616b016f5fe01df0fb4aa142c280e0f90aa2f7bfa5442180f6790b/zendriver-0.13.0.tar.gz", hash = "sha256:23789e54b4d69559b46b41d756316b3a67247b1aa1fd11498ef3575e621ad4f4", size = 419969, upload-time = "2025-07-25T02:05:18.563Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/d5/257ecf353843fde1839cc72aa927a6c98e924cb89368f3026cf22be66235/zendriver-0.17.1.tar.gz", hash = "sha256:b9d5f79eea2dd116ec91badd5efb8193606e8c6a80635b963a2d5ac085ef186b", size = 476718, upload-time = "2026-10-02T02:07:16.599Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/f1/bb9165526d36c14906b7bf11614b5288a59fec8dee1cc3b322f164c9d730/zendriver-0.13.0-py3-none-any.whl", hash = "sha256:dff3bb9315bbbfca10894778e296e12f868da4c06753635803067015fb0c23fa", size = 350946, upload-time = "2025-07-25T02:05:16.896Z" },
+    { url = "https://files.pythonhosted.org/packages/be/df/c037faf5ebad4410dcb343cce96af99695a54ca03ed9d1d8b64d4de90c75/zendriver-0.17.1-py3-none-any.whl", hash = "sha256:d857a36aee9df719f9f381d42e5589a5101e19569a2e77a9f2813fc08a10db3a", size = 381387, upload-time = "2026-10-02T02:07:15.196Z" },
 ]
 
 [[package]]

@@ -67,7 +67,11 @@ async def scrape_x_accounts(
     try:
         page = browser.main_tab
     except Exception:
+        page = None
+
+    if page is None:
         page = await browser.get("about:blank")
+
     for account in accounts:
         try:
             async for batch in _scrape_account(
