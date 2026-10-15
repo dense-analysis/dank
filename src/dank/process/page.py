@@ -112,10 +112,14 @@ class _PageMetaParser(HTMLParser):
             self.title += data
 
 
-class _JsonLdParser(HTMLParser):
-    def __init__(self) -> None:
+class _JsonScriptParser(HTMLParser):
+    def __init__(
+        self, script_type: str, *, script_id: str | None = None,
+    ) -> None:
         super().__init__()
 
+        self.script_type = script_type
+        self.script_id = script_id
         self.blocks: list[str] = []
         self._in_block = False
         self._buffer: list[str] = []
@@ -129,9 +133,11 @@ class _JsonLdParser(HTMLParser):
             return
 
         attr_map = _attrs_to_map(attrs)
-        script_type = attr_map.get("type", "").lower()
+        script_type = attr_map.get("type", "").strip().lower()
 
-        if script_type == "application/ld+json":
+        if (script_type == self.script_type
+                and (self.script_id is None
+                     or attr_map.get("id") == self.script_id)):
             self._in_block = True
             self._buffer = []
 
@@ -270,7 +276,45 @@ def extract_article_html(page_html: str) -> str:
     extractor.feed(page_html)
     candidate = _select_best_candidate(extractor.candidates)
 
-    return candidate
+    return candidate or _extract_next_article_html(page_html)
+
+
+def _extract_next_article_html(page_html: str) -> str:
+    parser = _JsonScriptParser("application/json", script_id="__NEXT_DATA__")
+    parser.feed(page_html)
+
+    for block in parser.blocks:
+        try:
+            data = json.loads(block)
+        except (ValueError, RecursionError):
+            continue
+
+        # Khoros stores other stories and widgets in the same Apollo cache.
+        match data:
+            case {
+                "page": "/blogs/BlogMessagePage/BlogMessagePage",
+                "query": {"messageId": str() as message_id},
+                "props": {"pageProps": {"apolloState": cache}},
+            } if (isinstance(cache, dict) and message_id.isascii()
+                  and message_id.isdecimal()):
+                article = cast(dict[str, Any], cache).get(
+                    f"BlogTopicMessage:message:{message_id}",
+                )
+            case _:
+                continue
+
+        match article:
+            case {
+                "__typename": "BlogTopicMessage",
+                "id": str() as article_id,
+                "entityType": "BLOG_ARTICLE",
+                "body": str() as body,
+            } if article_id == f"message:{message_id}" and html_text(body):
+                return body
+            case _:
+                continue
+
+    return ""
 
 
 def extract_youtube_iframes(page_html: str) -> str:
@@ -310,7 +354,7 @@ def _select_author(meta: dict[str, str], jsonld_author: str) -> str:
 
 
 def _extract_jsonld_author(page_html: str) -> str:
-    parser = _JsonLdParser()
+    parser = _JsonScriptParser("application/ld+json")
     parser.feed(page_html)
 
     for block in parser.blocks:

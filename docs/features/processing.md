@@ -118,6 +118,12 @@ page when possible. Page headers, scripts and styles are removed from
 processed content and previews. Embeddings use readable text rather than
 HTML markup. Original feed XML and page HTML remain in raw storage.
 
+When no article container is available, processing can recover Khoros blog
+articles (including Microsoft Community Hub) from saved Next.js JSON data.
+It selects the article matching the page's message ID and preserves its
+formatting, links and images. Page scripts are never executed. Existing saved
+captures can use this fallback with `--reprocess`; another scrape is unnecessary.
+
 When a full feed body is plain text, processing can recover paragraphs,
 headings, lists and quotations from the saved article page. Only complete
 blocks matching the entire feed text in order (ignoring whitespace) are
