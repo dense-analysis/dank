@@ -1,5 +1,22 @@
 import DOMPurify from "dompurify";
 
+function sanitizeArticle(html: string) {
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["form", "input", "button", "iframe", "style"],
+    FORBID_ATTR: ["style", "id", "name"],
+    RETURN_DOM_FRAGMENT: true,
+  });
+}
+
+export function hasArticleContent(html: string): boolean {
+  const content = sanitizeArticle(html);
+  return Boolean(
+    content.textContent?.trim() ||
+      content.querySelector("img[src], video[src], audio[src], source[src]"),
+  );
+}
+
 export interface ArticleCodeBlock {
   code: HTMLElement;
   text: string;
@@ -37,14 +54,7 @@ export function renderArticle(
   html: string,
 ): ArticleCodeBlock[] {
   // Source markup is sanitized before adding any reader-owned elements.
-  element.replaceChildren(
-    DOMPurify.sanitize(html, {
-      USE_PROFILES: { html: true },
-      FORBID_TAGS: ["form", "input", "button", "iframe", "style"],
-      FORBID_ATTR: ["style", "id", "name"],
-      RETURN_DOM_FRAGMENT: true,
-    }),
-  );
+  element.replaceChildren(sanitizeArticle(html));
   for (const link of element.querySelectorAll("a")) {
     link.target = "_blank";
     link.rel = "noopener noreferrer";
