@@ -75,6 +75,43 @@ waiting retries, queued batches, pending records and saved posts. Source
 summaries appear after their pending records are saved. Warnings/errors still
 use stderr; both streams also go to the configured log file.
 
+## Run logs
+
+`make scrape` and `make process` save a separate plain-text log for each run,
+while continuing to display progress and errors in the terminal. This works
+in Docker and native mode. Files live on the host in the checkout where you
+ran Make, so they survive removal of Docker's temporary command containers:
+
+```text
+logs/scrape/2026-10-15T14-30-00Z-12345.log
+logs/process/2026-10-15T14-40-00Z-12378.log
+```
+
+Names contain the UTC start time and a process ID to separate simultaneous
+runs. Each file records the command and arguments, mode, working directory,
+checkout revision (including whether it has changes), both output streams,
+finish time, duration in seconds and exit status. Nonzero command exits still
+fail Make. Ctrl+C records exit 130; an uncatchable kill or power loss can
+leave a partial log without a final status. Output streams remain separate
+in the terminal and are combined in the archive.
+
+Logs are ignored by Git and kept until you delete them. The application still
+writes its configured `dank.log`; direct `uv run` or `docker compose run`
+commands do not create these per-run archives. The recorded checkout revision
+identifies host source; Docker uses the application image last built.
+
+Find recent runs and review warnings, errors and outcomes:
+
+```sh
+ls -t logs/scrape/*.log
+ls -t logs/process/*.log
+rg -n 'WARNING|ERROR|Traceback|Exit status:' logs/scrape logs/process
+```
+
+For a comparison, ask an agent to inspect these folders and compare matching
+commands and source selections, checking errors, counts and elapsed times.
+An exit status of zero does not rule out source warnings or partial results.
+
 ## Concurrency
 
 These optional settings have the same defaults in native and Docker runs:

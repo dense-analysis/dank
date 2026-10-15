@@ -38,7 +38,7 @@ make web MODE=native
 
 ### Docker
 
-Install Docker with Compose and `make`, and start your Docker engine:
+Install Docker with Compose, `make` and Bash, then start your Docker engine:
 
 ```sh
 make up
@@ -89,6 +89,11 @@ log file. Pending stages report elapsed time every five seconds. See
 [RSS progress](docs/features/rss.md#progress-and-errors) for the counts.
 Sources run concurrently with shared per-host request limits and bounded queues.
 See [concurrency settings](docs/features/history.md#concurrency) for defaults and tuning.
+
+Every `make scrape` and `make process` also saves a timestamped terminal log
+under `logs/scrape/` or `logs/process/` in your checkout, in both modes.
+Logs include the command, checkout revision, duration and exit status, and
+are kept for later comparisons. See [run logs](docs/features/history.md#run-logs).
 
 ## Make commands
 
