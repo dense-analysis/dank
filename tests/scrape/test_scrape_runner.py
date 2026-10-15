@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from dank.config import (
+    BrowserScrapeSettings,
     BrowserSettings,
     ClickHouseSettings,
     LoggingSettings,
@@ -47,9 +48,7 @@ def _make_settings() -> Settings:
             email='x@example.com',
             username='x-user',
             password='secret',
-            max_posts=200,
-            max_scrolls=20,
-            scroll_pause_seconds=1.5,
+            scrape=BrowserScrapeSettings(max_posts=200),
         ),
         data_dir=pathlib.Path('data'),
         max_asset_bytes=None,
@@ -252,10 +251,13 @@ async def test_failed_page_mode_uses_saved_entries_without_feed_discovery(
     assert fetch.call_args.args[1] == "https://example.com/story"
 
 
-async def test_failed_page_mode_does_not_collect_x() -> None:
+@pytest.mark.parametrize("domain", ["x.com", "reddit.com"])
+async def test_failed_page_mode_does_not_collect_browser_sources(
+    domain: str,
+) -> None:
     assert [
         batch async for batch in _discover_source_batches(
-            _make_settings(), SourceConfig("x.com", ("writer",)),
+            _make_settings(), SourceConfig(domain, ()),
             cast(Any, None), cast(Any, None), cast(Any, None),
             feed_staleness=datetime.timedelta(days=14), batch_size=50,
             retry_failed_pages=True,

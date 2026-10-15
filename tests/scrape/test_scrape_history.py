@@ -10,7 +10,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from dank.config import ScrapeSettings, Settings, SourceConfig, load_settings
+from dank.config import (
+    BrowserScrapeSettings,
+    ScrapeSettings,
+    Settings,
+    SourceConfig,
+    load_settings,
+)
 from dank.model import AssetDiscovery, RawAsset, RawPost
 from dank.runtime import RuntimeInfo
 from dank.scrape.assets import download_assets
@@ -370,6 +376,7 @@ async def test_history_snapshots_source_options_and_limit_between_runs(
     await run_scrape(harness.settings._replace(
         sources=(source,), max_entries_per_feed=20,
         media_download_types=("image",),
+        x=harness.settings.x._replace(scrape=BrowserScrapeSettings(23, 7, 0)),
     ))
     await run_scrape(harness.settings._replace(
         sources=(source._replace(tags=("architecture",)),),
@@ -389,6 +396,9 @@ async def test_history_snapshots_source_options_and_limit_between_runs(
     )
     assert [row["max_entries_per_feed"] for row in runs] == [20, 5]
     assert [row["media_download_types"] for row in runs] == [["image"], []]
+    assert [row["x_max_posts"] for row in runs] == [23, 200]
+    assert [row["x_max_scrolls"] for row in runs] == [7, 20]
+    assert [row["x_scroll_pause_seconds"] for row in runs] == [0, 1.5]
 
 
 async def test_fast_source_is_saved_while_another_source_waits(

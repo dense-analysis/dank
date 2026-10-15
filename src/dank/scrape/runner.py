@@ -14,6 +14,7 @@ import aiohttp
 
 from dank.config import (
     MEDIA_DOWNLOAD_TYPES,
+    RedditSourceConfig,
     Settings,
     SourceConfig,
     load_settings,
@@ -67,8 +68,9 @@ async def run_scrape(
         limits=settings.scrape,
         options=ScrapeOptions(
             int(settings.keep_feed_on_fetch_failure), settings.max_asset_bytes,
-            settings.feed_staleness_days, settings.x.max_posts,
-            settings.x.max_scrolls, settings.x.scroll_pause_seconds,
+            settings.feed_staleness_days, settings.x.scrape.max_posts,
+            settings.x.scrape.max_scrolls,
+            settings.x.scrape.scroll_pause_seconds,
             settings.max_entries_per_feed, settings.media_download_types,
         ),
     )
@@ -300,7 +302,7 @@ async def _discover_source_batches(
     retry_failed_pages: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
     if retry_failed_pages:
-        if source.domain == "x.com":
+        if source.domain in {"x.com", "reddit.com"}:
             return
 
         posts = await _load_failed_rss_pages(clickhouse_client, source)
@@ -316,12 +318,13 @@ async def _discover_source_batches(
 
     match source.domain:
         case "reddit.com":
+            options = source.reddit or RedditSourceConfig()
             communities = tuple(
                 urlsplit(url).path.split("/")[2] for url in source.feed_urls
             )
             batches_iter = scrape_reddit_communities(
                 settings.reddit, communities, session,
-                sort=source.reddit_sort, time_filter=source.reddit_time_filter,
+                sort=options.sort, time_filter=options.time_filter,
             )
         case "x.com":
             logger.info(

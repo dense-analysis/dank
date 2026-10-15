@@ -4,6 +4,7 @@ import math
 import pathlib
 import re
 import tomllib
+from enum import StrEnum
 from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
 
@@ -14,20 +15,50 @@ class ConfigError(RuntimeError):
     pass
 
 
-class XSettings(NamedTuple):
-    email: str
-    username: str
-    password: str
-    max_posts: int
-    max_scrolls: int
-    scroll_pause_seconds: float
+class BrowserScrapeSettings(NamedTuple):
+    """Collection limits and pacing for one browser-backed listing."""
 
-
-class RedditSettings(NamedTuple):
     max_posts: int = 100
     max_scrolls: int = 20
     scroll_pause_seconds: float = 1.5
+
+
+class XSettings(NamedTuple):
+    email: str = ""
+    username: str = ""
+    password: str = ""
+    scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
+
+
+class RedditSettings(NamedTuple):
+    """Scrape limits and stall detection applied to each Reddit community."""
+
+    scrape: BrowserScrapeSettings = BrowserScrapeSettings()
     stall_scrolls: int = 3
+
+
+class RedditSort(StrEnum):
+    BEST = "best"
+    HOT = "hot"
+    NEW = "new"
+    TOP = "top"
+    RISING = "rising"
+
+
+class RedditTimeFilter(StrEnum):
+    HOUR = "hour"
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"
+    ALL = "all"
+
+
+class RedditSourceConfig(NamedTuple):
+    """The ranking and time window used to select community posts."""
+
+    sort: RedditSort = RedditSort.TOP
+    time_filter: RedditTimeFilter = RedditTimeFilter.DAY
 
 
 class ClickHouseSettings(NamedTuple):
@@ -45,8 +76,7 @@ class SourceConfig(NamedTuple):
     accounts: tuple[str, ...]
     feed_urls: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
-    reddit_sort: str = "best"
-    reddit_time_filter: str = "day"
+    reddit: RedditSourceConfig | None = None
 
 
 class BrowserSettings(NamedTuple):
@@ -169,13 +199,9 @@ def _parse_source(
             )
 
         return SourceConfig(
-            "reddit.com", (), tuple(communities.values()), tags,
-            _reddit_choice(options, "reddit_sort", "best", (
-                "best", "hot", "new", "top", "rising",
-            )),
-            _reddit_choice(options, "reddit_time_filter", "day", (
-                "hour", "day", "week", "month", "year", "all",
-            )),
+            domain="reddit.com", accounts=(),
+            feed_urls=tuple(communities.values()), tags=tags,
+            reddit=_parse_reddit_source(options),
         )
 
     if {"reddit_sort", "reddit_time_filter"}.intersection(options):
@@ -225,15 +251,34 @@ def _reddit_feed_url(value: str) -> str:
     return f"https://www.reddit.com/r/{match[1]}/"
 
 
-def _reddit_choice(
-    options: dict[str, Any], key: str, default: str, choices: tuple[str, ...],
-) -> str:
-    value = options.get(key, default)
+def _parse_reddit_source(options: dict[str, Any]) -> RedditSourceConfig:
+    defaults = RedditSourceConfig()
 
-    if not isinstance(value, str) or value.strip().lower() not in choices:
-        raise ConfigError(f"sources.{key} must be one of {', '.join(choices)}")
+    return RedditSourceConfig(
+        sort=_parse_enum(
+            RedditSort, options.get("reddit_sort", defaults.sort),
+            "sources.reddit_sort",
+        ),
+        time_filter=_parse_enum(
+            RedditTimeFilter,
+            options.get("reddit_time_filter", defaults.time_filter),
+            "sources.reddit_time_filter",
+        ),
+    )
 
-    return value.strip().lower()
+
+def _parse_enum[T: StrEnum](
+    enum: type[T], value: object, field: str,
+) -> T:
+    try:
+        if not isinstance(value, str):
+            raise ValueError
+
+        return enum(value.strip().lower())
+    except ValueError:
+        raise ConfigError(
+            f"{field} must be one of {', '.join(enum)}",
+        ) from None
 
 
 def _parse_reddit_settings(value: object) -> RedditSettings:
@@ -243,10 +288,13 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
         raise ConfigError("reddit must be a table")
 
     defaults = RedditSettings()
+    default_limits = {
+        **defaults.scrape._asdict(), "stall_scrolls": defaults.stall_scrolls,
+    }
     limits: dict[str, int] = {}
 
     for key in ("max_posts", "max_scrolls", "stall_scrolls"):
-        setting = data.get(key, getattr(defaults, key))
+        setting = data.get(key, default_limits[key])
         minimum = 0 if key == "max_scrolls" else 1
 
         if (
@@ -257,7 +305,9 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
 
         limits[key] = setting
 
-    pause = data.get("scroll_pause_seconds", defaults.scroll_pause_seconds)
+    pause = data.get(
+        "scroll_pause_seconds", defaults.scrape.scroll_pause_seconds,
+    )
 
     if (
         not isinstance(pause, int | float) or isinstance(pause, bool)
@@ -265,7 +315,13 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
     ):
         raise ConfigError("reddit.scroll_pause_seconds must be 0.25 to 60")
 
-    return RedditSettings(**limits, scroll_pause_seconds=float(pause))
+    return RedditSettings(
+        scrape=BrowserScrapeSettings(
+            max_posts=limits["max_posts"], max_scrolls=limits["max_scrolls"],
+            scroll_pause_seconds=float(pause),
+        ),
+        stall_scrolls=limits["stall_scrolls"],
+    )
 
 
 def _source_strings(value: object, field: str) -> tuple[str, ...]:
@@ -396,14 +452,19 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     x_data: dict[str, Any] = _as_dict(data.get("x")) or {}
 
     sources = _parse_sources(data.get("sources"))
+    x_defaults = XSettings().scrape
 
     x_settings = XSettings(
         email=str(x_data.get("email", "")),
         username=str(x_data.get("username", "")),
         password=str(x_data.get("password", "")),
-        max_posts=int(x_data.get("max_posts", 200)),
-        max_scrolls=int(x_data.get("max_scrolls", 20)),
-        scroll_pause_seconds=float(x_data.get("scroll_pause_seconds", 1.5)),
+        scrape=BrowserScrapeSettings(
+            max_posts=int(x_data.get("max_posts", x_defaults.max_posts)),
+            max_scrolls=int(x_data.get("max_scrolls", x_defaults.max_scrolls)),
+            scroll_pause_seconds=float(x_data.get(
+                "scroll_pause_seconds", x_defaults.scroll_pause_seconds,
+            )),
+        ),
     )
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}

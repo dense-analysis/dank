@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from dank.config import RedditSettings
+from dank.config import (
+    BrowserScrapeSettings,
+    RedditSettings,
+    RedditSort,
+    RedditTimeFilter,
+)
 from dank.scrape.reddit import (
     RedditScrapeError,
     community_url,
@@ -210,10 +215,12 @@ def test_html_network_response_and_dom_fallback() -> None:
     assert "html" in json.loads(batch.posts[0].payload)["raw"]
 
 
-def test_top_day_url_and_best_default() -> None:
-    assert community_url("LocalLLaMA").endswith("/LocalLLaMA/best/")
-    assert community_url("LocalLLaMA", sort="top").endswith("/top/?t=day")
-    assert community_url("Python", sort="top", time_filter="week").endswith(
+def test_top_day_default_and_explicit_listing_options() -> None:
+    assert community_url("LocalLLaMA").endswith("/LocalLLaMA/top/?t=day")
+    assert community_url("LocalLLaMA", sort=RedditSort.BEST).endswith("/best/")
+    assert community_url(
+        "Python", sort=RedditSort.TOP, time_filter=RedditTimeFilter.WEEK,
+    ).endswith(
         "?t=week",
     )
 
@@ -232,7 +239,10 @@ def test_invalid_listing_options(
     time_filter: str,
 ) -> None:
     with pytest.raises(ValueError):
-        community_url(community, sort=sort, time_filter=time_filter)
+        community_url(
+            community, sort=cast(RedditSort, sort),
+            time_filter=cast(RedditTimeFilter, time_filter),
+        )
 
 
 class _Page:
@@ -346,7 +356,9 @@ async def test_collection_scrolls_for_new_posts_and_stops_at_exact_limit() -> (
     None
 ):
     page = _Page([_card("aaa"), _card("aaa") + _card("bbb") + _card("ccc")])
-    posts, _ = await _collect(page, RedditSettings(max_posts=2))
+    posts, _ = await _collect(
+        page, RedditSettings(scrape=BrowserScrapeSettings(max_posts=2)),
+    )
 
     assert posts == ["t3_aaa", "t3_bbb"]
     assert page.scrolls == 1
@@ -362,7 +374,9 @@ async def test_collection_stops_on_stall() -> None:
 
 async def test_collection_stops_at_scroll_limit() -> None:
     page = _Page([_card("aaa"), _card("bbb"), _card("ccc"), _card("ddd")])
-    posts, _ = await _collect(page, RedditSettings(max_scrolls=2))
+    posts, _ = await _collect(
+        page, RedditSettings(scrape=BrowserScrapeSettings(max_scrolls=2)),
+    )
 
     assert posts == ["t3_aaa", "t3_bbb", "t3_ccc"]
     assert page.scrolls == 2
@@ -370,7 +384,9 @@ async def test_collection_stops_at_scroll_limit() -> None:
 
 async def test_collection_handles_initial_delayed_content() -> None:
     page = _Page(["", _card("aaa")])
-    posts, _ = await _collect(page, RedditSettings(max_posts=1))
+    posts, _ = await _collect(
+        page, RedditSettings(scrape=BrowserScrapeSettings(max_posts=1)),
+    )
 
     assert posts == ["t3_aaa"]
     assert page.scrolls == 1
@@ -549,7 +565,9 @@ async def test_restriction_phrase_in_normal_post_is_not_access_failure() -> (
     None
 ):
     page = _Page([_card()], body="Discussion: verify you are human")
-    posts, _ = await _collect(page, RedditSettings(max_posts=1))
+    posts, _ = await _collect(
+        page, RedditSettings(scrape=BrowserScrapeSettings(max_posts=1)),
+    )
 
     assert posts == ["t3_abc"]
 

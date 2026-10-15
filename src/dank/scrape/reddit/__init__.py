@@ -6,12 +6,18 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator, Iterable
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from urllib.parse import urlencode
 
 import zendriver
 from zendriver import cdp
 
+from dank.config import (
+    RedditSettings,
+    RedditSort,
+    RedditSourceConfig,
+    RedditTimeFilter,
+)
 from dank.model import AssetDiscovery, RawPost
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
@@ -23,14 +29,10 @@ from dank.scrape.zendriver import (
 from .html import extract_html_posts
 from .payloads import as_dict, extract_json_posts, text, timestamp
 
-if TYPE_CHECKING:
-    from dank.config import RedditSettings
-
 logger = logging.getLogger(__name__)
 REDDIT_SOURCE = "reddit"
+DEFAULT_LISTING = RedditSourceConfig()
 REDDIT_PATTERNS = (r"https://(?:[a-z0-9-]+\.)*reddit\.com/",)
-SORTS = frozenset({"best", "hot", "new", "top", "rising"})
-TIME_FILTERS = frozenset({"hour", "day", "week", "month", "year", "all"})
 SNAPSHOT_SCRIPT = """JSON.stringify({
     url: location.href,
     title: document.title,
@@ -68,18 +70,21 @@ class RedditScrapeError(RuntimeError):
 def community_url(
     community: str,
     *,
-    sort: str = "best",
-    time_filter: str = "day",
+    sort: RedditSort = DEFAULT_LISTING.sort,
+    time_filter: RedditTimeFilter = DEFAULT_LISTING.time_filter,
 ) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_]+", community):
         raise ValueError("Expected a Reddit community name")
 
-    if sort not in SORTS or time_filter not in TIME_FILTERS:
-        raise ValueError("Invalid Reddit sort or time filter")
+    sort = RedditSort(sort)
+    time_filter = RedditTimeFilter(time_filter)
 
     url = f"https://www.reddit.com/r/{community}/{sort}/"
 
-    return f"{url}?{urlencode({'t': time_filter})}" if sort == "top" else url
+    return (
+        f"{url}?{urlencode({'t': time_filter})}"
+        if sort is RedditSort.TOP else url
+    )
 
 
 async def scrape_reddit_communities(
@@ -87,14 +92,13 @@ async def scrape_reddit_communities(
     communities: tuple[str, ...],
     session: BrowserSession,
     *,
-    sort: str = "best",
-    time_filter: str = "day",
+    sort: RedditSort = DEFAULT_LISTING.sort,
+    time_filter: RedditTimeFilter = DEFAULT_LISTING.time_filter,
 ) -> AsyncIterator[ScrapeBatch]:
     # Each source owns a tab so X and other Reddit sources cannot navigate it.
     async with asyncio.timeout(30):
         browser = await session.get_browser()
         page = await browser.get("about:blank", new_tab=True)
-
 
     try:
         for community in communities:
@@ -119,10 +123,11 @@ async def _scrape_community(
     community: str,
     settings: RedditSettings,
     *,
-    sort: str,
-    time_filter: str,
+    sort: RedditSort,
+    time_filter: RedditTimeFilter,
 ) -> AsyncIterator[ScrapeBatch]:
     url = community_url(community, sort=sort, time_filter=time_filter)
+    limits = settings.scrape
     capture = NetworkCapture(
         page,
         REDDIT_PATTERNS,
@@ -150,12 +155,12 @@ async def _scrape_community(
         async with asyncio.timeout(20):
             await page.send(cdp.page.navigate(url))
 
-        for step in range(settings.max_scrolls + 1):
+        for step in range(limits.max_scrolls + 1):
             # Reddit may redirect its initial document before rendering cards.
             pause = (
-                max(3, settings.scroll_pause_seconds)
+                max(3, limits.scroll_pause_seconds)
                 if step == 0
-                else settings.scroll_pause_seconds
+                else limits.scroll_pause_seconds
             )
 
             async with asyncio.timeout(max(10, pause + 5)):
@@ -171,7 +176,7 @@ async def _scrape_community(
                 community,
                 seen_posts,
                 seen_assets,
-                max_posts=settings.max_posts,
+                max_posts=limits.max_posts,
                 dom_html=text(snapshot.get("html")),
                 request_url=text(snapshot.get("url")) or url,
             )
@@ -192,7 +197,7 @@ async def _scrape_community(
             else:
                 idle_scrolls += 1
 
-            if len(seen_posts) >= settings.max_posts:
+            if len(seen_posts) >= limits.max_posts:
                 stop_reason = "post limit"
                 break
 
@@ -200,7 +205,7 @@ async def _scrape_community(
                 stop_reason = "repeated stall"
                 break
 
-            if step < settings.max_scrolls:
+            if step < limits.max_scrolls:
                 async with asyncio.timeout(10):
                     await page.evaluate(SCROLL_SCRIPT)
 
@@ -211,8 +216,8 @@ async def _scrape_community(
             len(seen_posts),
             step,
             stop_reason,
-            settings.max_posts,
-            settings.max_scrolls,
+            limits.max_posts,
+            limits.max_scrolls,
         )
 
         if not seen_posts:

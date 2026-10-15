@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from dank.config import SourceConfig, load_settings
+from dank.config import (
+    RedditSort,
+    RedditSourceConfig,
+    RedditTimeFilter,
+    SourceConfig,
+    load_settings,
+)
 from dank.scrape import runner
 from dank.scrape.runner import (
     _collect_source,  # pyright: ignore[reportPrivateUsage]
@@ -15,13 +21,38 @@ from dank.scrape.runner import (
 from dank.scrape.types import ScrapeBatch
 
 
+async def test_loaded_defaults_reach_the_collector_as_top_for_the_day(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "reddit.fixture.toml"
+    path.write_text(
+        'sources=[{domain="https://www.reddit.com", '
+        'feed_urls=["r/LocalLLaMA"]}]',
+    )
+    settings = load_settings(path)
+    source = settings.sources[0]
+    received: list[dict[str, object]] = []
+
+    async def collect(*args: object, **kwargs: object):
+        received.append(kwargs)
+        yield ScrapeBatch([], [])
+
+    monkeypatch.setattr(runner, "scrape_reddit_communities", collect)
+    _ = [batch async for batch in _discover_source_batches(
+        settings, source, cast(Any, None), cast(Any, None), cast(Any, None),
+        feed_staleness=datetime.timedelta(days=1), batch_size=50,
+    )]
+    assert received[0]["sort"] is RedditSort.TOP
+    assert received[0]["time_filter"] is RedditTimeFilter.DAY
+
+
 async def test_reddit_dispatch_uses_community_sort_and_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = load_settings("config.native.example.toml")
     source = SourceConfig(
         "reddit.com", (), ("https://www.reddit.com/r/LocalLLaMA/",),
-        reddit_sort="top", reddit_time_filter="week",
+        reddit=RedditSourceConfig(time_filter=RedditTimeFilter.WEEK),
     )
     session = object()
     calls: list[tuple[object, ...]] = []

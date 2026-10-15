@@ -369,6 +369,7 @@ async def test_reddit_posts_remain_readable_without_valid_metadata(
 ) -> None:
     post = row("reddit.com", "t3_abc")
     post["url"] = "https://www.reddit.com/r/python/comments/abc/title/"
+    post["source"] = "reddit"
     app["clickhouse"] = FakeClickHouse([post], [], [{
         "post_id": "t3_abc", "payload": payload,
     }])

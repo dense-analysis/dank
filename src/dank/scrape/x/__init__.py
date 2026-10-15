@@ -100,6 +100,7 @@ async def _scrape_account(
     settings: XSettings,
     email_settings: EmailSettings | None,
 ) -> AsyncIterator[ScrapeBatch]:
+    limits = settings.scrape
     handle = account.strip("@").strip()
     if not handle:
         return
@@ -141,17 +142,17 @@ async def _scrape_account(
         if posts or assets:
             yield ScrapeBatch(posts=posts, assets=assets)
 
-        if total_posts >= settings.max_posts:
+        if total_posts >= limits.max_posts:
             return
 
-        for _ in range(settings.max_scrolls):
+        for _ in range(limits.max_scrolls):
             await _scroll(page)
             posts, assets = await _drain_posts_and_assets(
                 capture,
                 seen_posts,
                 seen_assets,
                 timeout_seconds=_scroll_pause_seconds(
-                    settings.scroll_pause_seconds,
+                    limits.scroll_pause_seconds,
                     idle_scrolls,
                 ),
             )
@@ -170,7 +171,7 @@ async def _scrape_account(
             else:
                 idle_scrolls += 1
 
-            if total_posts >= settings.max_posts:
+            if total_posts >= limits.max_posts:
                 break
 
             if idle_scrolls >= MAX_IDLE_SCROLLS and total_posts > 0:
@@ -181,7 +182,7 @@ async def _scrape_account(
             seen_posts,
             seen_assets,
             timeout_seconds=min(
-                settings.scroll_pause_seconds,
+                limits.scroll_pause_seconds,
                 FAST_SCROLL_PAUSE_SECONDS,
             ),
         )

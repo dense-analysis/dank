@@ -28,21 +28,20 @@ stall_scrolls = 3
 `reddit.com` and `www.reddit.com` also work as source domains. Community
 shorthand and full community URLs are equivalent; duplicates within a source
 are removed without regard to case. Use community URLs without sort paths or
-query strings. Each source can optionally set `reddit_sort` to `best` (the
-default), `hot`, `new`, `top`, or `rising`.
-
-For the highest-ranked posts in the past day, use Top with a day window:
+query strings. Collection defaults to **Top, past day**, suitable for a daily
+scrape. Each source can override `reddit_sort` with `best`, `hot`, `new`,
+`top`, or `rising`. For example, to use Best instead:
 
 ```toml
 sources = [
-  { domain = "reddit.com", feed_urls = ["r/LocalLLaMA"], reddit_sort = "top" }
+  { domain = "reddit.com", feed_urls = ["r/LocalLLaMA"], reddit_sort = "best" }
 ]
 ```
 
 `reddit_time_filter` defaults to `day` and accepts `hour`, `day`, `week`,
 `month`, `year`, or `all`. It applies only to Top. To give communities different
-sorts, use separate source tables. Best is Reddit's ranking, not a promise of
-the best posts published today; Top + day is the explicit daily choice.
+sorts, use separate source tables. Best uses Reddit's ranking without a daily
+window; Top + day selects its highest-ranked posts from the past day.
 
 ## Run
 

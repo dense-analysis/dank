@@ -2,7 +2,16 @@ import pathlib
 
 import pytest
 
-from dank.config import ConfigError, RedditSettings, load_settings
+from dank.config import (
+    BrowserScrapeSettings,
+    ConfigError,
+    RedditSettings,
+    RedditSort,
+    RedditSourceConfig,
+    RedditTimeFilter,
+    load_settings,
+)
+from dank.scrape.reddit import community_url
 
 
 def test_reddit_sources_accept_urls_and_community_shorthand(
@@ -27,11 +36,19 @@ sources = [
         "https://www.reddit.com/r/accelerate/",
     )
     assert source.tags == ("ai",)
-    assert source.reddit_sort == "best"
-    assert source.reddit_time_filter == "day"
+    assert source.reddit is not None
+    assert source.reddit.sort is RedditSort.TOP
+    assert source.reddit.time_filter is RedditTimeFilter.DAY
+    assert community_url(
+        "LocalLLaMA", sort=source.reddit.sort,
+        time_filter=source.reddit.time_filter,
+    ) == "https://www.reddit.com/r/LocalLLaMA/top/?t=day"
+    assert settings.sources[0].reddit is None
     assert settings.reddit == RedditSettings()
-    assert settings.sources[2].reddit_sort == "top"
-    assert settings.sources[2].reddit_time_filter == "week"
+    other = settings.sources[2].reddit
+    assert other is not None
+    assert other.sort is RedditSort.TOP
+    assert other.time_filter is RedditTimeFilter.WEEK
 
 
 @pytest.mark.parametrize("options", [
@@ -80,7 +97,7 @@ def test_reddit_limits_can_capture_only_the_initial_page(
     path = tmp_path / "settings.fixture.toml"
     path.write_text("[reddit]\nmax_posts = 5\nmax_scrolls = 0\n")
     assert load_settings(path).reddit == RedditSettings(
-        max_posts=5, max_scrolls=0,
+        scrape=BrowserScrapeSettings(max_posts=5, max_scrolls=0),
     )
 
 
@@ -92,3 +109,81 @@ def test_reddit_options_on_other_sources_are_rejected(
 
     with pytest.raises(ConfigError, match="Reddit source"):
         load_settings(path)
+
+
+@pytest.mark.parametrize("sort", list(RedditSort))
+def test_sort_enum_values_are_normalized_at_the_toml_boundary(
+    tmp_path: pathlib.Path, sort: RedditSort,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [{domain="reddit.com", feed_urls=["r/python"], '
+        f'reddit_sort=" {sort.value.upper()} "}}]',
+    )
+    options = load_settings(path).sources[0].reddit
+    assert options is not None
+    assert options.sort is sort
+    assert options.time_filter is RedditTimeFilter.DAY
+    url = community_url("python", sort=options.sort)
+    suffix = f"/{sort}/?t=day" if sort is RedditSort.TOP else f"/{sort}/"
+    assert url.endswith(suffix)
+
+
+@pytest.mark.parametrize("window", list(RedditTimeFilter))
+def test_time_window_enum_controls_the_top_listing(
+    tmp_path: pathlib.Path, window: RedditTimeFilter,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [{domain="reddit.com", feed_urls=["r/python"], '
+        f'reddit_time_filter=" {window.value.upper()} "}}]',
+    )
+    options = load_settings(path).sources[0].reddit
+    assert options is not None
+    assert options.sort is RedditSort.TOP
+    assert options.time_filter is window
+    assert community_url("python", time_filter=window).endswith(f"?t={window}")
+
+
+@pytest.mark.parametrize("field", ["reddit_sort", "reddit_time_filter"])
+@pytest.mark.parametrize("value", ['""', '"unknown"', "true", "1", "[]", "{}"])
+def test_invalid_enum_options_report_the_exact_source_field(
+    tmp_path: pathlib.Path, field: str, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = [{domain="reddit.com", feed_urls=["r/python"], '
+        f'{field}={value}}}]',
+    )
+
+    with pytest.raises(ConfigError, match=f"sources.{field} must be one of"):
+        load_settings(path)
+
+
+def test_browser_composition_preserves_flat_toml_and_platform_defaults(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("")
+    settings = load_settings(path)
+    assert settings.x.scrape == BrowserScrapeSettings(max_posts=200)
+    assert settings.reddit.scrape == BrowserScrapeSettings(max_posts=100)
+    assert RedditSourceConfig().sort is RedditSort.TOP
+    path.write_text('''
+[x]
+username = "reader"
+max_posts = 23
+max_scrolls = 7
+scroll_pause_seconds = 0
+[reddit]
+max_posts = 12
+max_scrolls = 0
+scroll_pause_seconds = 2.5
+stall_scrolls = 4
+''')
+    settings = load_settings(path)
+    assert settings.x.username == "reader"
+    assert settings.x.scrape == BrowserScrapeSettings(23, 7, 0)
+    assert settings.reddit == RedditSettings(
+        BrowserScrapeSettings(12, 0, 2.5), 4,
+    )

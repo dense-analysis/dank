@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from dank.config import SourceConfig
+from dank.config import RedditSourceConfig, SourceConfig
 from dank.model import Post
 from dank.process import runner
 from dank.process.rss import convert_raw_post
@@ -248,7 +248,7 @@ async def test_reddit_listings_are_processed_once_with_the_reddit_converter(
         )),
         SourceConfig("reddit.com", (), (
             "https://www.reddit.com/r/LocalLLaMA/",
-        ), reddit_sort="top"),
+        ), reddit=RedditSourceConfig()),
     )
     posts = AsyncMock(return_value=1)
     assets = AsyncMock(return_value=0)

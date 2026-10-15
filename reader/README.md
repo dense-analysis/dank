@@ -89,9 +89,9 @@ Search, author and date filters apply within the current Reddit view; article
 links and browser navigation preserve that view. Scores, comment counts and
 flair reflect the collected post. Comments themselves are not collected.
 
-The reader orders stored posts by date or search relevance. Reddit's collection
-sort (Best, Hot, Top or New) is selected in source configuration before scraping;
-refreshing this view reloads collected posts.
+The reader orders stored posts by date or search relevance. Reddit collection
+defaults to Top for the past day; source configuration can change the sort
+and time window before scraping. Refreshing this view reloads collected posts.
 
 ## Structure
 
