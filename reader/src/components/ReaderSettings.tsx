@@ -67,6 +67,27 @@ export function ReaderSettings() {
           <span>Larger</span>
         </div>
       </div>
+      <div className="image-background-setting">
+        <label htmlFor="auto-image-background">
+          <input
+            id="auto-image-background"
+            type="checkbox"
+            checked={preferences.autoImageBackground}
+            aria-describedby="auto-image-background-help"
+            onChange={(event) =>
+              updatePreferences({
+                ...preferences,
+                autoImageBackground: event.target.checked,
+              })
+            }
+          />
+          Automatically improve image backgrounds
+        </label>
+        <p className="settings-help" id="auto-image-background-help">
+          Use a light background when transparent images would otherwise be
+          difficult to read. You can still change each image’s background.
+        </p>
+      </div>
       <section className="reading-preview" aria-label="Reading preview">
         <p className="eyebrow">A LITTLE PREVIEW</p>
         <h2>A quieter corner of the internet.</h2>

@@ -53,6 +53,8 @@ export function isPost(value: unknown): value is Post {
     (value.reddit === undefined ||
       value.reddit === null ||
       isRedditPost(value.reddit)) &&
+    (value.collection_incomplete === undefined ||
+      typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
     Array.isArray(value.media) &&
     value.media.every(

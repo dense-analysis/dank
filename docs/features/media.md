@@ -4,6 +4,11 @@ DANK discovers media while collecting [RSS articles](rss.md) and [X
 posts](x.md). Downloads happen during scraping; a later processing run records
 metadata for files that are available locally.
 
+Processing recognizes PNG signatures for downloaded images whose filenames
+have no known type, allowing the reader to use their local copies. Other
+unrecognized formats remain unclassified. Reprocessing article HTML alone
+does not collect images found only inside embedded article data.
+
 ## Supported assets
 
 | Asset | Download type | Handling |

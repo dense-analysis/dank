@@ -142,6 +142,149 @@ async function expectNoHorizontalOverflow(page: Page) {
   ).toBe(true);
 }
 
+for (const width of [1280, 390, 320]) {
+  test(`distinguishes uncollected articles in the feed and reader at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await mockReader(page);
+    const missing = {
+      ...article,
+      id: "uncollected",
+      title: "Microsoft Defender for Linux",
+      url: "https://techcommunity.microsoft.com/original-article",
+      html: "\n\n\n\n\n\n",
+      collection_incomplete: true,
+      excerpt: "",
+    };
+    state.posts = [missing, article];
+    await page.goto("/reader/");
+    const missingCard = page
+      .locator(".post-card")
+      .filter({ has: story(page, missing.title) });
+    const collectedCard = page
+      .locator(".post-card")
+      .filter({ has: story(page) });
+    const badge = missingCard.getByText("Not collected", { exact: true });
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveAttribute("title", /Full text wasn’t collected/);
+    await expect(
+      missingCard.getByText(/min read|Open to read this story/),
+    ).toHaveCount(0);
+    await expect(collectedCard.getByText("Not collected")).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`collection-feed-${width}.png`),
+    });
+
+    await story(page, missing.title).click();
+    const notice = page.getByRole("complementary", {
+      name: "Collection status",
+    });
+    await expect(
+      notice.getByRole("heading", { name: "Full text not collected" }),
+    ).toBeVisible();
+    const original = notice.getByRole("link", {
+      name: "Read original article",
+    });
+    await expect(original).toHaveAttribute("href", missing.url);
+    await expect(original).toHaveAttribute("target", "_blank");
+    await original.focus();
+    await expect(original).toBeFocused();
+    await expect(page.locator(".article-body")).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("main", { name: "Article reader" })
+        .getByText(/min read|YOU’VE REACHED THE END/),
+    ).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(`collection-article-${width}.png`),
+    });
+
+    await page.getByRole("button", { name: "Back to your reading" }).click();
+    await expect(story(page, missing.title)).toBeFocused();
+    await expect(missingCard.getByText("Read", { exact: true })).toHaveCount(0);
+    expect(
+      await page.evaluate((key) => localStorage.getItem(key), readStorageKey),
+    ).toBeNull();
+    await story(page).click();
+    await expect(
+      page.getByRole("complementary", { name: "Collection status" }),
+    ).toHaveCount(0);
+    await expect(page.getByText("YOU’VE REACHED THE END")).toBeVisible();
+  });
+}
+
+for (const width of [1280, 390, 320]) {
+  test(`shows available text with an incomplete scrape warning at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await mockReader(page);
+    const partial = {
+      ...article,
+      id: "incomplete",
+      title: "Article saved from its feed",
+      html: "The feed text is still available to read.",
+      collection_incomplete: true,
+    };
+    state.posts = [partial, article];
+    await page.goto("/reader/");
+    const card = page.locator(".post-card").filter({
+      has: story(page, partial.title),
+    });
+    await expect(
+      card.getByText("Incomplete scrape", { exact: true }),
+    ).toBeVisible();
+    await expect(card.getByText("Not collected", { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(card.getByText(/min read/)).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`incomplete-feed-${width}.png`),
+    });
+
+    await story(page, partial.title).click();
+    const notice = page.getByRole("complementary", {
+      name: "Collection status",
+    });
+    await expect(
+      notice.getByRole("heading", { name: "Incomplete scrape" }),
+    ).toBeVisible();
+    await expect(notice).toContainText(
+      "text, formatting or media may be missing",
+    );
+    await expect(page.locator(".article-body")).toHaveText(partial.html);
+    await expect(
+      page.getByRole("link", { name: "Read original", exact: true }),
+    ).toHaveAttribute("href", partial.url);
+    await expectNoHorizontalOverflow(page);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(`incomplete-article-${width}.png`),
+    });
+
+    state.posts[0] = {
+      ...partial,
+      html: "<p>The restored article has its paragraphs.</p><p>And its formatting.</p>",
+      collection_incomplete: false,
+    };
+    await page.reload();
+    await expect(notice).toHaveCount(0);
+    await expect(
+      page.getByText("Incomplete scrape", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator(".article-body p")).toHaveCount(2);
+    await page.getByRole("button", { name: "Back to your reading" }).click();
+    await expect(
+      card.getByText("Incomplete scrape", { exact: true }),
+    ).toHaveCount(0);
+  });
+}
+
 test("opens a full article page and restores filters, loaded pages, focus and scroll through Back and Forward", async ({
   page,
 }) => {

@@ -1,11 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Minus, Plus } from "lucide-react";
-import { useEffect } from "react";
+import {
+  ArrowLeft,
+  CircleAlert,
+  CircleDashed,
+  ExternalLink,
+  Minus,
+  Plus,
+} from "lucide-react";
+import { useEffect, useMemo } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { fetchPost } from "../lib/api";
+import { hasArticleContent } from "../lib/article";
 import type { Filters, Post } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
+import { CollectionBadge } from "./CollectionBadge";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
 import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
 import { SourceLink } from "./SourceLink";
@@ -47,9 +56,13 @@ export function ArticleView({
     queryFn: ({ signal }) => fetchPost(domain, id, signal),
     initialData: initial,
   });
+  const hasContent = useMemo(
+    () => hasArticleContent(post?.html ?? ""),
+    [post?.html],
+  );
   useEffect(() => {
-    if (post) markRead(post);
-  }, [post, markRead]);
+    if (post && hasContent) markRead(post);
+  }, [post, hasContent, markRead]);
   return (
     <main id="main" className="article-page" aria-label="Article reader">
       <div className="reader-toolbar">
@@ -122,6 +135,9 @@ export function ArticleView({
             )}
             <span className="meta-dot">·</span>
             <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+            {hasContent && post.collection_incomplete && (
+              <CollectionBadge incomplete />
+            )}
           </div>
           <h1>{post.title || "Untitled post"}</h1>
           <div className="article-byline">
@@ -134,24 +150,68 @@ export function ArticleView({
             {post.reddit ? (
               <RedditMetadata reddit={post.reddit} />
             ) : (
-              <span> {readingTime(post)} min read</span>
+              hasContent && <span> {readingTime(post)} min read</span>
             )}
           </div>
-          <a
-            className="original-link"
-            href={safeUrl(post.url)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Read at {post.domain}
-            <ExternalLink size={13} />
-          </a>
-          <ArticleBody html={post.html} />
-          {!post.html.trim() && (
-            <p className="article-body">
-              The full article wasn’t collected. You can read it at the original
-              source above.
-            </p>
+          {hasContent ? (
+            <>
+              <a
+                className="original-link"
+                href={safeUrl(post.url)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read original
+                <ExternalLink size={13} />
+              </a>
+              {post.collection_incomplete && (
+                <aside
+                  className="collection-notice collection-notice-partial"
+                  aria-label="Collection status"
+                >
+                  <CircleAlert
+                    className="collection-notice-icon"
+                    size={20}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <h2>Incomplete scrape</h2>
+                    <p>
+                      The article page couldn’t be fetched. Available text is
+                      shown below, but some text, formatting or media may be
+                      missing. Read the original for the full article.
+                    </p>
+                  </div>
+                </aside>
+              )}
+              <ArticleBody html={post.html} />
+            </>
+          ) : (
+            <aside className="collection-notice" aria-label="Collection status">
+              <CircleDashed
+                className="collection-notice-icon"
+                size={20}
+                aria-hidden="true"
+              />
+              <div>
+                <h2>Full text not collected</h2>
+                <p>
+                  This story is in your feed, but its article text isn’t
+                  available here.
+                </p>
+                {safeUrl(post.url) && (
+                  <a
+                    className="collection-source-link"
+                    href={safeUrl(post.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Read original article{" "}
+                    <ExternalLink size={13} aria-hidden="true" />
+                  </a>
+                )}
+              </div>
+            </aside>
           )}
           {post.media.some((asset) =>
             /^(video|audio)\//.test(asset.content_type),
@@ -189,7 +249,7 @@ export function ArticleView({
             </section>
           )}
           <div className="article-end">
-            <span>YOU’VE REACHED THE END</span>
+            {hasContent && <span>YOU’VE REACHED THE END</span>}
             <button type="button" className="secondary-button" onClick={close}>
               <ArrowLeft size={15} />
               Back to your reading

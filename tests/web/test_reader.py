@@ -209,7 +209,7 @@ async def test_combined_posts_requests_embedding_and_reports_relevance_cap(
 ) -> None:
     embed = AsyncMock(return_value=(1.0, 0.0))
     monkeypatch.setattr(reader_api, "_search_embedding", embed)
-    fake = FakeClickHouse([row("b.example"), row("a.example")], [])
+    fake = FakeClickHouse([row("b.example"), row("a.example")], [], [])
     app["clickhouse"] = fake
     response = await request(
         app,
@@ -394,6 +394,7 @@ async def test_posts_paginate_without_cross_domain_asset_collisions(
           "url": "https://example.com/b.jpg",
           "local_path": str(assets / "b.jpg"), "content_type": "image/jpeg",
           "size_bytes": 0}],
+        [{"domain": "b.example", "post_id": "same"}],
     )
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/posts?limit=2")
@@ -403,8 +404,14 @@ async def test_posts_paginate_without_cross_domain_asset_collisions(
     assert data["posts"][0]["thumbnail"] is None
     assert data["posts"][1]["thumbnail"] == "/assets/b.jpg"
     assert data["posts"][1]["media"][0]["content_type"] == "image/jpeg"
+    assert data["posts"][0]["collection_incomplete"] is False
+    assert data["posts"][1]["collection_incomplete"] is True
     assert fake.calls[1][1]["post_keys"] == [
         ("c.example", "same"), ("b.example", "same"),
+    ]
+    assert fake.calls[2][1]["post_versions"] == [
+        (domain, "same", 1791462645123)
+        for domain in ("c.example", "b.example")
     ]
     assert data["next_cursor"]
     assert data["limited"] is False
@@ -414,7 +421,7 @@ async def test_posts_paginate_without_cross_domain_asset_collisions(
 
 async def test_relevance_reports_capped_results(app: web.Application) -> None:
     app["clickhouse"] = FakeClickHouse(
-        [row("b.example"), row("a.example")], [],
+        [row("b.example"), row("a.example")], [], [],
     )
     response = await request(
         app, "/api/reader/posts?q=article&sort=relevance&limit=1",
@@ -436,13 +443,45 @@ async def test_empty_page_has_no_cursor(app: web.Application) -> None:
 async def test_post_detail_returns_direct_object_and_not_found(
     app: web.Application,
 ) -> None:
-    fake = FakeClickHouse([row("a.example")], [], [])
+    fake = FakeClickHouse([row("a.example")], [], [], [])
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/post?domain=a.example&id=same")
     assert json.loads(response.text or "")["id"] == "same"
     assert fake.calls[0][1] == {"domain": "a.example", "post_id": "same"}
     missing = await request(app, "/api/reader/post?domain=missing&id=missing")
     assert missing.status == 404
+
+
+@pytest.mark.parametrize("failed", [True, False])
+async def test_article_with_text_reports_its_page_capture_failure(
+    app: web.Application, *, failed: bool,
+) -> None:
+    article = row("a.example")
+    failure = [{"domain": "a.example", "post_id": "same"}] if failed else []
+    fake = FakeClickHouse([article], [], failure)
+    app["clickhouse"] = fake
+    response = await request(app, "/api/reader/post?domain=a.example&id=same")
+    data = json.loads(response.text or "")
+
+    assert response.status == 200
+    assert data["html"] == article["html"]
+    assert data["collection_incomplete"] is failed
+    assert fake.calls[2][1]["post_versions"] == [
+        ("a.example", "same", 1791462645123),
+    ]
+
+
+async def test_social_post_does_not_need_rss_page_capture(
+    app: web.Application,
+) -> None:
+    article = {**row("x.com"), "source": "x"}
+    fake = FakeClickHouse([article], [])
+    app["clickhouse"] = fake
+    response = await request(app, "/api/reader/post?domain=x.com&id=same")
+
+    assert response.status == 200
+    assert json.loads(response.text or "")["collection_incomplete"] is False
+    assert len(fake.calls) == 2
 
 
 async def test_invalid_requests_are_json_errors(app: web.Application) -> None:

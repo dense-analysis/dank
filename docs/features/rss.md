@@ -115,11 +115,31 @@ keeping a finite header limit.
 By default, entries whose article fetch fails or returns an empty body are
 skipped. Set `keep_feed_on_fetch_failure = true` to retain those entries with
 empty article HTML and `page_fetch_status: "failed"` in the raw payload.
+Known human-verification pages are also treated as failures, even when
+the server responds with HTTP 200.
 
 The [processor](processing.md) can use the retained feed's title, author,
 publication date and summary or full content. Keeping the entry does not
 schedule a later retry after these immediate attempts are exhausted. If the
 feed itself cannot be fetched or parsed, there are no entries to retain.
+
+Retry retained failures later, including entries that have left the feed:
+
+```sh
+uv run scrape --retry-failed-pages --domains '^www\.theregister\.com$'
+uv run process --age 24h --domains '^www\.theregister\.com$'
+```
+
+For Docker, prefix each command with `docker compose run --rm dank` instead
+of `uv run`. This mode only revisits the latest failed RSS captures for
+selected sources and their explicit feed URLs, without fetching feeds or X.
+Successful pages are saved as new raw captures; earlier captures and feed
+text remain intact. Failed retries leave the existing records unchanged.
+Normal request limits and media settings still apply.
+
+Paragraph recovery needs a matching saved page. A plain-text feed alone
+cannot supply the publisher's original paragraph boundaries. Processing
+after a successful retry restores those boundaries when the full text matches.
 
 See the [README](../../README.md) for ClickHouse setup and shared settings.
 

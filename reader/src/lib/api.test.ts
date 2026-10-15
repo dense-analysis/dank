@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchPost, fetchPosts, fetchSources } from "./api";
 import { defaultFilters } from "./storage";
+import { isPost } from "./validation";
 
 function respond(body: unknown, status = 200): void {
   vi.stubGlobal(
@@ -63,6 +64,28 @@ describe("reader API", () => {
     });
     await expect(fetchSources()).rejects.toThrow("unexpected response");
   });
+
+  it("validates incomplete collection flags while accepting older saved posts", () => {
+    const post = {
+      id: "1",
+      domain: "example.com",
+      url: "https://example.com/1",
+      title: "Feed text",
+      author: "Writer",
+      excerpt: "Still readable",
+      html: "Still readable",
+      created_at: "2026-10-15T12:00:00Z",
+      source: "rss",
+      thumbnail: null,
+      media: [],
+    };
+
+    expect(isPost(post)).toBe(true);
+    expect(isPost({ ...post, collection_incomplete: true })).toBe(true);
+    expect(isPost({ ...post, collection_incomplete: false })).toBe(true);
+    expect(isPost({ ...post, collection_incomplete: "false" })).toBe(false);
+  });
+
   it("sends all filters, an opaque cursor, and the cancellation signal", async () => {
     respond({ posts: [], next_cursor: null, limited: false });
     const signal = new AbortController().signal;

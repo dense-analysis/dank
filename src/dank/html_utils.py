@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -13,6 +14,17 @@ YOUTUBE_HOSTS = {
     "youtube-nocookie.com",
     "www.youtube-nocookie.com",
 }
+
+# The Register's verification shell can return HTTP 200 without an article.
+# Keep one pattern for capture validation and older raw-record queries.
+PAGE_CHALLENGE_PATTERN = (
+    r'(?is)<title>\s*Are we human\?\s*</title>.*?'
+    r'<script\b[^>]*\bsrc\s*=\s*["\'][^"\']*/_labrador/pow/'
+)
+
+
+def is_page_challenge(value: str) -> bool:
+    return re.search(PAGE_CHALLENGE_PATTERN, value) is not None
 
 
 def is_youtube_url(url: str) -> bool:

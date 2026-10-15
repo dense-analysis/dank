@@ -66,6 +66,11 @@ test("persists reading preferences across settings, feed, article and reload", a
     page.getByRole("heading", { name: "Settings", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  const automatic = page.getByRole("checkbox", {
+    name: "Automatically improve image backgrounds",
+  });
+  await expect(automatic).not.toBeChecked();
+  await automatic.check();
   await page.getByRole("radio", { name: /Newsreader/ }).check();
   const size = page.getByRole("slider", { name: "Article text size" });
   await size.fill("23");
@@ -73,6 +78,7 @@ test("persists reading preferences across settings, feed, article and reload", a
   await expect(preview).toHaveCSS("font-family", /Newsreader/);
   await expect(preview).toHaveCSS("font-size", "23px");
   await page.reload();
+  await expect(automatic).toBeChecked();
   await expect(page.getByRole("radio", { name: /Newsreader/ })).toBeChecked();
   await expect(size).toHaveValue("23");
   await page.getByRole("button", { name: "All stories", exact: true }).click();
@@ -99,6 +105,9 @@ test("persists reading preferences across settings, feed, article and reload", a
   await page.getByRole("button", { name: "Reset to defaults" }).click();
   await expect(page.getByRole("radio", { name: /DM Sans/ })).toBeChecked();
   await expect(size).toHaveValue("19");
+  await expect(automatic).not.toBeChecked();
+  await page.reload();
+  await expect(automatic).not.toBeChecked();
 });
 
 test("settings work on mobile and have no serious accessibility violations", async ({
@@ -115,6 +124,9 @@ test("settings work on mobile and have no serious accessibility violations", asy
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("radio", { name: /Newsreader/ }).check();
   await page.getByRole("slider", { name: "Article text size" }).fill("26");
+  await page
+    .getByRole("checkbox", { name: "Automatically improve image backgrounds" })
+    .check();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -139,6 +151,11 @@ test("unavailable preference storage keeps settings usable and explains persiste
   });
   await page.goto("/reader/?view=settings");
   await page.getByRole("radio", { name: /Newsreader/ }).check();
+  const automatic = page.getByRole("checkbox", {
+    name: "Automatically improve image backgrounds",
+  });
+  await automatic.check();
+  await expect(automatic).toBeChecked();
   await expect(page.locator(".preview-body")).toHaveCSS(
     "font-family",
     /Newsreader/,

@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
-from dank.html_utils import remove_page_noise
+from dank.html_utils import PAGE_CHALLENGE_PATTERN, remove_page_noise
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import (
     AppState,
@@ -195,10 +195,13 @@ async def _post_payloads(
         key = (str(row["domain"]), str(row["post_id"]))
         assets.setdefault(key, []).append(_parse_asset_row(row))
 
+    incomplete = await _incomplete_page_keys(client, posts)
+
     payloads = [
         post_payload(
             post, assets.get((post.domain, post.post_id), []), assets_dir,
             query,
+            collection_incomplete=(post.domain, post.post_id) in incomplete,
         )
         for post in posts
     ]
@@ -262,9 +265,48 @@ def _reddit_count(
     )
 
 
+async def _incomplete_page_keys(
+    client: ClickHouseClient, posts: list[PostRow],
+) -> set[tuple[str, str]]:
+    versions: list[tuple[str, str, int]] = []
+
+    for post in posts:
+        if post.source != "rss":
+            continue
+
+        timestamp = post.updated_at
+
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=dt.UTC)
+
+        # Plain datetime bindings discard ClickHouse's millisecond precision.
+        versions.append((post.domain, post.post_id,
+                         round(timestamp.timestamp() * 1000)))
+
+    if not versions:
+        return set()
+
+    # Describe the displayed capture, even if a newer retry awaits processing.
+    result = await client.fetch_json(
+        "SELECT domain, post_id FROM raw_posts "
+        "WHERE (domain, post_id, toUnixTimestamp64Milli(scraped_at)) "
+        "IN %(post_versions)s "
+        "AND source = 'rss' "
+        "AND (JSONExtractString(payload, 'page_fetch_status') = 'failed' "
+        "OR match(JSONExtractString(payload, 'page_html'), "
+        "%(challenge_pattern)s))",
+        {"post_versions": versions,
+         "challenge_pattern": PAGE_CHALLENGE_PATTERN},
+    )
+
+    return {(str(row["domain"]), str(row["post_id"])) for row in result.rows}
+
+
 def post_payload(
     post: PostRow, assets: list[AssetRow], assets_dir: pathlib.Path,
     query: str = "",
+    *,
+    collection_incomplete: bool = False,
 ) -> dict[str, Any]:
     source_url = _http_url(post.url) or ""
     body = _sanitize_html(remove_page_noise(post.html, base_url=source_url))
@@ -296,6 +338,7 @@ def post_payload(
         "author": post.author, "title": post.title,
         "excerpt": search_excerpt(body, query) or _summarize_html(body),
         "html": body,
+        "collection_incomplete": collection_incomplete,
         "created_at": created_at.isoformat(), "source": post.source,
         "thumbnail": images.thumbnail, "media": media,
     }

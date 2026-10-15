@@ -17,6 +17,13 @@ def convert_raw_asset(raw: RawAsset) -> Asset | None:
     size_bytes = path.stat().st_size
     content_type = mimetypes.guess_type(path.name)[0] or ""
 
+    if not content_type and raw.asset_type == "image":
+        # Some publisher image URLs have no extension. PNG signature:
+        # https://www.w3.org/TR/png-3/#5PNG-file-signature
+        with path.open("rb") as file:
+            if file.read(8) == b"\x89PNG\r\n\x1a\n":
+                content_type = "image/png"
+
     return Asset(
         domain=raw.domain,
         post_id=raw.post_id,
