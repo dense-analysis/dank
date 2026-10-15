@@ -28,7 +28,7 @@ def _raw_post(payload: dict[str, Any]) -> RawPost:
 
 def test_convert_reddit_self_post_preserves_body_and_identity() -> None:
     raw = _raw_post({
-        "title": "Small &amp; capable model",
+        "title": "Small & capable model",
         "author": "alice",
         "subreddit": "LocalLLaMA",
         "created_utc": 1792065600,
@@ -182,3 +182,14 @@ def test_convert_reddit_uses_record_creation_time_before_payload() -> None:
     assert post is not None
     assert post.created_at == created_at
     assert post.updated_at == SCRAPED_AT
+
+
+def test_convert_reddit_preserves_plain_text_entities_in_normalized_title(
+) -> None:
+    post = convert_raw_reddit_post(_raw_post({
+        "title": "How to write &lt;script&gt; and &amp; entities",
+        "author": "alice",
+    }))
+
+    assert post is not None
+    assert post.title == "How to write &lt;script&gt; and &amp; entities"

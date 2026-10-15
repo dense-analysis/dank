@@ -23,7 +23,7 @@ def convert_raw_reddit_post(row: RawPost) -> Post | None:
         return None
 
     payload = cast(dict[str, Any], payload)
-    title = html.unescape(_text(payload.get("title"))).strip()
+    title = _text(payload.get("title")).strip()
 
     if not title:
         return None
@@ -41,7 +41,7 @@ def convert_raw_reddit_post(row: RawPost) -> Post | None:
         url=row.url,
         created_at=created_at,
         updated_at=row.scraped_at,
-        author=html.unescape(_text(payload.get("author"))).strip(),
+        author=_text(payload.get("author")).strip(),
         title=title,
         title_embedding=EMPTY_STRING_VECTOR,
         html=_body_html(payload, row.url),
