@@ -7,6 +7,7 @@ import html
 import json
 import logging
 import pathlib
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from html.parser import HTMLParser
 from typing import Any, cast
@@ -28,7 +29,9 @@ from dank.web.app import (
     _search_embedding,  # pyright: ignore[reportPrivateUsage]
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.web.reader_communities import community_icons
 from dank.web.reader_excerpt import search_excerpt
+from dank.web.reader_flairs import reddit_flairs
 from dank.web.reader_query import (
     REDDIT_COMMUNITY_SQL,
     build_query,
@@ -101,25 +104,51 @@ async def handle_sources(request: web.Request) -> web.Response:
     communities = {name.lower(): name for name in names}
 
     if communities:
-        result = await client.fetch_json(
-            f"SELECT {REDDIT_COMMUNITY_SQL} AS community, count() AS count "
-            "FROM posts FINAL WHERE domain = 'reddit.com' GROUP BY community",
+        metadata = await _reddit_source_metadata(
+            client, communities, state.assets_dir,
         )
-        community_counts = {
-            str(row["community"]): int(row["count"]) for row in result.rows
-        }
 
         for source in sources:
             if source["domain"] == "reddit.com":
-                source.update(kind="reddit", communities=[
-                    {"name": name, "count": community_counts.get(key, 0)}
-                    for key, name in sorted(communities.items())
-                ])
+                source.update(kind="reddit", **metadata)
 
     return web.json_response({
         "sources": sources,
         "total_posts": sum(counts.values()),
     })
+
+
+async def _reddit_source_metadata(
+    client: ClickHouseClient,
+    communities: dict[str, str],
+    assets_dir: pathlib.Path,
+) -> dict[str, Any]:
+    result = await client.fetch_json(
+        f"SELECT {REDDIT_COMMUNITY_SQL} AS community, count() AS count "
+        "FROM posts FINAL WHERE domain = 'reddit.com' GROUP BY community",
+    )
+    counts = {
+        str(row["community"]): int(row["count"]) for row in result.rows
+    }
+    icons = await community_icons(client, list(communities), assets_dir)
+    flairs = await reddit_flairs(client)
+    global_flairs: Counter[str] = Counter()
+
+    for labels in flairs.values():
+        for flair in labels:
+            global_flairs[flair["name"]] += flair["count"]
+
+    return {
+        "communities": [
+            {"name": name, "count": counts.get(key, 0),
+             "icon_url": icons.get(key), "flairs": flairs.get(key, [])}
+            for key, name in sorted(communities.items())
+        ],
+        "flairs": [
+            {"name": name, "count": count}
+            for name, count in sorted(global_flairs.items())
+        ],
+    }
 
 
 async def handle_posts(request: web.Request) -> web.Response:
@@ -205,13 +234,14 @@ async def _post_payloads(
         )
         for post in posts
     ]
-    await _add_reddit_metadata(client, payloads)
+    await _add_reddit_metadata(client, payloads, assets_dir)
 
     return payloads
 
 
 async def _add_reddit_metadata(
     client: ClickHouseClient, payloads: list[dict[str, Any]],
+    assets_dir: pathlib.Path,
 ) -> None:
     reddit = [post for post in payloads if post["domain"] == "reddit.com"]
 
@@ -239,8 +269,17 @@ async def _add_reddit_metadata(
             "community": community,
             "score": _reddit_count(snapshot.get("score")),
             "comments": _reddit_count(snapshot.get("num_comments"), minimum=0),
-            "flair": flair if isinstance(flair, str) else None,
+            "flair": flair.strip() if isinstance(flair, str) else None,
         }
+
+    icons = await community_icons(
+        client, [post["reddit"]["community"] for post in reddit], assets_dir,
+    )
+
+    for post in reddit:
+        post["reddit"]["icon_url"] = icons.get(
+            post["reddit"]["community"].lower(),
+        )
 
 
 def _reddit_snapshot(value: object) -> dict[str, Any]:

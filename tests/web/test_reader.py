@@ -285,7 +285,7 @@ async def test_reddit_sources_include_configured_empty_communities(
     )))
     fake = FakeClickHouse(
         [{"domain": "reddit.com", "count": 7}],
-        [{"community": "localllama", "count": 7}],
+        [{"community": "localllama", "count": 7}], [], [],
     )
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/sources")
@@ -293,8 +293,8 @@ async def test_reddit_sources_include_configured_empty_communities(
     assert response.status == 200
     assert data["sources"][0]["kind"] == "reddit"
     assert data["sources"][0]["communities"] == [
-        {"name": "accelerate", "count": 0},
-        {"name": "LocalLLaMA", "count": 7},
+        {"name": "accelerate", "count": 0, "icon_url": None, "flairs": []},
+        {"name": "LocalLLaMA", "count": 7, "icon_url": None, "flairs": []},
     ]
 
 
@@ -346,14 +346,14 @@ async def test_reddit_metadata_uses_latest_snapshot_and_retains_safe_html(
             "subreddit": "other", "score": 123, "num_comments": 42,
             "link_flair_text": "Discussion",
         }),
-    }])
+    }], [])
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/posts?kind=reddit")
     data = json.loads(response.text or "")
     assert response.status == 200
     assert data["posts"][0]["reddit"] == {
         "community": "LocalLLaMA", "score": 123, "comments": 42,
-        "flair": "Discussion",
+        "flair": "Discussion", "icon_url": None,
     }
     assert "<script>" not in data["posts"][0]["html"]
     assert "ORDER BY scraped_at DESC LIMIT 1 BY post_id" in fake.calls[2][0]
@@ -372,7 +372,7 @@ async def test_reddit_posts_remain_readable_without_valid_metadata(
     post["source"] = "reddit"
     app["clickhouse"] = FakeClickHouse([post], [], [{
         "post_id": "t3_abc", "payload": payload,
-    }])
+    }], [])
     response = await request(app, "/api/reader/posts?kind=reddit")
     assert response.status == 200
     metadata = json.loads(response.text or "")["posts"][0]["reddit"]
@@ -385,7 +385,7 @@ async def test_posts_paginate_without_cross_domain_asset_collisions(
     app: web.Application, tmp_path: pathlib.Path,
 ) -> None:
     assets = tmp_path / "assets"
-    assets.mkdir()
+    assets.mkdir(exist_ok=True)
     (assets / "b.jpg").touch()
     article = row("b.example")
     article["html"] = '<img src="https://example.com/b.jpg"><p>Body</p>'
@@ -655,3 +655,54 @@ async def test_built_reader_routes_and_existing_viewer_are_independent(
     assert reader_api._reader_file("../outside") is None  # pyright: ignore[reportPrivateUsage]
     assert reader_api._reader_file("missing.js") is None  # pyright: ignore[reportPrivateUsage]
     assert reader_api._reader_file("saved/politics") == tmp_path / "index.html"  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_community_identity_and_flair_choices_are_shared_with_posts(
+    app: web.Application, tmp_path: pathlib.Path,
+) -> None:
+    assets = tmp_path / "assets"
+    assets.mkdir(exist_ok=True)
+    icon = assets / "community.png"
+    icon.write_bytes(b"\x89PNG\r\n\x1a\n")
+    state = app["state"]
+    app["state"] = state._replace(settings=state.settings._replace(sources=(
+        SourceConfig("reddit.com", (), feed_urls=(
+            "https://www.reddit.com/r/LocalLLaMA/",
+            "https://www.reddit.com/r/accelerate/",
+        )),
+    )))
+    icon_row = {
+        "community": "localllama", "icon_url": "https://styles.redditmedia.com/icon.png",
+        "local_path": str(icon), "content_type": "image/png",
+    }
+    app["clickhouse"] = FakeClickHouse(
+        [{"domain": "reddit.com", "count": 9}],
+        [{"community": "localllama", "count": 7},
+         {"community": "accelerate", "count": 2}],
+        [icon_row],
+        [{"community": "localllama", "name": "Discussion", "count": 4},
+         {"community": "localllama", "name": "New Model", "count": 3},
+         {"community": "accelerate", "name": "Discussion", "count": 2}],
+    )
+    response = await request(app, "/api/reader/sources")
+    assert response.status == 200
+    source = json.loads(response.text or "")["sources"][0]
+    assert source["flairs"] == [
+        {"name": "Discussion", "count": 6}, {"name": "New Model", "count": 3},
+    ]
+    assert source["communities"][0]["flairs"] == [
+        {"name": "Discussion", "count": 2},
+    ]
+    assert source["communities"][1]["icon_url"] == "/assets/community.png"
+    post = row("reddit.com", "t3_icon")
+    post.update(source="reddit", url="https://www.reddit.com/r/LocalLLaMA/comments/icon/title/")
+    app["clickhouse"] = FakeClickHouse([post], [], [{
+        "post_id": "t3_icon", "payload": '{"link_flair_text":"  New Model  "}',
+    }], [icon_row])
+    response = await request(
+        app, "/api/reader/post?domain=reddit.com&id=t3_icon",
+    )
+    assert response.status == 200
+    metadata = json.loads(response.text or "")["reddit"]
+    assert metadata["icon_url"] == "/assets/community.png"
+    assert metadata["flair"] == "New Model"

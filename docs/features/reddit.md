@@ -78,6 +78,19 @@ When Reddit communities are configured, the reader shows a collapsible
 including communities with no collected posts yet. Reddit stays separate from
 All stories. Search and reader filters operate on the selected collection.
 
+Community icons are discovered automatically for every configured community
+on each scrape and cached locally when image downloads are enabled. Adding a
+new `r/community` needs no icon setting. The sidebar, cards and article header
+use the cached icon; a missing icon shows the community's initial. A failed
+refresh keeps the last usable icon and can retry on the next scrape.
+
+Under **Filters → Flair**, choose labels found on your collected posts.
+A community view offers only that community's labels. The overall Reddit view
+combines identical labels across communities. Multiple selected labels match
+any of those flairs and combine with the other filters. Counts describe the
+collected posts, not Reddit's full catalogue of available flairs. Search,
+article links and Back navigation preserve the selected labels.
+
 Posts include their title, author, available body and media, outbound link,
 and captured score/comment counts where present. A comment count is metadata,
 not a downloaded discussion. Listing pages can truncate post bodies or omit

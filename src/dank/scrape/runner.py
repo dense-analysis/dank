@@ -21,7 +21,7 @@ from dank.config import (
 )
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.logging_setup import configure_logging
-from dank.model import AssetDiscovery, RawPost
+from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
 from dank.progress import Progress
 from dank.runtime import runtime_info
 from dank.scrape.assets import download_assets
@@ -48,6 +48,8 @@ from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
 logger = logging.getLogger(__name__)
+# Community avatars should remain small even when post media is unlimited.
+MAX_COMMUNITY_ICON_BYTES = 1024 * 1024
 
 
 async def run_scrape(
@@ -115,6 +117,8 @@ async def run_scrape(
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
         await _ensure_history_tables(clickhouse_client)
+        schema = pathlib.Path(__file__).parents[1] / "storage/reddit.sql"
+        await clickhouse_client.execute(schema.read_text())
         await clickhouse_client.insert_rows("scrape_runs", [history.row(1)])
 
         try:
@@ -257,6 +261,7 @@ async def _collect_source(
                     retry_failed_pages=retry_failed_pages,
                 ):
                     stats.discovered(len(batch.posts), len(batch.assets))
+                    stats.pending += len(batch.communities)
                     await queue.put(batch._replace(source_index=index))
                     history.queue_size += 1
 
@@ -493,11 +498,129 @@ async def _process_batches(
             available_assets += assets.assets_available
             unavailable_assets += assets.assets_unavailable
 
+        if batch is not None and batch.communities:
+            owner = (
+                history.sources.get(batch.source_index) if history else None
+            )
+            await _persist_community_icons(
+                clickhouse_client, http_client, batch.communities,
+                assets_dir=assets_dir, max_asset_bytes=max_asset_bytes,
+                download_types=download_types, owner=owner,
+            )
+
+            _records_persisted([owner] * len(batch.communities))
+
         if batch is None:
             # Break when there's nothing left.
             break
 
     return ScrapeTotals(saved_posts, available_assets, unavailable_assets)
+
+
+async def _persist_community_icons(
+    client: ClickHouseClient,
+    http_client: aiohttp.ClientSession,
+    communities: tuple[RedditCommunityDiscovery, ...],
+    *,
+    assets_dir: pathlib.Path,
+    max_asset_bytes: int | None,
+    download_types: tuple[str, ...],
+    owner: SourceMetrics | None,
+) -> None:
+    if "image" not in download_types:
+        return
+
+    limit = min(max_asset_bytes or MAX_COMMUNITY_ICON_BYTES,
+                MAX_COMMUNITY_ICON_BYTES)
+
+    for community in communities:
+        if not community.icon_url:
+            continue
+
+        name = community.community.lower()
+        if (
+            not re.fullmatch(r"[a-z0-9_]{2,21}", name)
+            or not _community_icon_url(community.icon_url)
+        ):
+            logger.warning("Ignoring invalid Reddit community icon metadata")
+            continue
+
+        # Reuse file caching without creating fictitious post/media rows.
+        discovery = AssetDiscovery(
+            "reddit-community", "reddit.com", f"communities/{name}",
+            community.icon_url, "image", None,
+        )
+
+        if owner is not None:
+            owner.counts["media_references"] += 1
+
+        downloaded = await download_assets(
+            [discovery], assets_dir=assets_dir, http_client=http_client,
+            max_asset_bytes=limit, download_types=download_types,
+            owners={discovery: owner} if owner is not None else None,
+        )
+
+        if not downloaded or not downloaded[0].local_path:
+            continue
+
+        local_path = pathlib.Path(downloaded[0].local_path)
+        content_type = await asyncio.to_thread(_icon_content_type, local_path)
+
+        if not content_type:
+            # A transient HTML response must not poison this URL's file cache.
+            await asyncio.to_thread(local_path.unlink, missing_ok=True)
+            logger.warning("Reddit r/%s icon is not a supported image", name)
+
+            if owner is not None:
+                owner.counts["parse_failures"] += 1
+
+            continue
+
+        # Failed refreshes never overwrite a previously cached community icon.
+        await client.insert_rows("reddit_community_icons", [{
+            "community": name, "icon_url": community.icon_url,
+            "local_path": str(local_path), "content_type": content_type,
+            "scraped_at": community.scraped_at,
+            "request_url": community.request_url,
+            "payload": community.payload,
+        }])
+
+        if owner is not None:
+            owner.counts["asset_records_saved"] += 1
+
+        logger.info("Cached community icon for r/%s", community.community)
+
+
+def _community_icon_url(value: str) -> bool:
+    try:
+        url = urlsplit(value)
+
+        return (
+            url.scheme == "https" and url.hostname == "styles.redditmedia.com"
+            and url.username is None and url.password is None
+            and url.port in {None, 443} and not url.fragment
+        )
+    except ValueError:
+        return False
+
+
+def _icon_content_type(path: pathlib.Path) -> str:
+    with path.open("rb") as file:
+        header = file.read(12)
+
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+
+    if header.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp"
+
+    return ""
 
 
 def _records_persisted(

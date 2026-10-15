@@ -95,6 +95,11 @@ match across communities.
 Search, author and date filters apply within the current Reddit view; article
 links and browser navigation preserve that view. Scores, comment counts and
 flair reflect the collected post. Comments themselves are not collected.
+Community icons are cached during scraping and appear in the sidebar, cards
+and article headers, with initials when unavailable. Filters offer the flairs
+observed in collected posts: community-specific choices in community views,
+and combined matching labels across the Reddit collection. Selected flairs
+match any selected label and remain in the URL through search and navigation.
 
 The reader orders stored posts by date or search relevance. Reddit collection
 defaults to Top for the past day; source configuration can change the sort

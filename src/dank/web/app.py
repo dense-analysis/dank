@@ -135,6 +135,8 @@ def create_app(settings: Settings, *, page_size: int) -> web.Application:
     app = web.Application()
     static_dir = _static_dir()
     assets_dir = _assets_dir(settings)
+    # Keep assets discovered after the first startup immediately readable.
+    assets_dir.mkdir(parents=True, exist_ok=True)
     templates = _template_environment()
     app["state"] = AppState(
         settings=settings,
@@ -186,6 +188,8 @@ async def _clickhouse_context(app: web.Application):
     app["clickhouse"] = client
 
     try:
+        schema = pathlib.Path(__file__).parents[1] / "storage/reddit.sql"
+        await client.execute(schema.read_text())
         yield
     finally:
         await client.__aexit__(None, None, None)
