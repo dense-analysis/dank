@@ -30,6 +30,7 @@ export function ArticleView({
   filters,
   selectAuthor,
   selectCommunity,
+  selectFlair,
 }: {
   domain: string;
   id: string;
@@ -40,6 +41,7 @@ export function ArticleView({
   filters: Filters;
   selectAuthor: (author: string) => void;
   selectCommunity: (community: string) => void;
+  selectFlair: (community: string, flair: string) => void;
 }) {
   const { preferences, updatePreferences, preferencesError } =
     useReaderPreferences();
@@ -156,7 +158,7 @@ export function ArticleView({
               select={selectAuthor}
             />
             {post.reddit ? (
-              <RedditMetadata reddit={post.reddit} />
+              <RedditMetadata reddit={post.reddit} selectFlair={selectFlair} />
             ) : (
               hasContent && <span> {readingTime(post)} min read</span>
             )}

@@ -90,7 +90,8 @@ If an icon is unavailable, the community initial is shown. **Filters → Flair**
 shows flairs found in collected posts for the selected community, or across all
 communities in the Reddit view. Select multiple flairs to match any of them;
 flair choices combine with search, author and date filters. Shared flair labels
-match across communities.
+match across communities. Click a flair badge on a post or article to open
+that community’s feed filtered to that flair.
 
 Search, author and date filters apply within the current Reddit view; article
 links and browser navigation preserve that view. Scores, comment counts and

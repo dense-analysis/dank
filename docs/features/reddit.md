@@ -89,7 +89,9 @@ A community view offers only that community's labels. The overall Reddit view
 combines identical labels across communities. Multiple selected labels match
 any of those flairs and combine with the other filters. Counts describe the
 collected posts, not Reddit's full catalogue of available flairs. Search,
-article links and Back navigation preserve the selected labels.
+article links and Back navigation preserve the selected labels. Click a flair
+badge on a post or article to open that community’s feed with just that flair
+selected.
 
 Posts include their title, author, available body and media, outbound link,
 and captured score/comment counts where present. A comment count is metadata,

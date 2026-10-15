@@ -1786,11 +1786,20 @@ input[type="checkbox"] {
   gap: 8px 12px;
 }
 .reddit-flair {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   max-width: 220px;
   padding: 2px 7px;
   background: var(--surface-hover);
   border-radius: 4px;
   overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.reddit-flair:hover,
+.reddit-flair:focus-visible {
+  color: var(--green);
+  text-decoration: underline;
 }
 
 @media (max-width: 600px) {

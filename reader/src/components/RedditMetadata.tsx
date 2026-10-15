@@ -23,7 +23,15 @@ export function RedditCommunityLink({
   );
 }
 
-export function RedditMetadata({ reddit }: { reddit: RedditPost }) {
+export function RedditMetadata({
+  reddit,
+  selectFlair,
+}: {
+  reddit: RedditPost;
+  selectFlair: (community: string, flair: string) => void;
+}) {
+  const { community, flair } = reddit;
+
   return (
     <span className="reddit-metadata">
       {reddit.score !== null && (
@@ -38,7 +46,17 @@ export function RedditMetadata({ reddit }: { reddit: RedditPost }) {
           {reddit.comments.toLocaleString()} comments
         </span>
       )}
-      {reddit.flair && <span className="reddit-flair">{reddit.flair}</span>}
+      {flair && (
+        <ReaderLink
+          className="reddit-flair"
+          href={`/reader/?${filterParams({ ...defaultFilters, kind: "reddit", community, flairs: [flair] })}`}
+          onNavigate={() => selectFlair(community, flair)}
+          aria-label={`Posts from r/${community} with flair ${flair}`}
+          title={`Show ${flair} posts from r/${community}`}
+        >
+          {flair}
+        </ReaderLink>
+      )}
     </span>
   );
 }

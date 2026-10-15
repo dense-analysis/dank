@@ -227,7 +227,9 @@ test("retains community, search, author and article navigation in Reddit", async
     .click();
   await expect(page).toHaveURL(timelineUrl);
   await expect(story).toBeVisible();
-  await page.getByRole("link", { name: "Posts from r/LocalLLaMA" }).click();
+  await page
+    .getByRole("link", { name: "Posts from r/LocalLLaMA", exact: true })
+    .click();
   expect(new URL(page.url()).searchParams.get("view")).toBe("reddit");
   expect(new URL(page.url()).searchParams.get("community")).toBe("LocalLLaMA");
 });

@@ -66,7 +66,7 @@ const sources: Source[] = [
   },
 ];
 
-async function mockDetails(page: Page, brokenIcons = false) {
+async function mockDetails(page: Pick<Page, "route">, brokenIcons = false) {
   const requests: URL[] = [];
   await page.route("**/assets/*.svg", (route) =>
     route.fulfill(
@@ -332,4 +332,94 @@ test("keeps icons and flair controls usable on mobile and accessible", async ({
     .getByRole("button", { name: "Remove flair filter: Research" })
     .click();
   await expect(page.locator(".post-card")).toHaveCount(2);
+});
+
+for (const width of [1440, 390]) {
+  test(`post flair opens its own community feed at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const requests = await mockDetails(page);
+    const initial =
+      "/reader/?view=reddit&q=Discussion&author=model_builder&after=2026-10-15";
+    await page.goto(initial);
+    await expect(page.locator(".post-card")).toHaveCount(2);
+    const badge = page.getByRole("link", {
+      name: "Posts from r/accelerate with flair Discussion",
+      exact: true,
+    });
+    const destination =
+      "/reader/?view=reddit&community=accelerate&flair=Discussion";
+    await expect(badge).toHaveAttribute("href", destination);
+    await badge.click();
+    await expect(page).toHaveURL(destination);
+    await expect(page.locator(".post-card")).toHaveCount(1);
+    await expect(
+      page.getByRole("heading", { name: posts[2].title, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Filters/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      requests.some(
+        (url) =>
+          url.searchParams.get("community") === "accelerate" &&
+          url.searchParams.get("flair") === "Discussion" &&
+          !url.searchParams.has("q") &&
+          !url.searchParams.has("author") &&
+          !url.searchParams.has("after"),
+      ),
+    ).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.goBack();
+    await expect(page).toHaveURL(initial);
+    await expect(page.locator(".post-card")).toHaveCount(2);
+  });
+}
+
+test("article flair supports keyboard and new-tab navigation with the same community filter", async ({
+  page,
+  context,
+}) => {
+  await mockDetails(context);
+  await page.goto(
+    "/reader/?view=reddit&community=LocalLLaMA&flair=New+Model&flair=Discussion",
+  );
+  await page
+    .getByRole("link", { name: `Read ${posts[0].title}`, exact: true })
+    .click();
+  const article = page.getByRole("main", { name: "Article reader" });
+  const articleUrl = page.url();
+  const badge = article.getByRole("link", {
+    name: "Posts from r/LocalLLaMA with flair New Model",
+    exact: true,
+  });
+  const destination =
+    "/reader/?view=reddit&community=LocalLLaMA&flair=New+Model";
+  await expect(badge).toHaveAttribute("href", destination);
+  const opened = context.waitForEvent("page");
+  await badge.click({ button: "middle" });
+  const tab = await opened;
+  await expect(tab).toHaveURL(destination);
+  await expect(tab.locator(".post-card")).toHaveCount(1);
+  await expect(page).toHaveURL(articleUrl);
+  await tab.close();
+  await badge.focus();
+  await badge.press("Enter");
+  await expect(page).toHaveURL(destination);
+  await expect(article).toHaveCount(0);
+  await expect(page.locator(".post-card")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", {
+      name: "Remove flair filter: New Model",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(articleUrl);
+  await expect(article).toBeVisible();
 });

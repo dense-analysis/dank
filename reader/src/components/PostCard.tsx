@@ -60,6 +60,7 @@ export function PostCard({
   filters,
   selectAuthor,
   selectCommunity,
+  selectFlair,
 }: {
   post: Post;
   read: boolean;
@@ -70,6 +71,7 @@ export function PostCard({
   filters: Filters;
   selectAuthor: (author: string) => void;
   selectCommunity: (community: string) => void;
+  selectFlair: (community: string, flair: string) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const hasContent = useMemo(() => hasArticleContent(post.html), [post.html]);
@@ -158,7 +160,9 @@ export function PostCard({
           filters={filters}
           select={selectAuthor}
         />
-        {post.reddit && <RedditMetadata reddit={post.reddit} />}
+        {post.reddit && (
+          <RedditMetadata reddit={post.reddit} selectFlair={selectFlair} />
+        )}
         {!post.reddit && hasContent && (
           <>
             <span className="meta-dot">·</span>

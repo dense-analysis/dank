@@ -163,6 +163,9 @@ export function App() {
   function selectCommunity(community: string) {
     select("reddit", { ...defaultFilters, community });
   }
+  function selectFlair(community: string, flair: string) {
+    select("reddit", { ...defaultFilters, community, flairs: [flair] });
+  }
   function selectAuthor(author: string) {
     navigate(filterParams({ ...filters, author, authorExact: true }));
   }
@@ -240,6 +243,7 @@ export function App() {
             filters={filters}
             selectAuthor={selectAuthor}
             selectCommunity={selectCommunity}
+            selectFlair={selectFlair}
           />
         )}
         <div hidden={readingArticle}>
@@ -334,6 +338,7 @@ export function App() {
                           filters={filters}
                           selectAuthor={selectAuthor}
                           selectCommunity={selectCommunity}
+                          selectFlair={selectFlair}
                         />
                       ))}
                     </div>
