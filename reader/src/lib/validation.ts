@@ -1,4 +1,4 @@
-import type { Post, RedditPost, Source } from "./types";
+import type { Post, RedditFlair, RedditPost, Source } from "./types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,6 +25,20 @@ function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+function isOptionalIcon(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isFlair(value: unknown): value is RedditFlair {
+  return (
+    isRecord(value) && typeof value.name === "string" && isCount(value.count)
+  );
+}
+
+function isOptionalFlairs(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every(isFlair));
+}
+
 function isRedditPost(value: unknown): value is RedditPost {
   return (
     isRecord(value) &&
@@ -32,7 +46,8 @@ function isRedditPost(value: unknown): value is RedditPost {
     (value.score === null ||
       (typeof value.score === "number" && Number.isSafeInteger(value.score))) &&
     (value.comments === null || isCount(value.comments)) &&
-    (value.flair === null || typeof value.flair === "string")
+    (value.flair === null || typeof value.flair === "string") &&
+    isOptionalIcon(value.icon_url)
   );
 }
 
@@ -73,6 +88,7 @@ export function isSource(value: unknown): value is Source {
     typeof value.name === "string" &&
     isStringArray(value.tags) &&
     isCount(value.count) &&
+    isOptionalFlairs(value.flairs) &&
     (value.kind === undefined ||
       ["rss", "x", "reddit"].includes(String(value.kind))) &&
     (value.communities === undefined ||
@@ -81,7 +97,9 @@ export function isSource(value: unknown): value is Source {
           (community) =>
             isRecord(community) &&
             typeof community.name === "string" &&
-            isCount(community.count),
+            isCount(community.count) &&
+            isOptionalIcon(community.icon_url) &&
+            isOptionalFlairs(community.flairs),
         )))
   );
 }

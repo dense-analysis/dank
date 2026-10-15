@@ -15,6 +15,7 @@ import type { Filters, Post } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
+import { CommunityAvatar } from "./CommunityAvatar";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
 import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
 import { SourceLink } from "./SourceLink";
@@ -124,7 +125,14 @@ export function ArticleView({
       {post && (
         <div className="article-inner">
           <div className="post-meta">
-            <SourceMark domain={post.domain} />
+            {post.reddit ? (
+              <CommunityAvatar
+                community={post.reddit.community}
+                iconUrl={post.reddit.icon_url}
+              />
+            ) : (
+              <SourceMark domain={post.domain} />
+            )}
             {post.reddit ? (
               <RedditCommunityLink
                 community={post.reddit.community}

@@ -1,6 +1,7 @@
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { calendarDate, recentDates } from "../lib/dateRanges";
+import { availableFlairs } from "../lib/reddit";
 import type { Filters, Source } from "../lib/types";
 
 export function FeedToolbar({
@@ -42,10 +43,15 @@ export function FeedToolbar({
   const activeCount =
     filters.domains.length +
     filters.tags.length +
+    filters.flairs.length +
     Number(!!filters.author) +
     Number(!!filters.after) +
     Number(!!filters.before);
   const tags = [...new Set(sources.flatMap((source) => source.tags))].sort();
+  const flairs =
+    filters.kind === "reddit"
+      ? availableFlairs(sources, filters.community)
+      : [];
   return (
     <div className="feed-tools">
       <form
@@ -120,6 +126,7 @@ export function FeedToolbar({
                   ...filters,
                   domains: [],
                   tags: [],
+                  flairs: [],
                   author: "",
                   authorExact: false,
                   after: "",
@@ -216,6 +223,38 @@ export function FeedToolbar({
               }
             />
           </label>
+          {flairs.length > 0 && (
+            <fieldset className="tag-field flair-field">
+              <legend>Flair</legend>
+              <div className="tag-options">
+                {flairs.map((flair) => (
+                  <button
+                    type="button"
+                    key={flair.name}
+                    className={`tag ${filters.flairs.includes(flair.name) ? "chosen" : ""}`}
+                    aria-pressed={filters.flairs.includes(flair.name)}
+                    title={`${flair.count.toLocaleString()} collected posts`}
+                    onClick={() =>
+                      change({
+                        ...filters,
+                        flairs: filters.flairs.includes(flair.name)
+                          ? filters.flairs.filter(
+                              (value) => value !== flair.name,
+                            )
+                          : [...filters.flairs, flair.name],
+                      })
+                    }
+                  >
+                    {flair.name}{" "}
+                    <span className="flair-count" aria-hidden="true">
+                      {flair.count.toLocaleString()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p>Match any selected flair in collected posts.</p>
+            </fieldset>
+          )}
           {tags.length > 0 && (
             <fieldset className="tag-field">
               <legend>Source tags</legend>
@@ -299,6 +338,22 @@ export function FeedToolbar({
               }
             >
               <span className="filter-chip-label">Source: {domain}</span>
+              <X size={12} />
+            </button>
+          ))}
+          {filters.flairs.map((flair) => (
+            <button
+              type="button"
+              key={flair}
+              aria-label={`Remove flair filter: ${flair}`}
+              onClick={() =>
+                change({
+                  ...filters,
+                  flairs: filters.flairs.filter((value) => value !== flair),
+                })
+              }
+            >
+              <span className="filter-chip-label">Flair: {flair}</span>
               <X size={12} />
             </button>
           ))}

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { RedditCommunity } from "../lib/types";
+import { CommunityAvatar } from "./CommunityAvatar";
 
 export function Sidebar({
   section,
@@ -99,6 +100,10 @@ export function Sidebar({
                     title={`r/${item.name}`}
                     aria-label={`r/${item.name}, ${item.count} collected posts`}
                   >
+                    <CommunityAvatar
+                      community={item.name}
+                      iconUrl={item.icon_url}
+                    />
                     <span className="community-name">r/{item.name}</span>
                     <span className="community-count" aria-hidden="true">
                       {item.count.toLocaleString()}

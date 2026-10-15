@@ -8,6 +8,7 @@ export const defaultFilters: Filters = {
   sort: "newest",
   domains: [],
   tags: [],
+  flairs: [],
   author: "",
   authorExact: false,
   after: "",

@@ -9,19 +9,35 @@ describe("filter URLs", () => {
       ...defaultFilters,
       kind: "reddit" as const,
       community: "LocalLLaMA",
+      flairs: ["New Model", "Research & News / 更新"],
       q: "local models",
       sort: "relevance" as const,
     };
     expect(parseFilters(filterParams(filters))).toEqual(filters);
-    expect(parseFilters(new URLSearchParams("community=LocalLLaMA"))).toEqual(
-      defaultFilters,
-    );
     expect(
-      filterParams({ ...defaultFilters, community: "LocalLLaMA" }).has(
-        "community",
-      ),
+      parseFilters(new URLSearchParams("community=LocalLLaMA&flair=New+Model")),
+    ).toEqual(defaultFilters);
+    expect(
+      filterParams({
+        ...defaultFilters,
+        community: "LocalLLaMA",
+        flairs: ["New Model"],
+      }).has("community"),
     ).toBe(false);
   });
+  it("deduplicates flair selections and excludes them outside Reddit", () => {
+    expect(
+      parseFilters(
+        new URLSearchParams(
+          "view=reddit&flair=New+Model&flair=New+Model&flair=+&flair=Discussion",
+        ),
+      ).flairs,
+    ).toEqual(["New Model", "Discussion"]);
+    expect(
+      filterParams({ ...defaultFilters, flairs: ["New Model"] }).has("flair"),
+    ).toBe(false);
+  });
+
   it("round-trips every rule, including repeated selections and punctuation", () => {
     const filters: Filters = {
       ...defaultFilters,

@@ -45,6 +45,7 @@ export function parseFilters(params: URLSearchParams): Filters {
           : "newest",
     domains: selections(params, "domain"),
     tags: selections(params, "tag"),
+    flairs: params.get("view") === "reddit" ? selections(params, "flair") : [],
     author: (params.get("author") ?? "").trim(),
     authorExact:
       !!params.get("author")?.trim() && params.get("author_match") === "exact",
@@ -59,6 +60,10 @@ export function filterParams(filters: Filters): URLSearchParams {
     params.set("view", "reddit");
     if (filters.community.trim())
       params.set("community", filters.community.trim());
+
+    for (const flair of new Set(filters.flairs)) {
+      if (flair.trim()) params.append("flair", flair.trim());
+    }
   }
   const q = filters.q.trim();
   if (q) params.set("q", q);

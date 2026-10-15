@@ -25,6 +25,7 @@ describe("reader API", () => {
       ...defaultFilters,
       kind: "reddit",
       community: "LocalLLaMA",
+      flairs: ["New Model", "Research & News"],
     });
     const reddit = new URL(
       String(vi.mocked(fetch).mock.calls[0][0]),
@@ -32,14 +33,19 @@ describe("reader API", () => {
     );
     expect(reddit.searchParams.get("kind")).toBe("reddit");
     expect(reddit.searchParams.get("community")).toBe("LocalLLaMA");
+    expect(reddit.searchParams.getAll("flair")).toEqual([
+      "New Model",
+      "Research & News",
+    ]);
     expect(reddit.searchParams.has("view")).toBe(false);
-    await fetchPosts(defaultFilters);
+    await fetchPosts({ ...defaultFilters, flairs: ["New Model"] });
     const stories = new URL(
       String(vi.mocked(fetch).mock.calls[1][0]),
       "https://reader.test",
     );
     expect(stories.searchParams.get("kind")).toBe("stories");
     expect(stories.searchParams.has("community")).toBe(false);
+    expect(stories.searchParams.has("flair")).toBe(false);
   });
 
   it("validates configured communities including those with no posts", async () => {
@@ -63,6 +69,47 @@ describe("reader API", () => {
       total_posts: 0,
     });
     await expect(fetchSources()).rejects.toThrow("unexpected response");
+  });
+
+  it("validates optional community icons and collected flair counts", async () => {
+    const source = {
+      domain: "reddit.com",
+      name: "Reddit",
+      kind: "reddit",
+      count: 1,
+      tags: [],
+      flairs: [{ name: "New Model", count: 1 }],
+      communities: [
+        {
+          name: "LocalLLaMA",
+          count: 1,
+          icon_url: "/assets/local.png",
+          flairs: [{ name: "New Model", count: 1 }],
+        },
+      ],
+    };
+    respond({ sources: [source], total_posts: 1 });
+    await expect(fetchSources()).resolves.toEqual({
+      sources: [source],
+      total_posts: 1,
+    });
+
+    for (const bad of [
+      { ...source, flairs: [{ name: "New Model", count: -1 }] },
+      { ...source, communities: [{ ...source.communities[0], icon_url: 7 }] },
+      {
+        ...source,
+        communities: [
+          {
+            ...source.communities[0],
+            flairs: [{ name: "New Model", count: "1" }],
+          },
+        ],
+      },
+    ]) {
+      respond({ sources: [bad], total_posts: 1 });
+      await expect(fetchSources()).rejects.toThrow("unexpected response");
+    }
   });
 
   it("validates incomplete collection flags while accepting older saved posts", () => {

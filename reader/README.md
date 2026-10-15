@@ -85,6 +85,13 @@ browser channel. No live collection is needed for the fixture tests.
 When Reddit communities are configured, a Reddit section appears below All
 stories. Expand its community list to browse each subreddit, including those
 with no collected posts yet. Reddit stays separate from the main story feed.
+Community icons are downloaded with collection and appear beside community names.
+If an icon is unavailable, the community initial is shown. **Filters → Flair**
+shows flairs found in collected posts for the selected community, or across all
+communities in the Reddit view. Select multiple flairs to match any of them;
+flair choices combine with search, author and date filters. Shared flair labels
+match across communities.
+
 Search, author and date filters apply within the current Reddit view; article
 links and browser navigation preserve that view. Scores, comment counts and
 flair reflect the collected post. Comments themselves are not collected.

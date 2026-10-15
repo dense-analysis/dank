@@ -3,11 +3,19 @@ export interface RedditPost {
   score: number | null;
   comments: number | null;
   flair: string | null;
+  icon_url?: string | null;
+}
+
+export interface RedditFlair {
+  name: string;
+  count: number;
 }
 
 export interface RedditCommunity {
   name: string;
   count: number;
+  icon_url?: string | null;
+  flairs?: RedditFlair[];
 }
 
 export interface Post {
@@ -29,6 +37,7 @@ export interface Post {
 export interface Source {
   kind?: "rss" | "x" | "reddit";
   communities?: RedditCommunity[];
+  flairs?: RedditFlair[];
   domain: string;
   name: string;
   tags: string[];
@@ -42,6 +51,7 @@ export interface Filters {
   sort: "newest" | "oldest" | "relevance";
   domains: string[];
   tags: string[];
+  flairs: string[];
   author: string;
   authorExact: boolean;
   after: string;

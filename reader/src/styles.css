@@ -1802,3 +1802,29 @@ input[type="checkbox"] {
     order: 1;
   }
 }
+
+.community-avatar {
+  border-radius: 50%;
+  overflow: hidden;
+}
+.community-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.community-item .community-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+.flair-field {
+  min-width: 0;
+}
+.flair-field .tag {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.flair-count {
+  margin-left: 4px;
+  opacity: 0.75;
+}

@@ -4,6 +4,7 @@ import { hasArticleContent } from "../lib/article";
 import type { Filters, Post } from "../lib/types";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
+import { CommunityAvatar } from "./CommunityAvatar";
 import { HighlightedText } from "./HighlightedText";
 import { ReaderLink } from "./ReaderLink";
 import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
@@ -78,7 +79,14 @@ export function PostCard({
       className={`post-card ${post.reddit ? "reddit-card" : ""} ${read ? "is-read" : ""}`}
     >
       <div className="post-meta">
-        <SourceMark domain={post.domain} />
+        {post.reddit ? (
+          <CommunityAvatar
+            community={post.reddit.community}
+            iconUrl={post.reddit.icon_url}
+          />
+        ) : (
+          <SourceMark domain={post.domain} />
+        )}
         {post.reddit ? (
           <RedditCommunityLink
             community={post.reddit.community}
