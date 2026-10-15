@@ -13,6 +13,10 @@ import zendriver
 from zendriver import cdp
 
 logger = logging.getLogger(__name__)
+# Zendriver 0.17.1 sends SIGTERM immediately after CDP Browser.close.
+# Let Chromium finish profile cleanup before handing control back to it.
+BROWSER_SHUTDOWN_TIMEOUT_SECONDS = 5
+BROWSER_SHUTDOWN_POLL_SECONDS = 0.1
 
 
 class NetworkResponse(NamedTuple):
@@ -90,8 +94,36 @@ class BrowserSession:
             return self._browser
 
     async def close(self) -> None:
-        if self._browser is not None:
-            await self._browser.stop()
+        browser = self._browser
+
+        if browser is None:
+            return
+
+        try:
+            async with asyncio.timeout(BROWSER_SHUTDOWN_TIMEOUT_SECONDS):
+                connection = browser.connection
+
+                if (
+                    not browser.stopped
+                    and connection is not None
+                    and not connection.closed
+                ):
+                    await connection.send(cdp.browser.close())
+
+                    # Zendriver exposes process exit only as a polled property.
+                    while not browser.stopped:  # noqa: ASYNC110
+                        await asyncio.sleep(BROWSER_SHUTDOWN_POLL_SECONDS)
+        except TimeoutError:
+            logger.debug(
+                "Browser graceful shutdown timed out; stopping driver",
+            )
+        except Exception:
+            logger.debug(
+                "Browser graceful shutdown unavailable; stopping driver",
+                exc_info=True,
+            )
+        finally:
+            await browser.stop()
 
     async def hold_open(self) -> None:
         if self._browser is not None and not self._config.headless:
