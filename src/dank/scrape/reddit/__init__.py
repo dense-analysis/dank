@@ -18,7 +18,7 @@ from dank.config import (
     RedditSourceConfig,
     RedditTimeFilter,
 )
-from dank.model import AssetDiscovery, RawPost
+from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
     BrowserSession,
@@ -157,6 +157,7 @@ async def _scrape_community(
     seen_posts: set[str] = set()
     seen_assets: set[str] = set()
     community_discovered = False
+    pending_community: RedditCommunityDiscovery | None = None
     idle_scrolls = 0
     stop_reason = "scroll limit"
     step = 0
@@ -208,8 +209,11 @@ async def _scrape_community(
                     request_url=text(snapshot.get("url")) or url,
                 )
             ) is not None:
-                batch = batch._replace(communities=(discovery,))
-                community_discovered = True
+                pending_community = discovery
+                community_discovered = bool(discovery.icon_url)
+                batch = batch._replace(
+                    communities=(discovery,) if community_discovered else (),
+                )
 
             logger.info(
                 "Reddit r/%s scroll=%d new_posts=%d total_posts=%d",
@@ -222,10 +226,7 @@ async def _scrape_community(
             if batch.posts or batch.assets or batch.communities:
                 yield batch
 
-            if batch.posts:
-                idle_scrolls = 0
-            else:
-                idle_scrolls += 1
+            idle_scrolls = 0 if batch.posts else idle_scrolls + 1
 
             if len(seen_posts) >= limits.max_posts:
                 stop_reason = "post limit"
@@ -250,7 +251,11 @@ async def _scrape_community(
             limits.max_scrolls,
         )
 
-        if not seen_posts and not community_discovered:
+        if pending_community is not None and not community_discovered:
+            # Keep a header-only result until scrolling has had a chance to
+            # reveal an icon that Reddit renders after the initial document.
+            yield ScrapeBatch([], [], communities=(pending_community,))
+        elif not seen_posts and not community_discovered:
             raise RedditScrapeError(
                 f"No public posts found for r/{community}. Reddit may have "
                 "blocked access, the community may be empty, or its listing "

@@ -205,10 +205,13 @@ def test_unsuccessful_document_uses_valid_dom_instead() -> None:
 class _Page:
     def __init__(
         self, *, posts: bool = True, header: bool = True, icon: bool = True,
+        icon_after_scroll: int | None = None,
     ) -> None:
         self.posts = posts
         self.header = header
         self.icon = icon
+        self.icon_after_scroll = icon_after_scroll
+        self.scrolls = 0
         self.community = COMMUNITY
         self.url = LISTING_URL
         self.visited: list[str] = []
@@ -221,9 +224,15 @@ class _Page:
         self.url = parameters["url"]
         self.community = self.url.split("/r/")[1].split("/")[0]
         self.visited.append(self.community)
+        self.scrolls = 0
 
     async def evaluate(self, script: str) -> str:
         if script.startswith("JSON.stringify"):
+            show_icon = self.icon or (
+                self.icon_after_scroll is not None
+                and self.scrolls >= self.icon_after_scroll
+            )
+
             return json.dumps(
                 {
                     "url": self.url,
@@ -231,12 +240,14 @@ class _Page:
                     "html": _post(self.community) if self.posts else "",
                     "community_html": (
                         _header(self.community)
-                        + (_icon() if self.icon else "")
+                        + (_icon() if show_icon else "")
                         if self.header
                         else ""
                     ),
                 },
             )
+
+        self.scrolls += 1
 
         return ""
 
@@ -286,13 +297,16 @@ async def test_metadata_deduplicates_within_each_run() -> None:
     assert page.visited == [COMMUNITY, "accelerate", COMMUNITY, "accelerate"]
 
 
-async def test_public_empty_community_still_emits_metadata() -> None:
-    batches = await _collect(_Page(posts=False), (COMMUNITY,))
+@pytest.mark.parametrize("icon", [True, False])
+async def test_public_empty_community_still_emits_metadata(
+    *, icon: bool,
+) -> None:
+    batches = await _collect(_Page(posts=False, icon=icon), (COMMUNITY,))
 
     assert len(batches) == 1
     assert batches[0].posts == []
     assert batches[0].assets == []
-    assert batches[0].communities[0].icon_url == ICON_URL
+    assert batches[0].communities[0].icon_url == (ICON_URL if icon else "")
 
 
 async def test_missing_header_does_not_lose_posts() -> None:
@@ -306,7 +320,22 @@ async def test_missing_header_does_not_lose_posts() -> None:
 async def test_missing_icon_keeps_posts_and_community_identity() -> None:
     batches = await _collect(_Page(icon=False), (COMMUNITY,))
 
-    assert len(batches) == 1
+    assert len(batches) == 2
     assert len(batches[0].posts) == 1
-    assert batches[0].communities[0].community == COMMUNITY
-    assert batches[0].communities[0].icon_url == ""
+    assert batches[0].communities == ()
+    assert batches[1].posts == []
+    assert batches[1].communities[0].community == COMMUNITY
+    assert batches[1].communities[0].icon_url == ""
+
+
+async def test_header_waits_for_icon_that_hydrates_after_scrolling() -> None:
+    page = _Page(icon=False, icon_after_scroll=1)
+    batches = await _collect(page, (COMMUNITY,))
+    discoveries = [item for batch in batches for item in batch.communities]
+
+    assert len(discoveries) == 1
+    assert discoveries[0].icon_url == ICON_URL
+    assert batches[0].communities == ()
+    assert [post.post_id for batch in batches for post in batch.posts] == [
+        "t3_abc",
+    ]
