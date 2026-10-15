@@ -122,8 +122,10 @@ When no readable article container is available, processing can recover
 Khoros blog articles (including Microsoft Community Hub) from saved Next.js
 JSON data. Empty or script-only article containers do not block this fallback.
 It selects the article matching the page's message ID and preserves its
-formatting, links and images. Page scripts are never executed. Existing saved
-captures can use this fallback with `--reprocess`; another scrape is unnecessary.
+formatting, links and image references. Page scripts are never executed.
+Existing saved captures can use this fallback with `--reprocess`; another
+scrape is unnecessary.
+Collecting missing image files remains a separate [media operation](media.md).
 
 When a full feed body is plain text, processing can recover paragraphs,
 headings, lists and quotations from the saved article page. Only complete
