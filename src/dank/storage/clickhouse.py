@@ -159,13 +159,14 @@ class ClickHouseClient:
 
 
 def parse_datetime(value: Any) -> datetime.datetime | None:
-    if isinstance(value, datetime.datetime):
-        return value
-
     if isinstance(value, str) and value:
         try:
-            return datetime.datetime.fromisoformat(value)
+            value = datetime.datetime.fromisoformat(value)
         except ValueError:
             return None
+
+    if isinstance(value, datetime.datetime):
+        # ClickHouse's UTC columns can be returned as naive datetimes.
+        return value if value.tzinfo else value.replace(tzinfo=datetime.UTC)
 
     return None
