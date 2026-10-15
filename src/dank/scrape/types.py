@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from dank.model import AssetDiscovery, RawPost
+from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
 
 
 class ScrapeBatch(NamedTuple):
@@ -17,6 +17,7 @@ class ScrapeBatch(NamedTuple):
     posts: list[RawPost]
     assets: list[AssetDiscovery]
     source_index: int = 0
+    communities: tuple[RedditCommunityDiscovery, ...] = ()
 
 
 class ScrapeTotals(NamedTuple):

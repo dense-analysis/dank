@@ -83,3 +83,13 @@ class Post(NamedTuple):
     html: str
     html_embedding: tuple[float, ...]
     source: str
+
+
+class RedditCommunityDiscovery(NamedTuple):
+    """Community identity and its icon observed on a Reddit listing page."""
+
+    community: str
+    icon_url: str
+    scraped_at: datetime.datetime
+    request_url: str
+    payload: str
