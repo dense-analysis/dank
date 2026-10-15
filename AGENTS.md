@@ -63,6 +63,9 @@ indirection.
   differ. Extract functions, components, or modules to make ownership clearer;
   keep abstractions proportional to the problem being solved.
 * Implement tests, especially unit tests for data processing.
+* When changing collection/processing failure handling, quality indicators, or
+  source-specific workarounds, update `docs/known-issues.md` with the current
+  behavior, remaining limits, and relevant evidence or tests.
 * Never use `importlib` in test code for importing private functions, and
   instead import with `# pyright: ignore[reportPrivateUsage]`
 

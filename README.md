@@ -19,6 +19,9 @@ perception and evolving narratives.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
 - [Database queries](docs/features/database.md) — inspect collected and processed data.
 
+See [known collection and processing issues](docs/known-issues.md) for reader
+status meanings, source-specific problems, current handling and recovery gaps.
+
 ## Choose how to run
 
 DANK supports **native execution with uv** and **Docker Compose**. Both use
