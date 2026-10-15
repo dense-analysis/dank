@@ -91,7 +91,9 @@ export function PostCard({
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
         <span className="post-labels">
           <span className="source-kind">
-            {post.source === "x" || post.source === "reddit" ? "Post" : "Article"}
+            {post.source === "x" || post.source === "reddit"
+              ? "Post"
+              : "Article"}
           </span>
           {(!hasContent || post.collection_incomplete) && (
             <CollectionBadge incomplete={hasContent} />
