@@ -7,6 +7,7 @@ import type { Filters, Post } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
 import { SourceLink } from "./SourceLink";
 
 export function ArticleView({
@@ -18,6 +19,7 @@ export function ArticleView({
   markRead,
   filters,
   selectAuthor,
+  selectCommunity,
 }: {
   domain: string;
   id: string;
@@ -27,6 +29,7 @@ export function ArticleView({
   markRead: (post: Post) => void;
   filters: Filters;
   selectAuthor: (author: string) => void;
+  selectCommunity: (community: string) => void;
 }) {
   const { preferences, updatePreferences, preferencesError } =
     useReaderPreferences();
@@ -109,7 +112,14 @@ export function ArticleView({
         <div className="article-inner">
           <div className="post-meta">
             <SourceMark domain={post.domain} />
-            <SourceLink domain={post.domain} select={selectSource} />
+            {post.reddit ? (
+              <RedditCommunityLink
+                community={post.reddit.community}
+                select={selectCommunity}
+              />
+            ) : (
+              <SourceLink domain={post.domain} select={selectSource} />
+            )}
             <span className="meta-dot">·</span>
             <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
           </div>
@@ -121,7 +131,11 @@ export function ArticleView({
               filters={filters}
               select={selectAuthor}
             />
-            <span> {readingTime(post)} min read</span>
+            {post.reddit ? (
+              <RedditMetadata reddit={post.reddit} />
+            ) : (
+              <span> {readingTime(post)} min read</span>
+            )}
           </div>
           <a
             className="original-link"

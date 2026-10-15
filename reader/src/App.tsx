@@ -36,7 +36,11 @@ export function App() {
   const { preferences } = useReaderPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
   const view = params.get("view");
-  const section = view === "sources" || view === "settings" ? view : "all";
+  const section =
+    view === "sources" || view === "settings" || view === "reddit"
+      ? view
+      : "all";
+  const feedSection = section === "all" || section === "reddit";
   const filters = parseFilters(params);
   const articleId = params.get("article");
   const articleDomain = params.get("article_source");
@@ -50,7 +54,7 @@ export function App() {
     queryFn: ({ pageParam, signal }) => fetchPosts(filters, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
-    enabled: section === "all",
+    enabled: feedSection,
   });
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const { fetchNextPage, hasNextPage, isFetching, isError } = posts;
@@ -59,7 +63,7 @@ export function App() {
     const target = loadMoreRef.current;
     if (
       !target ||
-      section !== "all" ||
+      !feedSection ||
       readingArticle ||
       !hasNextPage ||
       isFetching ||
@@ -79,7 +83,7 @@ export function App() {
     observer.observe(target);
     return () => observer.disconnect();
   }, [
-    section,
+    feedSection,
     readingArticle,
     hasNextPage,
     isFetching,
@@ -97,12 +101,27 @@ export function App() {
     (post) => post.id === articleId && post.domain === articleDomain,
   );
   const readKeys = new Set(read);
+  const redditSources =
+    sources.data?.sources.filter((source) => source.kind === "reddit") ?? [];
+  const communities = redditSources.flatMap(
+    (source) => source.communities ?? [],
+  );
+  const visibleSources =
+    sources.data?.sources.filter((source) =>
+      section === "reddit"
+        ? source.kind === "reddit"
+        : source.kind !== "reddit",
+    ) ?? [];
   const title =
     section === "settings"
       ? "Settings"
       : section === "sources"
         ? "Sources"
-        : "All stories";
+        : section === "reddit"
+          ? filters.community
+            ? `r/${filters.community}`
+            : "Reddit"
+          : "All stories";
   const date = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
@@ -110,7 +129,10 @@ export function App() {
   }).format(new Date());
 
   function select(nextView: string, nextFilters = defaultFilters) {
-    const next = filterParams(nextFilters);
+    const next = filterParams({
+      ...nextFilters,
+      kind: nextView === "reddit" ? "reddit" : "stories",
+    });
     if (nextView !== "all") next.set("view", nextView);
     navigate(next);
     setMobileOpen(false);
@@ -129,7 +151,17 @@ export function App() {
     backTo(next);
   }
   function selectSource(domain: string) {
-    select("all", { ...defaultFilters, domains: [domain] });
+    const isReddit =
+      sources.data?.sources.some(
+        (source) => source.domain === domain && source.kind === "reddit",
+      ) || /^(www\.)?reddit\.com$/.test(domain);
+    select(isReddit ? "reddit" : "all", {
+      ...defaultFilters,
+      domains: [domain],
+    });
+  }
+  function selectCommunity(community: string) {
+    select("reddit", { ...defaultFilters, community });
   }
   function selectAuthor(author: string) {
     navigate(filterParams({ ...filters, author, authorExact: true }));
@@ -139,6 +171,10 @@ export function App() {
     <Sidebar
       section={section}
       select={select}
+      redditEnabled={redditSources.length > 0}
+      communities={communities}
+      community={filters.community}
+      selectCommunity={selectCommunity}
       mobileOpen={mobileOpen}
       close={() => setMobileOpen(false)}
     />
@@ -179,7 +215,7 @@ export function App() {
             <Menu size={21} />
           </button>
           <div className="breadcrumb">
-            {section === "all" && !readingArticle ? (
+            {feedSection && !readingArticle ? (
               <h1>{title}</h1>
             ) : (
               <span>{title}</span>
@@ -203,6 +239,7 @@ export function App() {
             markRead={markRead}
             filters={filters}
             selectAuthor={selectAuthor}
+            selectCommunity={selectCommunity}
           />
         )}
         <div hidden={readingArticle}>
@@ -212,13 +249,22 @@ export function App() {
             <main
               id={readingArticle ? undefined : "main"}
               className="timeline"
-              aria-label={section === "all" ? "All stories" : undefined}
+              aria-label={feedSection ? title : undefined}
               tabIndex={-1}
               data-page-focus
             >
               <div className="page-heading">
-                {section === "all" && <p className="eyebrow">{date}</p>}
-                {section !== "all" && (
+                {feedSection && <p className="eyebrow">{date}</p>}
+                {section === "reddit" && (
+                  <p className="reddit-description">
+                    Collected posts from{" "}
+                    {filters.community
+                      ? `r/${filters.community}`
+                      : "your communities"}
+                    .
+                  </p>
+                )}
+                {!feedSection && (
                   <div className="title-row">
                     <h1>{title}</h1>
                   </div>
@@ -244,12 +290,16 @@ export function App() {
                 <>
                   <FeedToolbar
                     filters={filters}
-                    sources={sources.data?.sources ?? []}
+                    sources={visibleSources}
                     change={changeFilters}
                   />
                   <div className="timeline-label">
                     <span>
-                      {filters.q ? "SEARCH RESULTS" : "LATEST"}
+                      {filters.q
+                        ? "SEARCH RESULTS"
+                        : section === "reddit"
+                          ? "COLLECTED POSTS"
+                          : "LATEST"}
                       {posts.isFetching && !posts.isPending && (
                         <span className="updating">Updating…</span>
                       )}
@@ -283,13 +333,18 @@ export function App() {
                           query={filters.q}
                           filters={filters}
                           selectAuthor={selectAuthor}
+                          selectCommunity={selectCommunity}
                         />
                       ))}
                     </div>
                   ) : (
                     <div className="empty-state">
                       <Inbox size={30} strokeWidth={1.3} />
-                      <h2>No stories found</h2>
+                      <h2>
+                        {section === "reddit"
+                          ? "No collected posts found"
+                          : "No stories found"}
+                      </h2>
                       <p>
                         Try a wider date range, fewer filters, or a different
                         search.
@@ -297,9 +352,12 @@ export function App() {
                       <button
                         type="button"
                         className="secondary-button"
-                        onClick={() => select("all")}
+                        onClick={() => select(section)}
                       >
-                        Show all stories <ArrowRight size={14} />
+                        {section === "reddit"
+                          ? "Show all Reddit posts"
+                          : "Show all stories"}{" "}
+                        <ArrowRight size={14} />
                       </button>
                     </div>
                   )}

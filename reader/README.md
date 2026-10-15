@@ -68,6 +68,19 @@ browser channel. No live collection is needed for the fixture tests.
   and a live preview. Preferences save in this browser and also apply to the
   article toolbar. The interface uses a charcoal dark theme with mint accents.
 
+## Reddit
+
+When Reddit communities are configured, a Reddit section appears below All
+stories. Expand its community list to browse each subreddit, including those
+with no collected posts yet. Reddit stays separate from the main story feed.
+Search, author and date filters apply within the current Reddit view; article
+links and browser navigation preserve that view. Scores, comment counts and
+flair reflect the collected post. Comments themselves are not collected.
+
+The reader orders stored posts by date or search relevance. Reddit's collection
+sort (Best, Hot, Top or New) is selected in source configuration before scraping;
+refreshing this view reloads collected posts.
+
 ## Structure
 
 React + TypeScript + Vite, with native CSS, Lucide icons, TanStack Query for

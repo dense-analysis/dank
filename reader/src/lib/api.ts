@@ -65,6 +65,8 @@ export async function fetchPosts(
   signal?: AbortSignal,
 ): Promise<PostPage> {
   const params = filterParams(filters);
+  params.delete("view");
+  params.set("kind", filters.kind);
   if (filters.q.trim()) params.set("mode", "combined");
   // The API defaults to chronological order; the reader defaults search to relevance.
   if (filters.q.trim() && filters.sort === "relevance")

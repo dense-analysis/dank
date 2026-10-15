@@ -31,6 +31,11 @@ export function parseFilters(params: URLSearchParams): Filters {
 
   return {
     ...defaultFilters,
+    kind: params.get("view") === "reddit" ? "reddit" : "stories",
+    community:
+      params.get("view") === "reddit"
+        ? (params.get("community") ?? "").trim()
+        : "",
     q,
     sort:
       sort === "oldest" || sort === "newest"
@@ -50,6 +55,11 @@ export function parseFilters(params: URLSearchParams): Filters {
 
 export function filterParams(filters: Filters): URLSearchParams {
   const params = new URLSearchParams();
+  if (filters.kind === "reddit") {
+    params.set("view", "reddit");
+    if (filters.community.trim())
+      params.set("community", filters.community.trim());
+  }
   const q = filters.q.trim();
   if (q) params.set("q", q);
   const defaultSort = q ? "relevance" : "newest";

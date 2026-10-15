@@ -1,4 +1,4 @@
-import type { Post, Source } from "./types";
+import type { Post, RedditPost, Source } from "./types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -21,6 +21,21 @@ export function isDateFilter(value: unknown): value is string {
   );
 }
 
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isRedditPost(value: unknown): value is RedditPost {
+  return (
+    isRecord(value) &&
+    typeof value.community === "string" &&
+    (value.score === null ||
+      (typeof value.score === "number" && Number.isSafeInteger(value.score))) &&
+    (value.comments === null || isCount(value.comments)) &&
+    (value.flair === null || typeof value.flair === "string")
+  );
+}
+
 export function isPost(value: unknown): value is Post {
   return (
     isRecord(value) &&
@@ -35,6 +50,9 @@ export function isPost(value: unknown): value is Post {
       "created_at",
       "source",
     ].every((key) => typeof value[key] === "string") &&
+    (value.reddit === undefined ||
+      value.reddit === null ||
+      isRedditPost(value.reddit)) &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
     Array.isArray(value.media) &&
     value.media.every(
@@ -52,8 +70,16 @@ export function isSource(value: unknown): value is Source {
     typeof value.domain === "string" &&
     typeof value.name === "string" &&
     isStringArray(value.tags) &&
-    typeof value.count === "number" &&
-    Number.isSafeInteger(value.count) &&
-    value.count >= 0
+    isCount(value.count) &&
+    (value.kind === undefined ||
+      ["rss", "x", "reddit"].includes(String(value.kind))) &&
+    (value.communities === undefined ||
+      (Array.isArray(value.communities) &&
+        value.communities.every(
+          (community) =>
+            isRecord(community) &&
+            typeof community.name === "string" &&
+            isCount(community.count),
+        )))
   );
 }

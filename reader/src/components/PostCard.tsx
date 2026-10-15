@@ -4,6 +4,7 @@ import type { Filters, Post } from "../lib/types";
 import { AuthorLink } from "./AuthorLink";
 import { HighlightedText } from "./HighlightedText";
 import { ReaderLink } from "./ReaderLink";
+import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
 import { SourceLink, sourceName } from "./SourceLink";
 export function readingTime(post: Post) {
   return Math.max(
@@ -55,6 +56,7 @@ export function PostCard({
   query,
   filters,
   selectAuthor,
+  selectCommunity,
 }: {
   post: Post;
   read: boolean;
@@ -64,18 +66,28 @@ export function PostCard({
   query: string;
   filters: Filters;
   selectAuthor: (author: string) => void;
+  selectCommunity: (community: string) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
   return (
-    <article className={`post-card ${read ? "is-read" : ""}`}>
+    <article
+      className={`post-card ${post.reddit ? "reddit-card" : ""} ${read ? "is-read" : ""}`}
+    >
       <div className="post-meta">
         <SourceMark domain={post.domain} />
-        <SourceLink domain={post.domain} select={selectSource} />
+        {post.reddit ? (
+          <RedditCommunityLink
+            community={post.reddit.community}
+            select={selectCommunity}
+          />
+        ) : (
+          <SourceLink domain={post.domain} select={selectSource} />
+        )}
         <span className="meta-dot">·</span>
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
         <span className="source-kind">
-          {post.source === "x" ? "Post" : "Article"}
+          {post.source === "x" || post.source === "reddit" ? "Post" : "Article"}
         </span>
       </div>
       <div className="post-main">
@@ -126,8 +138,14 @@ export function PostCard({
           filters={filters}
           select={selectAuthor}
         />
-        <span className="meta-dot">·</span>
-        <span>{readingTime(post)} min read</span>
+        {post.reddit ? (
+          <RedditMetadata reddit={post.reddit} />
+        ) : (
+          <>
+            <span className="meta-dot">·</span>
+            <span>{readingTime(post)} min read</span>
+          </>
+        )}
         {read && (
           <span className="read-indicator">
             <Check size={12} /> Read

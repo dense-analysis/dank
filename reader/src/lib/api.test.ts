@@ -18,6 +18,51 @@ function respond(body: unknown, status = 200): void {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("reader API", () => {
+  it("keeps Reddit queries separate from stories and sends the community without a UI view parameter", async () => {
+    respond({ posts: [], next_cursor: null, limited: false });
+    await fetchPosts({
+      ...defaultFilters,
+      kind: "reddit",
+      community: "LocalLLaMA",
+    });
+    const reddit = new URL(
+      String(vi.mocked(fetch).mock.calls[0][0]),
+      "https://reader.test",
+    );
+    expect(reddit.searchParams.get("kind")).toBe("reddit");
+    expect(reddit.searchParams.get("community")).toBe("LocalLLaMA");
+    expect(reddit.searchParams.has("view")).toBe(false);
+    await fetchPosts(defaultFilters);
+    const stories = new URL(
+      String(vi.mocked(fetch).mock.calls[1][0]),
+      "https://reader.test",
+    );
+    expect(stories.searchParams.get("kind")).toBe("stories");
+    expect(stories.searchParams.has("community")).toBe(false);
+  });
+
+  it("validates configured communities including those with no posts", async () => {
+    const source = {
+      domain: "reddit.com",
+      name: "Reddit",
+      kind: "reddit",
+      tags: [],
+      count: 0,
+      communities: [{ name: "LocalLLaMA", count: 0 }],
+    };
+    respond({ sources: [source], total_posts: 0 });
+    await expect(fetchSources()).resolves.toEqual({
+      sources: [source],
+      total_posts: 0,
+    });
+    respond({
+      sources: [
+        { ...source, communities: [{ name: "LocalLLaMA", count: "bad" }] },
+      ],
+      total_posts: 0,
+    });
+    await expect(fetchSources()).rejects.toThrow("unexpected response");
+  });
   it("sends all filters, an opaque cursor, and the cancellation signal", async () => {
     respond({ posts: [], next_cursor: null, limited: false });
     const signal = new AbortController().signal;

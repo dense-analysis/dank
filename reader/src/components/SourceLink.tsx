@@ -15,7 +15,7 @@ export function SourceLink({
 }) {
   return (
     <ReaderLink
-      href={`/reader/?${filterParams({ ...defaultFilters, domains: [domain] })}`}
+      href={`/reader/?${filterParams({ ...defaultFilters, kind: /^(www\.)?reddit\.com$/.test(domain) ? "reddit" : "stories", domains: [domain] })}`}
       onNavigate={() => select(domain)}
       className="source-link"
       title={domain}

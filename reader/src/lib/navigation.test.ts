@@ -4,8 +4,27 @@ import { defaultFilters } from "./storage";
 import type { Filters } from "./types";
 
 describe("filter URLs", () => {
+  it("preserves Reddit community filters and discards orphaned community selections", () => {
+    const filters = {
+      ...defaultFilters,
+      kind: "reddit" as const,
+      community: "LocalLLaMA",
+      q: "local models",
+      sort: "relevance" as const,
+    };
+    expect(parseFilters(filterParams(filters))).toEqual(filters);
+    expect(parseFilters(new URLSearchParams("community=LocalLLaMA"))).toEqual(
+      defaultFilters,
+    );
+    expect(
+      filterParams({ ...defaultFilters, community: "LocalLLaMA" }).has(
+        "community",
+      ),
+    ).toBe(false);
+  });
   it("round-trips every rule, including repeated selections and punctuation", () => {
     const filters: Filters = {
+      ...defaultFilters,
       q: "politics & science + future?",
       sort: "relevance",
       domains: ["example.com", "news.example.org"],
