@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import pathlib
+import re
 import tomllib
 from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
@@ -21,6 +23,13 @@ class XSettings(NamedTuple):
     scroll_pause_seconds: float
 
 
+class RedditSettings(NamedTuple):
+    max_posts: int = 100
+    max_scrolls: int = 20
+    scroll_pause_seconds: float = 1.5
+    stall_scrolls: int = 3
+
+
 class ClickHouseSettings(NamedTuple):
     host: str
     port: int
@@ -36,6 +45,8 @@ class SourceConfig(NamedTuple):
     accounts: tuple[str, ...]
     feed_urls: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    reddit_sort: str = "best"
+    reddit_time_filter: str = "day"
 
 
 class BrowserSettings(NamedTuple):
@@ -78,6 +89,7 @@ class Settings(NamedTuple):
     max_entries_per_feed: int = 0
     scrape: ScrapeSettings = ScrapeSettings()
     media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
+    reddit: RedditSettings = RedditSettings()
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -124,22 +136,131 @@ def _parse_sources(raw_sources: object) -> tuple[SourceConfig, ...]:
         ]
 
         if domain:
-            options = _as_dict(item) or {}
-            feeds = _parse_feed_urls(options.get("feed_urls", []))
-            tags = tuple(dict.fromkeys(
-                tag.lower() for tag in _source_strings(
-                    options.get("tags", []), "tags",
-                )
-            ))
-
-            if domain == "x.com" and feeds:
-                raise ConfigError(
-                    "sources.feed_urls is not supported for x.com",
-                )
-
-            parsed.append(SourceConfig(domain, tuple(accounts), feeds, tags))
+            parsed.append(_parse_source(domain, tuple(accounts), item))
 
     return tuple(parsed)
+
+
+def _parse_source(
+    domain: str, accounts: tuple[str, ...], item: object,
+) -> SourceConfig:
+    options = _as_dict(item) or {}
+    tags = tuple(dict.fromkeys(
+        tag.lower() for tag in _source_strings(options.get("tags", []), "tags")
+    ))
+    reddit_domains = {
+        f"{scheme}{host}{suffix}"
+        for scheme in ("", "http://", "https://")
+        for host in ("reddit.com", "www.reddit.com", "old.reddit.com")
+        for suffix in ("", "/")
+    }
+
+    if domain in reddit_domains:
+        feeds = _source_strings(options.get("feed_urls", []), "feed_urls")
+        communities: dict[str, str] = {}
+
+        for url in feeds:
+            canonical = _reddit_feed_url(url)
+            communities.setdefault(canonical.lower(), canonical)
+
+        if not communities or accounts:
+            raise ConfigError(
+                "Reddit sources require community feed_urls, not accounts",
+            )
+
+        return SourceConfig(
+            "reddit.com", (), tuple(communities.values()), tags,
+            _reddit_choice(options, "reddit_sort", "best", (
+                "best", "hot", "new", "top", "rising",
+            )),
+            _reddit_choice(options, "reddit_time_filter", "day", (
+                "hour", "day", "week", "month", "year", "all",
+            )),
+        )
+
+    if {"reddit_sort", "reddit_time_filter"}.intersection(options):
+        raise ConfigError("Reddit sorting options require a Reddit source")
+
+    feeds = _parse_feed_urls(options.get("feed_urls", []))
+
+    if domain == "x.com" and feeds:
+        raise ConfigError("sources.feed_urls is not supported for x.com")
+
+    return SourceConfig(domain, accounts, feeds, tags)
+
+
+def _reddit_feed_url(value: str) -> str:
+    # Canonical URLs also give the reader a stable community identity.
+    path = value
+
+    if "://" in value:
+        parsed = urlsplit(value)
+
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.netloc.lower() not in {
+                "reddit.com", "www.reddit.com", "old.reddit.com",
+            }
+            or parsed.query or parsed.fragment
+        ):
+            raise ConfigError(
+                "sources.feed_urls must be Reddit community URLs",
+            )
+
+        path = parsed.path
+
+    match = re.fullmatch(r"/?r/([A-Za-z0-9_]{2,21})/?", path)
+
+    if not match:
+        raise ConfigError(
+            "sources.feed_urls must contain r/community or a Reddit "
+            "community URL; use reddit_sort for sorting",
+        )
+
+    return f"https://www.reddit.com/r/{match[1]}/"
+
+
+def _reddit_choice(
+    options: dict[str, Any], key: str, default: str, choices: tuple[str, ...],
+) -> str:
+    value = options.get(key, default)
+
+    if not isinstance(value, str) or value.strip().lower() not in choices:
+        raise ConfigError(f"sources.{key} must be one of {', '.join(choices)}")
+
+    return value.strip().lower()
+
+
+def _parse_reddit_settings(value: object) -> RedditSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("reddit must be a table")
+
+    defaults = RedditSettings()
+    limits: dict[str, int] = {}
+
+    for key in ("max_posts", "max_scrolls", "stall_scrolls"):
+        setting = data.get(key, getattr(defaults, key))
+        minimum = 0 if key == "max_scrolls" else 1
+
+        if (
+            not isinstance(setting, int) or isinstance(setting, bool)
+            or not minimum <= setting < 2 ** 32
+        ):
+            raise ConfigError(f"reddit.{key} must be an integer >= {minimum}")
+
+        limits[key] = setting
+
+    pause = data.get("scroll_pause_seconds", defaults.scroll_pause_seconds)
+
+    if (
+        not isinstance(pause, int | float) or isinstance(pause, bool)
+        or not math.isfinite(pause) or not 0.25 <= pause <= 60
+    ):
+        raise ConfigError("reddit.scroll_pause_seconds must be 0.25 to 60")
+
+    return RedditSettings(**limits, scroll_pause_seconds=float(pause))
 
 
 def _source_strings(value: object, field: str) -> tuple[str, ...]:
@@ -376,4 +497,5 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         media_download_types=_parse_media_download_types(
             data.get("media", {}),
         ),
+        reddit=_parse_reddit_settings(data.get("reddit", {})),
     )
