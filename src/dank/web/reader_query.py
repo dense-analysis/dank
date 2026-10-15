@@ -12,11 +12,16 @@ from typing import Any, NamedTuple, cast
 from multidict import MultiMapping
 
 from dank.config import SourceConfig
+from dank.web.reader_flairs import (
+    FLAIR_WHITESPACE_PATTERN,
+    LATEST_REDDIT_FLAIRS_SQL,
+    MAX_FLAIR_LENGTH,
+    REDDIT_COMMUNITY_SQL as REDDIT_COMMUNITY_SQL,
+)
 
 POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, source"
 )
-REDDIT_COMMUNITY_SQL = "lowerUTF8(extract(url, '/r/([^/]+)/comments/'))"
 
 
 class ReaderFilters(NamedTuple):
@@ -33,6 +38,7 @@ class ReaderFilters(NamedTuple):
     cursor: str = ""
     kind: str = ""
     community: str = ""
+    flairs: tuple[str, ...] = ()
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -48,13 +54,13 @@ class ReaderFilters(NamedTuple):
 def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
-        "limit", "cursor", "author_match", "kind", "community",
+        "limit", "cursor", "author_match", "kind", "community", "flair",
     }
 
     if unknown:
         raise ValueError("Unknown reader filter")
 
-    for key in set(query) - {"domain", "tag"}:
+    for key in set(query) - {"domain", "tag", "flair"}:
         if len(query.getall(key)) != 1:
             raise ValueError(f"{key} must appear only once")
 
@@ -72,6 +78,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         cursor=query.get("cursor", ""),
         kind=query.get("kind", ""),
         community=query.get("community", "").strip().lower(),
+        flairs=_flair_choices(query.getall("flair", [])),
     )
     _validate(filters)
 
@@ -83,6 +90,15 @@ def _choices(values: list[str]) -> tuple[str, ...]:
         raise ValueError("Source and tag filters must be nonempty and bounded")
 
     return tuple(sorted({value.strip().lower() for value in values}))
+
+
+def _flair_choices(values: list[str]) -> tuple[str, ...]:
+    if len(values) > 100 or any(
+        not value.strip() or len(value) > MAX_FLAIR_LENGTH for value in values
+    ):
+        raise ValueError("Flair filters must be nonempty and bounded")
+
+    return tuple(sorted({value.strip() for value in values}))
 
 
 def _date(value: str) -> dt.datetime | None:
@@ -151,6 +167,10 @@ def _validate_reddit_filters(filters: ReaderFilters) -> None:
         or not re.fullmatch(r"[a-z0-9_]{2,21}", filters.community)
     ):
         raise ValueError("community requires kind=reddit and a community name")
+
+    if filters.flairs and filters.kind != "reddit":
+        raise ValueError("flair requires kind=reddit")
+
 
 def encode_cursor(
     filters: ReaderFilters, created_at: dt.datetime, domain: str, post_id: str,
@@ -306,6 +326,14 @@ def _conditions(
     if filters.community:
         conditions.append(f"{REDDIT_COMMUNITY_SQL} = %(community)s")
         params["community"] = filters.community
+
+    if filters.flairs:
+        conditions.append(
+            "post_id IN (SELECT post_id FROM "
+            f"({LATEST_REDDIT_FLAIRS_SQL}) WHERE flair IN %(flairs)s)",
+        )
+        params["flairs"] = list(filters.flairs)
+        params["flair_whitespace"] = FLAIR_WHITESPACE_PATTERN
 
     if filters.domains:
         conditions.append("domain IN %(domains)s")
