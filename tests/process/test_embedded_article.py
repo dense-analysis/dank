@@ -54,6 +54,30 @@ def test_existing_rendered_article_remains_preferred(container: str) -> None:
     assert extract_article_html(page) == '<p>Rendered article.</p>'
 
 
+@pytest.mark.parametrize("container", ["article", "main"])
+@pytest.mark.parametrize("shell", [
+    '<div data-testid="Loader"></div>',
+    '<script>loadArticle()</script>',
+    '<p>&nbsp;</p>',
+])
+def test_empty_rendered_shell_does_not_hide_embedded_article(
+    container: str, shell: str,
+) -> None:
+    page = PAGE.replace(
+        '<div id="__next">',
+        f'<{container}>{shell}</{container}><div id="__next">',
+    )
+
+    assert extract_article_html(page) == extract_article_html(PAGE)
+
+
+def test_media_only_article_is_preserved_without_embedded_recovery() -> None:
+    body = '<figure><img src="/diagram.png" alt="A diagram"></figure>'
+    page = f'<article>{body}</article>' + _script({"unrelated": "data"})
+
+    assert extract_article_html(page) == body
+
+
 @pytest.mark.parametrize("data", [
     None, [], {}, {"props": []}, {"query": {"messageId": "4560822"}},
 ])

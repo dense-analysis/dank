@@ -276,7 +276,11 @@ def extract_article_html(page_html: str) -> str:
     extractor.feed(page_html)
     candidate = _select_best_candidate(extractor.candidates)
 
-    return candidate or _extract_next_article_html(page_html)
+    # A loading shell can have article markup without any readable body.
+    if html_text(candidate):
+        return candidate
+
+    return _extract_next_article_html(page_html) or candidate
 
 
 def _extract_next_article_html(page_html: str) -> str:
