@@ -92,7 +92,11 @@ class _ListingParser(HTMLParser):
         if tag not in VOID_TAGS:
             self.stack.append(tag)
 
-        if attributes.get("slot") == "text-body":
+        if attributes.get("slot") == "text-body" or (
+            self.body_start is not None
+            and "schema:articleBody" in attributes.get("property", "").split()
+        ):
+            # The outer slot also contains Reddit's expand/collapse controls.
             self.body_start = self._offset() + len(
                 self.get_starttag_text() or "",
             )

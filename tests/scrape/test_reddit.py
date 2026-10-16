@@ -619,3 +619,21 @@ def test_gallery_preserves_distinct_images() -> None:
         {"url": "https://i.redd.it/one.png", "asset_type": "photo"},
         {"url": "https://i.redd.it/two.png", "asset_type": "photo"},
     ]
+
+
+def test_semantic_body_excludes_controls_but_keeps_post_words() -> None:
+    body = "<p>Read more about this launch.</p><p>Second paragraph.</p>"
+    wrapper = (
+        '<div class="overflow-wrapper">'
+        f'<div property="schema:articleBody">{body}</div>'
+        '<div class="overflow-cover"></div>'
+        '<button id="t3_abc-read-more-button">Read more</button>'
+        '</div>'
+    )
+    source = _card().replace(
+        "<p>Public <strong>body</strong>.</p>", wrapper,
+    )
+    post = extract_html_posts(source, "LocalLLaMA")[0]
+
+    assert post["selftext_html"] == body
+    assert post["raw"] == {"html": source}
