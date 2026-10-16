@@ -23,7 +23,7 @@ export function RedditCommunityLink({
   );
 }
 
-export function RedditMetadata({
+export function RedditFlair({
   reddit,
   selectFlair,
 }: {
@@ -32,6 +32,22 @@ export function RedditMetadata({
 }) {
   const { community, flair } = reddit;
 
+  if (!flair) return null;
+
+  return (
+    <ReaderLink
+      className="reddit-flair"
+      href={`/reader/?${filterParams({ ...defaultFilters, kind: "reddit", community, flairs: [flair] })}`}
+      onNavigate={() => selectFlair(community, flair)}
+      aria-label={`Posts from r/${community} with flair ${flair}`}
+      title={`Show ${flair} posts from r/${community}`}
+    >
+      {flair}
+    </ReaderLink>
+  );
+}
+
+export function RedditMetadata({ reddit }: { reddit: RedditPost }) {
   return (
     <span className="reddit-metadata">
       {reddit.score !== null && (
@@ -46,17 +62,6 @@ export function RedditMetadata({
           <MessageCircle size={13} aria-hidden="true" />
           {reddit.comments.toLocaleString()} comments
         </span>
-      )}
-      {flair && (
-        <ReaderLink
-          className="reddit-flair"
-          href={`/reader/?${filterParams({ ...defaultFilters, kind: "reddit", community, flairs: [flair] })}`}
-          onNavigate={() => selectFlair(community, flair)}
-          aria-label={`Posts from r/${community} with flair ${flair}`}
-          title={`Show ${flair} posts from r/${community}`}
-        >
-          {flair}
-        </ReaderLink>
       )}
     </span>
   );

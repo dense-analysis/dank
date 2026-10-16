@@ -36,9 +36,12 @@ const otherPost: Post = {
   reddit: { community: "accelerate", score: null, comments: null, flair: null },
 };
 
-async function mockReddit(page: Page, configured = true) {
+async function mockReddit(
+  page: Page,
+  configured = true,
+  posts = [blogPost, redditPost, otherPost],
+) {
   const requests: URL[] = [];
-  const posts = [blogPost, redditPost, otherPost];
   const sources: Source[] = [
     { domain: "example.com", name: "Example", count: 1, tags: [] },
     ...(configured
@@ -98,6 +101,118 @@ async function noOverflow(page: Page) {
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+}
+
+for (const width of [1440, 980, 390, 320]) {
+  test(`keeps long flairs on one line and titles aligned at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const flair = "🔒 Established r/accelerate contributors only";
+    const posts: Post[] = [
+      {
+        ...redditPost,
+        title: "Waymo in Toronto",
+        excerpt: "Learn more.",
+        thumbnail: "/reader/favicon.svg",
+        reddit: { community: "accelerate", score: 32, comments: 2, flair },
+      },
+      {
+        ...otherPost,
+        title: "A short post without a thumbnail or flair",
+      },
+      {
+        ...redditPost,
+        id: "long-label",
+        title:
+          "A longer discussion title that spans multiple lines in the feed",
+        reddit: {
+          community: "accelerate",
+          score: 21,
+          comments: 18,
+          flair:
+            `${flair} — a very long community label that exceeds the reading column`.repeat(
+              2,
+            ),
+        },
+      },
+    ];
+    await mockReddit(page, true, posts);
+
+    for (const community of ["accelerate", ""]) {
+      await page.goto(`/reader/?view=reddit&community=${community}`);
+      const cards = page.locator(".post-card");
+      await expect(cards).toHaveCount(3);
+      await page.evaluate(() => document.fonts.ready);
+
+      for (const card of await cards.all()) {
+        const heading = await card.locator("h2").boundingBox();
+        const meta = await card.locator(".post-meta").boundingBox();
+
+        if (!heading || !meta) throw new Error("Missing post layout");
+
+        expect(heading.y - (meta.y + meta.height)).toBeCloseTo(14, 0);
+      }
+
+      const thumbnail = await cards.first().locator(".thumbnail").boundingBox();
+      const title = await cards.first().locator("h2").boundingBox();
+
+      if (!title || !thumbnail) throw new Error("Missing thumbnail layout");
+
+      expect(title.y).toBeCloseTo(thumbnail.y, 0);
+      await expect(cards.locator(".post-bottom .reddit-flair")).toHaveCount(0);
+
+      for (const badge of await cards.locator(".reddit-flair").all()) {
+        expect(
+          await badge.evaluate((element) => {
+            const text = document.createRange();
+            text.selectNodeContents(element);
+
+            return text.getBoundingClientRect().height < 24;
+          }),
+        ).toBe(true);
+        expect(
+          await badge.evaluate((element) => {
+            const time = element.parentElement?.querySelector("time");
+
+            return (
+              !!time &&
+              Boolean(
+                element.compareDocumentPosition(time) &
+                  Node.DOCUMENT_POSITION_FOLLOWING,
+              )
+            );
+          }),
+        ).toBe(true);
+      }
+
+      await noOverflow(page);
+    }
+
+    await page.screenshot({
+      path: testInfo.outputPath("flair-feed.png"),
+      fullPage: true,
+    });
+    await page
+      .getByRole("link", { name: `Read ${posts[0].title}`, exact: true })
+      .click();
+    const article = page.getByRole("main", { name: "Article reader" });
+    const badge = article.getByRole("link", {
+      name: `Posts from r/accelerate with flair ${flair}`,
+      exact: true,
+    });
+    await expect(badge).toBeVisible();
+    expect((await badge.boundingBox())?.height).toBe(24);
+    await expect(badge).toHaveAttribute(
+      "title",
+      `Show ${flair} posts from r/accelerate`,
+    );
+    await noOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath("flair-article.png"),
+      fullPage: true,
+    });
+  });
 }
 
 test("keeps Reddit separate and exposes configured communities with accessible disclosure", async ({

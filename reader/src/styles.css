@@ -497,6 +497,7 @@ input[type="checkbox"] {
 }
 .post-meta {
   display: flex;
+  min-height: 24px;
   flex-wrap: wrap;
   gap: 9px;
   align-items: center;
@@ -591,7 +592,7 @@ input[type="checkbox"] {
 .post-main {
   display: flex;
   gap: 24px;
-  align-items: center;
+  align-items: flex-start;
   margin-top: 14px;
 }
 .post-open {
@@ -1809,14 +1810,16 @@ input[type="checkbox"] {
   gap: 8px 12px;
 }
 .reddit-flair {
-  display: inline-flex;
-  align-items: center;
+  display: block;
   min-height: 24px;
-  max-width: 220px;
+  max-width: 100%;
   padding: 2px 7px;
   background: var(--surface-hover);
   border-radius: 4px;
-  overflow-wrap: anywhere;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-decoration: none;
 }
 .reddit-flair:hover,

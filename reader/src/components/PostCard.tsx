@@ -7,7 +7,11 @@ import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HighlightedText } from "./HighlightedText";
 import { ReaderLink } from "./ReaderLink";
-import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
+import {
+  RedditCommunityLink,
+  RedditFlair,
+  RedditMetadata,
+} from "./RedditMetadata";
 import { SourceLink, sourceName } from "./SourceLink";
 export function readingTime(post: Post) {
   return Math.max(
@@ -106,6 +110,9 @@ export function PostCard({
             <span className="meta-dot">·</span>
           </>
         )}
+        {post.reddit && (
+          <RedditFlair reddit={post.reddit} selectFlair={selectFlair} />
+        )}
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
         {(!communityContext || !hasContent || post.collection_incomplete) && (
           <span className="post-labels">
@@ -172,9 +179,7 @@ export function PostCard({
           filters={filters}
           select={selectAuthor}
         />
-        {post.reddit && (
-          <RedditMetadata reddit={post.reddit} selectFlair={selectFlair} />
-        )}
+        {post.reddit && <RedditMetadata reddit={post.reddit} />}
         {!post.reddit && hasContent && (
           <>
             <span className="meta-dot">·</span>

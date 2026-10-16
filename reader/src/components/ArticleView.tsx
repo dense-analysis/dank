@@ -18,7 +18,11 @@ import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
 import { RedditComments } from "./RedditComments";
-import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
+import {
+  RedditCommunityLink,
+  RedditFlair,
+  RedditMetadata,
+} from "./RedditMetadata";
 import { RedditVideo } from "./RedditVideo";
 import { SourceLink } from "./SourceLink";
 
@@ -176,7 +180,10 @@ export function ArticleView({
               select={selectAuthor}
             />
             {post.reddit ? (
-              <RedditMetadata reddit={post.reddit} selectFlair={selectFlair} />
+              <>
+                <RedditMetadata reddit={post.reddit} />
+                <RedditFlair reddit={post.reddit} selectFlair={selectFlair} />
+              </>
             ) : (
               hasContent && <span> {readingTime(post)} min read</span>
             )}
