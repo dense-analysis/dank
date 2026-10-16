@@ -4,9 +4,109 @@ Use this register to understand collection-quality problems, the handling
 already in place, and the gaps that remain. Detailed commands live in the
 linked feature guides; live outcomes live in [run history and logs](features/history.md).
 
-Last reviewed: **2026-10-16**, against the implementation on `main`.
+Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
+
+## Full-scrape improvement tasks
+
+These are open follow-ups from run `3024d25d-d50e-4cde-be87-4b8e70224e22`
+on 2026-10-17 (Europe/London), using commit `0e0de9a`. Its archived log is
+`logs/scrape/2026-10-16T23-41-08Z-50060.log` (filenames use UTC).
+The run used all 55 configured sources, 36 X accounts and 15 Reddit communities.
+It exited with `RedditScrapeError` after **6m39s**, with **1,420 raw records saved**.
+The saved rows were independently counted in ClickHouse within the run's time
+window; these are captures, not necessarily previously unseen posts.
+
+| Source | Saved records | Distinct post IDs | Outcome |
+| --- | ---: | ---: | --- |
+| RSS | 826 | 826 | Some feeds/articles/media failed; retained records remain available. |
+| X | 594 | 581 | Partial: the 21st account timed out; 15 were not attempted. |
+| Reddit | 0 | 0 | Failed on the 12th community; 32 queued posts were never flushed. |
+
+The source outcomes were 27 completed, 26 partial and 2 failed. The browser
+timeout prevented an indefinite X wait, and Reddit ran independently, but
+this run did **not** establish reliable collection of either browser source.
+Media counters reported 389 new files, 2,508 cached, 154 failed and 183
+intentionally skipped. All 55 saved YouTube references lacked a local file;
+logs contained errors for 53 distinct YouTube IDs. Size-limit rejections
+produced 91 warnings for 85 distinct URLs and are included in failure counts.
+
+- [ ] **P1: Save small batches before a later source error can discard them.**
+  Reddit queued 32 posts but saved none: both post and media buffers stayed below
+  the 50-record flush threshold when a later community raised an exception.
+  Flush completed batches promptly or within a short deadline, and drain safely
+  on source failure/cancellation. Done when a regression reproducing this run
+  retains all 32 earlier posts and reports the later failure accurately.
+  [Persistence](../src/dank/scrape/runner.py).
+- [ ] **P1: Isolate empty or failed Reddit communities.** A zero-post result for
+  `r/DomainDrivenDesign` raised `RedditScrapeError`, failed the entire run and
+  prevented the final three communities from being attempted. Distinguish a
+  legitimate empty top/day listing from blocked access and unrecognized markup;
+  record per-community outcomes and continue independent communities when safe.
+  Done when empty and blocked fixtures produce distinct results, later
+  communities still run, and failures are reflected in source counters.
+  [Collector](../src/dank/scrape/reddit/__init__.py).
+- [ ] **P1: Recover X collection after a browser timeout.** X saved 594 records
+  before its 21st account timed out; 15 accounts were never attempted. The
+  30-second timeout prevented an indefinite wait and Reddit continued.
+  Record per-account outcomes and add bounded browser recovery/checkpointing.
+  Done when a forced mid-run browser failure retains saved records, reports
+  the affected account, and allows remaining accounts to be attempted without
+  automatic sign-in retries. The underlying renderer failure remains unknown.
+  [Collector](../src/dank/scrape/x/__init__.py).
+- [ ] **P1: Verify Reddit pagination beyond the initial cards.** Communities
+  repeatedly returned only 3–4 posts before the repeated-stall limit. A
+  read-only browser snapshot showed a hidden listing tab and an unexpanded
+  `community-more-posts` partial. These are investigation clues, not a proven
+  cause or proof that every community has more eligible posts. Done when
+  collection advances beyond the initial cards on a known active community,
+  with tests covering detail-tab focus and delayed pagination.
+  [Listing collector](../src/dank/scrape/reddit/__init__.py).
+- [ ] **P1: Restore YouTube format discovery and downloads.** Logs reported
+  unavailable requested formats and missing challenge-solver scripts. The
+  container has Node and yt-dlp `2026.8.19`, but no `yt-dlp-ejs`. Pin compatible
+  solver support using the [official EJS setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS),
+  then inspect formats before changing the combined-MP4 selector. A separate
+  metadata-only check also hit HTTP 429 and a sign-in challenge; missing EJS
+  is not established as the sole cause. Report blocked access and honor cooldowns.
+  Done when representative available videos download with playable audio/video within
+  the size policy in Docker and native mode. Keep removed/unavailable videos
+  distinct, and avoid repeating deterministic format failures with cookies
+  and then without cookies. [Downloader](../src/dank/scrape/assets/audio_video.py).
+- [ ] **P2: Expose browser-stage progress.** Browser detail work is absent from
+  HTTP-active counters, and source-history counters are finalized only at source
+  end. Heartbeats stayed at zero active HTTP/media while Reddit worked on posts.
+  Add meaningful account/community/detail progress and distinguish buffered
+  records from durable rows. Done when a heartbeat identifies active browser
+  work, waiting and stalled work without inspecting network traffic.
+  [Progress metrics](../src/dank/scrape/metrics.py).
+- [ ] **P2: Separate size exclusions from download failures.** The configured
+  10 MiB cap rejected many videos, while empty download paths count as failures.
+  X selects the largest variant before applying that cap. Preserve a structured
+  outcome such as size-excluded, unavailable or failed, and consider a smaller
+  eligible variant. Done when policy exclusions do not inflate failure counts,
+  usable smaller variants can be saved, and the configured limit is still enforced.
+  [Variant selection](../src/dank/scrape/x/payloads.py),
+  [outcome counters](../src/dank/scrape/assets/__init__.py).
+- [ ] **P2: Make blocked feed/article recovery actionable.** Niche Gamer's feeds
+  returned 403; article fetches also failed across several publishers, and
+  Order Order exhausted its 429 retries. Retain host/status and retry eligibility
+  in a source summary, distinguish retained feed text from a fetched article,
+  and review supported feed alternatives. Done when operators can identify
+  affected sources and choose a scoped retry or configuration change without
+  searching the whole log. Existing access restrictions may remain.
+- [ ] **P2: Bound and cancel yt-dlp jobs.** Code inspection shows downloads run
+  through `asyncio.to_thread` without a DANK-owned overall deadline; cancelling
+  an await does not stop the worker. This is a potential stall risk, not an
+  observed yt-dlp hang in this run. Add a bounded, cancellable execution model.
+  Done when an intentionally stalled downloader releases its media slot, cleans
+  partial output and permits graceful shutdown within a tested deadline.
+- [ ] **P3: Reduce routine network log noise.** Full GraphQL query parameters
+  and Reddit telemetry responses obscure warnings and useful stage messages.
+  Keep account/community progress and aggregate capture counts at INFO; move
+  detailed network diagnostics to DEBUG with sensitive URL data omitted.
+  Done when a normal run can be audited without hundreds of transport lines.
 
 ## What the reader tells us
 
