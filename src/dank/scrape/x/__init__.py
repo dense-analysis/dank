@@ -74,14 +74,14 @@ async def scrape_x_accounts(
         for account in accounts:
             async for batch in _scrape_account(page, account, settings):
                 yield batch
-    except LoginRequiredError:
+    except LoginRequiredError as error:
         count("fetch_failures")
         stats = current_source.get()
 
         if stats is not None:
             stats.error_type = "LoginRequiredError"
 
-        logger.warning(LOGIN_REQUIRED_MESSAGE)
+        logger.warning("X collection stopped: %s", error)
 
 
 async def _scrape_account(

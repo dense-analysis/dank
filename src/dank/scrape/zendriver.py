@@ -22,6 +22,24 @@ BROWSER_SHUTDOWN_TIMEOUT_SECONDS = 5
 BROWSER_SHUTDOWN_POLL_SECONDS = 0.1
 
 
+class ChromiumConfig(zendriver.Config):
+    """Keep Chromium's normal features while retaining driver transport."""
+
+    def __call__(self) -> list[str]:
+        # Restore features disabled by Zendriver's launch defaults.
+        # https://zendriver.dev/reference/core/config/#zendriver.core.config.Config
+        unnecessary_switches = {
+            "--disable-breakpad", "--disable-dev-shm-usage",
+            "--disable-features", "--disable-infobars", "--no-pings",
+            "--no-service-autorun", "--remote-allow-origins",
+        }
+
+        return [
+            arg for arg in super().__call__()
+            if arg.partition("=")[0] not in unnecessary_switches
+        ]
+
+
 class NetworkResponse(NamedTuple):
     url: str
     status: int
@@ -87,6 +105,7 @@ class BrowserSession:
             if self._browser is None:
                 options: dict[str, Any] = {
                     "headless": self._config.headless,
+                    "disable_webrtc": False,
                 }
                 browser_path = _resolve_browser_executable(
                     self._config.browser_executable_path,
@@ -99,11 +118,6 @@ class BrowserSession:
                     self._acquire_profile()
                     options["user_data_dir"] = str(self._config.profile_dir)
 
-                browser_args: list[str] = []
-
-                if browser_args:
-                    options["browser_args"] = browser_args
-
                 timeout = self._config.connection_timeout
                 max_tries = self._config.connection_max_tries
 
@@ -113,7 +127,9 @@ class BrowserSession:
                 if max_tries is not None:
                     options["browser_connection_max_tries"] = max_tries
 
-                self._browser = await zendriver.start(**options)
+                self._browser = await zendriver.start(
+                    config=ChromiumConfig(**options),
+                )
                 await self._browser.wait(0.5)
 
             return self._browser

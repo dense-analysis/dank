@@ -12,7 +12,17 @@ from dank.scrape.zendriver import (
     BrowserConfig,
     BrowserProfileBusyError,
     BrowserSession,
+    ChromiumConfig,
 )
+
+
+@pytest.fixture(autouse=True)
+def browser_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Unit tests launch a fake browser and need no installed Chromium.
+    monkeypatch.setattr(
+        browser_module, "_resolve_browser_executable",
+        MagicMock(return_value="/fixture/chromium"),
+    )
 
 
 async def _session(
@@ -201,6 +211,39 @@ async def test_profile_lock_prevents_overlapping_login_and_scrape(
 
     assert start.await_count == 2
     assert (tmp_path / "browser-profile").stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.parametrize("headless", [False, True])
+async def test_browser_keeps_normal_features_and_persistent_transport(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+    *, headless: bool,
+) -> None:
+    browser = _browser()
+    browser.stopped = True
+    start = AsyncMock(return_value=browser)
+    monkeypatch.setattr(browser_module.zendriver, "start", start)
+    profile = tmp_path / "browser-profile"
+
+    async with BrowserSession(BrowserConfig(
+        profile_dir=profile, headless=headless,
+    )) as session:
+        await session.get_browser()
+
+    config: ChromiumConfig = start.call_args.kwargs["config"]
+    config.host = "127.0.0.1"
+    config.port = 9222
+    args = config()
+    assert f"--user-data-dir={profile}" in args
+    assert "--remote-debugging-host=127.0.0.1" in args
+    assert "--remote-debugging-port=9222" in args
+    assert ("--headless=new" in args) == headless
+    assert config.disable_webrtc is False
+    assert config.disable_webgl is False
+    assert not config.user_agent and not config.lang
+    assert not any(arg.startswith((
+        "--disable-features", "--webrtc-ip-handling-policy",
+        "--force-webrtc", "--remote-allow-origins",
+    )) for arg in args)
 
 
 async def test_failed_browser_start_releases_profile_lock(

@@ -15,6 +15,7 @@ from dank.scrape.x import (
     scrape_x_accounts,
 )
 from dank.scrape.x.session import (
+    LOGIN_LIMITED_MESSAGE,
     LOGIN_REQUIRED_MESSAGE,
     X_HOME_URL,
     LoginRequiredError,
@@ -34,8 +35,18 @@ def _page(states: tuple[object, ...] = ()) -> MagicMock:
 
 async def test_sign_in_waits_through_challenge_and_navigation() -> None:
     page = _page((False, ProtocolException("context destroyed"), True))
-    await wait_for_x_session(page, timeout_seconds=3)
+    await wait_for_x_session(page, timeout_seconds=6)
     assert page.evaluate.await_count == 3
+
+
+async def test_temporary_limit_stops_immediately_without_retrying() -> None:
+    page = _page(("limited", True))
+
+    with pytest.raises(LoginRequiredError, match="temporarily limited"):
+        await wait_for_x_session(page, timeout_seconds=10)
+
+    assert page.evaluate.await_count == 1
+    page.get.assert_not_called()
 
 
 @pytest.mark.parametrize("state", [False, None, "true", 1])
@@ -65,6 +76,7 @@ async def test_timeout_also_bounds_a_stalled_browser_command() -> None:
 
 @pytest.mark.parametrize("outcome", [
     None, LoginRequiredError("expired"), asyncio.CancelledError(),
+    LoginRequiredError(LOGIN_LIMITED_MESSAGE),
 ])
 async def test_login_reports_success_only_after_flushing_shared_profile(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
@@ -74,7 +86,9 @@ async def test_login_reports_success_only_after_flushing_shared_profile(
     path.write_text('[storage]\ndata_dir="private-data"\n')
     settings = load_settings(path)
     browser = MagicMock()
-    page = _page((True,))
+    page = _page(([1280, 900],))
+    page.get = AsyncMock(return_value=page)
+    page.set_window_size = AsyncMock()
     browser.get = AsyncMock(return_value=page)
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=context)
@@ -100,14 +114,19 @@ async def test_login_reports_success_only_after_flushing_shared_profile(
     assert config == BrowserConfig.from_settings(settings)
     assert not config.headless and not config.keep_open
     assert config.profile_dir == pathlib.Path("private-data/browser-profile")
-    browser.get.assert_awaited_once_with(X_HOME_URL)
+    browser.get.assert_awaited_once_with("about:blank")
+    page.get.assert_awaited_once_with(X_HOME_URL)
+    page.set_window_size.assert_awaited_once_with(width=1280, height=900)
     wait.assert_awaited_once_with(page, timeout_seconds=10)
     context.__aexit__.assert_awaited_once()
 
 
+@pytest.mark.parametrize("message", [
+    LOGIN_REQUIRED_MESSAGE, LOGIN_LIMITED_MESSAGE,
+])
 async def test_expired_session_stops_before_accounts_and_reports_recovery(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, message: str,
 ) -> None:
     path = tmp_path / "settings.fixture.toml"
     path.write_text(
@@ -119,7 +138,7 @@ async def test_expired_session_stops_before_accounts_and_reports_recovery(
     session = MagicMock(get_browser=AsyncMock(return_value=browser))
     monkeypatch.setattr(
         "dank.scrape.x.wait_for_x_session",
-        AsyncMock(side_effect=LoginRequiredError("expired")),
+        AsyncMock(side_effect=LoginRequiredError(message)),
     )
     stats = SourceMetrics(1, settings.sources[0])
     token = current_source.set(stats)
@@ -135,7 +154,7 @@ async def test_expired_session_stops_before_accounts_and_reports_recovery(
     browser.get.assert_awaited_once_with(X_HOME_URL)
     assert stats.counts["fetch_failures"] == 1
     assert stats.error_type == "LoginRequiredError"
-    assert LOGIN_REQUIRED_MESSAGE in caplog.text
+    assert message in caplog.text
 
 
 async def test_saved_session_collects_without_password_or_email(

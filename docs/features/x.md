@@ -53,7 +53,9 @@ the command confirms success and closes the window automatically.
 
 Sign-in waits up to ten minutes. Use `ARGS='--timeout 1200'` for more time,
 or Ctrl+C to cancel. Native users can also run `uv run x-login --config PATH`.
-No database connection or configured source is needed to sign in.
+No database connection or configured source is needed to sign in. The window
+fits the available display. DANK keeps Chromium's normal site isolation and
+WebRTC behavior, and uses the browser's own user agent and language.
 
 The profile lives under `<storage.data_dir>/browser-profile`. Docker sign-in
 and scraping use the same `dank_data` volume, so the session survives container
@@ -91,6 +93,17 @@ install a Chromium-based browser and use its host path if setting
 `browser.executable_path`. Docker includes Chromium and its own launcher.
 `browser.connection_timeout` and `browser.connection_max_tries` can help with
 slow browser startup.
+
+## Temporary login limits
+
+If X reports that it has temporarily limited login, DANK stops sign-in and
+closes the browser. Wait for X's restriction to clear before trying again.
+Changing browser settings or restarting DANK does not clear that restriction.
+DANK does not submit credentials or retry login for you.
+
+Docker still needs Chromium's `--no-sandbox` launcher under the supplied
+container permissions. Native Chrome uses its normal sandbox. The dedicated
+profile and its existing cookie storage are preserved across upgrades.
 
 ## Expired sessions
 

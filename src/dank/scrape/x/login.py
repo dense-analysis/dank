@@ -6,6 +6,8 @@ import math
 import signal
 import sys
 
+import zendriver
+
 from dank.config import ConfigError, Settings, load_settings
 from dank.scrape.zendriver import (
     BrowserConfig,
@@ -14,6 +16,18 @@ from dank.scrape.zendriver import (
 )
 
 from .session import X_HOME_URL, LoginRequiredError, wait_for_x_session
+
+
+async def fit_login_window(page: zendriver.Tab) -> None:
+    size = await page.evaluate(
+        "[screen.availWidth, screen.availHeight]", return_by_value=True,
+    )
+
+    match size:
+        case [int() as width, int() as height] if width > 0 and height > 0:
+            await page.set_window_size(width=width, height=height)
+        case _:
+            pass
 
 
 async def sign_in(settings: Settings, *, timeout_seconds: float) -> None:
@@ -28,7 +42,9 @@ async def sign_in(settings: Settings, *, timeout_seconds: float) -> None:
 
     async with BrowserSession(config) as session:
         browser = await session.get_browser()
-        page = await browser.get(X_HOME_URL)
+        page = await browser.get("about:blank")
+        await fit_login_window(page)
+        await page.get(X_HOME_URL)
         print(
             "Sign in to X in the browser and complete any verification. "
             "Waiting for your signed-in home page...",
