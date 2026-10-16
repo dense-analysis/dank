@@ -56,3 +56,8 @@ level = "INFO"
 
 # Sign in with make x-login MODE=native before collecting X accounts.
 # See docs/features/x.md for account and collection settings.
+
+# Optional autofill via 1Password CLI; values are fetched only during sign-in.
+# [x.onepassword]
+# username = "op://Personal/X/username"
+# password = "op://Personal/X/password"

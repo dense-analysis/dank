@@ -15,6 +15,12 @@ from dank.scrape.zendriver import (
     BrowserSession,
 )
 
+from .onepassword import (
+    LoginCredentials,
+    OnePasswordError,
+    load_credentials,
+    read_credentials,
+)
 from .session import X_HOME_URL, LoginRequiredError, wait_for_x_session
 
 
@@ -30,7 +36,10 @@ async def fit_login_window(page: zendriver.Tab) -> None:
             pass
 
 
-async def sign_in(settings: Settings, *, timeout_seconds: float) -> None:
+async def sign_in(
+    settings: Settings, *, timeout_seconds: float,
+    credentials: LoginCredentials | None = None, manual: bool = False,
+) -> None:
     task = asyncio.current_task()
 
     if task is not None:
@@ -44,13 +53,26 @@ async def sign_in(settings: Settings, *, timeout_seconds: float) -> None:
         browser = await session.get_browser()
         page = await browser.get("about:blank")
         await fit_login_window(page)
+
+        if credentials is None and not manual:
+            credentials = await load_credentials(settings.x.onepassword)
+
         await page.get(X_HOME_URL)
         print(
             "Sign in to X in the browser and complete any verification. "
             "Waiting for your signed-in home page...",
             flush=True,
         )
-        await wait_for_x_session(page, timeout_seconds=timeout_seconds)
+        if credentials is not None:
+            print(
+                "1Password will fill visible, empty X login fields. "
+                "Click Continue yourself and complete any verification.",
+                flush=True,
+            )
+
+        await wait_for_x_session(
+            page, timeout_seconds=timeout_seconds, credentials=credentials,
+        )
 
     # Closing the browser flushes the profile before reporting success.
     print("X session saved. You can now run make scrape.", flush=True)
@@ -63,6 +85,17 @@ def main() -> None:
     )
     parser.add_argument("--config", default="config.toml")
     parser.add_argument(
+        "--manual", action="store_true",
+        help="Skip optional 1Password autofill",
+    )
+    parser.add_argument(
+        "--onepassword-references", action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--credentials-stdin", action="store_true", help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--timeout", type=float, default=600,
         help="Seconds to wait for sign-in (default: 600)",
     )
@@ -73,8 +106,25 @@ def main() -> None:
 
     try:
         settings = load_settings(args.config)
-        asyncio.run(sign_in(settings, timeout_seconds=args.timeout))
-    except (LoginRequiredError, BrowserProfileBusyError) as error:
+
+        if args.onepassword_references:
+            if settings.x.onepassword is not None and not args.manual:
+                print(settings.x.onepassword.username)
+                print(settings.x.onepassword.password)
+
+            return
+
+        credentials = (
+            read_credentials(sys.stdin.buffer)
+            if args.credentials_stdin else None
+        )
+        asyncio.run(sign_in(
+            settings, timeout_seconds=args.timeout,
+            credentials=credentials, manual=args.manual,
+        ))
+    except (
+        LoginRequiredError, BrowserProfileBusyError, OnePasswordError,
+    ) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1) from None
     except (KeyboardInterrupt, asyncio.CancelledError):

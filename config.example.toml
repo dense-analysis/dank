@@ -60,3 +60,8 @@ level = "INFO"
 # max_posts = 200
 # max_scrolls = 20
 # scroll_pause_seconds = 1.5
+
+# Optional autofill via the host's 1Password CLI; you submit each step yourself.
+# [x.onepassword]
+# username = "op://Personal/X/username"
+# password = "op://Personal/X/password"

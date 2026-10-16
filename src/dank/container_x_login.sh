@@ -46,7 +46,7 @@ children+=("$!")
 children+=("$!")
 
 printf '%s\n' 'Open http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale to sign in to X.'
-x-login "$@" &
+x-login "$@" <&0 &
 login_pid=$!
 
 # Stop the whole temporary desktop if login or any display server exits.

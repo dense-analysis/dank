@@ -117,7 +117,9 @@ async def test_login_reports_success_only_after_flushing_shared_profile(
     browser.get.assert_awaited_once_with("about:blank")
     page.get.assert_awaited_once_with(X_HOME_URL)
     page.set_window_size.assert_awaited_once_with(width=1280, height=900)
-    wait.assert_awaited_once_with(page, timeout_seconds=10)
+    wait.assert_awaited_once_with(
+        page, timeout_seconds=10, credentials=None,
+    )
     context.__aexit__.assert_awaited_once()
 
 

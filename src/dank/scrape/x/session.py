@@ -5,6 +5,13 @@ import asyncio
 import zendriver
 from zendriver.core.connection import ProtocolException
 
+from .onepassword import (
+    PASSWORD_SELECTOR,
+    USERNAME_SELECTOR,
+    LoginCredentials,
+    fill_field,
+)
+
 X_HOME_URL = "https://x.com/home"
 SESSION_POLL_SECONDS = 2
 LOGIN_LIMITED_MESSAGE = (
@@ -46,12 +53,26 @@ async def is_signed_in(page: zendriver.Tab) -> bool:
 
 async def wait_for_x_session(
     page: zendriver.Tab, *, timeout_seconds: float,
+    credentials: LoginCredentials | None = None,
 ) -> None:
+    fields = (
+        [(USERNAME_SELECTOR, credentials.username),
+         (PASSWORD_SELECTOR, credentials.password)] if credentials else []
+    )
+
     try:
         async with asyncio.timeout(timeout_seconds):
             while not await is_signed_in(page):
                 if page.browser and page.browser.stopped:
                     raise LoginRequiredError("Browser closed before sign-in.")
+
+                pending: list[tuple[str, str]] = []
+
+                for selector, value in fields:
+                    if not await fill_field(page, selector, value):
+                        pending.append((selector, value))
+
+                fields = pending
 
                 await asyncio.sleep(SESSION_POLL_SECONDS)
     except TimeoutError:

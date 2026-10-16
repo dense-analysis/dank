@@ -9,7 +9,7 @@ CONFIG_TEMPLATE := config.example.toml
 RUN := $(COMPOSE) run --rm -T dank
 SCRAPE := $(RUN) scrape --headless
 WEB := $(COMPOSE) up --build --wait
-X_LOGIN := $(COMPOSE) run --build --rm --no-deps -T -p 127.0.0.1:6080:6080 dank dank-x-login
+X_LOGIN := bash src/dank/run_x_login.sh $(COMPOSE) --
 else ifeq ($(MODE),native)
 CONFIG_TEMPLATE := config.native.example.toml
 RUN := $(UV) run

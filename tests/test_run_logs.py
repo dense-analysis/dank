@@ -24,6 +24,9 @@ def workspace(tmp_path: pathlib.Path) -> pathlib.Path:
     (path / "src/dank").mkdir(parents=True)
     shutil.copyfile(ROOT / "Makefile", path / "Makefile")
     shutil.copyfile(WRAPPER, path / "src/dank/run_logged.sh")
+    shutil.copyfile(
+        ROOT / "src/dank/run_x_login.sh", path / "src/dank/run_x_login.sh",
+    )
     (path / "config.toml").touch()
     (path / "launcher.py").write_text(
         'import json, sys\n'
@@ -82,15 +85,15 @@ def test_make_login_uses_same_service_without_archiving_browser_output(
     launcher = shlex.join([sys.executable, str(workspace / "launcher.py")])
     result = _capture(_start([
         "make", "x-login", f"MODE={mode}", f"UV={launcher}",
-        f"COMPOSE={launcher}", "ARGS=--timeout 30",
+        f"COMPOSE={launcher}", "ARGS=--timeout 30 --manual",
     ], workspace))
     assert result.returncode == 0, result.stderr
-    args = ["run", "x-login", "--timeout", "30"]
+    args = ["run", "x-login", "--timeout", "30", "--manual"]
 
     if mode == "docker":
         args = ["run", "--build", "--rm", "--no-deps", "-T", "-p",
                 "127.0.0.1:6080:6080", "dank", "dank-x-login",
-                "--timeout", "30"]
+                "--timeout", "30", "--manual"]
 
     assert json.dumps(args) in result.stdout
     assert not (workspace / "logs").exists()

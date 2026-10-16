@@ -23,8 +23,14 @@ class BrowserScrapeSettings(NamedTuple):
     scroll_pause_seconds: float = 1.5
 
 
+class XOnePasswordSettings(NamedTuple):
+    username: str
+    password: str
+
+
 class XSettings(NamedTuple):
     scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
+    onepassword: XOnePasswordSettings | None = None
 
 
 class RedditCommentSort(StrEnum):
@@ -465,6 +471,36 @@ def _parse_optional_int(value: object) -> int | None:
     return None
 
 
+def _parse_x_onepassword(value: object) -> XOnePasswordSettings | None:
+    if value is None:
+        return None
+
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("x.onepassword must be a table of secret references")
+
+    references: list[str] = []
+
+    for field in ("username", "password"):
+        reference = data.get(field)
+
+        if (
+            not isinstance(reference, str)
+            or not reference.startswith("op://")
+            or len(reference.removeprefix("op://").split("/")) < 3
+            or any(not part for part in reference[5:].split("/"))
+            or any(ord(char) < 32 or ord(char) == 127 for char in reference)
+        ):
+            raise ConfigError(
+                f"x.onepassword.{field} must be an op:// secret reference",
+            )
+
+        references.append(reference)
+
+    return XOnePasswordSettings(*references)
+
+
 def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     config_path = pathlib.Path(path)
 
@@ -487,6 +523,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
                 "scroll_pause_seconds", x_defaults.scroll_pause_seconds,
             )),
         ),
+        onepassword=_parse_x_onepassword(x_data.get("onepassword")),
     )
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}

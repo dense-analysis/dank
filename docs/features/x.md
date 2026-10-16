@@ -94,6 +94,33 @@ install a Chromium-based browser and use its host path if setting
 `browser.connection_timeout` and `browser.connection_max_tries` can help with
 slow browser startup.
 
+## Optional 1Password autofill
+
+If you have [1Password CLI](https://developer.1password.com/docs/cli/), enable
+its [desktop app integration](https://developer.1password.com/docs/cli/app-integration/)
+and copy the secret references for your X login into configuration:
+
+```toml
+[x.onepassword]
+username = "op://Personal/X/username"
+password = "op://Personal/X/password"
+```
+
+Use your actual vault, item and field references. Run `make x-login` as usual,
+or add `MODE=native`. Authorize 1Password when prompted. It fills each visible,
+empty X username/password field once; you click Continue or Sign in yourself.
+Existing input is preserved, and verification codes remain manual.
+
+Docker uses `op` on the host and sends the values through standard input to the
+one-off container. No 1Password installation or vault access is needed inside
+Docker. Use the Make command for this integration; direct Compose commands
+continue to support manual sign-in.
+
+Without references, without `op`, or when access is denied, sign-in remains
+manual. Use `ARGS='--manual'` to skip 1Password for a run. Resolved credentials
+are kept in memory and are not written to config, environment variables,
+command-line arguments or logs. This does not clear an X login restriction.
+
 ## Temporary login limits
 
 If X reports that it has temporarily limited login, DANK stops sign-in and
