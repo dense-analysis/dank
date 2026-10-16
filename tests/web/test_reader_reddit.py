@@ -261,3 +261,31 @@ def test_one_player_per_native_video_when_listing_and_detail_urls_differ():
     assert len(result) == 1
     assert result[0]["url"] == VIDEO + "?a=new"
     assert result[0]["poster_url"] == POSTER
+
+
+def test_historical_native_video_reuses_its_separately_collected_preview():
+    media = [
+        {"url": VIDEO, "asset_type": "video"},
+        {"url": POSTER, "asset_type": "photo"},
+    ]
+    video = videos({"media": media}, {POSTER: "/assets/poster.jpg"})[0]
+    assert video["poster_url"] == "/assets/poster.jpg"
+    # A self-post image must not be repurposed as a video preview.
+    video = videos({
+        "media": media, "selftext_html": "<p>Body image</p>",
+    }, {})[0]
+    assert video["poster_url"] is None
+
+
+def test_video_poster_variants_and_generated_link_do_not_repeat():
+    from dank.web.reader_reddit import without_video_posters
+
+    body = '<p><img src="' + POSTER + '?width=1080"></p>'
+    body += '<p><a href="https://v.redd.it/abc">https://v.redd.it/abc</a></p>'
+    body += '<p>Source: <a href="https://example.com">The source</a></p>'
+    result = without_video_posters(
+        body, {POSTER + "?width=640"}, "https://v.redd.it/abc",
+    )
+    assert "<img" not in result
+    assert "v.redd.it/abc" not in result
+    assert "The source" in result

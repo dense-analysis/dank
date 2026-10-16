@@ -343,7 +343,14 @@ def _add_reddit_archive(
     post["reddit"]["comment_capture"] = comment_capture(snapshot, post["url"])
     post["reddit"]["video"] = media[0] if media else None
     post["reddit"]["videos"] = media
-    post["html"] = without_video_posters(post["html"], posters)
+    if media:
+        posters.update(
+            original for original, local in local_urls.items()
+            if local in posters
+        )
+        post["html"] = without_video_posters(
+            post["html"], posters, snapshot.get("url"),
+        )
 
 
 def _reddit_snapshot(value: object) -> dict[str, Any]:

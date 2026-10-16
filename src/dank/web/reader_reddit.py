@@ -172,6 +172,17 @@ def videos(
         key = _video_identity(url)
         merged[key] = {**merged.get(key, {}), **asset, "url": url}
 
+    if len(merged) == 1 and not snapshot.get("selftext_html"):
+        photos = {
+            _url(_mapping(item).get("url"))
+            for item in cast(list[object], media)
+            if _mapping(item).get("asset_type") == "photo"
+        } - {None}
+
+        if len(photos) == 1:
+            # Older feed captures stored the video's preview separately.
+            next(iter(merged.values())).setdefault("poster_url", photos.pop())
+
     return [
         _video(asset, asset["url"], local_urls) for asset in merged.values()
     ]
@@ -236,12 +247,20 @@ def _local_media(url: str, local_urls: dict[str, str]) -> str | None:
     return None
 
 
-def without_video_posters(body: str, posters: set[str]) -> str:
+def without_video_posters(
+    body: str, posters: set[str], destination: object = None,
+) -> str:
     parser = _VideoPosters(posters)
     parser.feed(body)
 
     for tag in parser.tags:
         body = body.replace(tag, "")
+
+    url = _url(destination)
+
+    if url and urlsplit(url).hostname == "v.redd.it":
+        escaped = html.escape(url, quote=True)
+        body = body.replace(f'<p><a href="{escaped}">{escaped}</a></p>', "")
 
     return body
 
@@ -250,10 +269,23 @@ class _VideoPosters(HTMLParser):
     def __init__(self, posters: set[str]) -> None:
         super().__init__()
         self.posters = posters
+        self.paths = {
+            (parsed.hostname, parsed.path) for value in posters
+            if (parsed := urlsplit(value)).hostname in {
+                "preview.redd.it", "external-preview.redd.it", "i.redd.it",
+            }
+        }
         self.tags: set[str] = set()
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
-        if tag == "img" and dict(attrs).get("src") in self.posters:
+        if tag != "img":
+            return
+
+        value = dict(attrs).get("src") or ""
+        parsed = urlsplit(_url(value) or "")
+
+        if (value in self.posters
+                or (parsed.hostname, parsed.path) in self.paths):
             self.tags.add(self.get_starttag_text() or "")
