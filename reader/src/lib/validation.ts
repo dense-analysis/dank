@@ -39,6 +39,55 @@ function isOptionalFlairs(value: unknown): boolean {
   return value === undefined || (Array.isArray(value) && value.every(isFlair));
 }
 
+function isRedditVideo(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.url === "string" &&
+    (value.poster_url === null || typeof value.poster_url === "string") &&
+    typeof value.remote === "boolean" &&
+    isOptionalIcon(value.hls_url) &&
+    isOptionalIcon(value.fallback_url)
+  );
+}
+
+function isRedditComment(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["id", "parent_id", "author", "body_html", "body", "permalink"].every(
+      (key) => typeof value[key] === "string",
+    ) &&
+    (value.score === null ||
+      (typeof value.score === "number" && Number.isSafeInteger(value.score))) &&
+    (value.created_utc === null ||
+      (typeof value.created_utc === "number" &&
+        Number.isFinite(value.created_utc) &&
+        value.created_utc >= 0 &&
+        value.created_utc <= 8640000000000)) &&
+    typeof value.is_op === "boolean" &&
+    isCount(value.depth)
+  );
+}
+
+function isCommentCapture(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["captured", "disabled", "failed", "not_captured"].includes(
+      String(value.status),
+    ) &&
+    typeof value.sort === "string" &&
+    isCount(value.limit) &&
+    (value.total_available === null || isCount(value.total_available)) &&
+    typeof value.has_more === "boolean" &&
+    Array.isArray(value.comments) &&
+    value.comments.every(isRedditComment) &&
+    (value.captured_at === undefined ||
+      typeof value.captured_at === "string") &&
+    (value.latest_attempt_status === undefined ||
+      value.latest_attempt_status === "disabled" ||
+      value.latest_attempt_status === "failed")
+  );
+}
+
 function isRedditPost(value: unknown): value is RedditPost {
   return (
     isRecord(value) &&
@@ -47,7 +96,15 @@ function isRedditPost(value: unknown): value is RedditPost {
       (typeof value.score === "number" && Number.isSafeInteger(value.score))) &&
     (value.comments === null || isCount(value.comments)) &&
     (value.flair === null || typeof value.flair === "string") &&
-    isOptionalIcon(value.icon_url)
+    isOptionalIcon(value.icon_url) &&
+    (value.video === undefined ||
+      value.video === null ||
+      isRedditVideo(value.video)) &&
+    (value.videos === undefined ||
+      (Array.isArray(value.videos) && value.videos.every(isRedditVideo))) &&
+    (value.comment_capture === undefined ||
+      value.comment_capture === null ||
+      isCommentCapture(value.comment_capture))
   );
 }
 

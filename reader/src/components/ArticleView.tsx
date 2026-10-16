@@ -17,7 +17,9 @@ import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { RedditComments } from "./RedditComments";
 import { RedditCommunityLink, RedditMetadata } from "./RedditMetadata";
+import { RedditVideo } from "./RedditVideo";
 import { SourceLink } from "./SourceLink";
 
 export function ArticleView({
@@ -52,20 +54,36 @@ export function ArticleView({
   const {
     data: post,
     isPending,
+    isPlaceholderData,
     error,
     refetch,
   } = useQuery({
     queryKey: ["post", domain, id],
     queryFn: ({ signal }) => fetchPost(domain, id, signal),
-    initialData: initial,
+    // Feed summaries omit archive details and must never count as a fresh detail response.
+    placeholderData: initial,
   });
   const hasContent = useMemo(
     () => hasArticleContent(post?.html ?? ""),
     [post?.html],
   );
+  const redditVideos = post?.reddit?.videos?.length
+    ? post.reddit.videos
+    : post?.reddit?.video
+      ? [post.reddit.video]
+      : [];
+  const hasReadableContent = hasContent || redditVideos.length > 0;
+  const attachedMedia =
+    post?.media.filter(
+      (asset) =>
+        /^(video|audio)\//.test(asset.content_type) &&
+        safeUrl(asset.url) &&
+        !redditVideos.some((video) => video.url === asset.url),
+    ) ?? [];
+
   useEffect(() => {
-    if (post && hasContent) markRead(post);
-  }, [post, hasContent, markRead]);
+    if (post && hasReadableContent) markRead(post);
+  }, [post, hasReadableContent, markRead]);
   return (
     <main id="main" className="article-page" aria-label="Article reader">
       <div className="reader-toolbar">
@@ -163,7 +181,7 @@ export function ArticleView({
               hasContent && <span> {readingTime(post)} min read</span>
             )}
           </div>
-          {hasContent ? (
+          {hasReadableContent ? (
             <>
               <a
                 className="original-link"
@@ -194,7 +212,14 @@ export function ArticleView({
                   </div>
                 </aside>
               )}
-              <ArticleBody html={post.html} />
+              {redditVideos.map((video) => (
+                <RedditVideo
+                  key={video.url}
+                  video={video}
+                  originalUrl={post.url}
+                />
+              ))}
+              {hasContent && <ArticleBody html={post.html} />}
             </>
           ) : (
             <aside className="collection-notice" aria-label="Collection status">
@@ -223,43 +248,38 @@ export function ArticleView({
               </div>
             </aside>
           )}
-          {post.media.some((asset) =>
-            /^(video|audio)\//.test(asset.content_type),
-          ) && (
+          {attachedMedia.length > 0 && (
             <section className="article-media" aria-label="Attached media">
-              {post.media
-                .filter(
-                  (asset) =>
-                    /^(video|audio)\//.test(asset.content_type) &&
-                    safeUrl(asset.url),
-                )
-                .map((asset) =>
-                  asset.content_type.startsWith("video/") ? (
-                    <video
-                      key={asset.url}
-                      controls
-                      preload="none"
-                      src={safeUrl(asset.url)}
-                      aria-label="Article video"
-                    >
-                      <track kind="captions" />
-                    </video>
-                  ) : (
-                    <audio
-                      key={asset.url}
-                      controls
-                      preload="none"
-                      src={safeUrl(asset.url)}
-                      aria-label="Article audio"
-                    >
-                      <track kind="captions" />
-                    </audio>
-                  ),
-                )}
+              {attachedMedia.map((asset) =>
+                asset.content_type.startsWith("video/") ? (
+                  <video
+                    key={asset.url}
+                    controls
+                    preload="none"
+                    src={safeUrl(asset.url)}
+                    aria-label="Article video"
+                  >
+                    <track kind="captions" />
+                  </video>
+                ) : (
+                  <audio
+                    key={asset.url}
+                    controls
+                    preload="none"
+                    src={safeUrl(asset.url)}
+                    aria-label="Article audio"
+                  >
+                    <track kind="captions" />
+                  </audio>
+                ),
+              )}
             </section>
           )}
+          {post.reddit && !isPlaceholderData && (
+            <RedditComments reddit={post.reddit} originalUrl={post.url} />
+          )}
           <div className="article-end">
-            {hasContent && <span>YOU’VE REACHED THE END</span>}
+            {hasReadableContent && <span>YOU’VE REACHED THE END</span>}
             <button type="button" className="secondary-button" onClick={close}>
               <ArrowLeft size={15} />
               Back to your reading

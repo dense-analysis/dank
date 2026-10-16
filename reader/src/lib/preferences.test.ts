@@ -90,3 +90,20 @@ it("reports storage failure without throwing or deleting saved preferences", () 
   vi.stubGlobal("localStorage", undefined);
   expect(loadPreferences()).toEqual(defaultPreferences);
 });
+
+it("shows comments and remote labels for older or malformed preferences", () => {
+  persisted =
+    '{"font":"georgia","showRedditComments":"false","showRemoteContentLabels":0}';
+  expect(loadPreferences().showRedditComments).toBe(true);
+  expect(loadPreferences().showRemoteContentLabels).toBe(true);
+});
+
+it("persists opting out of Reddit comment and remote label display", () => {
+  savePreferences({
+    ...defaultPreferences,
+    showRedditComments: false,
+    showRemoteContentLabels: false,
+  });
+  expect(loadPreferences().showRedditComments).toBe(false);
+  expect(loadPreferences().showRemoteContentLabels).toBe(false);
+});

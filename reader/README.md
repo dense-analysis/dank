@@ -98,8 +98,18 @@ on a post or article to open that community's feed with just that flair selected
 Article links and Back navigation preserve the active filters.
 
 Scores appear as an up arrow and number; scores, comment counts and flairs are
-collected snapshots. Comments themselves are not collected. Community icons
-use initials when a cached image is unavailable.
+collected snapshots. Saved comments appear beneath a post in their collected
+order, with replies indented and a link to Reddit when more remain. Older posts
+and skipped or failed comment collections show an explicit notice.
+
+Reddit videos play on demand, including audio when provided by the source.
+Downloaded videos play locally; remote videos stream from Reddit and carry a
+small label. If a stream becomes unavailable, use **Watch on Reddit**.
+
+Settings can hide captured comments or remote video labels in this browser.
+Collection options, including video downloads and comment limits/sort, remain
+in the collector configuration. Community icons use initials when a cached
+image is unavailable.
 
 The reader orders stored posts by date or search relevance. Reddit collection
 defaults to Top for the past day; source configuration can change the sort

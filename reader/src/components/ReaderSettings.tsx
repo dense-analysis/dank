@@ -88,6 +88,56 @@ export function ReaderSettings() {
           difficult to read. You can still change each image’s background.
         </p>
       </div>
+      <fieldset className="reddit-reading-settings">
+        <legend>Reddit reading</legend>
+        <div className="image-background-setting">
+          <label htmlFor="show-reddit-comments">
+            <input
+              id="show-reddit-comments"
+              type="checkbox"
+              checked={preferences.showRedditComments}
+              aria-describedby="show-reddit-comments-help"
+              onChange={(event) =>
+                updatePreferences({
+                  ...preferences,
+                  showRedditComments: event.target.checked,
+                })
+              }
+            />
+            Show captured comments
+          </label>
+          <p className="settings-help" id="show-reddit-comments-help">
+            Read saved conversations beneath Reddit posts. Hiding them keeps the
+            archived comments intact.
+          </p>
+        </div>
+        <div className="image-background-setting">
+          <label htmlFor="show-remote-content-labels">
+            <input
+              id="show-remote-content-labels"
+              type="checkbox"
+              checked={preferences.showRemoteContentLabels}
+              aria-describedby="show-remote-content-labels-help"
+              onChange={(event) =>
+                updatePreferences({
+                  ...preferences,
+                  showRemoteContentLabels: event.target.checked,
+                })
+              }
+            />
+            Show remote content labels
+          </label>
+          <p className="settings-help" id="show-remote-content-labels-help">
+            Mark videos that stream from Reddit and haven’t been saved for
+            offline viewing.
+          </p>
+        </div>
+        <p className="settings-help">
+          These are reading preferences. Video downloads, comment collection,
+          comment limits and sorting are controlled by your collection
+          configuration.
+        </p>
+      </fieldset>
       <section className="reading-preview" aria-label="Reading preview">
         <p className="eyebrow">A LITTLE PREVIEW</p>
         <h2>A quieter corner of the internet.</h2>

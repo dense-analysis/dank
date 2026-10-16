@@ -1,9 +1,44 @@
+export interface RedditComment {
+  id: string;
+  parent_id: string;
+  author: string;
+  body_html: string;
+  body: string;
+  score: number | null;
+  created_utc: number | null;
+  permalink: string;
+  is_op: boolean;
+  depth: number;
+}
+
+export interface RedditCommentCapture {
+  status: "captured" | "disabled" | "failed" | "not_captured";
+  sort: string;
+  limit: number;
+  total_available: number | null;
+  has_more: boolean;
+  comments: RedditComment[];
+  captured_at?: string;
+  latest_attempt_status?: "disabled" | "failed";
+}
+
+export interface RedditVideo {
+  url: string;
+  poster_url: string | null;
+  remote: boolean;
+  hls_url?: string | null;
+  fallback_url?: string | null;
+}
+
 export interface RedditPost {
   community: string;
   score: number | null;
   comments: number | null;
   flair: string | null;
   icon_url?: string | null;
+  comment_capture?: RedditCommentCapture | null;
+  video?: RedditVideo | null;
+  videos?: RedditVideo[];
 }
 
 export interface RedditFlair {

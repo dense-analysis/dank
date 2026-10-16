@@ -24,12 +24,16 @@ export interface ReaderPreferences {
   font: ReadingFont;
   fontSize: number;
   autoImageBackground: boolean;
+  showRedditComments: boolean;
+  showRemoteContentLabels: boolean;
 }
 
 export const defaultPreferences: ReaderPreferences = {
   font: "dm-sans",
   fontSize: 19,
   autoImageBackground: false,
+  showRedditComments: true,
+  showRemoteContentLabels: true,
 };
 const preferencesKey = "dank-reader:preferences:v1";
 
@@ -54,6 +58,8 @@ export function loadPreferences(): ReaderPreferences {
           ? value.fontSize
           : defaultPreferences.fontSize,
       autoImageBackground: value.autoImageBackground === true,
+      showRedditComments: value.showRedditComments !== false,
+      showRemoteContentLabels: value.showRemoteContentLabels !== false,
     };
   } catch {
     return { ...defaultPreferences };
