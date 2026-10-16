@@ -156,7 +156,7 @@ async def _previous_reddit_bodies(
 
         if isinstance(capture, dict) and cast(dict[str, Any], capture).get(
             "status",
-        ) in {"failed", "disabled"}:
+        ) in ("failed", "disabled"):
             candidates.append(raw)
 
     if not candidates:
@@ -168,10 +168,12 @@ async def _previous_reddit_bodies(
     for index, raw in enumerate(candidates):
         clauses.append(
             f"(post_id = %(post_{index})s "
-            f"AND scraped_at < %(before_{index})s)",
+            f"AND toUnixTimestamp64Milli(scraped_at) < %(before_{index})s)",
         )
         params[f"post_{index}"] = raw.post_id
-        params[f"before_{index}"] = raw.scraped_at
+        params[f"before_{index}"] = round(raw.scraped_at.replace(
+            tzinfo=raw.scraped_at.tzinfo or datetime.UTC,
+        ).timestamp() * 1000)
 
     result = await client.fetch_json(
         "SELECT post_id, payload FROM raw_posts "

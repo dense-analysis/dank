@@ -43,6 +43,7 @@ from dank.web.reader_reddit import (
     videos,
     without_video_posters,
 )
+from dank.web.reader_reddit_history import preserve_reddit_archives
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -284,6 +285,9 @@ async def _add_reddit_metadata(
         str(row["post_id"]): _reddit_snapshot(row.get("payload"))
         for row in result.rows
     }
+    snapshots = await preserve_reddit_archives(
+        client, snapshots, versions, include_discussion=include_discussion,
+    )
 
     for post in reddit:
         snapshot = snapshots.get(post["id"], {})

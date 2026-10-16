@@ -27,7 +27,7 @@ async def preserve_reddit_archives(
             key: version_map[key]
             for key, snapshot in snapshots.items()
             if key in version_map and isinstance(snapshot.get(field), dict)
-            and snapshot[field].get("status") in {"failed", "disabled"}
+            and snapshot[field].get("status") in ("failed", "disabled")
         }
 
         if not candidates:

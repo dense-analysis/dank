@@ -160,20 +160,30 @@ def videos(
     if not isinstance(media, list):
         return []
 
-    result: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    merged: dict[str, dict[str, Any]] = {}
 
     for item in cast(list[object], media):
         asset = _mapping(item)
         url = _url(asset.get("url"))
 
-        if not url or asset.get("asset_type") != "video" or url in seen:
+        if not url or asset.get("asset_type") != "video":
             continue
 
-        seen.add(url)
-        result.append(_video(asset, url, local_urls))
+        key = _video_identity(url)
+        merged[key] = {**merged.get(key, {}), **asset, "url": url}
 
-    return result
+    return [
+        _video(asset, asset["url"], local_urls) for asset in merged.values()
+    ]
+
+
+def _video_identity(url: str) -> str:
+    parsed = urlsplit(url)
+    parts = parsed.path.strip("/").split("/")
+
+    return f"v.redd.it/{parts[0]}" if (
+        parsed.hostname == "v.redd.it" and parts[0]
+    ) else url
 
 
 def _video(
@@ -188,15 +198,42 @@ def _video(
         _url(asset.get("playback_url")) or _url(asset.get("fallback_url"))
     )
     poster = _url(asset.get("poster_url"))
-    local = local_urls.get(url)
+    local = _local_media(url, local_urls)
 
     return {
         "url": local or hls or fallback or url,
-        "poster_url": local_urls.get(poster, poster) if poster else None,
+        "poster_url": (_local_media(poster, local_urls) or poster)
+        if poster else None,
         "remote": local is None,
         "hls_url": hls if not local else None,
-        "fallback_url": fallback if not local else None,
+        "fallback_url": fallback
+        if not local and asset.get("playback_has_audio") is True else None,
     }
+
+
+def _local_media(url: str, local_urls: dict[str, str]) -> str | None:
+    if url in local_urls:
+        return local_urls[url]
+
+    parsed = urlsplit(url)
+
+    if parsed.hostname not in {
+        "v.redd.it", "preview.redd.it", "external-preview.redd.it",
+    }:
+        return None
+
+    # Signed Reddit URLs rotate; the media path still identifies the same
+    # asset within this post. Previously archived video remains usable.
+    for original, local in local_urls.items():
+        candidate = urlsplit(original)
+
+        if (candidate.hostname, candidate.path) == (
+            parsed.hostname, parsed.path,
+        ) or (parsed.hostname == "v.redd.it"
+              and _video_identity(original) == _video_identity(url)):
+            return local
+
+    return None
 
 
 def without_video_posters(body: str, posters: set[str]) -> str:

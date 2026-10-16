@@ -209,3 +209,55 @@ async def test_archive_metadata_only_on_detail_and_posters_not_repeated(
     assert "comment_capture" not in listing["reddit"]
     assert "video" not in listing["reddit"]
     assert listing["thumbnail"] == POSTER
+
+
+def test_signed_reddit_urls_reuse_the_archived_video_after_refresh():
+    snapshot = {"media": [{
+        "asset_type": "video", "url": VIDEO + "?a=new-signature",
+        "hls_url": VIDEO + "?a=new-signature",
+    }]}
+    video = videos(snapshot, {
+        VIDEO + "?a=old-signature": "/assets/saved.mp4",
+    })[0]
+    assert video["remote"] is False
+    assert video["url"] == "/assets/saved.mp4"
+
+
+def test_retained_comments_report_original_capture_and_latest_attempt():
+    capture = comment_capture({"comment_capture": {
+        "status": "captured", "comments": [],
+        "captured_at": "2026-10-16T12:00:00+00:00",
+        "latest_attempt_status": "failed",
+    }}, PERMALINK)
+    assert capture["captured_at"] == "2026-10-16T12:00:00+00:00"
+    assert capture["latest_attempt_status"] == "failed"
+
+
+@pytest.mark.parametrize("status", [[], {}, None])
+def test_malformed_capture_status_does_not_break_the_article(status: object):
+    capture = comment_capture(
+        {"comment_capture": {"status": status}}, PERMALINK,
+    )
+    assert capture["status"] == "not_captured"
+
+
+@pytest.mark.parametrize("has_audio", [False, True])
+def test_only_muxed_mp4_is_offered_as_an_automatic_hls_fallback(
+    *, has_audio: bool,
+):
+    fallback = "https://v.redd.it/abc/packaged.mp4"
+    video = videos({"media": [{
+        "url": VIDEO, "asset_type": "video", "playback_url": fallback,
+        "playback_has_audio": has_audio,
+    }]}, {})[0]
+    assert video["fallback_url"] == (fallback if has_audio else None)
+
+
+def test_one_player_per_native_video_when_listing_and_detail_urls_differ():
+    result = videos({"media": [
+        {"url": VIDEO + "?a=old", "asset_type": "video", "poster_url": POSTER},
+        {"url": VIDEO + "?a=new", "asset_type": "video"},
+    ]}, {})
+    assert len(result) == 1
+    assert result[0]["url"] == VIDEO + "?a=new"
+    assert result[0]["poster_url"] == POSTER

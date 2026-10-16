@@ -29,7 +29,7 @@ def preserve_reddit_body(row: RawPost, previous_payload: str) -> RawPost:
     if (
         not isinstance(current.get("detail_capture"), dict)
         or current["detail_capture"].get("status")
-        not in {"failed", "disabled"}
+        not in ("failed", "disabled")
         or not isinstance(previous.get("detail_capture"), dict)
         or previous["detail_capture"].get("status") != "captured"
     ):
@@ -45,7 +45,7 @@ def preserve_reddit_body(row: RawPost, previous_payload: str) -> RawPost:
 
 
 def convert_raw_reddit_post(row: RawPost) -> Post | None:
-    """Prepare a captured community post without fetching its comments."""
+    """Prepare captured post content; discussion stays in the raw archive."""
     try:
         payload = json.loads(row.payload)
     except ValueError:

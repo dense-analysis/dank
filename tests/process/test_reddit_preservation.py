@@ -120,12 +120,14 @@ async def test_processing_recovers_failed_body_from_older_success() -> None:
 
     query, params = client.fetch_json.call_args_list[1].args
     assert "domain = 'reddit.com'" in query
-    assert "scraped_at < %(before_0)s" in query
+    assert "toUnixTimestamp64Milli(scraped_at) < %(before_0)s" in query
     assert (
         "JSONExtractString(payload, 'detail_capture', 'status') = 'captured'"
         in query
     )
-    assert params == {"post_0": "t3_post", "before_0": NOW}
+    assert params == {
+        "post_0": "t3_post", "before_0": round(NOW.timestamp() * 1000),
+    }
     table, rows = client.insert_rows.call_args.args
     assert table == "posts"
     assert "The complete archived post." in rows[0]["html"]
