@@ -332,7 +332,7 @@ def test_reddit_cursor_cannot_leak_across_communities():
         decode_cursor(filters._replace(community="localllama", cursor=token))
 
 
-async def test_reddit_metadata_uses_latest_snapshot_and_retains_safe_html(
+async def test_reddit_metadata_uses_processed_snapshot_and_retains_safe_html(
     app: web.Application,
 ) -> None:
     post = row("reddit.com", "t3_abc")
@@ -357,7 +357,10 @@ async def test_reddit_metadata_uses_latest_snapshot_and_retains_safe_html(
     }
     assert "<script>" not in data["posts"][0]["html"]
     assert "ORDER BY scraped_at DESC LIMIT 1 BY post_id" in fake.calls[2][0]
-    assert fake.calls[2][1] == {"reddit_ids": ["t3_abc"]}
+    assert fake.calls[2][1] == {
+        "reddit_versions": [("t3_abc", 1791462645123)],
+    }
+    assert "toUnixTimestamp64Milli(scraped_at)" in fake.calls[2][0]
 
 
 @pytest.mark.parametrize("payload", [

@@ -38,6 +38,11 @@ from dank.web.reader_query import (
     encode_cursor,
     parse_filters,
 )
+from dank.web.reader_reddit import (
+    comment_capture,
+    videos,
+    without_video_posters,
+)
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -201,7 +206,9 @@ async def handle_post(request: web.Request) -> web.Response:
     if post is None:
         return web.json_response({"error": "Article not found"}, status=404)
 
-    posts = await _post_payloads(client, [post], state.assets_dir)
+    posts = await _post_payloads(
+        client, [post], state.assets_dir, include_discussion=True,
+    )
 
     return web.json_response(posts[0])
 
@@ -209,6 +216,8 @@ async def handle_post(request: web.Request) -> web.Response:
 async def _post_payloads(
     client: ClickHouseClient, posts: list[PostRow], assets_dir: pathlib.Path,
     query: str = "",
+    *,
+    include_discussion: bool = False,
 ) -> list[dict[str, Any]]:
     if not posts:
         return []
@@ -234,7 +243,10 @@ async def _post_payloads(
         )
         for post in posts
     ]
-    await _add_reddit_metadata(client, payloads, assets_dir)
+    await _add_reddit_metadata(
+        client, payloads, assets_dir, posts, assets,
+        include_discussion=include_discussion,
+    )
 
     return payloads
 
@@ -242,18 +254,31 @@ async def _post_payloads(
 async def _add_reddit_metadata(
     client: ClickHouseClient, payloads: list[dict[str, Any]],
     assets_dir: pathlib.Path,
+    rows: list[PostRow],
+    assets: dict[tuple[str, str], list[AssetRow]],
+    *,
+    include_discussion: bool,
 ) -> None:
     reddit = [post for post in payloads if post["domain"] == "reddit.com"]
 
     if not reddit:
         return
 
-    # Fetch snapshots only for this page, from the original raw payloads.
+    # Match the processed article version: a pending scrape must not replace
+    # its discussion with a newer, unprocessed capture.
+    versions = [
+        (post.post_id, round(post.updated_at.replace(
+            tzinfo=post.updated_at.tzinfo or dt.UTC,
+        ).timestamp() * 1000))
+        for post in rows if post.domain == "reddit.com"
+    ]
     result = await client.fetch_json(
         "SELECT post_id, payload FROM raw_posts "
-        "WHERE domain = 'reddit.com' AND post_id IN %(reddit_ids)s "
+        "WHERE domain = 'reddit.com' "
+        "AND (post_id, toUnixTimestamp64Milli(scraped_at)) "
+        "IN %(reddit_versions)s "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id",
-        {"reddit_ids": [post["id"] for post in reddit]},
+        {"reddit_versions": versions},
     )
     snapshots = {
         str(row["post_id"]): _reddit_snapshot(row.get("payload"))
@@ -271,6 +296,10 @@ async def _add_reddit_metadata(
             "comments": _reddit_count(snapshot.get("num_comments"), minimum=0),
             "flair": flair.strip() if isinstance(flair, str) else None,
         }
+        _add_reddit_archive(
+            post, snapshot, assets.get(("reddit.com", post["id"]), []),
+            assets_dir, include_discussion=include_discussion,
+        )
 
     icons = await community_icons(
         client, [post["reddit"]["community"] for post in reddit], assets_dir,
@@ -280,6 +309,37 @@ async def _add_reddit_metadata(
         post["reddit"]["icon_url"] = icons.get(
             post["reddit"]["community"].lower(),
         )
+
+
+def _add_reddit_archive(
+    post: dict[str, Any], snapshot: dict[str, Any], assets: list[AssetRow],
+    assets_dir: pathlib.Path, *, include_discussion: bool,
+) -> None:
+    local_urls: dict[str, str] = {}
+
+    for asset in assets:
+        view = _asset_view(asset, assets_dir=assets_dir)
+
+        if view and view["kind"] in {"image", "video"}:
+            # A previously downloaded HLS manifest is not an offline video.
+            if urlsplit(view["url"]).path.lower().endswith(".m3u8"):
+                continue
+
+            local_urls[asset.url] = view["url"]
+
+    media = videos(snapshot, local_urls)
+    posters = {video["poster_url"] for video in media if video["poster_url"]}
+
+    if not post["thumbnail"] and posters:
+        post["thumbnail"] = next(iter(posters))
+
+    if not include_discussion:
+        return
+
+    post["reddit"]["comment_capture"] = comment_capture(snapshot, post["url"])
+    post["reddit"]["video"] = media[0] if media else None
+    post["reddit"]["videos"] = media
+    post["html"] = without_video_posters(post["html"], posters)
 
 
 def _reddit_snapshot(value: object) -> dict[str, Any]:
