@@ -40,6 +40,14 @@ export function FeedToolbar({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+  const searchLabel =
+    filters.kind === "reddit"
+      ? filters.community
+        ? `Search r/${filters.community}`
+        : "Search Reddit"
+      : filters.domains.length === 1
+        ? `Search ${filters.domains[0]}`
+        : "Search stories";
   const activeCount =
     filters.domains.length +
     filters.tags.length +
@@ -70,8 +78,8 @@ export function FeedToolbar({
           ref={input}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="Search stories"
-          aria-label="Search stories"
+          placeholder={searchLabel}
+          aria-label={searchLabel}
         />
         {draft && (
           <button

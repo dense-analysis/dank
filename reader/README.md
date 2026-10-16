@@ -85,22 +85,21 @@ browser channel. No live collection is needed for the fixture tests.
 When Reddit communities are configured, a Reddit section appears below All
 stories. Expand its community list to browse each subreddit, including those
 with no collected posts yet. Reddit stays separate from the main story feed.
-Community icons are downloaded with collection and appear beside community names.
-If an icon is unavailable, the community initial is shown. **Filters → Flair**
-shows flairs found in collected posts for the selected community, or across all
-communities in the Reddit view. Select multiple flairs to match any of them;
-flair choices combine with search, author and date filters. Shared flair labels
-match across communities. Click a flair badge on a post or article to open
-that community’s feed filtered to that flair.
 
-Search, author and date filters apply within the current Reddit view; article
-links and browser navigation preserve that view. Scores, comment counts and
-flair reflect the collected post. Comments themselves are not collected.
-Community icons are cached during scraping and appear in the sidebar, cards
-and article headers, with initials when unavailable. Filters offer the flairs
-observed in collected posts: community-specific choices in community views,
-and combined matching labels across the Reddit collection. Selected flairs
-match any selected label and remain in the URL through search and navigation.
+A community's name and cached icon stay visible in a compact sticky header.
+Its cards omit the repeated community identity; the combined Reddit feed keeps
+community names and icons on each card. Search identifies its current scope,
+such as **Search r/LocalLLaMA**, **Search Reddit**, or the selected source.
+
+**Filters → Flair** offers labels found in collected posts for that community,
+or combined labels across all communities. Multiple selected flairs match any
+of them and combine with search, author and date filters. Click a flair badge
+on a post or article to open that community's feed with just that flair selected.
+Article links and Back navigation preserve the active filters.
+
+Scores appear as an up arrow and number; scores, comment counts and flairs are
+collected snapshots. Comments themselves are not collected. Community icons
+use initials when a cached image is unavailable.
 
 The reader orders stored posts by date or search relevance. Reddit collection
 defaults to Top for the past day; source configuration can change the sort

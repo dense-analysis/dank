@@ -77,11 +77,14 @@ When Reddit communities are configured, the reader shows a collapsible
 **Reddit** section below **All stories**, with a link for each community,
 including communities with no collected posts yet. Reddit stays separate from
 All stories. Search and reader filters operate on the selected collection.
+A community view keeps its name and icon in a compact sticky header, labels
+search with that community, and omits repeated community identity from cards.
+Scores use an up arrow and number.
 
 Community icons are discovered automatically for every configured community
 on each scrape and cached locally when image downloads are enabled. Adding a
-new `r/community` needs no icon setting. The sidebar, cards and article header
-use the cached icon; a missing icon shows the community's initial. A failed
+new `r/community` needs no icon setting. The sidebar, community header and article header
+use the cached icon; cards also show it in the combined Reddit view; a missing icon shows the community's initial. A failed
 refresh keeps the last usable icon and can retry on the next scrape.
 
 Under **Filters → Flair**, choose labels found on your collected posts.

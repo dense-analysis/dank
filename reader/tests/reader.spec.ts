@@ -303,7 +303,7 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
   await page.goto(`/reader/?${filters}`);
   await expect(story(page)).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Search stories" }),
+    page.getByRole("textbox", { name: "Search example.com" }),
   ).toHaveValue("housing");
   await expect(
     page.getByRole("combobox", { name: "Order stories" }),
@@ -686,7 +686,7 @@ for (const view of ["saved", "legacy-politics"]) {
     await expect(story(page, socialPost.title)).toBeVisible();
     await expect(story(page)).toHaveCount(0);
     await expect(
-      page.getByRole("textbox", { name: "Search stories" }),
+      page.getByRole("textbox", { name: "Search x.com" }),
     ).toHaveValue("housing");
     await expect(
       page.getByRole("combobox", { name: "Order stories" }),

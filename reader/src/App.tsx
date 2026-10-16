@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { ArticleView } from "./components/ArticleView";
+import { CommunityAvatar } from "./components/CommunityAvatar";
 import { FeedToolbar } from "./components/FeedToolbar";
 import { Modal } from "./components/Modal";
 import { PostCard } from "./components/PostCard";
@@ -106,6 +107,12 @@ export function App() {
   const communities = redditSources.flatMap(
     (source) => source.communities ?? [],
   );
+  const communityContext = section === "reddit" && !!filters.community;
+  const activeCommunity = communities.find(
+    (community) =>
+      community.name.toLowerCase() === filters.community.toLowerCase(),
+  );
+  const communityName = activeCommunity?.name ?? filters.community;
   const visibleSources =
     sources.data?.sources.filter((source) =>
       section === "reddit"
@@ -119,7 +126,7 @@ export function App() {
         ? "Sources"
         : section === "reddit"
           ? filters.community
-            ? `r/${filters.community}`
+            ? `r/${communityName}`
             : "Reddit"
           : "All stories";
   const date = new Intl.DateTimeFormat(undefined, {
@@ -207,7 +214,9 @@ export function App() {
       ) : (
         sidebar
       )}
-      <div className="main-shell">
+      <div
+        className={`main-shell ${communityContext ? "community-context" : ""}`}
+      >
         <header className="topbar">
           <button
             type="button"
@@ -218,6 +227,12 @@ export function App() {
             <Menu size={21} />
           </button>
           <div className="breadcrumb">
+            {communityContext && (
+              <CommunityAvatar
+                community={communityName}
+                iconUrl={activeCommunity?.icon_url}
+              />
+            )}
             {feedSection && !readingArticle ? (
               <h1>{title}</h1>
             ) : (
@@ -263,7 +278,7 @@ export function App() {
                   <p className="reddit-description">
                     Collected posts from{" "}
                     {filters.community
-                      ? `r/${filters.community}`
+                      ? `r/${communityName}`
                       : "your communities"}
                     .
                   </p>

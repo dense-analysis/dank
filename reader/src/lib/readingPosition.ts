@@ -64,10 +64,18 @@ export function saveReadingPosition(
   }
 }
 
+function readingEdge(): number {
+  const toolbar = document.querySelector(".reader-toolbar");
+  if (!toolbar) return 0;
+
+  // Use the pinned offset even when restoring before the toolbar sticks.
+  const top = Number.parseFloat(window.getComputedStyle(toolbar).top) || 0;
+
+  return top + toolbar.getBoundingClientRect().height;
+}
+
 export function captureReadingPosition(body: Element): ReadingPosition {
-  const edge =
-    document.querySelector(".reader-toolbar")?.getBoundingClientRect().height ??
-    0;
+  const edge = readingEdge();
   const block =
     window.scrollY > 0 && body.getBoundingClientRect().top <= edge
       ? [...body.children].findIndex(
@@ -87,9 +95,7 @@ export function readingPositionTop(
   position: ReadingPosition,
 ): number {
   const anchor = position.block === null ? null : body.children[position.block];
-  const edge =
-    document.querySelector(".reader-toolbar")?.getBoundingClientRect().height ??
-    0;
+  const edge = readingEdge();
   return anchor
     ? Math.max(
         0,

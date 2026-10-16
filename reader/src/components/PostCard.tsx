@@ -76,39 +76,51 @@ export function PostCard({
   const [imageFailed, setImageFailed] = useState(false);
   const hasContent = useMemo(() => hasArticleContent(post.html), [post.html]);
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
+  const communityContext =
+    filters.kind === "reddit" &&
+    !!filters.community &&
+    post.reddit?.community.toLowerCase() === filters.community.toLowerCase();
   return (
     <article
       className={`post-card ${post.reddit ? "reddit-card" : ""} ${read ? "is-read" : ""}`}
     >
       <div className="post-meta">
-        {post.reddit ? (
-          <CommunityAvatar
-            community={post.reddit.community}
-            iconUrl={post.reddit.icon_url}
-          />
-        ) : (
-          <SourceMark domain={post.domain} />
+        {!communityContext && (
+          <>
+            {post.reddit ? (
+              <CommunityAvatar
+                community={post.reddit.community}
+                iconUrl={post.reddit.icon_url}
+              />
+            ) : (
+              <SourceMark domain={post.domain} />
+            )}
+            {post.reddit ? (
+              <RedditCommunityLink
+                community={post.reddit.community}
+                select={selectCommunity}
+              />
+            ) : (
+              <SourceLink domain={post.domain} select={selectSource} />
+            )}
+            <span className="meta-dot">·</span>
+          </>
         )}
-        {post.reddit ? (
-          <RedditCommunityLink
-            community={post.reddit.community}
-            select={selectCommunity}
-          />
-        ) : (
-          <SourceLink domain={post.domain} select={selectSource} />
-        )}
-        <span className="meta-dot">·</span>
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
-        <span className="post-labels">
-          <span className="source-kind">
-            {post.source === "x" || post.source === "reddit"
-              ? "Post"
-              : "Article"}
+        {(!communityContext || !hasContent || post.collection_incomplete) && (
+          <span className="post-labels">
+            {!communityContext && (
+              <span className="source-kind">
+                {post.source === "x" || post.source === "reddit"
+                  ? "Post"
+                  : "Article"}
+              </span>
+            )}
+            {(!hasContent || post.collection_incomplete) && (
+              <CollectionBadge incomplete={hasContent} />
+            )}
           </span>
-          {(!hasContent || post.collection_incomplete) && (
-            <CollectionBadge incomplete={hasContent} />
-          )}
-        </span>
+        )}
       </div>
       <div className="post-main">
         <ReaderLink

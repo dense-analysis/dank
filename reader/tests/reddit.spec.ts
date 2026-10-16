@@ -138,7 +138,9 @@ test("keeps Reddit separate and exposes configured communities with accessible d
   await expect(page.getByRole("heading", { name: blogPost.title })).toHaveCount(
     0,
   );
-  await expect(page.getByText("128 points", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".reddit-score").filter({ hasText: "128" }),
+  ).toBeVisible();
   await expect(page.getByText("42 comments", { exact: true })).toBeVisible();
   await expect(page.getByText("Discussion", { exact: true })).toBeVisible();
   await noOverflow(page);
@@ -185,7 +187,7 @@ test("retains community, search, author and article navigation in Reddit", async
     page.getByRole("heading", { name: otherPost.title }),
   ).toHaveCount(0);
   await page
-    .getByRole("textbox", { name: "Search stories" })
+    .getByRole("textbox", { name: "Search r/LocalLLaMA" })
     .fill("local models");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page
@@ -228,7 +230,8 @@ test("retains community, search, author and article navigation in Reddit", async
   await expect(page).toHaveURL(timelineUrl);
   await expect(story).toBeVisible();
   await page
-    .getByRole("link", { name: "Posts from r/LocalLLaMA", exact: true })
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("button", { name: /r\/LocalLLaMA/ })
     .click();
   expect(new URL(page.url()).searchParams.get("view")).toBe("reddit");
   expect(new URL(page.url()).searchParams.get("community")).toBe("LocalLLaMA");

@@ -35,9 +35,10 @@ export function RedditMetadata({
   return (
     <span className="reddit-metadata">
       {reddit.score !== null && (
-        <span title="Score when collected">
+        <span className="reddit-score" title="Score when collected">
           <ArrowUp size={13} aria-hidden="true" />
-          {reddit.score.toLocaleString()} points
+          <span className="visually-hidden">Score: </span>
+          {reddit.score.toLocaleString()}
         </span>
       )}
       {reddit.comments !== null && (
