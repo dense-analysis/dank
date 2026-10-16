@@ -12,6 +12,38 @@ from dank.html_utils import remove_page_noise
 from dank.model import Post, RawPost
 
 
+def preserve_reddit_body(row: RawPost, previous_payload: str) -> RawPost:
+    """Project an older full body without changing either raw archive."""
+    try:
+        current = json.loads(row.payload)
+        previous = json.loads(previous_payload)
+    except (TypeError, ValueError):
+        return row
+
+    if not isinstance(current, dict) or not isinstance(previous, dict):
+        return row
+
+    current = cast(dict[str, Any], current)
+    previous = cast(dict[str, Any], previous)
+
+    if (
+        not isinstance(current.get("detail_capture"), dict)
+        or current["detail_capture"].get("status")
+        not in {"failed", "disabled"}
+        or not isinstance(previous.get("detail_capture"), dict)
+        or previous["detail_capture"].get("status") != "captured"
+    ):
+        return row
+
+    for key in ("selftext", "selftext_html", "media", "url", "is_self"):
+        current.pop(key, None)
+
+        if key in previous:
+            current[key] = previous[key]
+
+    return row._replace(payload=json.dumps(current, separators=(",", ":")))
+
+
 def convert_raw_reddit_post(row: RawPost) -> Post | None:
     """Prepare a captured community post without fetching its comments."""
     try:

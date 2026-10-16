@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
 import re
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from dank.config import Settings, load_settings
 from dank.embeddings import EmbeddingModel, get_embedding_model
@@ -14,7 +15,7 @@ from dank.html_utils import html_text
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
-from dank.process.reddit import convert_raw_reddit_post
+from dank.process.reddit import convert_raw_reddit_post, preserve_reddit_body
 from dank.process.rss import (
     convert_raw_post as convert_raw_rss_post,
     recover_post_from_page,
@@ -95,9 +96,17 @@ async def process_source_posts(
 
     converted = 0
     batch: list[Post] = []
+    reddit_bodies = (
+        await _previous_reddit_bodies(clickhouse_client, result.rows)
+        if domain == "reddit.com" else {}
+    )
 
     for row in result.rows:
         raw = parse_raw_post_row(row)
+
+        if previous_payload := reddit_bodies.get(raw.post_id):
+            raw = preserve_reddit_body(raw, previous_payload)
+
         post = converter(raw)
 
         if post is None:
@@ -124,6 +133,57 @@ async def process_source_posts(
     )
 
     return converted
+
+
+async def _previous_reddit_bodies(
+    client: ClickHouseClient, rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    candidates: list[RawPost] = []
+
+    for row in rows:
+        raw = parse_raw_post_row(row)
+
+        try:
+            payload = json.loads(raw.payload)
+        except (TypeError, ValueError):
+            continue
+
+        if not isinstance(payload, dict):
+            continue
+
+        payload = cast(dict[str, Any], payload)
+        capture = payload.get("detail_capture")
+
+        if isinstance(capture, dict) and cast(dict[str, Any], capture).get(
+            "status",
+        ) in {"failed", "disabled"}:
+            candidates.append(raw)
+
+    if not candidates:
+        return {}
+
+    clauses: list[str] = []
+    params: dict[str, object] = {}
+
+    for index, raw in enumerate(candidates):
+        clauses.append(
+            f"(post_id = %(post_{index})s "
+            f"AND scraped_at < %(before_{index})s)",
+        )
+        params[f"post_{index}"] = raw.post_id
+        params[f"before_{index}"] = raw.scraped_at
+
+    result = await client.fetch_json(
+        "SELECT post_id, payload FROM raw_posts "
+        "WHERE domain = 'reddit.com' AND (" + " OR ".join(clauses) + ") "
+        "AND JSONExtractString(payload, 'detail_capture', 'status') "
+        "= 'captured' ORDER BY scraped_at DESC LIMIT 1 BY post_id",
+        params,
+    )
+
+    return {
+        str(row["post_id"]): str(row["payload"]) for row in result.rows
+    }
 
 
 async def process_source_assets(
