@@ -14,6 +14,7 @@ from .onepassword import (
 
 X_HOME_URL = "https://x.com/home"
 SESSION_POLL_SECONDS = 2
+SESSION_CHECK_TIMEOUT_SECONDS = 20
 LOGIN_LIMITED_MESSAGE = (
     "X has temporarily limited sign-in. Stop retrying and wait for X's "
     "restriction to clear before running x-login again."
@@ -28,17 +29,23 @@ class LoginRequiredError(RuntimeError):
     pass
 
 
-async def is_signed_in(page: zendriver.Tab) -> bool:
-    """Require authenticated navigation on X, not merely a loaded page."""
+async def read_session_state(page: zendriver.Tab) -> bool | str:
+    """Distinguish a signed-in page, a login page and a page still loading."""
     try:
         state = await page.evaluate(
             "(() => {"
             "if (location.origin !== 'https://x.com') return false;"
             "if (document.body?.innerText.toLowerCase().includes("
             "'temporarily limited your login')) return 'limited';"
-            "return !!document.querySelector("
+            "if (document.querySelector("
             "'[data-testid=SideNav_AccountSwitcher_Button]') && "
-            "!!document.querySelector('[data-testid=AppTabBar_Home_Link]');"
+            "document.querySelector('[data-testid=AppTabBar_Home_Link]')) "
+            "return true;"
+            "if (['/i/flow/', '/i/jf/onboarding/', "
+            "'/login', '/account/access']"
+            ".some(path => location.pathname.startsWith(path))) "
+            "return 'login';"
+            "return false;"
             "})()",
         )
     except (ProtocolException, ConnectionError):
@@ -48,7 +55,41 @@ async def is_signed_in(page: zendriver.Tab) -> bool:
     if state == "limited":
         raise LoginRequiredError(LOGIN_LIMITED_MESSAGE)
 
+    if state == "login":
+        return "login"
+
     return state is True
+
+
+async def is_signed_in(page: zendriver.Tab) -> bool:
+    return await read_session_state(page) is True
+
+
+async def check_x_session(
+    page: zendriver.Tab, *, timeout_seconds: float,
+) -> bool:
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            while True:
+                state = await read_session_state(page)
+
+                if state is True:
+                    return True
+
+                if state == "login":
+                    return False
+
+                if page.browser and page.browser.stopped:
+                    raise LoginRequiredError(
+                        "Browser closed during session check.",
+                    )
+
+                await asyncio.sleep(SESSION_POLL_SECONDS)
+    except TimeoutError:
+        raise LoginRequiredError(
+            "Could not confirm the saved X session. "
+            "Check the connection and try again.",
+        ) from None
 
 
 async def wait_for_x_session(

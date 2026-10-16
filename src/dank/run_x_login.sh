@@ -15,21 +15,32 @@ if ((${#compose[@]} == 0 || $# == 0)); then
 fi
 shift
 
-run=("${compose[@]}" run --build --rm --no-deps -T -p 127.0.0.1:6080:6080 dank dank-x-login)
+manual=false
 for argument in "$@"; do
     case "$argument" in
-        --manual|--help|-h) exec "${run[@]}" "$@" ;;
+        --manual) manual=true ;;
+        --help|-h) exec "${compose[@]}" run --build --rm --no-deps -T dank x-login "$@" ;;
     esac
 done
 
-if ! command -v op >/dev/null 2>&1; then
+# Build output stays separate from later references and credentials.
+"${compose[@]}" build dank >&2
+set +e
+"${compose[@]}" run --rm --no-deps -T dank x-login --check-session "$@"
+check_status=$?
+set -e
+case "$check_status" in
+    0) exit 0 ;;
+    3) ;; # No signed-in session; continue to interactive login.
+    *) exit "$check_status" ;;
+esac
+
+run=("${compose[@]}" run --rm --no-deps -T -p 127.0.0.1:6080:6080 dank dank-x-login)
+if [[ $manual == true ]] || ! command -v op >/dev/null 2>&1; then
     exec "${run[@]}" "$@"
 fi
 
 # Only references leave this configuration-reader container.
-# Build progress may use stdout, so finish the build before opening that pipe.
-"${compose[@]}" build dank >&2
-run=("${compose[@]}" run --rm --no-deps -T -p 127.0.0.1:6080:6080 dank dank-x-login)
 references=$("${compose[@]}" run --rm --no-deps -T dank x-login --onepassword-references "$@")
 if [[ -z $references ]]; then
     exec "${run[@]}" "$@"

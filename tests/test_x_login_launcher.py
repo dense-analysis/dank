@@ -16,6 +16,7 @@ PASSWORD = "  p'ass $`word\\ $(touch should-not-exist)  "
 
 @pytest.mark.parametrize("scenario", [
     "configured", "missing", "denied", "manual", "unconfigured",
+    "saved", "check-error",
 ])
 def test_optional_host_cli_passes_secrets_only_through_stdin(
     tmp_path: pathlib.Path, scenario: str,
@@ -29,7 +30,12 @@ def test_optional_host_cli_passes_secrets_only_through_stdin(
         "args=sys.argv[1:]\n"
         "with pathlib.Path('calls').open('a') as f:\n"
         "    f.write(json.dumps(args)+'\\n')\n"
-        "if '--onepassword-references' in args:\n"
+        "if '--check-session' in args:\n"
+        f"    if {scenario!r} == 'saved':\n"
+        "        print('Already signed in to X. Reusing the saved session.')\n"
+        "        sys.exit(0)\n"
+        f"    sys.exit(1 if {scenario!r} == 'check-error' else 3)\n"
+        "elif '--onepassword-references' in args:\n"
         "    if '--build' in args: print('Docker build progress')\n"
         f"    if {scenario!r} != 'unconfigured':\n"
         "        print('op://Personal Vault/X/username')\n"
@@ -46,7 +52,8 @@ def test_optional_host_cli_passes_secrets_only_through_stdin(
     )
     op_script = workspace / "op.py"
     op_script.write_text(
-        "import sys\n"
+        "import pathlib, sys\n"
+        "pathlib.Path('op-called').touch()\n"
         "assert sys.argv[1:3] == ['read','--no-newline']\n"
         f"if {scenario!r} == 'denied':\n"
         f"    print({PASSWORD!r},file=sys.stderr)\n"
@@ -77,7 +84,8 @@ def test_optional_host_cli_passes_secrets_only_through_stdin(
              "login_username": "inherited", "login_password": "inherited"},
     )
     stdout, stderr = process.communicate(timeout=10)
-    assert process.returncode == 0, stderr
+    expected_status = 1 if scenario == "check-error" else 0
+    assert process.returncode == expected_status, stderr
     assert PASSWORD not in stdout + stderr
     assert USERNAME not in stdout + stderr
     assert not (workspace / "should-not-exist").exists()
@@ -86,6 +94,14 @@ def test_optional_host_cli_passes_secrets_only_through_stdin(
         for line in (workspace / "calls").read_text().splitlines()
     ]
     assert PASSWORD not in repr(calls)
+
+    if scenario in {"saved", "check-error"}:
+        assert "--check-session" in calls[-1]
+        assert len(calls) == 2
+        assert not (workspace / "op-called").exists()
+        assert "--credentials-stdin" not in stdout
+        assert "6080" not in stdout
+        return
 
     if scenario == "configured":
         assert "Received expected credentials privately" in stdout

@@ -19,6 +19,7 @@ from dank.scrape.x.session import (
     LOGIN_REQUIRED_MESSAGE,
     X_HOME_URL,
     LoginRequiredError,
+    check_x_session,
     is_signed_in,
     wait_for_x_session,
 )
@@ -54,6 +55,33 @@ async def test_page_or_cookie_presence_is_not_sign_in(state: object) -> None:
     assert not await is_signed_in(_page((state,)))
 
 
+async def test_initial_check_waits_for_a_page_still_loading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("dank.scrape.x.session.SESSION_POLL_SECONDS", 0.001)
+    page = _page((False, ProtocolException("navigation"), True))
+    assert await check_x_session(page, timeout_seconds=1)
+
+
+async def test_initial_check_distinguishes_login_from_loading() -> None:
+    page = _page(("login",))
+    assert not await check_x_session(page, timeout_seconds=1)
+    assert page.evaluate.await_count == 1
+
+
+async def test_uncertain_session_check_does_not_request_sign_in() -> None:
+    page = _page()
+    page.evaluate = AsyncMock(return_value=False)
+
+    with pytest.raises(LoginRequiredError, match="Could not confirm"):
+        await check_x_session(page, timeout_seconds=0.01)
+
+
+async def test_limited_session_check_stops_before_credentials() -> None:
+    with pytest.raises(LoginRequiredError, match="temporarily limited"):
+        await check_x_session(_page(("limited",)), timeout_seconds=1)
+
+
 async def test_closed_browser_does_not_report_saved_session() -> None:
     page = _page((False,))
     page.browser.stopped = True
@@ -74,6 +102,7 @@ async def test_timeout_also_bounds_a_stalled_browser_command() -> None:
         await wait_for_x_session(page, timeout_seconds=0.01)
 
 
+@pytest.mark.parametrize("reused", [False, True])
 @pytest.mark.parametrize("outcome", [
     None, LoginRequiredError("expired"), asyncio.CancelledError(),
     LoginRequiredError(LOGIN_LIMITED_MESSAGE),
@@ -81,6 +110,7 @@ async def test_timeout_also_bounds_a_stalled_browser_command() -> None:
 async def test_login_reports_success_only_after_flushing_shared_profile(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str], outcome: BaseException | None,
+    *, reused: bool,
 ) -> None:
     path = tmp_path / "settings.fixture.toml"
     path.write_text('[storage]\ndata_dir="private-data"\n')
@@ -94,22 +124,56 @@ async def test_login_reports_success_only_after_flushing_shared_profile(
     context.__aenter__ = AsyncMock(return_value=context)
     context.get_browser = AsyncMock(return_value=browser)
 
+    messages: list[str] = []
+
     async def closed(*args: Any) -> None:
-        assert "session saved" not in capsys.readouterr().out
+        messages.append(capsys.readouterr().out)
+        assert "session saved" not in messages[-1].lower()
+        assert login_module.SESSION_REUSED_MESSAGE not in messages[-1]
 
     context.__aexit__ = AsyncMock(side_effect=closed)
     factory = MagicMock(return_value=context)
     monkeypatch.setattr(login_module, "BrowserSession", factory)
+    monkeypatch.setattr(
+        login_module, "check_x_session", AsyncMock(return_value=reused),
+    )
+    credentials = login_module.LoginCredentials("fixture-user", "fixture-pass")
+    load = AsyncMock(return_value=credentials)
+    monkeypatch.setattr(login_module, "load_credentials", load)
     wait = AsyncMock(side_effect=outcome)
     monkeypatch.setattr(login_module, "wait_for_x_session", wait)
 
-    if outcome is not None:
+    if outcome is not None and not reused:
         with pytest.raises(type(outcome)):
-            await login_module.sign_in(settings, timeout_seconds=10)
+            await login_module.sign_in(
+                settings, timeout_seconds=10, remote_desktop=True,
+            )
     else:
-        await login_module.sign_in(settings, timeout_seconds=10)
+        await login_module.sign_in(
+            settings, timeout_seconds=10, remote_desktop=True,
+        )
 
-    assert ("session saved" in capsys.readouterr().out) == (outcome is None)
+    messages.append(capsys.readouterr().out)
+    output = "".join(messages)
+    assert ("session saved" in output.lower()) == (
+        outcome is None and not reused
+    )
+
+    if reused:
+        assert login_module.SESSION_REUSED_MESSAGE in output
+        assert "6080" not in output
+        assert "1Password" not in output
+        assert "sign-in is required" not in output
+        wait.assert_not_awaited()
+        load.assert_not_awaited()
+    else:
+        assert "6080" in output
+        assert "1Password will fill" in output
+        load.assert_awaited_once()
+        wait.assert_awaited_once_with(
+            page, timeout_seconds=10, credentials=credentials,
+        )
+
     config = factory.call_args.args[0]
     assert config == BrowserConfig.from_settings(settings)
     assert not config.headless and not config.keep_open
@@ -117,9 +181,6 @@ async def test_login_reports_success_only_after_flushing_shared_profile(
     browser.get.assert_awaited_once_with("about:blank")
     page.get.assert_awaited_once_with(X_HOME_URL)
     page.set_window_size.assert_awaited_once_with(width=1280, height=900)
-    wait.assert_awaited_once_with(
-        page, timeout_seconds=10, credentials=None,
-    )
     context.__aexit__.assert_awaited_once()
 
 

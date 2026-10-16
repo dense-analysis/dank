@@ -30,6 +30,7 @@ def workspace(tmp_path: pathlib.Path) -> pathlib.Path:
     (path / "config.toml").touch()
     (path / "launcher.py").write_text(
         'import json, sys\n'
+        'if "--check-session" in sys.argv: sys.exit(3)\n'
         'print(json.dumps(sys.argv[1:]), flush=True)\n'
         'print("regular progress", flush=True)\n'
         'print("WARNING source unavailable", file=sys.stderr, flush=True)\n'
@@ -91,7 +92,7 @@ def test_make_login_uses_same_service_without_archiving_browser_output(
     args = ["run", "x-login", "--timeout", "30", "--manual"]
 
     if mode == "docker":
-        args = ["run", "--build", "--rm", "--no-deps", "-T", "-p",
+        args = ["run", "--rm", "--no-deps", "-T", "-p",
                 "127.0.0.1:6080:6080", "dank", "dank-x-login",
                 "--timeout", "30", "--manual"]
 

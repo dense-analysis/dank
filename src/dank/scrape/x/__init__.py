@@ -27,6 +27,7 @@ from .payloads import (
 )
 from .session import (
     LOGIN_REQUIRED_MESSAGE,
+    SESSION_CHECK_TIMEOUT_SECONDS,
     X_HOME_URL,
     LoginRequiredError,
     wait_for_x_session,
@@ -46,7 +47,6 @@ INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
 READY_STATE_TIMEOUT_SECONDS = 2
 LOGIN_PROMPT_TIMEOUT_SECONDS = 0.25
-SESSION_CHECK_TIMEOUT_SECONDS = 20
 
 
 async def scrape_x_accounts(

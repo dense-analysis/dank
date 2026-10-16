@@ -35,10 +35,14 @@ the collection attempt, not a guarantee of complete account history.
 make x-login
 ```
 
-Open [the sign-in browser](http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale).
-Sign in to X there and complete any verification. The command confirms
-"X session saved" and closes the temporary browser when your signed-in home
-page is detected. Docker needs no browser or Python installation on the host.
+The command first checks the saved X session. If it is still valid, it reports
+"Already signed in to X" and finishes without opening the sign-in view or
+requesting 1Password access.
+
+When sign-in is required, follow the printed link to
+[the sign-in browser](http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale).
+Complete sign-in and any verification there. The command confirms
+"X sign-in complete. Session saved" and closes the temporary browser. Docker needs no browser or Python installation on the host.
 The viewer can keep running while you sign in.
 Use the clipboard panel in the sign-in view to paste into the remote browser.
 
@@ -48,8 +52,9 @@ Use the clipboard panel in the sign-in view to paste into the remote browser.
 make x-login MODE=native
 ```
 
-This opens a local Chromium window. Complete sign-in and verification there;
-the command confirms success and closes the window automatically.
+This opens a local Chromium window to check the saved session. If it is valid,
+the command reports that it is reusing the session and closes the window.
+Otherwise, complete sign-in and verification when prompted.
 
 Sign-in waits up to ten minutes. Use `ARGS='--timeout 1200'` for more time,
 or Ctrl+C to cancel. Native users can also run `uv run x-login --config PATH`.
@@ -107,7 +112,8 @@ password = "op://Personal/X/password"
 ```
 
 Use your actual vault, item and field references. Run `make x-login` as usual,
-or add `MODE=native`. Authorize 1Password when prompted. It fills each visible,
+or add `MODE=native`. 1Password is requested only when sign-in is needed.
+Authorize it when prompted. It fills each visible,
 empty X username/password field once; you click Continue or Sign in yourself.
 Existing input is preserved, and verification codes remain manual.
 
