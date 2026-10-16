@@ -13,6 +13,7 @@ from dank.scrape.zendriver import (
     BrowserProfileBusyError,
     BrowserSession,
     ChromiumConfig,
+    NetworkCapture,
 )
 
 
@@ -91,6 +92,16 @@ async def test_graceful_timeout_still_stops_owned_browser(
     browser = _browser()
     caplog.set_level("DEBUG", logger="dank.scrape.zendriver")
 
+    async def disconnect() -> None:
+        browser.connection.closed = True
+
+    async def stop() -> None:
+        # Zendriver otherwise sends Browser.close again without a timeout.
+        assert browser.connection.closed
+
+    browser.connection.aclose.side_effect = disconnect
+    browser.stop.side_effect = stop
+
     async def send(_command: Any) -> None:
         await asyncio.Event().wait()
 
@@ -107,7 +118,27 @@ async def test_graceful_timeout_still_stops_owned_browser(
 
     browser.stop.assert_awaited_once()
     browser.connection.send.assert_awaited_once()
+    browser.connection.aclose.assert_awaited_once()
     assert "graceful shutdown timed out" in caplog.text
+
+
+@pytest.mark.parametrize("error", [RuntimeError(), asyncio.CancelledError()])
+async def test_interrupted_network_capture_detaches_handlers(
+    error: BaseException,
+) -> None:
+    page = MagicMock(send=AsyncMock(side_effect=error))
+    capture = NetworkCapture(page, ("https://example.test",))
+
+    with pytest.raises(type(error)):
+        await capture.start()
+
+    assert (
+        page.remove_handlers.call_args_list == page.add_handler.call_args_list
+    )
+    page.send.side_effect = None
+    await capture.start()
+    await capture.stop()
+    assert page.remove_handlers.call_count == 4
 
 
 async def test_closed_connection_falls_back_to_driver_cleanup(

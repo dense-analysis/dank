@@ -27,6 +27,10 @@ threshold, so the final batch can exceed it. `max_scrolls` bounds scrolling;
 collection can also stop after repeated idle scrolls. These settings control
 the collection attempt, not a guarantee of complete account history.
 
+Browser startup/navigation and each scroll step have a 30-second response
+budget. A stalled browser stops that X source and records a fetch failure;
+posts already saved remain available and other sources can continue.
+
 ## Sign in
 
 **Docker**

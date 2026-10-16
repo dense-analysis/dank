@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
@@ -37,11 +38,12 @@ logger = logging.getLogger(__name__)
 
 X_SOURCE = "x"
 X_GRAPHQL_PATTERNS = (
-    r"https://x\.com/i/api/graphql/.+/UserTweets",
-    r"https://x\.com/i/api/graphql/.+/UserTweetsAndReplies",
-    r"https://x\.com/i/api/graphql/.+/TweetDetail",
-    r"https://x\.com/i/api/graphql/.+/UserMedia",
+    r"^https://x\.com/i/api/graphql/[^/?]+/"
+    r"(?:UserTweets|UserTweetsAndReplies|UserOriginalsTimeline|"
+    r"TweetDetail|UserMedia)(?:\?|$)",
 )
+# Bound browser steps without charging time spent saving yielded batches.
+BROWSER_ACTION_TIMEOUT_SECONDS = 30
 FAST_SCROLL_PAUSE_SECONDS = 0.35
 INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
@@ -63,10 +65,11 @@ async def scrape_x_accounts(
         logger.warning("No X accounts configured")
         return
 
-    browser = await session.get_browser()
-
     try:
-        page = await browser.get(X_HOME_URL)
+        async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+            browser = await session.get_browser()
+            page = await browser.get(X_HOME_URL)
+
         await wait_for_x_session(
             page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
         )
@@ -74,14 +77,22 @@ async def scrape_x_accounts(
         for account in accounts:
             async for batch in _scrape_account(page, account, settings):
                 yield batch
-    except LoginRequiredError as error:
+    except (LoginRequiredError, TimeoutError) as error:
         count("fetch_failures")
         stats = current_source.get()
 
         if stats is not None:
-            stats.error_type = "LoginRequiredError"
+            stats.error_type = type(error).__name__
 
-        logger.warning("X collection stopped: %s", error)
+        if isinstance(error, TimeoutError):
+            logger.warning(
+                "X collection stopped: browser did not respond within %ss. "
+                "Saved posts are retained; other sources can continue.",
+                BROWSER_ACTION_TIMEOUT_SECONDS,
+            )
+            await session.close()
+        else:
+            logger.warning("X collection stopped: %s", error)
 
 
 async def _scrape_account(
@@ -97,14 +108,15 @@ async def _scrape_account(
     logger.info("Starting X scrape for account=%s", handle)
 
     capture = NetworkCapture(page, X_GRAPHQL_PATTERNS)
-    await capture.start()
 
     try:
         url = f"https://x.com/{quote(handle)}"
-        page = await page.get(url)
-        await _ensure_navigation(page, url)
 
-        await _check_login_required(page)
+        async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+            await capture.start()
+            page = await page.get(url)
+            await _ensure_navigation(page, url)
+            await _check_login_required(page)
 
         seen_posts: set[str] = set()
         seen_assets: set[str] = set()
@@ -132,9 +144,9 @@ async def _scrape_account(
             return
 
         for _ in range(limits.max_scrolls):
-            await _scroll(page)
-
-            await _check_login_required(page)
+            async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+                await _scroll(page)
+                await _check_login_required(page)
 
             posts, assets = await _drain_posts_and_assets(
                 capture,

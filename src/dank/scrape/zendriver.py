@@ -163,10 +163,10 @@ class BrowserSession:
             self._release_profile()
             return
 
+        connection = browser.connection
+
         try:
             async with asyncio.timeout(BROWSER_SHUTDOWN_TIMEOUT_SECONDS):
-                connection = browser.connection
-
                 if (
                     not browser.stopped
                     and connection is not None
@@ -184,6 +184,10 @@ class BrowserSession:
             logger.debug(
                 "Browser graceful shutdown timed out; stopping driver",
             )
+
+            if connection is not None:
+                # Do not let driver cleanup resend the same stalled command.
+                await connection.aclose()
         except Exception:
             logger.debug(
                 "Browser graceful shutdown unavailable; stopping driver",
@@ -250,8 +254,13 @@ class NetworkCapture:
             cdp.network.LoadingFinished,
             self._on_loading_finished,
         )
-        await self._tab.send(cdp.network.enable())
         self._started = True
+
+        try:
+            await self._tab.send(cdp.network.enable())
+        except BaseException:
+            await self.stop()
+            raise
 
     async def stop(self) -> None:
         if not self._started:
