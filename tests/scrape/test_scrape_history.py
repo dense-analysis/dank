@@ -22,8 +22,12 @@ from dank.runtime import RuntimeInfo
 from dank.scrape.assets import download_assets
 from dank.scrape.assets.http import http_asset_path
 from dank.scrape.metrics import SourceMetrics, count, current_source
-from dank.scrape.runner import run_scrape
+from dank.scrape.runner import (
+    _process_batches,  # pyright: ignore[reportPrivateUsage]
+    run_scrape,
+)
 from dank.scrape.types import ScrapeBatch
+from dank.scrape.zendriver import BrowserConfig
 
 
 class _Client:
@@ -103,6 +107,92 @@ def _post(domain: str) -> RawPost:
         domain, "post", f"https://{domain}/article", now, now,
         "rss", f"https://{domain}/feed", "{}",
     )
+
+
+async def test_reddit_persists_while_x_waits_in_its_own_browser(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    x_started = asyncio.Event()
+    release_x = asyncio.Event()
+    second_x_started = asyncio.Event()
+    reddit_saved = asyncio.Event()
+    sessions: list[tuple[BrowserConfig, _Browser]] = []
+    used: dict[str, object] = {}
+    media_profiles: set[pathlib.Path] = set()
+
+    def browser(config: BrowserConfig) -> _Browser:
+        session = _Browser()
+        sessions.append((config, session))
+
+        return session
+
+    async def discover(
+        settings: Settings, source: SourceConfig, client: Any, http: Any,
+        session: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        key = source.accounts[0] if source.accounts else "reddit"
+        used[key] = session
+
+        if key == "first":
+            x_started.set()
+            await release_x.wait()
+        elif key == "second":
+            second_x_started.set()
+        else:
+            await x_started.wait()
+
+        yield ScrapeBatch([_post(source.domain)._replace(
+            post_id=key, source="reddit" if key == "reddit" else "x",
+        )], [])
+
+    original_insert = harness.client.insert_rows
+
+    async def insert(table: str, rows: list[dict[str, Any]]) -> None:
+        await original_insert(table, rows)
+
+        if table == "raw_posts" and rows[0]["domain"] == "reddit.com":
+            reddit_saved.set()
+
+    async def consume(*args: Any, **kwargs: Any) -> None:
+        media_profiles.add(kwargs["browser_profile_dir"])
+        await _process_batches(*args, **kwargs)
+
+    monkeypatch.setattr("dank.scrape.runner.BrowserSession", browser)
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    monkeypatch.setattr("dank.scrape.runner._process_batches", consume)
+    monkeypatch.setattr(harness.client, "insert_rows", insert)
+    task = asyncio.create_task(run_scrape(harness.settings._replace(
+        sources=(
+            SourceConfig("x.com", ("first",)),
+            SourceConfig("x.com", ("second",)),
+            SourceConfig("reddit.com", (), ("https://www.reddit.com/r/test/",)),
+        ),
+    ), headless=True))
+
+    try:
+        await asyncio.wait_for(reddit_saved.wait(), timeout=1)
+        assert not task.done()
+        assert not second_x_started.is_set()
+        assert used["first"] is not used["reddit"]
+        assert harness.client.rows["raw_posts"][0]["source"] == "reddit"
+    finally:
+        release_x.set()
+        await task
+
+    assert used["first"] is used["second"]
+    assert len(sessions) == 2
+    assert sessions[0][0].profile_dir == (
+        harness.settings.data_dir / "browser-profile"
+    )
+    assert sessions[1][0].profile_dir == (
+        harness.settings.data_dir / "reddit-browser-profile"
+    )
+    assert media_profiles == {
+        harness.settings.data_dir / "browser-profile",
+        harness.settings.data_dir / "reddit-browser-profile",
+    }
 
 
 async def test_history_tracks_source_completion_after_persistence(

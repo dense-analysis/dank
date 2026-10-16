@@ -66,7 +66,8 @@ The profile lives under `<storage.data_dir>/browser-profile`. Docker sign-in
 and scraping use the same `dank_data` volume, so the session survives container
 removal and restarts. Use the same Compose project and configuration for both.
 Native and Docker profiles are separate: sign in in the mode you will scrape.
-Only one sign-in or browser scrape may use a profile at a time.
+Only one X sign-in or scrape may use that profile at a time. Reddit uses a
+separate browser and profile, so it can collect while X is waiting.
 
 Keep the profile private: it contains session credentials. The Docker sign-in
 view is available only on localhost and only while the command is running.

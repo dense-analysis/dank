@@ -103,9 +103,11 @@ async def run_scrape(
     data_dir = pathlib.Path(settings.data_dir)
     assets_dir = data_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
-    profile_dir = data_dir / "browser-profile"
     browser_config = BrowserConfig.from_settings(
         settings, headless=headless, keep_open=not headless,
+    )
+    reddit_config = browser_config._replace(
+        profile_dir=data_dir / "reddit-browser-profile",
     )
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
@@ -119,11 +121,12 @@ async def run_scrape(
                 aiohttp.ClientSession(
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as http_client,
-                BrowserSession(browser_config) as session,
+                BrowserSession(browser_config) as x_session,
+                BrowserSession(reddit_config) as reddit_session,
             ):
                 await _collect_with_history(
-                    settings, clickhouse_client, http_client, session,
-                    history, assets_dir, profile_dir,
+                    settings, clickhouse_client, http_client,
+                    x_session, reddit_session, history, assets_dir,
                     retry_failed_pages=retry_failed_pages,
                 )
         except BaseException as error:
@@ -176,24 +179,32 @@ async def _collect_with_history(
     settings: Settings,
     client: ClickHouseClient,
     http_client: aiohttp.ClientSession,
-    session: BrowserSession,
+    x_session: BrowserSession,
+    reddit_session: BrowserSession,
     history: RunMetrics,
     assets_dir: pathlib.Path,
-    profile_dir: pathlib.Path,
     *,
     retry_failed_pages: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
-    browser_lock = asyncio.Lock()
+    browser_locks = {
+        domain: asyncio.Lock() for domain in ("x.com", "reddit.com")
+    }
     token = current_limiter.set(RequestLimiter(settings.scrape))
     progress = asyncio.create_task(history.report_progress())
 
     async def worker() -> None:
         # No await while claiming the next source from the shared iterator.
         for index, source in sources:
+            is_reddit = source.domain == "reddit.com"
+            session = reddit_session if is_reddit else x_session
+            profile_dir = settings.data_dir / (
+                "reddit-browser-profile" if is_reddit else "browser-profile"
+            )
             await _collect_source(
                 settings, source, index, client, http_client, session,
-                history, assets_dir, profile_dir, browser_lock,
+                history, assets_dir, profile_dir,
+                browser_locks.get(source.domain),
                 retry_failed_pages=retry_failed_pages,
             )
 
@@ -218,7 +229,7 @@ async def _collect_source(
     history: RunMetrics,
     assets_dir: pathlib.Path,
     profile_dir: pathlib.Path,
-    browser_lock: asyncio.Lock,
+    browser_lock: asyncio.Lock | None,
     *,
     retry_failed_pages: bool = False,
 ) -> None:
@@ -239,11 +250,9 @@ async def _collect_source(
         token = current_source.set(stats)
 
         try:
-            # Browser collectors share one browser/profile and login state.
+            # Same-site sources share a tab, independently of the other site.
             async with (
-                browser_lock
-                if source.domain in {"x.com", "reddit.com"}
-                else nullcontext()
+                browser_lock if browser_lock is not None else nullcontext()
             ):
                 async for batch in _discover_source_batches(
                     settings, source, client, http_client, session,

@@ -134,9 +134,12 @@ A source slot is reused after its downloads and writes finish. Set
 The HTTP limits are shared across homepage, feed, article and direct media
 requests, including redirect destinations. Hosts are grouped by hostname,
 including across configured sources. Four RSS fetch jobs per source and four
-media jobs across the run provide additional bounds. X collectors share one
-browser and run one at a time. Chromium and yt-dlp's internal HTTP requests
-are outside the direct HTTP limiter; processing remains a separate command.
+media jobs across the run provide additional bounds. X and Reddit use separate
+browsers, profiles and locks, so either can collect while the other waits.
+Sources on the same site share a browser and run one at a time. Both still
+count toward `source_concurrency`; RSS-only runs do not launch either browser.
+Chromium and yt-dlp's internal HTTP requests are outside the direct HTTP
+limiter; processing remains a separate command.
 
 All values must be positive integers. CPU/memory capacity is reported for
 tuning; limits do not automatically grow with core count. `scrape_runs` records

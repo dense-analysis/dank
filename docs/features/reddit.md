@@ -73,7 +73,9 @@ make process MODE=native ARGS='--age 24h --domains "^reddit\.com$"'
 ```
 
 For Docker, omit `MODE=native`. Docker already includes Chromium and runs
-collection headlessly. The shared browser profile persists between runs.
+collection headlessly. Reddit uses its own browser and persistent profile at
+`<storage.data_dir>/reddit-browser-profile`, independently of X's saved login.
+An X scrape waiting on its browser does not hold Reddit's browser lock.
 An inaccessible community, login requirement, or blocked page is reported as
 a collection failure; DANK does not bypass those checks.
 
