@@ -30,11 +30,24 @@ class XSettings(NamedTuple):
     scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
 
 
+class RedditCommentSort(StrEnum):
+    BEST = "best"
+    TOP = "top"
+    NEW = "new"
+    CONTROVERSIAL = "controversial"
+    OLD = "old"
+    QA = "qa"
+
+
 class RedditSettings(NamedTuple):
     """Scrape limits and stall detection applied to each Reddit community."""
 
     scrape: BrowserScrapeSettings = BrowserScrapeSettings()
     stall_scrolls: int = 3
+    capture_comments: bool = True
+    comment_limit: int = 50
+    comment_sort: RedditCommentSort = RedditCommentSort.BEST
+    download_videos: bool = False
 
 
 class RedditSort(StrEnum):
@@ -315,7 +328,30 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
     ):
         raise ConfigError("reddit.scroll_pause_seconds must be 0.25 to 60")
 
+    for key in ("capture_comments", "download_videos"):
+        if not isinstance(data.get(key, getattr(defaults, key)), bool):
+            raise ConfigError(f"reddit.{key} must be a boolean")
+
+    comment_limit = data.get("comment_limit", defaults.comment_limit)
+
+    if (
+        not isinstance(comment_limit, int) or isinstance(comment_limit, bool)
+        or not 1 <= comment_limit <= 500
+    ):
+        raise ConfigError(
+            "reddit.comment_limit must be an integer from 1 to 500",
+        )
+
     return RedditSettings(
+        capture_comments=data.get(
+            "capture_comments", defaults.capture_comments,
+        ),
+        download_videos=data.get("download_videos", defaults.download_videos),
+        comment_limit=comment_limit,
+        comment_sort=_parse_enum(
+            RedditCommentSort, data.get("comment_sort", defaults.comment_sort),
+            "reddit.comment_sort",
+        ),
         scrape=BrowserScrapeSettings(
             max_posts=limits["max_posts"], max_scrolls=limits["max_scrolls"],
             scroll_pause_seconds=float(pause),

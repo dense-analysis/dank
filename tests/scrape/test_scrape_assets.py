@@ -18,11 +18,16 @@ class _UnusedHttpClient:
         raise AssertionError("HTTP client should not be used for yt-dlp")
 
 
+@pytest.mark.parametrize("asset_source,asset_type,url", [
+    ("rss", "youtube", "https://www.youtube.com/watch?v=abc123"),
+    ("reddit", "video", "https://v.redd.it/abc/HLSPlaylist.m3u8"),
+])
 @pytest.mark.parametrize("download_types", [MEDIA_DOWNLOAD_TYPES, ("video",)])
-async def test_download_assets_uses_yt_dlp_library_for_youtube(
+async def test_video_sites_use_yt_dlp_and_preserve_url_identity(
     monkeypatch: Any,
     tmp_path: Any,
     download_types: tuple[str, ...],
+    asset_source: str, asset_type: str, url: str,
 ) -> None:
     assets_dir = tmp_path / "assets"
     browser_profile_dir = tmp_path / "browser-profile"
@@ -70,11 +75,11 @@ async def test_download_assets_uses_yt_dlp_library_for_youtube(
     )
 
     discovery = AssetDiscovery(
-        source="rss",
+        source=asset_source,
         domain="example.com",
         post_id="post-1",
-        url="https://www.youtube.com/watch?v=abc123",
-        asset_type="youtube",
+        url=url,
+        asset_type=asset_type,
         estimated_size_bytes=None,
     )
     assets = await download_assets(
@@ -87,6 +92,11 @@ async def test_download_assets_uses_yt_dlp_library_for_youtube(
     )
 
     assert assets
+    assert assets[0].url == url
+    assert assets[0].asset_type == asset_type
+    assert (
+        "bestvideo+bestaudio/best" in parsed_arguments
+    ) == (asset_source == "reddit")
     assert assets[0].local_path == str(created_path.resolve())
     assert "--add-metadata" in parsed_arguments
     assert ("--write-thumbnail" in parsed_arguments) == (

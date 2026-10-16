@@ -162,13 +162,29 @@ def normalize_post(
         "spoiler": bool(candidate.get("spoiler", False)),
         "raw": candidate.get("raw", candidate),
     }
-    post["media"] = _media(candidate)
+    media = _media(candidate)
+    parents = candidate.get("crosspost_parent_list")
+
+    if isinstance(parents, list) and not any(
+        item["asset_type"] == "video" for item in media
+    ):
+        # Crossposts own their discussion; media can belong to the parent.
+        inherited = [
+            item for parent in cast(list[object], parents)[:1]
+            for item in _media(as_dict(parent))
+            if item["asset_type"] == "video" or not media
+        ]
+        media = list({
+            text(item["url"]): item for item in media + inherited
+        }.values())
+
+    post["media"] = media
 
     return post
 
 
-def _media(candidate: dict[str, object]) -> list[dict[str, str]]:
-    assets: dict[str, str] = {}
+def _media(candidate: dict[str, object]) -> list[dict[str, object]]:
+    assets: dict[str, dict[str, object]] = {}
     supplied = candidate.get("media")
 
     if isinstance(supplied, list):
@@ -178,36 +194,74 @@ def _media(candidate: dict[str, object]) -> list[dict[str, str]]:
             kind = text(asset.get("asset_type"))
 
             if url and kind in {"photo", "video"}:
-                assets[url] = kind
+                assets[url] = {
+                    **assets.get(url, {}), "url": url, "asset_type": kind,
+                    **({"playback_has_audio": True}
+                       if asset.get("playback_has_audio") is True else {}),
+                    **{
+                        key: value for key in (
+                            "playback_url", "hls_url",
+                            "poster_url", "audio_url",
+                        ) if (value := public_url(asset.get(key)))
+                    },
+                }
 
     destination = public_url(
         candidate.get("url_overridden_by_dest", candidate.get("url")),
     )
 
     if urlsplit(destination).hostname == "i.redd.it":
-        # A direct image post needs its original, not the thumbnail as well.
         return [{"url": destination, "asset_type": "photo"}]
 
     preview = as_dict(candidate.get("preview")).get("images")
+    poster = ""
 
     if isinstance(preview, list):
         for image in cast(list[object], preview):
             url = public_url(as_dict(as_dict(image).get("source")).get("url"))
 
             if url:
-                assets.setdefault(url, "photo")
+                poster = poster or url
+                assets.setdefault(url, {"url": url, "asset_type": "photo"})
 
-    assets.update(_gallery_images(candidate))
-
-    video = as_dict(as_dict(candidate.get("secure_media")).get("reddit_video"))
-    video_url = public_url(video.get("hls_url")) or public_url(
-        video.get("fallback_url"),
+    assets.update({
+        url: {"url": url, "asset_type": kind}
+        for url, kind in _gallery_images(candidate).items()
+    })
+    video = (
+        as_dict(as_dict(candidate.get("secure_media")).get("reddit_video"))
+        or as_dict(as_dict(candidate.get("media")).get("reddit_video"))
+        or as_dict(
+            as_dict(candidate.get("preview")).get("reddit_video_preview"),
+        )
     )
+    hls = public_url(video.get("hls_url"))
+    playback = public_url(video.get("fallback_url"))
+    video_url = hls or playback
 
     if video_url:
-        assets[video_url] = "video"
+        assets[video_url] = {
+            "url": video_url, "asset_type": "video",
+            **({"hls_url": hls} if hls else {}),
+            **({"playback_url": playback} if playback else {}),
+            **({"poster_url": poster} if poster else {}),
+        }
 
-    return [{"url": url, "asset_type": kind} for url, kind in assets.items()]
+    return _video_posters(list(assets.values()), poster)
+
+
+def _video_posters(
+    media: list[dict[str, object]], poster: str,
+) -> list[dict[str, object]]:
+    poster = poster or next((
+        text(item["url"]) for item in media if item["asset_type"] == "photo"
+    ), "")
+
+    for item in media:
+        if item["asset_type"] == "video" and poster:
+            item.setdefault("poster_url", poster)
+
+    return media
 
 
 def _gallery_images(candidate: dict[str, object]) -> dict[str, str]:

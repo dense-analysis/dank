@@ -32,6 +32,14 @@ http_per_host = 2
 media_concurrency = 4
 queue_batches = 2
 
+[reddit]
+# Post bodies and media links are always collected from individual post pages.
+capture_comments = true
+comment_limit = 50
+comment_sort = "best"
+# Also requires "video" in media.download_types; false keeps remote playback.
+download_videos = false
+
 [rss]
 feed_staleness_days = 14
 keep_feed_on_fetch_failure = false

@@ -282,7 +282,11 @@ async def _collect_source(
             browser_profile_dir=profile_dir,
             max_asset_bytes=settings.max_asset_bytes,
             batch_size=history.batch_size, history=history,
-            download_types=settings.media_download_types,
+            download_types=tuple(
+                kind for kind in settings.media_download_types
+                if kind != "video" or source.domain != "reddit.com"
+                or settings.reddit.download_videos
+            ),
         )
 
     await gather_tasks([

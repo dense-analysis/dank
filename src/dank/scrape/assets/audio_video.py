@@ -7,6 +7,7 @@ import optparse
 import pathlib
 import shutil
 from typing import TYPE_CHECKING, NamedTuple, Self, cast
+from urllib.parse import urlsplit
 
 from yt_dlp import ParsedOptions, YoutubeDL, parse_options  # type: ignore
 
@@ -179,7 +180,11 @@ def _build_yt_dlp_arguments(
         *(["--write-thumbnail"] if download_thumbnail else []),
         "--write-info-json",
         "--format",
-        AUDIO_VIDEO_FORMAT_SELECTOR,
+        (
+            "bestvideo+bestaudio/best"
+            if urlsplit(url).hostname == "v.redd.it"
+            else AUDIO_VIDEO_FORMAT_SELECTOR
+        ),
         "--output",
         str(output_template),
     ]

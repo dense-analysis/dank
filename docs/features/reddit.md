@@ -2,8 +2,10 @@
 
 DANK collects posts from community listing pages with a Chromium browser.
 It reads the page's network responses and rendered posts while scrolling,
-without using RSS feeds or requesting Reddit's public JSON API. Comments and
-individual post pages are not collected.
+then visits each discovered post for its full body, media and discussion.
+Post details use the same browser session: captured network responses, a
+bounded comments JSON request where Reddit permits it, and rendered comments
+as a fallback. Access restrictions remain visible as capture failures.
 
 ## Configure
 
@@ -23,6 +25,10 @@ max_posts = 100
 max_scrolls = 20
 scroll_pause_seconds = 1.5
 stall_scrolls = 3
+capture_comments = true
+comment_limit = 50
+comment_sort = "best"
+download_videos = false
 ```
 
 `reddit.com` and `www.reddit.com` also work as source domains. Community
@@ -42,6 +48,20 @@ sources = [
 `month`, `year`, or `all`. It applies only to Top. To give communities different
 sorts, use separate source tables. Best uses Reddit's ranking without a daily
 window; Top + day selects its highest-ranked posts from the past day.
+
+Comments default to **Best**, with up to **50 comments including replies**
+per post. `comment_limit` accepts 1–500. `comment_sort` accepts `best`, `top`,
+`new`, `controversial`, `old`, or `qa`; Reddit supplies that ordering. Set
+`capture_comments = false` to collect the post without its discussion.
+These settings affect future captures. They do not remove existing archives.
+
+Videos default to remote playback: DANK keeps the video link and available
+poster without downloading the video. To archive Reddit videos, set
+`download_videos = true` and include `"video"` in `[media].download_types`.
+Both settings must allow it. Native Reddit streams are assembled with their
+audio using yt-dlp; media size limits still apply. Remote links depend on
+Reddit remaining available and can expire. Existing [media controls](media.md)
+also apply to images and other media.
 
 ## Run
 
@@ -71,6 +91,14 @@ Top + day asks Reddit for its daily ranking; the limits bound how much of that
 listing DANK captures. Run collection regularly to build your local history.
 Progress logs report each community and why collection stopped.
 
+Each detail visit has a 35-second budget and shares the browser session's
+request pacing. A blocked or timed-out detail page keeps the listing post.
+Comments can be fewer than the configured limit when Reddit returns collapsed
+threads, unavailable replies, or stops loading; DANK makes at most five
+additional scroll attempts and reports that more discussion is available.
+It does not expand every hidden reply. Raw post and comment payloads are
+retained for reprocessing.
+
 ## Read
 
 When Reddit communities are configured, the reader shows a collapsible
@@ -96,13 +124,24 @@ article links and Back navigation preserve the selected labels. Click a flair
 badge on a post or article to open that community’s feed with just that flair
 selected.
 
-Posts include their title, author, available body and media, outbound link,
-and captured score/comment counts where present. A comment count is metadata,
-not a downloaded discussion. Listing pages can truncate post bodies or omit
-media; the reader only has what the listing supplied. Its date ordering sorts
-collected posts locally and does not change the configured Reddit collection
-sort. Counts are snapshots, not live Reddit values.
+Posts include their title, author, full available body, playable video,
+outbound links and captured score/comment counts. The discussion keeps reply
+nesting and Reddit's captured ordering. A footer links to Reddit when more
+comments exist. Older posts and captures made with comments disabled explain
+that comments were not captured; failed collection is shown separately.
+Counts and discussions are snapshots, not live Reddit values.
+
+Remote media has a small notice; **Settings** can hide that notice without
+changing playback or download policy. Downloaded videos play locally when
+available. Reader date ordering sorts collected posts locally and does not
+change the configured Reddit collection sort.
+
+A failed detail refresh keeps the last successful body and media. Failed or
+disabled comment refreshes retain an existing archived discussion with its
+original capture date and the latest attempt state. A successful empty
+capture replaces an older discussion. Historical posts without a discussion
+archive remain clearly marked as not captured.
 
 The scraper follows Reddit's current page markup, so site changes may require
-an update. Original JSON or post HTML is retained with every raw snapshot for
-diagnosis and reprocessing. Existing [media controls](media.md) apply.
+an update. Original JSON or post/comment HTML is retained with every raw
+snapshot for diagnosis and reprocessing.

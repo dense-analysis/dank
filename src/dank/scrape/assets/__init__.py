@@ -145,8 +145,8 @@ async def _download_one(
 ) -> RawAsset | None:
     target_dir = assets_dir / discovery.domain / discovery.post_id
 
-    if discovery.asset_type == "youtube":
-        # Download YouTube assets with yt-dlp.
+    if _uses_media_downloader(discovery):
+        # Assemble adaptive streams instead of saving a manifest as media.
         return await download_audio_video_asset(
             discovery=discovery,
             target_dir=target_dir,
@@ -193,7 +193,7 @@ def _existing_files(
 ) -> set[pathlib.Path]:
     target = assets_dir / discovery.domain / discovery.post_id
 
-    if discovery.asset_type == "youtube":
+    if _uses_media_downloader(discovery):
         return {path.resolve() for path in target.glob("*")}
 
     path = http_asset_path(target, discovery.url)
@@ -217,3 +217,10 @@ def _download_outcome(
         return "files_downloaded", path.stat().st_size
     except OSError:
         return "files_downloaded", 0
+
+
+def _uses_media_downloader(discovery: AssetDiscovery) -> bool:
+    return discovery.asset_type == "youtube" or (
+        discovery.source == "reddit" and discovery.asset_type == "video"
+        and urlparse(discovery.url).hostname == "v.redd.it"
+    )

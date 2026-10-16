@@ -16,14 +16,18 @@ from dank.config import (
     BrowserSettings,
     ClickHouseSettings,
     LoggingSettings,
+    RedditSettings,
     Settings,
     SourceConfig,
     XSettings,
 )
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.model import AssetDiscovery, RawAsset, RawPost
+from dank.runtime import runtime_info
+from dank.scrape.metrics import RunMetrics, ScrapeOptions
 from dank.scrape.rss import FetchedText
 from dank.scrape.runner import (
+    _collect_source,  # pyright: ignore[reportPrivateUsage]
     _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
     _process_batches,  # pyright: ignore[reportPrivateUsage]
     filter_settings_sources,
@@ -304,3 +308,40 @@ async def test_articles_are_saved_before_waiting_for_media(
     finally:
         release.set()
         await task
+
+
+@pytest.mark.parametrize("domain,enabled,global_types,expected", [
+    ("reddit.com", False, ("image", "audio", "video"), ("image", "audio")),
+    ("reddit.com", True, ("image", "audio", "video"),
+     ("image", "audio", "video")),
+    ("reddit.com", True, ("image",), ("image",)),
+    ("x.com", False, ("image", "video"), ("image", "video")),
+])
+async def test_reddit_video_opt_in_respects_global_download_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    domain: str, global_types: tuple[str, ...], expected: tuple[str, ...],
+    *, enabled: bool,
+) -> None:
+    source = SourceConfig(domain, ())
+    settings = _make_settings()._replace(
+        sources=(source,), media_download_types=global_types,
+        reddit=RedditSettings(download_videos=enabled),
+    )
+    consumer = AsyncMock()
+
+    async def discover(*_args: Any, **_kwargs: Any):
+        yield ScrapeBatch([], [])
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    monkeypatch.setattr("dank.scrape.runner._process_batches", consumer)
+    history = RunMetrics(
+        runtime_info(), source_count=1, batch_size=100,
+        headless=True, options=ScrapeOptions(),
+    )
+    await _collect_source(
+        settings, source, 1, AsyncMock(), AsyncMock(), AsyncMock(),
+        history, tmp_path, tmp_path, asyncio.Lock(),
+    )
+    assert consumer.call_args.kwargs["download_types"] == expected

@@ -187,3 +187,41 @@ stall_scrolls = 4
     assert settings.reddit == RedditSettings(
         BrowserScrapeSettings(12, 0, 2.5), 4,
     )
+
+
+@pytest.mark.parametrize("option", [
+    "capture_comments = 1", 'download_videos = "false"',
+    "comment_limit = 0", "comment_limit = 501", "comment_limit = true",
+    'comment_sort = "rising"', "comment_sort = true",
+])
+def test_invalid_reddit_archive_settings(
+    tmp_path: pathlib.Path, option: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[reddit]\n{option}\n")
+
+    with pytest.raises(ConfigError, match="reddit"):
+        load_settings(path)
+
+
+def test_archive_settings_defaults_and_overrides(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("")
+    defaults = load_settings(path).reddit
+    assert defaults.capture_comments is True
+    assert defaults.comment_limit == 50
+    assert defaults.comment_sort == "best"
+    assert defaults.download_videos is False
+    path.write_text('''[reddit]
+capture_comments = false
+comment_limit = 500
+comment_sort = " NEW "
+download_videos = true
+''')
+    settings = load_settings(path).reddit
+    assert settings.capture_comments is False
+    assert settings.comment_limit == 500
+    assert settings.comment_sort == "new"
+    assert settings.download_videos is True

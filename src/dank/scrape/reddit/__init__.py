@@ -27,6 +27,7 @@ from dank.scrape.zendriver import (
 )
 
 from .communities import discover_community
+from .details import capture_post_detail
 from .html import extract_html_posts
 from .payloads import as_dict, extract_json_posts, text, timestamp
 
@@ -110,6 +111,7 @@ async def scrape_reddit_communities(
         browser = await session.get_browser()
         page = await browser.get("about:blank", new_tab=True)
 
+    detail_page: zendriver.Tab | None = None
     visited: set[str] = set()
 
     try:
@@ -126,13 +128,52 @@ async def scrape_reddit_communities(
                 sort=sort,
                 time_filter=time_filter,
             ):
+                if batch.posts:
+                    if detail_page is None:
+                        try:
+                            async with asyncio.timeout(10):
+                                detail_page = await browser.get(
+                                    "about:blank", new_tab=True,
+                                )
+                        except Exception:
+                            logger.warning("Reddit detail tab unavailable")
+
+                    batch = await _capture_batch_details(
+                        batch, detail_page, settings,
+                    )
+
                 yield batch
     finally:
         try:
             async with asyncio.timeout(5):
                 await page.close()
+
+                if detail_page is not None:
+                    await detail_page.close()
         except TimeoutError:
             logger.warning("Timed out closing the Reddit browser tab")
+
+
+async def _capture_batch_details(
+    batch: ScrapeBatch, page: zendriver.Tab | None, settings: RedditSettings,
+) -> ScrapeBatch:
+    posts: list[RawPost] = []
+    fresh_ids = {post.post_id for post in batch.posts}
+    assets = {
+        f"{item.post_id}:{item.url}": item for item in batch.assets
+        if item.post_id not in fresh_ids
+    }
+
+    for post in batch.posts:
+        enriched = await capture_post_detail(page, post, settings)
+        posts.append(enriched)
+
+        for asset in _discover_assets(
+            as_dict(json.loads(enriched.payload)), post.post_id, set(),
+        ):
+            assets[f"{asset.post_id}:{asset.url}"] = asset
+
+    return batch._replace(posts=posts, assets=list(assets.values()))
 
 
 async def _scrape_community(

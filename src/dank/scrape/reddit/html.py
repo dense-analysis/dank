@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import html
+import json
 from html.parser import HTMLParser
+from typing import cast
 from urllib.parse import urlsplit
 
-from .payloads import normalize_post, public_url
+from .payloads import as_dict, normalize_post, public_url
 
 VOID_TAGS = frozenset(
     {
@@ -39,7 +41,7 @@ class _ListingParser(HTMLParser):
         self.body_start: int | None = None
         self.body_depth = 0
         self.body = ""
-        self.media: list[dict[str, str]] = []
+        self.media: list[dict[str, object]] = []
         self.flair: list[str] = []
         self.excluded_depth = 0
         self.line_offsets = [0]
@@ -100,10 +102,10 @@ class _ListingParser(HTMLParser):
 
     def _capture_media(self, tag: str, attributes: dict[str, str]) -> None:
         if tag in {"shreddit-player", "video", "source"}:
-            url = public_url(attributes.get("src", ""))
+            video = _player_media(attributes)
 
-            if url.startswith("https://"):
-                self.media.append({"url": url, "asset_type": "video"})
+            if video:
+                self.media.append(video)
         elif tag == "img":
             url = public_url(attributes.get("src", ""))
             host = urlsplit(url).hostname
@@ -186,3 +188,47 @@ def extract_html_posts(source: str, community: str) -> list[dict[str, object]]:
     parser.close()
 
     return parser.posts
+
+
+def _player_media(attributes: dict[str, str]) -> dict[str, object]:
+    # Reddit exposes muxed MP4 variants in this player attribute.
+    try:
+        playback = as_dict(json.loads(
+            attributes.get("packaged-media-json")
+            or attributes.get("packaged-media", "{}"),
+        ))
+    except (ValueError, RecursionError):
+        playback = {}
+
+    sources = as_dict(playback.get("playbackUrls"))
+    hls = public_url(sources.get("hls")) or public_url(
+        attributes.get("hls-url"),
+    )
+    url = public_url(attributes.get("src"))
+
+    if urlsplit(url).path.endswith(".m3u8"):
+        hls = hls or url
+
+    permutations = as_dict(playback.get("playbackMp4s")).get("permutations")
+    packaged = ""
+
+    if isinstance(permutations, list):
+        for item in cast(list[object], permutations):
+            packaged = public_url(
+                as_dict(as_dict(item).get("source")).get("url"),
+            ) or packaged
+
+    poster = public_url(attributes.get("poster"))
+    video_url = hls or url or public_url(playback.get("fallbackUrl"))
+    direct = packaged or (url if url != hls else "")
+
+    if not video_url:
+        return {}
+
+    return {
+        "url": video_url, "asset_type": "video",
+        **({"hls_url": hls} if hls else {}),
+        **({"playback_url": direct} if direct else {}),
+        **({"playback_has_audio": True} if packaged else {}),
+        **({"poster_url": poster} if poster else {}),
+    }
