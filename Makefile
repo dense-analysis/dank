@@ -9,16 +9,18 @@ CONFIG_TEMPLATE := config.example.toml
 RUN := $(COMPOSE) run --rm -T dank
 SCRAPE := $(RUN) scrape --headless
 WEB := $(COMPOSE) up --build --wait
+X_LOGIN := $(COMPOSE) run --build --rm --no-deps -T -p 127.0.0.1:6080:6080 dank dank-x-login
 else ifeq ($(MODE),native)
 CONFIG_TEMPLATE := config.native.example.toml
 RUN := $(UV) run
 SCRAPE := $(RUN) scrape
 WEB := $(RUN) web --no-reload
+X_LOGIN := $(RUN) x-login
 else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process query embed download-model
+.PHONY: help config up web down logs scrape process query embed download-model x-login
 
 help:
 	@printf '%s\n' \
@@ -27,6 +29,7 @@ help:
 		'' \
 		'  up, web         Start the viewer (Docker stack or native foreground)' \
 		'  scrape          Collect sources; save output under logs/scrape/' \
+		'  x-login         Sign in to X and save the session for collection' \
 		'  process         Process posts/assets; save output under logs/process/' \
 		'  query           Run clickhouse-query; pass -q and SQL through ARGS' \
 		'  embed           Run embed-text; pass quoted text through ARGS' \
@@ -49,6 +52,9 @@ up web: config
 
 scrape: config
 	@bash src/dank/run_logged.sh scrape $(MODE) $(SCRAPE) $(value ARGS)
+
+x-login: config
+	$(X_LOGIN) $(value ARGS)
 
 process: config
 	@bash src/dank/run_logged.sh process $(MODE) $(RUN) process $(value ARGS)

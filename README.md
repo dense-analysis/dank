@@ -109,6 +109,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | Target | Action |
 | --- | --- |
 | `make up` or `make web` | Start the Docker stack; native mode runs the viewer in the foreground |
+| `make x-login` | Sign in to X and save the session for collection |
 | `make scrape` | Collect configured sources; Docker adds `--headless` |
 | `make process` | Process collected posts and assets |
 | `make query` | Run `clickhouse-query` with arguments from `ARGS` |

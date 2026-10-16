@@ -54,18 +54,9 @@ executable_path = "/usr/local/bin/dank-chromium"
 file = "data/dank.log"
 level = "INFO"
 
-# Uncomment for X account collection.
+# Sign in with make x-login before collecting X accounts.
+# Optional collection limits; no X password belongs in this file.
 # [x]
-# username = "your-username"
-# email = "you@example.com"
-# password = "your-password"
 # max_posts = 200
 # max_scrolls = 20
 # scroll_pause_seconds = 1.5
-
-# Optional IMAP settings for X confirmation codes.
-# [email]
-# host = "imap.example.com"
-# username = "you@example.com"
-# password = "your-imap-password"
-# port = 993

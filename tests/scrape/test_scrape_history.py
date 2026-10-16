@@ -338,7 +338,8 @@ async def test_x_missing_accounts_and_login_failure_have_correct_outcomes(
         yield ScrapeBatch([], [])
 
     monkeypatch.setattr("dank.scrape.x._scrape_account", blocked)
-    browser = SimpleNamespace(wait=AsyncMock(), main_tab=object())
+    monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
+    browser = SimpleNamespace(get=AsyncMock(return_value=object()))
     session = SimpleNamespace(get_browser=AsyncMock(return_value=browser))
     stats = SourceMetrics(1, SourceConfig("x.com", accounts))
     token = current_source.set(stats)
@@ -346,7 +347,7 @@ async def test_x_missing_accounts_and_login_failure_have_correct_outcomes(
     try:
         batches = [
             batch async for batch in scrape_x_accounts(
-                harness.settings.x, accounts, None, cast(Any, session),
+                harness.settings.x, accounts, cast(Any, session),
             )
         ]
     finally:

@@ -104,15 +104,8 @@ async def run_scrape(
     assets_dir = data_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
     profile_dir = data_dir / "browser-profile"
-    browser_config = BrowserConfig(
-        headless=headless,
-        browser_executable_path=(
-            str(settings.browser.executable_path)
-            if settings.browser.executable_path else None
-        ),
-        connection_timeout=settings.browser.connection_timeout,
-        connection_max_tries=settings.browser.connection_max_tries,
-        keep_open=not headless, profile_dir=profile_dir,
+    browser_config = BrowserConfig.from_settings(
+        settings, headless=headless, keep_open=not headless,
     )
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
@@ -344,7 +337,6 @@ async def _discover_source_batches(
             batches_iter = scrape_x_accounts(
                 settings.x,
                 source.accounts,
-                settings.email,
                 session,
             )
         case _:

@@ -24,9 +24,6 @@ class BrowserScrapeSettings(NamedTuple):
 
 
 class XSettings(NamedTuple):
-    email: str = ""
-    username: str = ""
-    password: str = ""
     scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
 
 
@@ -98,13 +95,6 @@ class BrowserSettings(NamedTuple):
     connection_max_tries: int | None
 
 
-class EmailSettings(NamedTuple):
-    host: str
-    username: str
-    password: str
-    port: int
-
-
 class LoggingSettings(NamedTuple):
     file_path: pathlib.Path
     level: str
@@ -126,7 +116,6 @@ class Settings(NamedTuple):
     feed_staleness_days: int
     sources: tuple[SourceConfig, ...]
     browser: BrowserSettings
-    email: EmailSettings | None
     logging: LoggingSettings
     keep_feed_on_fetch_failure: bool = False
     max_entries_per_feed: int = 0
@@ -491,9 +480,6 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     x_defaults = XSettings().scrape
 
     x_settings = XSettings(
-        email=str(x_data.get("email", "")),
-        username=str(x_data.get("username", "")),
-        password=str(x_data.get("password", "")),
         scrape=BrowserScrapeSettings(
             max_posts=int(x_data.get("max_posts", x_defaults.max_posts)),
             max_scrolls=int(x_data.get("max_scrolls", x_defaults.max_scrolls)),
@@ -554,22 +540,6 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         ),
     )
 
-    email_data: dict[str, Any] = _as_dict(data.get("email")) or {}
-    email_settings: EmailSettings | None = None
-
-    if email_data:
-        host = str(email_data.get("host", "")).strip()
-        username = str(email_data.get("username", "")).strip()
-        password = str(email_data.get("password", "")).strip()
-
-        if host and username and password:
-            email_settings = EmailSettings(
-                host=host,
-                username=username,
-                password=password,
-                port=int(email_data.get("port", 993)),
-            )
-
     logging_data: dict[str, Any] = _as_dict(data.get("logging")) or {}
     file_path = _parse_path(logging_data.get("file"))
 
@@ -591,7 +561,6 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         feed_staleness_days=feed_staleness_days,
         sources=sources,
         browser=browser_settings,
-        email=email_settings,
         logging=logging_settings,
         keep_feed_on_fetch_failure=keep_feed_on_fetch_failure,
         max_entries_per_feed=max_entries_per_feed,

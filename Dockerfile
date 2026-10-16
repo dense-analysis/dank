@@ -17,6 +17,7 @@ COPY --from=node /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         ca-certificates chromium ffmpeg fonts-liberation gosu tini \
+        novnc websockify x11vnc xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1000 dank \
@@ -41,6 +42,7 @@ COPY --from=reader-build /reader/dist ./reader/dist
 
 COPY --chmod=755 src/dank/container_entrypoint.sh /usr/local/bin/dank-entrypoint
 COPY --chmod=755 src/dank/container_chromium.sh /usr/local/bin/dank-chromium
+COPY --chmod=755 src/dank/container_x_login.sh /usr/local/bin/dank-x-login
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/dank-entrypoint"]

@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import fcntl
 import logging
 import pathlib
 import re
 import shutil
 from collections.abc import AsyncIterator, Iterable
-from typing import Any, NamedTuple
+from typing import IO, Any, NamedTuple
 
 import zendriver
 from zendriver import cdp
+
+from dank.config import Settings
 
 logger = logging.getLogger(__name__)
 # Zendriver 0.17.1 sends SIGTERM immediately after CDP Browser.close.
@@ -36,12 +39,33 @@ class BrowserConfig(NamedTuple):
     keep_open: bool = False
     profile_dir: pathlib.Path | None = None
 
+    @classmethod
+    def from_settings(
+        cls, settings: Settings, *, headless: bool = False,
+        keep_open: bool = False,
+    ) -> BrowserConfig:
+        return cls(
+            headless=headless, keep_open=keep_open,
+            profile_dir=settings.data_dir / "browser-profile",
+            browser_executable_path=(
+                str(settings.browser.executable_path)
+                if settings.browser.executable_path else None
+            ),
+            connection_timeout=settings.browser.connection_timeout,
+            connection_max_tries=settings.browser.connection_max_tries,
+        )
+
+
+class BrowserProfileBusyError(RuntimeError):
+    pass
+
 
 class BrowserSession:
     def __init__(self, config: BrowserConfig) -> None:
         self._config = config
         self._browser: zendriver.Browser | None = None
         self._lock = asyncio.Lock()
+        self._profile_lock: IO[bytes] | None = None
 
     async def __aenter__(self) -> BrowserSession:
         return self
@@ -52,10 +76,11 @@ class BrowserSession:
         exc: object,
         tb: object,
     ) -> None:
-        if exc_type is not None and self._config.keep_open:
-            await self.hold_open()
-
-        await self.close()
+        try:
+            if exc_type is not None and self._config.keep_open:
+                await self.hold_open()
+        finally:
+            await self.close()
 
     async def get_browser(self) -> zendriver.Browser:
         async with self._lock:
@@ -71,7 +96,7 @@ class BrowserSession:
                     options["browser_executable_path"] = browser_path
 
                 if self._config.profile_dir is not None:
-                    self._config.profile_dir.mkdir(parents=True, exist_ok=True)
+                    self._acquire_profile()
                     options["user_data_dir"] = str(self._config.profile_dir)
 
                 browser_args: list[str] = []
@@ -93,10 +118,33 @@ class BrowserSession:
 
             return self._browser
 
+    def _acquire_profile(self) -> None:
+        profile = self._config.profile_dir
+
+        if profile is None or self._profile_lock is not None:
+            return
+
+        profile.mkdir(parents=True, exist_ok=True, mode=0o700)
+        profile.chmod(0o700)
+        lock = (profile / ".dank.lock").open("a+b")
+
+        try:
+            # Kernel locks survive neither process exit nor container exit.
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock.close()
+            raise BrowserProfileBusyError(
+                "Browser profile is in use. Finish the other sign-in or "
+                "browser scrape, then retry.",
+            ) from None
+
+        self._profile_lock = lock
+
     async def close(self) -> None:
         browser = self._browser
 
         if browser is None:
+            self._release_profile()
             return
 
         try:
@@ -113,6 +161,9 @@ class BrowserSession:
                     # Zendriver exposes process exit only as a polled property.
                     while not browser.stopped:  # noqa: ASYNC110
                         await asyncio.sleep(BROWSER_SHUTDOWN_POLL_SECONDS)
+
+                    # Avoid a second Browser.close against the exited process.
+                    await connection.aclose()
         except TimeoutError:
             logger.debug(
                 "Browser graceful shutdown timed out; stopping driver",
@@ -123,7 +174,16 @@ class BrowserSession:
                 exc_info=True,
             )
         finally:
-            await browser.stop()
+            try:
+                await browser.stop()
+            finally:
+                self._browser = None
+                self._release_profile()
+
+    def _release_profile(self) -> None:
+        if self._profile_lock is not None:
+            self._profile_lock.close()
+            self._profile_lock = None
 
     async def hold_open(self) -> None:
         if self._browser is not None and not self._config.headless:

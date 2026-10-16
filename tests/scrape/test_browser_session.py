@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from dank.scrape import zendriver as browser_module
-from dank.scrape.zendriver import BrowserConfig, BrowserSession
+from dank.scrape.zendriver import (
+    BrowserConfig,
+    BrowserProfileBusyError,
+    BrowserSession,
+)
 
 
 async def _session(
@@ -31,6 +36,7 @@ def _browser() -> MagicMock:
     browser.wait = AsyncMock()
     browser.connection.closed = False
     browser.connection.send = AsyncMock()
+    browser.connection.aclose = AsyncMock()
     browser.stop = AsyncMock()
 
     return browser
@@ -62,6 +68,7 @@ async def test_graceful_close_waits_for_process_before_stopping_driver(
     await session.close()
 
     assert order == ["close requested", "process exited", "driver stopped"]
+    browser.connection.aclose.assert_awaited_once()
     browser.stop.assert_awaited_once()
 
 
@@ -169,3 +176,47 @@ async def test_failed_scrape_still_holds_debug_browser_before_cleanup(
 
     assert order == ["held for inspection", "stopped"]
     browser.connection.send.assert_not_awaited()
+
+
+async def test_profile_lock_prevents_overlapping_login_and_scrape(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = _browser()
+    browser.stopped = True
+    start = AsyncMock(return_value=browser)
+    monkeypatch.setattr(browser_module.zendriver, "start", start)
+    config = BrowserConfig(profile_dir=tmp_path / "browser-profile")
+
+    async with BrowserSession(config) as first:
+        await first.get_browser()
+
+        async with BrowserSession(config) as second:
+            with pytest.raises(BrowserProfileBusyError, match="in use"):
+                await second.get_browser()
+
+        start.assert_awaited_once()
+
+    async with BrowserSession(config) as third:
+        await third.get_browser()
+
+    assert start.await_count == 2
+    assert (tmp_path / "browser-profile").stat().st_mode & 0o777 == 0o700
+
+
+async def test_failed_browser_start_releases_profile_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = _browser()
+    browser.stopped = True
+    start = AsyncMock(side_effect=[RuntimeError("startup"), browser])
+    monkeypatch.setattr(browser_module.zendriver, "start", start)
+    config = BrowserConfig(profile_dir=tmp_path / "browser-profile")
+
+    with pytest.raises(RuntimeError, match="startup"):
+        async with BrowserSession(config) as first:
+            await first.get_browser()
+
+    async with BrowserSession(config) as second:
+        await second.get_browser()
+
+    assert start.await_count == 2

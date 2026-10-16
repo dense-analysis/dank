@@ -6,7 +6,7 @@ responses while visiting and scrolling account pages.
 
 ## Configure
 
-Add account handles and login details to `config.toml` in the checkout root.
+Add account handles to `config.toml` in the checkout root.
 Create it using the [native or Docker setup](../setup.md); these source
 settings apply to both modes:
 
@@ -14,22 +14,61 @@ settings apply to both modes:
 sources = [{ domain = "x.com", accounts = ["example", "another_account"] }]
 
 [x]
-username = "your-username"
-email = "you@example.com"
-password = "your-password"
 max_posts = 200
 max_scrolls = 20
 scroll_pause_seconds = 1.5
 ```
 
-`email` is used if X asks for account confirmation during login. The browser
-profile is kept under `<storage.data_dir>/browser-profile`, allowing browser
-session data to persist between runs.
+Sign in once using the command below. DANK reuses the saved browser session;
+X passwords and email credentials are not required in configuration.
 
 The scraper visits accounts in order. `max_posts` is a per-account stopping
 threshold, so the final batch can exceed it. `max_scrolls` bounds scrolling;
 collection can also stop after repeated idle scrolls. These settings control
 the collection attempt, not a guarantee of complete account history.
+
+## Sign in
+
+**Docker**
+
+```sh
+make x-login
+```
+
+Open [the sign-in browser](http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale).
+Sign in to X there and complete any verification. The command confirms
+"X session saved" and closes the temporary browser when your signed-in home
+page is detected. Docker needs no browser or Python installation on the host.
+The viewer can keep running while you sign in.
+Use the clipboard panel in the sign-in view to paste into the remote browser.
+
+**Native**
+
+```sh
+make x-login MODE=native
+```
+
+This opens a local Chromium window. Complete sign-in and verification there;
+the command confirms success and closes the window automatically.
+
+Sign-in waits up to ten minutes. Use `ARGS='--timeout 1200'` for more time,
+or Ctrl+C to cancel. Native users can also run `uv run x-login --config PATH`.
+No database connection or configured source is needed to sign in.
+
+The profile lives under `<storage.data_dir>/browser-profile`. Docker sign-in
+and scraping use the same `dank_data` volume, so the session survives container
+removal and restarts. Use the same Compose project and configuration for both.
+Native and Docker profiles are separate: sign in in the mode you will scrape.
+Only one sign-in or browser scrape may use a profile at a time.
+
+Keep the profile private: it contains session credentials. The Docker sign-in
+view is available only on localhost and only while the command is running.
+Do not expose port 6080 to a network. An existing valid session is confirmed
+and reused automatically.
+
+Older `[x].username`, `[x].email`, `[x].password` and `[email]` settings are
+ignored. Remove them from existing configuration; DANK no longer submits
+passwords or polls your mailbox for codes.
 
 ## Run
 
@@ -53,22 +92,12 @@ install a Chromium-based browser and use its host path if setting
 `browser.connection_timeout` and `browser.connection_max_tries` can help with
 slow browser startup.
 
-## Email confirmation codes
+## Expired sessions
 
-DANK includes optional IMAP polling for one-time codes:
-
-```toml
-[email]
-host = "imap.example.com"
-username = "you@example.com"
-password = "your-imap-password"
-port = 993
-```
-
-When X requests a code, the poller looks for recent messages from `x.com`.
-If a required code is unavailable or email is unconfigured, the scraper stops
-with a login-required message. This integration still needs live validation
-against an actual confirmation email.
+Collection checks the saved sign-in before visiting accounts. If X requires
+sign-in or verification again, collection records a login-required failure and
+asks you to run `make x-login` (or `make x-login MODE=native`). Complete that
+step, then rerun collection. Signing in does not automatically start a scrape.
 
 ## Collected data
 

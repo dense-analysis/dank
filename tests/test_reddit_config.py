@@ -171,7 +171,6 @@ def test_browser_composition_preserves_flat_toml_and_platform_defaults(
     assert RedditSourceConfig().sort is RedditSort.TOP
     path.write_text('''
 [x]
-username = "reader"
 max_posts = 23
 max_scrolls = 7
 scroll_pause_seconds = 0
@@ -182,7 +181,6 @@ scroll_pause_seconds = 2.5
 stall_scrolls = 4
 ''')
     settings = load_settings(path)
-    assert settings.x.username == "reader"
     assert settings.x.scrape == BrowserScrapeSettings(23, 7, 0)
     assert settings.reddit == RedditSettings(
         BrowserScrapeSettings(12, 0, 2.5), 4,

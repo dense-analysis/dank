@@ -2,6 +2,8 @@ import json
 import pathlib
 from typing import Any, cast
 
+import pytest
+
 from dank.scrape.x import (
     LOGIN_PROMPT_TIMEOUT_SECONDS,
     _has_login_prompt,  # pyright: ignore[reportPrivateUsage]
@@ -94,17 +96,29 @@ async def test_has_login_prompt_handles_timeout() -> None:
     assert await _has_login_prompt(cast(Any, page)) is False
 
 
-async def test_is_login_page_skips_selector_for_non_login_url() -> None:
+async def test_is_login_page_checks_prompt_on_account_page() -> None:
     page = _FakeLoginPromptPage(
         location="https://x.com/example",
-        select_raises=None,
+        select_raises=TimeoutError(),
     )
 
     assert await _is_login_page(cast(Any, page)) is False
-    assert page.last_timeout is None
+    assert page.last_timeout == LOGIN_PROMPT_TIMEOUT_SECONDS
 
 
 async def test_is_login_page_checks_selector_for_missing_location() -> None:
     page = _FakeLoginPromptPage(location=None, select_raises=None)
 
+    assert await _is_login_page(cast(Any, page)) is True
+
+
+@pytest.mark.parametrize("path", [
+    "/i/flow/login", "/i/jf/onboarding/web?mode=login", "/account/access",
+])
+async def test_login_and_verification_redirects_require_sign_in(
+    path: str,
+) -> None:
+    page = _FakeLoginPromptPage(
+        location=f"https://x.com{path}", select_raises=TimeoutError(),
+    )
     assert await _is_login_page(cast(Any, page)) is True

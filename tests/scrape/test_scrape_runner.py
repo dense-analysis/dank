@@ -49,9 +49,6 @@ def _make_settings() -> Settings:
             use_http=True,
         ),
         x=XSettings(
-            email='x@example.com',
-            username='x-user',
-            password='secret',
             scrape=BrowserScrapeSettings(max_posts=200),
         ),
         data_dir=pathlib.Path('data'),
@@ -67,7 +64,6 @@ def _make_settings() -> Settings:
             connection_timeout=None,
             connection_max_tries=None,
         ),
-        email=None,
         logging=LoggingSettings(
             file_path=pathlib.Path('dank.log'),
             level='INFO',

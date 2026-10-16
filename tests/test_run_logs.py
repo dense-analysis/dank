@@ -75,6 +75,27 @@ def _log(workspace: pathlib.Path, action: str = "scrape") -> pathlib.Path:
     return paths[0]
 
 
+@pytest.mark.parametrize("mode", ["native", "docker"])
+def test_make_login_uses_same_service_without_archiving_browser_output(
+    workspace: pathlib.Path, mode: str,
+) -> None:
+    launcher = shlex.join([sys.executable, str(workspace / "launcher.py")])
+    result = _capture(_start([
+        "make", "x-login", f"MODE={mode}", f"UV={launcher}",
+        f"COMPOSE={launcher}", "ARGS=--timeout 30",
+    ], workspace))
+    assert result.returncode == 0, result.stderr
+    args = ["run", "x-login", "--timeout", "30"]
+
+    if mode == "docker":
+        args = ["run", "--build", "--rm", "--no-deps", "-T", "-p",
+                "127.0.0.1:6080:6080", "dank", "dank-x-login",
+                "--timeout", "30"]
+
+    assert json.dumps(args) in result.stdout
+    assert not (workspace / "logs").exists()
+
+
 @pytest.mark.parametrize("action", ["scrape", "process"])
 @pytest.mark.parametrize("mode", ["native", "docker"])
 def test_make_archives_both_streams_and_preserves_quoted_arguments(

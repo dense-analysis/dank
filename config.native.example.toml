@@ -54,4 +54,5 @@ level = "INFO"
 # [browser]
 # executable_path = "/path/to/your/chromium-browser"
 
-# See docs/features/x.md for X account and optional email settings.
+# Sign in with make x-login MODE=native before collecting X accounts.
+# See docs/features/x.md for account and collection settings.

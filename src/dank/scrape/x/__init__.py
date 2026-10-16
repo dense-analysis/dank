@@ -3,18 +3,15 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-import random
-import time
 from collections.abc import AsyncIterator, Iterable
-from typing import Any, cast
+from typing import cast
 from urllib.parse import quote
 
 import zendriver
-from zendriver import Element, cdp
+from zendriver import cdp
 
-from dank.config import EmailSettings, XSettings
+from dank.config import XSettings
 from dank.model import AssetDiscovery, RawPost
-from dank.scrape.imap_email import EmailSearchFilters, wait_for_code
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
@@ -27,6 +24,12 @@ from .payloads import (
     XAsset,
     XExtractedPost,
     extract_posts_from_payload,
+)
+from .session import (
+    LOGIN_REQUIRED_MESSAGE,
+    X_HOME_URL,
+    LoginRequiredError,
+    wait_for_x_session,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,16 +46,14 @@ INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
 READY_STATE_TIMEOUT_SECONDS = 2
 LOGIN_PROMPT_TIMEOUT_SECONDS = 0.25
+SESSION_CHECK_TIMEOUT_SECONDS = 20
 
 
 async def scrape_x_accounts(
     settings: XSettings,
     accounts: tuple[str, ...],
-    email_settings: EmailSettings | None,
     session: BrowserSession,
 ) -> AsyncIterator[ScrapeBatch]:
-    browser = await session.get_browser()
-
     if not accounts:
         stats = current_source.get()
 
@@ -62,43 +63,31 @@ async def scrape_x_accounts(
         logger.warning("No X accounts configured")
         return
 
-    await browser.wait(0.1)
+    browser = await session.get_browser()
 
     try:
-        page = browser.main_tab
-    except Exception:
-        page = None
+        page = await browser.get(X_HOME_URL)
+        await wait_for_x_session(
+            page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
+        )
 
-    if page is None:
-        page = await browser.get("about:blank")
-
-    for account in accounts:
-        try:
-            async for batch in _scrape_account(
-                page,
-                account,
-                settings,
-                email_settings,
-            ):
+        for account in accounts:
+            async for batch in _scrape_account(page, account, settings):
                 yield batch
-        except LoginRequiredError:
-            count("fetch_failures")
-            stats = current_source.get()
+    except LoginRequiredError:
+        count("fetch_failures")
+        stats = current_source.get()
 
-            if stats is not None:
-                stats.error_type = "LoginRequiredError"
+        if stats is not None:
+            stats.error_type = "LoginRequiredError"
 
-            logger.warning(
-                "X login required; stopping scrape.",
-            )
-            return
+        logger.warning(LOGIN_REQUIRED_MESSAGE)
 
 
 async def _scrape_account(
     page: zendriver.Tab,
     account: str,
     settings: XSettings,
-    email_settings: EmailSettings | None,
 ) -> AsyncIterator[ScrapeBatch]:
     limits = settings.scrape
     handle = account.strip("@").strip()
@@ -115,10 +104,7 @@ async def _scrape_account(
         page = await page.get(url)
         await _ensure_navigation(page, url)
 
-        if await _is_login_page(page):
-            await _login(page, settings, email_settings)
-            page = await page.get(url)
-            await _ensure_navigation(page, url)
+        await _check_login_required(page)
 
         seen_posts: set[str] = set()
         seen_assets: set[str] = set()
@@ -147,6 +133,9 @@ async def _scrape_account(
 
         for _ in range(limits.max_scrolls):
             await _scroll(page)
+
+            await _check_login_required(page)
+
             posts, assets = await _drain_posts_and_assets(
                 capture,
                 seen_posts,
@@ -201,16 +190,23 @@ async def _scrape_account(
         logger.info("Finished X scrape for account=%s", handle)
 
 
+async def _check_login_required(page: zendriver.Tab) -> None:
+    if await _is_login_page(page):
+        raise LoginRequiredError(LOGIN_REQUIRED_MESSAGE)
+
+
 async def _is_login_page(page: zendriver.Tab) -> bool:
     location = await _get_location(page)
 
     if not location:
         return await _has_login_prompt(page)
 
-    if "/i/flow/login" in location or "/login" in location:
+    if any(path in location for path in (
+        "/i/flow/", "/login", "/i/jf/onboarding/", "/account/access",
+    )):
         return True
 
-    return False
+    return await _has_login_prompt(page)
 
 
 async def _ensure_navigation(page: zendriver.Tab, url: str) -> None:
@@ -260,123 +256,6 @@ async def _has_login_prompt(page: zendriver.Tab) -> bool:
         return False
     else:
         return True
-
-
-class LoginRequiredError(RuntimeError):
-    pass
-
-
-async def _submit_input_slowly(
-    page: zendriver.Tab,
-    input_element: Element,
-    string: str,
-):
-    # Send characters one-by-one in a loop with sleeps.
-    # This emulates natural typing better which defeats X bot detection.
-    for char in string:
-        await page.sleep(0.1)
-        await input_element.send_keys(char)
-
-    await page.sleep(0.1)
-    await input_element.send_keys("\n")
-
-
-async def _simulate_human_mouse_move(
-    page: zendriver.Tab,
-    input_element: Element,
-) -> None:
-    viewport = cast(
-        dict[str, Any],
-        await page.evaluate(
-            "({width: window.innerWidth, height: window.innerHeight})",
-        ),
-    )
-    width = viewport.get("width", 0)
-    height = viewport.get("height", 0)
-
-    if width > 0 and height > 0:
-        steps = random.randint(6, 14)
-        for _ in range(random.randint(3, 5)):
-            x = random.uniform(width * 0.15, width * 0.85)
-            y = random.uniform(height * 0.2, height * 0.8)
-            await page.mouse_move(x, y, steps=steps)
-            await page.sleep(random.uniform(0.05, 0.15))
-
-    await input_element.mouse_move()
-    await page.sleep(0.1)
-    await input_element.mouse_click()
-
-
-async def _login(
-    page: zendriver.Tab,
-    settings: XSettings,
-    email_settings: EmailSettings | None,
-) -> None:
-    otp_start = time.time()
-    page = await page.get("https://x.com/login")
-    await _ensure_navigation(page, "https://x.com/login")
-    try:
-        username_input = await page.select('[autocomplete="username"]')
-    except TimeoutError as exc:
-        raise LoginRequiredError("X login form not available") from exc
-
-    await _simulate_human_mouse_move(page, username_input)
-    await _submit_input_slowly(page, username_input, settings.username)
-
-    try:
-        # If we trigger a bot detection input then submit the email address
-        # into that for confirmation.
-        confirmation_input = await page.select(
-            '[data-testid="ocfEnterTextTextInput"]',
-            timeout=5,
-        )
-        await _submit_input_slowly(page, confirmation_input, settings.email)
-    except TimeoutError:
-        pass
-
-    try:
-        password_input = await page.select(
-            '[autocomplete="current-password"]',
-            timeout=10,
-        )
-    except TimeoutError:
-        password_input = await page.select(
-            'input[name="password"]',
-            timeout=10,
-        )
-
-    await _submit_input_slowly(page, password_input, settings.password)
-    await _handle_otp(page, email_settings, otp_start)
-    await _wait_for_ready_state(page)
-
-
-async def _handle_otp(
-    page: zendriver.Tab,
-    email_settings: EmailSettings | None,
-    otp_start: float,
-) -> None:
-    selectors = (
-        'input[name="challenge_response"]',
-        'input[name="verification_code"]',
-        'input[autocomplete="one-time-code"]',
-        'input[inputmode="numeric"]',
-    )
-
-    try:
-        otp_input = await page.select(",".join(selectors), timeout=2)
-    except TimeoutError:
-        return None
-
-    if email_settings is None:
-        raise LoginRequiredError("OTP required but email is not configured")
-
-    filters = EmailSearchFilters(domain="x.com", since_epoch=otp_start)
-    code = await wait_for_code(email_settings, filters)
-
-    if not code:
-        raise LoginRequiredError("OTP code not found in email")
-
-    await _submit_input_slowly(page, otp_input, code)
 
 
 async def _scroll(page: zendriver.Tab) -> None:
