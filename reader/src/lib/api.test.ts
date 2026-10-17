@@ -19,6 +19,30 @@ function respond(body: unknown, status = 200): void {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("reader API", () => {
+  it("accepts unknown publication dates without accepting invalid timestamps", () => {
+    const post = {
+      id: "article",
+      domain: "example.com",
+      url: "https://example.com/article",
+      author: "Writer",
+      title: "Article",
+      excerpt: "",
+      html: "",
+      created_at: "2026-10-17T12:00:00Z",
+      source: "linked_article",
+      thumbnail: null,
+      media: [],
+    };
+    expect(isPost(post)).toBe(true);
+    expect(isPost({ ...post, published_at: null })).toBe(true);
+    expect(isPost({ ...post, published_at: "2026-10-16T12:00:00Z" })).toBe(
+      true,
+    );
+    for (const invalid of ["invalid", "2026-10-16", 123, false]) {
+      expect(isPost({ ...post, published_at: invalid })).toBe(false);
+    }
+  });
+
   it("validates optional X post identities while accepting missing profile images and older posts", () => {
     const post = {
       id: "1",

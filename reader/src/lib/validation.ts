@@ -213,6 +213,9 @@ function validPost(value: unknown, allowConversation: boolean): value is Post {
       "created_at",
       "source",
     ].every((key) => typeof value[key] === "string") &&
+    (value.published_at === undefined ||
+      value.published_at === null ||
+      isTimestamp(value.published_at)) &&
     (value.linked_post === undefined ||
       value.linked_post === null ||
       isPostReference(value.linked_post)) &&

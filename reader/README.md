@@ -93,7 +93,8 @@ browser channel. No live collection is needed for the fixture tests.
 When a Hacker News story links to a collected article, All shows the original
 source once. **Links** on cards and articles lists collected posts referencing
 that item; each link opens its saved discussion or post while preserving the
-current view. Hacker News keeps its own daily listing and discussions.
+current view. Collected linked articles show their publication date when available
+and explicitly label missing dates. Hacker News keeps its own daily listing and discussions.
 
 **Blogs**
 shows articles; **X** and **Reddit** each have their own feed and expandable

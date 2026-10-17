@@ -24,7 +24,7 @@ import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HackerNewsDetail } from "./HackerNewsDetail";
-import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { PostTimestamp, readingTime, SourceMark, safeUrl } from "./PostCard";
 import { PostLinks } from "./PostLinks";
 import { ReaderLink } from "./ReaderLink";
 import { RedditComments } from "./RedditComments";
@@ -237,7 +237,7 @@ export function ArticleView({
               <SourceLink domain={post.domain} select={selectSource} />
             )}
             <span className="meta-dot">·</span>
-            <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+            <PostTimestamp post={post} />
             {hasContent && post.collection_incomplete && (
               <CollectionBadge incomplete />
             )}

@@ -48,6 +48,17 @@ export function dateLabel(date: string) {
         hourCycle: "h23",
       }).format(value);
 }
+export function PostTimestamp({ post }: { post: Post }) {
+  const date =
+    post.published_at === undefined ? post.created_at : post.published_at;
+
+  return date ? (
+    <time dateTime={date}>{dateLabel(date)}</time>
+  ) : (
+    <span>Publication date unavailable</span>
+  );
+}
+
 export function SourceMark({ domain }: { domain: string }) {
   return (
     <span
@@ -143,7 +154,7 @@ export function PostCard({
         {post.reddit && (
           <RedditFlair reddit={post.reddit} selectFlair={selectFlair} />
         )}
-        <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+        <PostTimestamp post={post} />
         {(!communityContext ||
           !hasReadableContent ||
           post.collection_incomplete) && (

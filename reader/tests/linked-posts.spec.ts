@@ -35,8 +35,12 @@ function reference(post: Post): PostReference {
   const { domain, id, url, title, source } = post;
   return { domain, id, url, title, source };
 }
-async function fixtures(page: Page, kind: "blog" | "x" | "reddit") {
-  const original = destination(kind);
+async function fixtures(
+  page: Page,
+  kind: "blog" | "x" | "reddit",
+  overrides: Partial<Post> = {},
+) {
+  const original = { ...destination(kind), ...overrides };
   const story: Post = {
     ...original,
     id: "1",
@@ -101,7 +105,8 @@ async function fixtures(page: Page, kind: "blog" | "x" | "reddit") {
               domain: original.domain,
               name: original.domain,
               count: 1,
-              kind: original.source,
+              kind:
+                original.source === "linked_article" ? "rss" : original.source,
               tags: [],
             },
           ],
@@ -154,6 +159,12 @@ for (const kind of ["blog", "x", "reddit"] as const) {
         name: kind === "x" ? "X post reader" : "Article reader",
         exact: true,
       });
+      await expect(
+        article.getByText(original.excerpt, { exact: true }),
+      ).toBeVisible();
+      await page.goBack();
+      await expect(page.locator(".hn-card")).toHaveClass(/is-read/);
+      await title.click();
       await expect(
         article.getByText(original.excerpt, { exact: true }),
       ).toBeVisible();
@@ -220,4 +231,44 @@ for (const kind of ["blog", "x", "reddit"] as const) {
       });
     });
   }
+}
+
+for (const publishedAt of [null, "2026-10-14T12:30:00Z", undefined]) {
+  test(`linked article publication date is explicit when ${String(publishedAt)}`, async ({
+    page,
+  }) => {
+    const { original } = await fixtures(page, "blog", {
+      source: "linked_article",
+      published_at: publishedAt,
+    });
+    await page.goto("/reader/");
+    const card = page.locator(".post-card");
+    await expect(card).toBeVisible();
+    if (publishedAt === null) {
+      await expect(
+        card.getByText("Publication date unavailable", { exact: true }),
+      ).toBeVisible();
+      await expect(card.locator(".post-meta time")).toHaveCount(0);
+    } else {
+      await expect(card.locator(".post-meta time")).toHaveAttribute(
+        "datetime",
+        publishedAt ?? original.created_at,
+      );
+    }
+    await card
+      .getByRole("link", { name: `Read ${original.title}`, exact: true })
+      .click();
+    const metadata = page.locator(".article-inner > .post-meta");
+    if (publishedAt === null) {
+      await expect(
+        metadata.getByText("Publication date unavailable", { exact: true }),
+      ).toBeVisible();
+      await expect(metadata.locator("time")).toHaveCount(0);
+    } else {
+      await expect(metadata.locator("time")).toHaveAttribute(
+        "datetime",
+        publishedAt ?? original.created_at,
+      );
+    }
+  });
 }

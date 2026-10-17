@@ -85,6 +85,7 @@ export interface Post {
   excerpt: string;
   html: string;
   collection_incomplete?: boolean;
+  published_at?: string | null;
   linked_post?: PostReference | null;
   links?: PostReference[];
   links_count?: number;
