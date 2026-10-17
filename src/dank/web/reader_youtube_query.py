@@ -108,6 +108,9 @@ def build_youtube_query(
     if filters.feed and filters.feed != "linked":
         params["feed"] = filters.feed
 
+        if filters.cursor:
+            params["snapshot_time"] = decode_youtube_cursor(filters)[0]
+
     for key, value, condition in (
         ("kind", filters.kind, "kind = %(kind)s"),
         ("id", filters.item_id, "item_id = %(id)s"),
@@ -147,10 +150,18 @@ def build_youtube_query(
 
 
 def _feed_items(filters: YouTubeFilters) -> str:
+    # A refreshing recommendation feed must not replace the snapshot being
+    # paged. Channel feeds keep their incremental history independently.
+    snapshot_bound = (
+        " AND observed_at <= "
+        "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
+        if filters.cursor else ""
+    )
     where = (
         " WHERE feed_url = %(feed)s AND (feed_kind = 'channel' OR "
         "run_id = (SELECT argMax(run_id, observed_at) "
-        "FROM youtube_discoveries WHERE feed_url = %(feed)s))"
+        "FROM youtube_discoveries WHERE feed_url = %(feed)s"
+        f"{snapshot_bound}))"
         if filters.feed else ""
     )
 

@@ -224,3 +224,23 @@ async def test_extensionless_cached_thumbnail_uses_type_and_keeps_containment(
     assert media == {
         "post:inside": {"thumbnail_url": "/assets/opaque-cache-hash"},
     }
+
+
+def test_recommendation_pages_and_total_keep_original_snapshot():
+    filters = YouTubeFilters(feed="https://www.youtube.com/feed/hype", limit=1)
+    captured = "2026-10-17T10:00:00+00:00"
+    cursor = encode_youtube_cursor(filters, captured, "video:AbCdEfGhIjK", 1)
+    paged = filters._replace(cursor=cursor)
+
+    for count in (False, True):
+        query, params = build_youtube_query(paged, count=count)
+        assert (
+            "WHERE feed_url = %(feed)s AND observed_at <= "
+            "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
+        ) in query
+        assert params["snapshot_time"] == captured
+        assert "feed_kind = 'channel' OR" in query
+
+    first_query, first_params = build_youtube_query(filters)
+    assert "snapshot_time" not in first_query
+    assert "snapshot_time" not in first_params
