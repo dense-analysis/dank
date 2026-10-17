@@ -71,6 +71,7 @@ export interface Post {
 
 export interface Source {
   kind?: "rss" | "x" | "reddit";
+  accounts?: XAccount[];
   communities?: RedditCommunity[];
   flairs?: RedditFlair[];
   domain: string;
@@ -79,9 +80,20 @@ export interface Source {
   count: number;
 }
 
+export interface XAccount {
+  handle: string;
+  name: string;
+  count: number;
+  icon_url?: string | null;
+}
+
+export type FeedKind = "all" | "stories" | "x" | "reddit";
+export type Section = FeedKind | "sources" | "settings";
+
 export interface Filters {
-  kind: "stories" | "reddit";
+  kind: FeedKind;
   community: string;
+  account: string;
   q: string;
   sort: "newest" | "oldest" | "relevance";
   domains: string[];

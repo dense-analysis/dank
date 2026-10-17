@@ -4,6 +4,37 @@ import { defaultFilters } from "./storage";
 import type { Filters } from "./types";
 
 describe("filter URLs", () => {
+  it.each(["all", "stories", "x", "reddit"] as const)(
+    "round-trips the %s collection",
+    (kind) => {
+      const filters = { ...defaultFilters, kind };
+      expect(parseFilters(filterParams(filters))).toEqual(filters);
+    },
+  );
+
+  it("keeps account identity independent of author and removes it outside X", () => {
+    const filters = parseFilters(
+      new URLSearchParams(
+        "view=x&account=%40Reporter&author=Ada&author_match=exact&q=local&sort=oldest",
+      ),
+    );
+    expect(filters).toMatchObject({
+      kind: "x",
+      account: "reporter",
+      author: "Ada",
+      authorExact: true,
+      q: "local",
+      sort: "oldest",
+    });
+    expect(parseFilters(filterParams(filters))).toEqual(filters);
+    expect(
+      parseFilters(new URLSearchParams("view=reddit&account=reporter")).account,
+    ).toBe("");
+    expect(
+      filterParams({ ...defaultFilters, account: "reporter" }).has("account"),
+    ).toBe(false);
+  });
+
   it("preserves Reddit community filters and discards orphaned community selections", () => {
     const filters = {
       ...defaultFilters,

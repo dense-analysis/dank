@@ -45,9 +45,15 @@ export function FeedToolbar({
       ? filters.community
         ? `Search r/${filters.community}`
         : "Search Reddit"
-      : filters.domains.length === 1
-        ? `Search ${filters.domains[0]}`
-        : "Search stories";
+      : filters.kind === "x"
+        ? filters.account
+          ? `Search @${filters.account}`
+          : "Search X"
+        : filters.domains.length === 1
+          ? `Search ${filters.domains[0]}`
+          : filters.kind === "stories"
+            ? "Search blogs"
+            : "Search everything";
   const activeCount =
     filters.domains.length +
     filters.tags.length +

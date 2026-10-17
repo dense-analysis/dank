@@ -1,3 +1,4 @@
+import { sourceKind } from "../lib/collections";
 import { filterParams } from "../lib/navigation";
 import { defaultFilters } from "../lib/storage";
 import { ReaderLink } from "./ReaderLink";
@@ -15,7 +16,7 @@ export function SourceLink({
 }) {
   return (
     <ReaderLink
-      href={`/reader/?${filterParams({ ...defaultFilters, kind: /^(www\.)?reddit\.com$/.test(domain) ? "reddit" : "stories", domains: [domain] })}`}
+      href={`/reader/?${filterParams({ ...defaultFilters, kind: sourceKind(domain), domains: [domain] })}`}
       onNavigate={() => select(domain)}
       className="source-link"
       title={domain}

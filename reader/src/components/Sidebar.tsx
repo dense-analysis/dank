@@ -1,14 +1,15 @@
 import {
-  ChevronDown,
   Layers3,
   MessagesSquare,
+  Newspaper,
   Rss,
   Settings2,
   X,
 } from "lucide-react";
-import { useState } from "react";
-import type { RedditCommunity } from "../lib/types";
+import type { RedditCommunity, Section, XAccount } from "../lib/types";
+import { CollectionNavGroup } from "./CollectionNavGroup";
 import { CommunityAvatar } from "./CommunityAvatar";
+import { IdentityAvatar } from "./IdentityAvatar";
 
 export function Sidebar({
   section,
@@ -17,19 +18,26 @@ export function Sidebar({
   communities,
   community,
   selectCommunity,
+  xEnabled,
+  accounts,
+  account,
+  selectAccount,
   mobileOpen,
   close,
 }: {
-  section: string;
-  select: (section: string) => void;
+  section: Section;
+  select: (section: Section) => void;
   redditEnabled: boolean;
   communities: RedditCommunity[];
   community: string;
   selectCommunity: (community: string) => void;
+  xEnabled: boolean;
+  accounts: XAccount[];
+  account: string;
+  selectAccount: (account: string) => void;
   mobileOpen: boolean;
   close: () => void;
 }) {
-  const [communitiesOpen, setCommunitiesOpen] = useState(true);
   return (
     <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
       <a className="brand" href="/reader/" aria-label="DANK reader home">
@@ -50,69 +58,69 @@ export function Sidebar({
           aria-current={section === "all" ? "page" : undefined}
           onClick={() => select("all")}
         >
-          <Layers3 size={19} /> All stories <span className="active-dot" />
+          <Layers3 size={19} /> All <span className="active-dot" />
         </button>
+        <button
+          type="button"
+          className={`nav-item ${section === "stories" ? "active" : ""}`}
+          aria-current={section === "stories" ? "page" : undefined}
+          onClick={() => select("stories")}
+        >
+          <Newspaper size={19} /> Blogs
+        </button>
+        {xEnabled && (
+          <CollectionNavGroup
+            id="x-accounts"
+            label="X"
+            itemsLabel="X accounts"
+            icon={
+              <span className="x-symbol" aria-hidden="true">
+                𝕏
+              </span>
+            }
+            active={section === "x"}
+            selected={account}
+            select={() => select("x")}
+            selectItem={selectAccount}
+            items={accounts.map((item) => ({
+              id: item.handle,
+              label: `@${item.handle}`,
+              title: item.name
+                ? `${item.name} (@${item.handle})`
+                : `@${item.handle}`,
+              count: item.count,
+              avatar: (
+                <IdentityAvatar
+                  name={item.handle}
+                  iconUrl={item.icon_url}
+                  kind="account"
+                />
+              ),
+            }))}
+          />
+        )}
         {redditEnabled && (
-          <div className="reddit-navigation">
-            <div className="reddit-nav-heading">
-              <button
-                type="button"
-                className={`nav-item ${section === "reddit" && !community ? "active" : ""}`}
-                aria-current={
-                  section === "reddit" && !community ? "page" : undefined
-                }
-                onClick={() => select("reddit")}
-              >
-                <MessagesSquare size={19} /> Reddit
-              </button>
-              <button
-                type="button"
-                className="icon-button community-toggle"
-                aria-label={
-                  communitiesOpen
-                    ? "Collapse Reddit communities"
-                    : "Expand Reddit communities"
-                }
-                aria-expanded={communitiesOpen}
-                aria-controls="reddit-communities"
-                onClick={() => setCommunitiesOpen(!communitiesOpen)}
-              >
-                <ChevronDown size={16} />
-              </button>
-            </div>
-            <ul
-              id="reddit-communities"
-              className="reddit-communities"
-              hidden={!communitiesOpen}
-            >
-              {communities.map((item) => (
-                <li key={item.name}>
-                  <button
-                    type="button"
-                    className={`nav-item community-item ${section === "reddit" && community.toLowerCase() === item.name.toLowerCase() ? "active" : ""}`}
-                    aria-current={
-                      section === "reddit" &&
-                      community.toLowerCase() === item.name.toLowerCase()
-                        ? "page"
-                        : undefined
-                    }
-                    onClick={() => selectCommunity(item.name)}
-                    title={`r/${item.name}`}
-                    aria-label={`r/${item.name}, ${item.count} collected posts`}
-                  >
-                    <CommunityAvatar
-                      community={item.name}
-                      iconUrl={item.icon_url}
-                    />
-                    <span className="community-name">r/{item.name}</span>
-                    <span className="community-count" aria-hidden="true">
-                      {item.count.toLocaleString()}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <CollectionNavGroup
+            id="reddit-communities"
+            label="Reddit"
+            itemsLabel="Reddit communities"
+            icon={<MessagesSquare size={19} />}
+            active={section === "reddit"}
+            selected={community}
+            select={() => select("reddit")}
+            selectItem={selectCommunity}
+            items={communities.map((item) => ({
+              id: item.name,
+              label: `r/${item.name}`,
+              count: item.count,
+              avatar: (
+                <CommunityAvatar
+                  community={item.name}
+                  iconUrl={item.icon_url}
+                />
+              ),
+            }))}
+          />
         )}
         <button
           type="button"

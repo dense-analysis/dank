@@ -19,6 +19,56 @@ function respond(body: unknown, status = 200): void {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("reader API", () => {
+  it.each(["all", "stories", "x"] as const)(
+    "sends the %s collection without the UI view parameter",
+    async (kind) => {
+      respond({ posts: [], next_cursor: null, limited: false });
+      await fetchPosts({ ...defaultFilters, kind, account: "Reporter" });
+      const params = new URL(
+        String(vi.mocked(fetch).mock.calls[0][0]),
+        "https://reader.test",
+      ).searchParams;
+      expect(params.get("kind")).toBe(kind);
+      expect(params.get("account")).toBe(kind === "x" ? "reporter" : null);
+      expect(params.has("view")).toBe(false);
+    },
+  );
+
+  it("validates account counts, handles and images before rendering source navigation", async () => {
+    const account = {
+      handle: "reporter",
+      name: "City Reporter",
+      count: 0,
+      icon_url: null,
+    };
+    const source = {
+      domain: "x.com",
+      name: "X",
+      kind: "x",
+      count: 0,
+      tags: [],
+      accounts: [account],
+    };
+    respond({ sources: [source], total_posts: 0 });
+    await expect(fetchSources()).resolves.toEqual({
+      sources: [source],
+      total_posts: 0,
+    });
+
+    for (const bad of [
+      { count: -1 },
+      { handle: "../bad" },
+      { name: null },
+      { icon_url: 42 },
+    ]) {
+      respond({
+        sources: [{ ...source, accounts: [{ ...account, ...bad }] }],
+        total_posts: 0,
+      });
+      await expect(fetchSources()).rejects.toThrow("unexpected response");
+    }
+  });
+
   it("keeps Reddit queries separate from stories and sends the community without a UI view parameter", async () => {
     respond({ posts: [], next_cursor: null, limited: false });
     await fetchPosts({
@@ -38,7 +88,11 @@ describe("reader API", () => {
       "Research & News",
     ]);
     expect(reddit.searchParams.has("view")).toBe(false);
-    await fetchPosts({ ...defaultFilters, flairs: ["New Model"] });
+    await fetchPosts({
+      ...defaultFilters,
+      kind: "stories",
+      flairs: ["New Model"],
+    });
     const stories = new URL(
       String(vi.mocked(fetch).mock.calls[1][0]),
       "https://reader.test",

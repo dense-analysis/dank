@@ -80,11 +80,23 @@ browser channel. No live collection is needed for the fixture tests.
   and a live preview. Preferences save in this browser and also apply to the
   article toolbar. The interface uses a charcoal dark theme with mint accents.
 
+## Collections
+
+**All** combines collected blogs, X posts and Reddit discussions. **Blogs**
+shows articles; **X** and **Reddit** each have their own feed and expandable
+sidebar list. Search, source filters and dates apply within the selected view.
+
+Expand **X** to choose a configured account, including accounts with no posts
+yet. Each entry shows its collected post count and captured profile image,
+with an initial when no image is available. X profile images load from its image
+host; Reddit icons use cached local assets. Account selection follows the post's
+handle, independently of the author filter, and stays in the URL through search
+and article navigation.
+
 ## Reddit
 
-When Reddit communities are configured, a Reddit section appears below All
-stories. Expand its community list to browse each subreddit, including those
-with no collected posts yet. Reddit stays separate from the main story feed.
+Expand Reddit's community list to browse each configured subreddit, including
+those with no collected posts yet.
 
 A community's name and cached icon stay visible in a compact sticky header.
 Its cards omit the repeated community identity; the combined Reddit feed keeps

@@ -2,8 +2,9 @@ import type { Filters, Post } from "./types";
 import { isRecord } from "./validation";
 
 export const defaultFilters: Filters = {
-  kind: "stories",
+  kind: "all",
   community: "",
+  account: "",
   q: "",
   sort: "newest",
   domains: [],

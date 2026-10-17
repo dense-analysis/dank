@@ -148,6 +148,17 @@ export function isSource(value: unknown): value is Source {
     isOptionalFlairs(value.flairs) &&
     (value.kind === undefined ||
       ["rss", "x", "reddit"].includes(String(value.kind))) &&
+    (value.accounts === undefined ||
+      (Array.isArray(value.accounts) &&
+        value.accounts.every(
+          (account) =>
+            isRecord(account) &&
+            typeof account.handle === "string" &&
+            /^[a-zA-Z0-9_]{1,15}$/.test(account.handle) &&
+            typeof account.name === "string" &&
+            isCount(account.count) &&
+            isOptionalIcon(account.icon_url),
+        ))) &&
     (value.communities === undefined ||
       (Array.isArray(value.communities) &&
         value.communities.every(

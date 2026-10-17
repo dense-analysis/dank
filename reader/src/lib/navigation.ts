@@ -1,3 +1,4 @@
+import { sectionFromView } from "./collections";
 import { defaultFilters } from "./storage";
 import type { Filters, Post } from "./types";
 import { isDateFilter } from "./validation";
@@ -28,13 +29,20 @@ export function parseFilters(params: URLSearchParams): Filters {
   const sort = params.get("sort");
   const after = params.get("after") ?? "";
   const before = params.get("before") ?? "";
+  const section = sectionFromView(params.get("view"));
+  const kind =
+    section === "sources" || section === "settings" ? "all" : section;
 
   return {
     ...defaultFilters,
-    kind: params.get("view") === "reddit" ? "reddit" : "stories",
+    kind,
     community:
       params.get("view") === "reddit"
         ? (params.get("community") ?? "").trim()
+        : "",
+    account:
+      kind === "x"
+        ? (params.get("account") ?? "").trim().replace(/^@/, "").toLowerCase()
         : "",
     q,
     sort:
@@ -56,8 +64,14 @@ export function parseFilters(params: URLSearchParams): Filters {
 
 export function filterParams(filters: Filters): URLSearchParams {
   const params = new URLSearchParams();
+  if (filters.kind !== "all") params.set("view", filters.kind);
+  if (filters.kind === "x" && filters.account.trim()) {
+    params.set(
+      "account",
+      filters.account.trim().replace(/^@/, "").toLowerCase(),
+    );
+  }
   if (filters.kind === "reddit") {
-    params.set("view", "reddit");
     if (filters.community.trim())
       params.set("community", filters.community.trim());
 

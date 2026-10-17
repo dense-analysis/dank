@@ -17,6 +17,7 @@ import {
 import { ArticleView } from "./components/ArticleView";
 import { CommunityAvatar } from "./components/CommunityAvatar";
 import { FeedToolbar } from "./components/FeedToolbar";
+import { IdentityAvatar } from "./components/IdentityAvatar";
 import { Modal } from "./components/Modal";
 import { PostCard } from "./components/PostCard";
 import { ReaderSettings } from "./components/ReaderSettings";
@@ -26,22 +27,25 @@ import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
 import { fetchPosts, fetchSources } from "./lib/api";
+import {
+  collectedAccounts,
+  feedLabels,
+  sectionFromView,
+  sourceKind,
+  sourcesForFeed,
+} from "./lib/collections";
 import { articleParams, filterParams, parseFilters } from "./lib/navigation";
 import { readingFonts } from "./lib/preferences";
 import { defaultFilters, postKey } from "./lib/storage";
-import type { Filters, Post } from "./lib/types";
+import type { Filters, Post, Section } from "./lib/types";
 
 export function App() {
   const { params, navigate, backTo, positionError } = useLocation();
   const { read, markRead, storageError } = useReadPosts();
   const { preferences } = useReaderPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const view = params.get("view");
-  const section =
-    view === "sources" || view === "settings" || view === "reddit"
-      ? view
-      : "all";
-  const feedSection = section === "all" || section === "reddit";
+  const section = sectionFromView(params.get("view"));
+  const feedSection = section !== "sources" && section !== "settings";
   const filters = parseFilters(params);
   const articleId = params.get("article");
   const articleDomain = params.get("article_source");
@@ -102,8 +106,15 @@ export function App() {
     (post) => post.id === articleId && post.domain === articleDomain,
   );
   const readKeys = new Set(read);
-  const redditSources =
-    sources.data?.sources.filter((source) => source.kind === "reddit") ?? [];
+  const allSources = sources.data?.sources ?? [];
+  const redditSources = sourcesForFeed(allSources, "reddit");
+  const xSources = sourcesForFeed(allSources, "x");
+  const accounts = collectedAccounts(xSources);
+  const activeAccount = accounts.find(
+    (account) => account.handle.toLowerCase() === filters.account.toLowerCase(),
+  );
+  const accountName = activeAccount?.handle ?? filters.account;
+  const accountContext = section === "x" && !!filters.account;
   const communities = redditSources.flatMap(
     (source) => source.communities ?? [],
   );
@@ -113,32 +124,28 @@ export function App() {
       community.name.toLowerCase() === filters.community.toLowerCase(),
   );
   const communityName = activeCommunity?.name ?? filters.community;
-  const visibleSources =
-    sources.data?.sources.filter((source) =>
-      section === "reddit"
-        ? source.kind === "reddit"
-        : source.kind !== "reddit",
-    ) ?? [];
+  const visibleSources = sourcesForFeed(allSources, filters.kind);
   const title =
     section === "settings"
       ? "Settings"
       : section === "sources"
         ? "Sources"
-        : section === "reddit"
-          ? filters.community
-            ? `r/${communityName}`
-            : "Reddit"
-          : "All stories";
+        : communityContext
+          ? `r/${communityName}`
+          : accountContext
+            ? `@${accountName}`
+            : feedLabels[filters.kind];
   const date = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
   }).format(new Date());
 
-  function select(nextView: string, nextFilters = defaultFilters) {
+  function select(nextView: Section, nextFilters = defaultFilters) {
     const next = filterParams({
       ...nextFilters,
-      kind: nextView === "reddit" ? "reddit" : "stories",
+      kind:
+        nextView === "sources" || nextView === "settings" ? "all" : nextView,
     });
     if (nextView !== "all") next.set("view", nextView);
     navigate(next);
@@ -158,17 +165,16 @@ export function App() {
     backTo(next);
   }
   function selectSource(domain: string) {
-    const isReddit =
-      sources.data?.sources.some(
-        (source) => source.domain === domain && source.kind === "reddit",
-      ) || /^(www\.)?reddit\.com$/.test(domain);
-    select(isReddit ? "reddit" : "all", {
+    select(sourceKind(domain), {
       ...defaultFilters,
       domains: [domain],
     });
   }
   function selectCommunity(community: string) {
     select("reddit", { ...defaultFilters, community });
+  }
+  function selectAccount(account: string) {
+    select("x", { ...defaultFilters, account });
   }
   function selectFlair(community: string, flair: string) {
     select("reddit", { ...defaultFilters, community, flairs: [flair] });
@@ -185,6 +191,10 @@ export function App() {
       communities={communities}
       community={filters.community}
       selectCommunity={selectCommunity}
+      xEnabled={xSources.length > 0}
+      accounts={accounts}
+      account={filters.account}
+      selectAccount={selectAccount}
       mobileOpen={mobileOpen}
       close={() => setMobileOpen(false)}
     />
@@ -215,7 +225,7 @@ export function App() {
         sidebar
       )}
       <div
-        className={`main-shell ${communityContext ? "community-context" : ""}`}
+        className={`main-shell ${communityContext || accountContext ? "collection-context" : ""}`}
       >
         <header className="topbar">
           <button
@@ -227,6 +237,13 @@ export function App() {
             <Menu size={21} />
           </button>
           <div className="breadcrumb">
+            {accountContext && (
+              <IdentityAvatar
+                name={accountName}
+                iconUrl={activeAccount?.icon_url}
+                kind="account"
+              />
+            )}
             {communityContext && (
               <CommunityAvatar
                 community={communityName}
@@ -275,12 +292,18 @@ export function App() {
               <div className="page-heading">
                 {feedSection && <p className="eyebrow">{date}</p>}
                 {section === "reddit" && (
-                  <p className="reddit-description">
+                  <p className="collection-description">
                     Collected posts from{" "}
                     {filters.community
                       ? `r/${communityName}`
                       : "your communities"}
                     .
+                  </p>
+                )}
+                {section === "x" && (
+                  <p className="collection-description">
+                    Collected posts from{" "}
+                    {accountContext ? `@${accountName}` : "your X accounts"}.
                   </p>
                 )}
                 {!feedSection && (
@@ -316,7 +339,7 @@ export function App() {
                     <span>
                       {filters.q
                         ? "SEARCH RESULTS"
-                        : section === "reddit"
+                        : section === "reddit" || section === "x"
                           ? "COLLECTED POSTS"
                           : "LATEST"}
                       {posts.isFetching && !posts.isPending && (
@@ -361,7 +384,7 @@ export function App() {
                     <div className="empty-state">
                       <Inbox size={30} strokeWidth={1.3} />
                       <h2>
-                        {section === "reddit"
+                        {section === "reddit" || section === "x"
                           ? "No collected posts found"
                           : "No stories found"}
                       </h2>
@@ -374,9 +397,11 @@ export function App() {
                         className="secondary-button"
                         onClick={() => select(section)}
                       >
-                        {section === "reddit"
-                          ? "Show all Reddit posts"
-                          : "Show all stories"}{" "}
+                        {section === "reddit" || section === "x"
+                          ? `Show all ${feedLabels[section]} posts`
+                          : section === "stories"
+                            ? "Show all blog articles"
+                            : "Show everything"}{" "}
                         <ArrowRight size={14} />
                       </button>
                     </div>

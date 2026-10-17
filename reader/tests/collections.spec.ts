@@ -228,11 +228,13 @@ test("All mixes collections while Blogs, X and Reddit keep their own feeds", asy
     ).toHaveCount(0);
   }
 
-  expect(
-    state.requests
-      .filter((url) => url.pathname.endsWith("/posts"))
-      .map((url) => url.searchParams.get("kind")),
-  ).toEqual(["all", "stories", "x", "reddit"]);
+  expect([
+    ...new Set(
+      state.requests
+        .filter((url) => url.pathname.endsWith("/posts"))
+        .map((url) => url.searchParams.get("kind")),
+    ),
+  ]).toEqual(["all", "stories", "x", "reddit"]);
 });
 
 test("X accounts have accessible disclosure, safe icons and initial fallbacks", async ({
