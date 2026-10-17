@@ -1,15 +1,9 @@
-import {
-  Layers3,
-  MessagesSquare,
-  Newspaper,
-  Rss,
-  Settings2,
-  X,
-} from "lucide-react";
+import { Layers3, Newspaper, Rss, Settings2, X } from "lucide-react";
 import type { RedditCommunity, Section, XAccount } from "../lib/types";
 import { CollectionNavGroup } from "./CollectionNavGroup";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { IdentityAvatar } from "./IdentityAvatar";
+import { PlatformIcon } from "./PlatformIcon";
 
 export function Sidebar({
   section,
@@ -73,11 +67,7 @@ export function Sidebar({
             id="x-accounts"
             label="X"
             itemsLabel="X accounts"
-            icon={
-              <span className="x-symbol" aria-hidden="true">
-                𝕏
-              </span>
-            }
+            icon={<PlatformIcon platform="x" />}
             active={section === "x"}
             selected={account}
             select={() => select("x")}
@@ -113,7 +103,7 @@ export function Sidebar({
             id="reddit-communities"
             label="Reddit"
             itemsLabel="Reddit communities"
-            icon={<MessagesSquare size={19} />}
+            icon={<PlatformIcon platform="reddit" />}
             active={section === "reddit"}
             selected={community}
             select={() => select("reddit")}

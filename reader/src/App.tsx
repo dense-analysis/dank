@@ -21,6 +21,7 @@ import { CommunityAvatar } from "./components/CommunityAvatar";
 import { FeedToolbar } from "./components/FeedToolbar";
 import { IdentityAvatar } from "./components/IdentityAvatar";
 import { Modal } from "./components/Modal";
+import { PlatformIcon } from "./components/PlatformIcon";
 import { PostCard } from "./components/PostCard";
 import { ReaderSettings } from "./components/ReaderSettings";
 import { Sidebar } from "./components/Sidebar";
@@ -144,6 +145,20 @@ export function App() {
               ? accountName
               : `@${accountHandle}`
             : feedLabels[filters.kind];
+  const overviewPlatform =
+    !accountContext &&
+    !communityContext &&
+    (section === "x" || section === "reddit")
+      ? section
+      : null;
+  const headerTitle = overviewPlatform ? (
+    <>
+      <PlatformIcon platform={overviewPlatform} size={24} />
+      <span className="visually-hidden">{title}</span>
+    </>
+  ) : (
+    title
+  );
   const date = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
@@ -271,11 +286,11 @@ export function App() {
             )}
             {feedSection && !readingArticle ? (
               <h1 className="collection-title" title={title}>
-                {title}
+                {headerTitle}
               </h1>
             ) : (
               <span className="collection-title" title={title}>
-                {title}
+                {headerTitle}
               </span>
             )}
             {accountContext && accountHasName && (
