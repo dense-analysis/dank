@@ -2,6 +2,7 @@ import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { hasArticleContent } from "../lib/article";
+import { postKey } from "../lib/storage";
 import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
@@ -177,6 +178,7 @@ export function PostCard({
           key={video.url}
           video={video}
           originalUrl={post.url}
+          positionScope={postKey(post)}
           onUnavailable={onUnavailable}
         />
       ))}

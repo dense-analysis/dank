@@ -374,7 +374,7 @@ for (const width of [1440, 390]) {
     await expect(frame).toHaveAttribute("id", identity ?? "");
     await player
       .getByRole("button", { name: "Play video", exact: true })
-      .click();
+      .press("Enter");
     await expect(player.locator("body")).toHaveAttribute("data-state", "1");
   });
 }
@@ -449,7 +449,10 @@ test("a slow YouTube player cannot start over a newer video, but can be resumed 
   );
   await expect(player.locator("body")).toHaveAttribute("data-state", "-1");
   await expect(video).toHaveJSProperty("paused", false);
-  await player.getByRole("button", { name: "Play video", exact: true }).click();
+  await player
+    .getByRole("button", { name: "Play video", exact: true })
+    .press("Enter");
+  await expect(player.locator("body")).toHaveAttribute("data-state", "1");
   await expect(video).toHaveJSProperty("paused", true);
 });
 

@@ -1,4 +1,5 @@
 import { observePlayback } from "./playback";
+import { rememberVideoPosition, videoPosition } from "./videoPositions";
 
 // YouTube's iframe client uses this handshake and command channel. Keep it scoped
 // to our own frame, without injecting the provider's remote script into the reader.
@@ -6,19 +7,45 @@ import { observePlayback } from "./playback";
 // State values and commands: https://developers.google.com/youtube/iframe_api_reference
 const HANDSHAKE_INTERVAL_MS = 250;
 
-export function connectYouTubePlayback(frame: HTMLIFrameElement) {
+export function connectYouTubePlayback(
+  frame: HTMLIFrameElement,
+  positionKey?: string,
+) {
   const origin = new URL(frame.src).origin;
   let ready = false;
   let startWhenReady = true;
   let pausePending = false;
+  let lastStored = videoPosition(positionKey);
+  let restoreTarget = lastStored;
+  let restoreIssued = false;
+  let currentTime: number | undefined;
+  let hasPlayed = false;
+  let duration: number | undefined;
   const send = (message: object) =>
     frame.contentWindow?.postMessage(
       JSON.stringify({ ...message, id: frame.id, channel: "widget" }),
       origin,
     );
-  const command = (func: string, args: string[] = []) =>
+  const command = (func: string, args: (string | number | boolean)[] = []) =>
     send({ event: "command", func, args });
+  const capture = () => {
+    if (currentTime === undefined || restoreTarget !== undefined || !hasPlayed)
+      return;
+    if (!playback.isActive() && videoPosition(positionKey) !== lastStored)
+      return;
+
+    rememberVideoPosition(positionKey, currentTime);
+    lastStored = videoPosition(positionKey);
+  };
+  const restore = () => {
+    if (restoreIssued || restoreTarget === undefined) return;
+
+    if (duration !== undefined && restoreTarget >= duration) restoreTarget = 0;
+    command("seekTo", [restoreTarget, true]);
+    restoreIssued = true;
+  };
   const playback = observePlayback(frame, () => {
+    capture();
     startWhenReady = false;
 
     if (ready) {
@@ -62,19 +89,59 @@ export function connectYouTubePlayback(frame: HTMLIFrameElement) {
       command("addEventListener", ["onError"]);
 
       // A different video or a scroll may have cancelled the click while loading.
-      if (startWhenReady) command("playVideo");
+      if (startWhenReady) {
+        restore();
+        command("playVideo");
+      }
     } else if (message.event === "onStateChange" && "info" in message) {
       if (message.info === 1 || message.info === 3) {
         // Ignore late buffering/playing events from a player we just paused.
         if (pausePending) command("pauseVideo");
-        else playback.playing();
+        else {
+          restore();
+          hasPlayed = message.info === 1 || hasPlayed;
+          playback.playing();
+        }
       } else if (
         message.info === 2 ||
         message.info === 0 ||
         message.info === 5
       ) {
         pausePending = false;
+        capture();
         playback.paused();
+      }
+    } else if (
+      ["initialDelivery", "infoDelivery"].includes(String(message.event)) &&
+      "info" in message &&
+      message.info &&
+      typeof message.info === "object"
+    ) {
+      const info = message.info;
+      if (
+        "duration" in info &&
+        typeof info.duration === "number" &&
+        Number.isFinite(info.duration) &&
+        info.duration > 0
+      )
+        duration = info.duration;
+
+      if (
+        "currentTime" in info &&
+        typeof info.currentTime === "number" &&
+        Number.isFinite(info.currentTime) &&
+        info.currentTime >= 0
+      ) {
+        currentTime = info.currentTime;
+        // Ignore initial zero-time messages until the restored seek has landed.
+        if (
+          restoreTarget !== undefined &&
+          restoreIssued &&
+          Math.abs(currentTime - restoreTarget) < 0.25
+        )
+          restoreTarget = undefined;
+
+        if (playback.isActive()) capture();
       }
     } else if (message.event === "onError") {
       playback.paused();

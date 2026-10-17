@@ -1,10 +1,17 @@
 <!doctype html>
 <html lang="en"><head><title>YouTube player fixture</title></head>
-<body data-ready="true" data-state="-1"><button type="button">Play video</button>
+<body data-ready="true" data-state="-1"><button type="button">Play video</button><input type="number" aria-label="Playback position" step="0.25">
 <script>
 const origin = new URL(location.href).searchParams.get("origin");
 let id;
 const events = new Set();
+let currentTime = Number(new URL(location.href).searchParams.get("start") ?? 0);
+const progress = (time) => {
+  currentTime = time;
+  document.body.dataset.time = String(time);
+  document.querySelector("input").value = String(time);
+  send("infoDelivery", {currentTime:time, duration:600});
+};
 const send = (event, info) => parent.postMessage(JSON.stringify({event, info, id, channel:"widget"}), origin);
 const ready = () => { if (id && document.body.dataset.ready === "true") send("onReady", null); };
 const state = (value) => {
@@ -21,9 +28,14 @@ addEventListener("message", event => {
     events.add(data.args[0]);
     if (data.args[0] === "onStateChange") document.body.dataset.subscribed = "true";
   }
-  if (data.func === "playVideo") state(1);
-  if (data.func === "pauseVideo") state(2);
+  if (data.func === "seekTo") progress(data.args[0]);
+  if (data.func === "playVideo") { state(1); progress(currentTime); }
+  if (data.func === "pauseVideo") { state(2); progress(currentTime); }
 });
 addEventListener("fixture-ready", () => { document.body.dataset.ready = "true"; ready(); });
-document.querySelector("button").onclick = () => state(document.body.dataset.state === "1" ? 2 : 1);
+document.querySelector("button").onclick = () => {
+  state(document.body.dataset.state === "1" ? 2 : 1);
+  progress(currentTime);
+};
+document.querySelector("input").oninput = event => progress(Number(event.target.value));
 </script></body></html>

@@ -1,12 +1,19 @@
 import { ExternalLink, Play, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { XLink } from "../lib/types";
+import { videoPositionKey } from "../lib/videoPositions";
 import { xMediaUrl } from "../lib/x";
 import { previewReferenceKey } from "../lib/xText";
 import { youtubeEmbedUrl } from "../lib/youtube";
 import { YouTubePlayer } from "./YouTubePlayer";
 
-export function XLinkPreview({ link }: { link: XLink }) {
+export function XLinkPreview({
+  link,
+  positionScope,
+}: {
+  link: XLink;
+  positionScope: string;
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -85,7 +92,15 @@ export function XLinkPreview({ link }: { link: XLink }) {
     <div className="x-youtube-preview">
       {playing ? (
         <div className="x-youtube-player">
-          <YouTubePlayer src={embed} title={title} />
+          <YouTubePlayer
+            src={embed}
+            title={title}
+            positionKey={videoPositionKey(
+              positionScope,
+              "youtube",
+              new URL(embed).pathname,
+            )}
+          />
         </div>
       ) : (
         <button

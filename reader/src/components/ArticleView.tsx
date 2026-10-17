@@ -13,7 +13,9 @@ import { useRedditContent } from "../hooks/useRedditContent";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
+import { postKey } from "../lib/storage";
 import type { Filters, Post } from "../lib/types";
+import { videoPositionKey } from "../lib/videoPositions";
 import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
@@ -57,7 +59,6 @@ export function ArticleView({
 }) {
   const { preferences, updatePreferences, preferencesError } =
     useReaderPreferences();
-  const videoRef = useVideoPlayback();
   const { fontSize } = preferences;
   function setFontSize(size: number) {
     updatePreferences({ ...preferences, fontSize: size });
@@ -241,6 +242,7 @@ export function ArticleView({
                   key={video.url}
                   video={video}
                   originalUrl={post.url}
+                  positionScope={postKey(post)}
                   onUnavailable={onUnavailable}
                 />
               ))}
@@ -277,16 +279,15 @@ export function ArticleView({
             <section className="article-media" aria-label="Attached media">
               {attachedMedia.map((asset) =>
                 asset.content_type.startsWith("video/") ? (
-                  <video
-                    ref={videoRef}
+                  <AttachedVideo
                     key={asset.url}
-                    controls
-                    preload="none"
-                    src={safeUrl(asset.url)}
-                    aria-label="Article video"
-                  >
-                    <track kind="captions" />
-                  </video>
+                    url={asset.url}
+                    positionKey={videoPositionKey(
+                      postKey(post),
+                      "attachment",
+                      asset.url,
+                    )}
+                  />
                 ) : (
                   <audio
                     key={asset.url}
@@ -314,5 +315,27 @@ export function ArticleView({
         </div>
       )}
     </main>
+  );
+}
+
+function AttachedVideo({
+  url,
+  positionKey,
+}: {
+  url: string;
+  positionKey: string;
+}) {
+  const videoRef = useVideoPlayback(positionKey);
+
+  return (
+    <video
+      ref={videoRef}
+      controls
+      preload="none"
+      src={safeUrl(url)}
+      aria-label="Article video"
+    >
+      <track kind="captions" />
+    </video>
   );
 }

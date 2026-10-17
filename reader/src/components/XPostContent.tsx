@@ -1,7 +1,9 @@
 import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
+import { postKey } from "../lib/storage";
 import type { Post, XMedia } from "../lib/types";
+import { videoPositionKey } from "../lib/videoPositions";
 import { xMedia, xMediaUrl } from "../lib/x";
 import {
   previewReferenceKey,
@@ -78,6 +80,13 @@ export function XPostContent({
               asset={asset}
               original={post.url}
               index={index}
+              positionKey={videoPositionKey(
+                postKey(post),
+                "x",
+                asset.source_url
+                  ? (videoReferenceKey(asset.source_url) ?? index)
+                  : index,
+              )}
               onVideoFailure={() =>
                 setFailedMedia((previous) => new Set(previous).add(asset.url))
               }
@@ -86,7 +95,11 @@ export function XPostContent({
         </section>
       )}
       {previews.map((link) => (
-        <XLinkPreview key={link.url} link={link} />
+        <XLinkPreview
+          key={link.url}
+          link={link}
+          positionScope={postKey(post)}
+        />
       ))}
     </div>
   );
@@ -97,14 +110,16 @@ function XAttachment({
   original,
   index,
   onVideoFailure,
+  positionKey,
 }: {
   asset: XMedia;
   original: string;
   index: number;
   onVideoFailure: () => void;
+  positionKey: string;
 }) {
   const [failed, setFailed] = useState(false);
-  const videoRef = useVideoPlayback();
+  const videoRef = useVideoPlayback(positionKey);
   const [loadedRatio, setLoadedRatio] = useState<number>();
   const ratio = loadedRatio ?? asset.aspect_ratio;
   const url = xMediaUrl(asset.url);

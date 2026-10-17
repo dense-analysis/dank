@@ -121,7 +121,10 @@ remain available. YouTube previews play inline when selected, with a separate
 **Watch on YouTube** link for videos that cannot be embedded. Closing the video
 or navigating to another view stops playback. X, YouTube and Reddit videos pause
 when scrolled fully out of view or when another video starts. Their position is
-preserved; scrolling back does not automatically resume them.
+preserved; scrolling back does not automatically resume them. Opening a post and
+returning to the feed keep the latest position for each video, including a
+backward seek. Press **Play** to continue from that point. Video positions stay
+in this open reader tab; reloading the page clears them.
 
 Remote media is labelled and video plays only on demand. Select the post text
 or timestamp to open it; inline links and media controls work independently.

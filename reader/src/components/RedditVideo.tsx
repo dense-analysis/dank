@@ -3,19 +3,28 @@ import { ExternalLink, Globe2, Play } from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { observeVideoPlayback } from "../lib/playback";
+import { redditVideoKey } from "../lib/redditText";
 import type { RedditVideo as Video } from "../lib/types";
 import { safeUrl } from "../lib/urls";
+import { videoPositionKey } from "../lib/videoPositions";
 
 export function RedditVideo({
   video,
   originalUrl,
   onUnavailable,
+  positionScope,
 }: {
   video: Video;
   originalUrl: string;
   onUnavailable?: (url: string) => void;
+  positionScope: string;
 }) {
   const { preferences } = useReaderPreferences();
+  const positionKey = videoPositionKey(
+    positionScope,
+    "reddit",
+    redditVideoKey(video.source_url || video.hls_url || video.url) ?? video.url,
+  );
   const element = useRef<HTMLVideoElement>(null);
   const [started, setStarted] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -58,7 +67,7 @@ export function RedditVideo({
 
     if (!started || !url || !media) return;
 
-    const playback = observeVideoPlayback(media);
+    const playback = observeVideoPlayback(media, positionKey);
     // Reserve the user's click while HLS loads; a newer player or scroll can cancel it.
     playback.playing();
     let active = true;
@@ -77,6 +86,7 @@ export function RedditVideo({
       // The API exposes only MP4 fallbacks known to include audio.
       if (fallback && fallback !== url && !usingFallback) {
         const resume = playback.isActive();
+        playback.pause();
         usingFallback = true;
         player?.destroy();
         player = undefined;
@@ -125,12 +135,12 @@ export function RedditVideo({
     return () => {
       active = false;
       media.removeEventListener("error", fail);
-      player?.destroy();
       playback.dispose();
+      player?.destroy();
       media.removeAttribute("src");
       media.load();
     };
-  }, [started, url, isHls, fallback, onUnavailable, video.url]);
+  }, [started, url, isHls, fallback, onUnavailable, video.url, positionKey]);
 
   return (
     <figure className="reddit-video">

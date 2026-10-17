@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { observePlayback } from "./playback";
+import { observePlayback, observeVideoPlayback } from "./playback";
+import { rememberVideoPosition, videoPosition } from "./videoPositions";
 import { connectYouTubePlayback } from "./youtubePlayback";
 
 const cleanups: (() => void)[] = [];
@@ -73,6 +74,20 @@ describe("shared playback", () => {
     expect(video.pauseSpy).toHaveBeenCalledOnce();
   });
 
+  it("ignores visibility samples older than a new play request", () => {
+    const video = player();
+    vi.advanceTimersByTime(10);
+    video.playing();
+    observers[0].change([
+      { isIntersecting: false, intersectionRatio: 0, time: 0 },
+    ]);
+    expect(video.pauseSpy).not.toHaveBeenCalled();
+    observers[0].change([
+      { isIntersecting: false, intersectionRatio: 0, time: 20 },
+    ]);
+    expect(video.pauseSpy).toHaveBeenCalledOnce();
+  });
+
   it("rejects delayed playback from hidden or detached players before observer delivery", () => {
     const video = player();
     vi.mocked(video.element.getBoundingClientRect).mockReturnValue(
@@ -98,7 +113,7 @@ describe("shared playback", () => {
   });
 });
 
-function youtube() {
+function youtube(positionKey?: string) {
   const frame = visible(document.createElement("iframe"));
   frame.id = "youtube-test";
   frame.src =
@@ -107,11 +122,11 @@ function youtube() {
   if (!target) throw new Error("Expected iframe window");
 
   const send = vi.spyOn(target, "postMessage");
-  const disconnect = connectYouTubePlayback(frame);
+  const disconnect = connectYouTubePlayback(frame, positionKey);
   cleanups.push(disconnect);
   const message = (
     event: string,
-    info?: number,
+    info?: unknown,
     origin = "https://www.youtube-nocookie.com",
     source = frame.contentWindow,
   ) => {
@@ -177,5 +192,112 @@ describe("YouTube playback messages", () => {
     yt.message("onReady");
     vi.advanceTimersByTime(1000);
     expect(yt.send).not.toHaveBeenCalled();
+  });
+});
+
+function native(key: string, initialReady = 1) {
+  const video = visible(document.createElement("video"));
+  let ready = initialReady;
+  let paused = true;
+  Object.defineProperties(video, {
+    readyState: { get: () => ready },
+    duration: { get: () => 60 },
+    paused: { get: () => paused },
+  });
+  vi.spyOn(video, "pause").mockImplementation(() => {
+    paused = true;
+    video.dispatchEvent(new Event("pause"));
+  });
+  const binding = observeVideoPlayback(video, key);
+  cleanups.push(binding.dispose);
+
+  return {
+    video,
+    binding,
+    ready() {
+      ready = 1;
+      video.dispatchEvent(new Event("loadedmetadata"));
+    },
+    play() {
+      paused = false;
+      video.dispatchEvent(new Event("play"));
+    },
+    seek(time: number) {
+      video.currentTime = time;
+      video.dispatchEvent(new Event("seeked"));
+    },
+  };
+}
+
+describe("native position handoff", () => {
+  it("restores the reader's newer progress when the old feed copy becomes visible", () => {
+    const key = "native-handoff";
+    const feed = native(key);
+    feed.play();
+    feed.seek(12.5);
+    feed.binding.pause();
+    const reader = native(key);
+    expect(reader.video.currentTime).toBe(12.5);
+    reader.video.dispatchEvent(new Event("seeked"));
+    reader.play();
+    reader.seek(26);
+    reader.binding.pause();
+    feed.binding.dispose();
+    expect(videoPosition(key)).toBe(26);
+    cleanups.shift();
+    const restored = native(key);
+    expect(restored.video.currentTime).toBe(26);
+  });
+  it("does not replace a pending restore with zero before metadata arrives", () => {
+    const key = "metadata-handoff";
+    rememberVideoPosition(key, 14.5);
+    const incoming = native(key, 0);
+    incoming.play();
+    incoming.video.dispatchEvent(new Event("timeupdate"));
+    expect(videoPosition(key)).toBe(14.5);
+    incoming.ready();
+    expect(incoming.video.currentTime).toBe(14.5);
+    incoming.seek(14.5);
+    incoming.binding.pause();
+    expect(videoPosition(key)).toBe(14.5);
+  });
+  it("keeps deliberate backward seeks and restarts completed videos sensibly", () => {
+    const key = "backward-handoff";
+    rememberVideoPosition(key, 40);
+    const incoming = native(key);
+    incoming.seek(40);
+    incoming.seek(3);
+    expect(videoPosition(key)).toBe(3);
+    rememberVideoPosition(key, 60);
+    const completed = native(key);
+    expect(completed.video.currentTime).toBe(0);
+  });
+});
+
+describe("YouTube position handoff", () => {
+  it("seeks to saved progress before play and ignores untrusted or initial zero samples", () => {
+    const key = "youtube-handoff";
+    rememberVideoPosition(key, 123.5);
+    const yt = youtube(key);
+    yt.message("onReady");
+    expect(yt.commands()).toEqual([
+      "addEventListener",
+      "addEventListener",
+      "seekTo",
+      "playVideo",
+    ]);
+    yt.message("onStateChange", 1);
+    yt.message("infoDelivery", { currentTime: 0 });
+    expect(videoPosition(key)).toBe(123.5);
+    yt.message("infoDelivery", { currentTime: 123.5 });
+    yt.message("infoDelivery", { currentTime: 130 }, "https://evil.test");
+    expect(videoPosition(key)).toBe(123.5);
+    yt.message("infoDelivery", { currentTime: 126 });
+    expect(videoPosition(key)).toBe(126);
+    yt.message("onStateChange", 2);
+    yt.message("infoDelivery", { currentTime: 50 });
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    cleanups.shift()?.();
+    expect(videoPosition(key)).toBe(50);
   });
 });
