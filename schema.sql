@@ -334,6 +334,25 @@ CREATE TABLE IF NOT EXISTS dank.youtube_index_versions (
 ENGINE = ReplacingMergeTree(completed_at)
 ORDER BY version;
 
+CREATE TABLE IF NOT EXISTS dank.youtube_reference_evidence (
+    video_id String,
+    format_hint LowCardinality(String),
+    domain String,
+    post_id String,
+    url String,
+    source LowCardinality(String),
+    title String,
+    kind LowCardinality(String),
+    reference_id String,
+    reference_url String,
+    author String,
+    matched_url String,
+    excerpt String,
+    observed_at DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(observed_at)
+ORDER BY (video_id, domain, post_id, kind, reference_id);
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS dank.youtube_links_from_posts
 TO dank.youtube_links AS
 SELECT arrayJoin(arrayDistinct(extractAll(

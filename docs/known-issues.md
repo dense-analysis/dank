@@ -98,6 +98,43 @@ without scrolling and at five known channel videos, completing in 20.2 seconds.
 Reader checks reconciled all 100 Hype ranks across pages and channel-wide counts
 across feeds. The existing collection supplied 430 distinct linked videos.
 
+### Attribution of videos linked from other feeds
+
+The reader uses a separate evidence index rebuilt from saved post bodies,
+explicit article scopes, and identifiable comments. Each occurrence retains its
+excerpt, matched destination, capture time and post/comment permalink. Multiple
+captures collapse by video and occurrence identity; older mentions survive a
+later capture that omits comments. Counts, search and pagination use this same
+index. Missing YouTube titles use a neutral video-ID label.
+
+The previous index searched entire payloads and attributed every match to the
+parent post. This included navigation, recommendations, quoted X posts, Reddit
+crossposts and parent articles archived alongside comment-feed entries. These
+are not accepted as direct links from the collected post. Identified RSS-page
+comments remain comment mentions; unknown page layouts or comments without
+stable identities are conservatively omitted. This verifies archived evidence,
+not whether an external link is still available or a comment is still public.
+
+Startup backfills the evidence index in bounded batches before serving the
+reader; an interrupted backfill can retry without duplicating references. New
+captures and processed articles add evidence when persisted. The old index and
+original source archive are retained for comparison. A read-only audit is
+available with `uv run python -m dank.web.reader_youtube_index --output audit.json`
+(add `--config` when needed). It reports verified/excluded legacy associations,
+their source excerpts, and the accepted evidence.
+
+**Archive audit, 2026-10-17:** of 485 legacy video-to-post associations, 465
+were supported by attributable content and 20 were excluded: seven parent
+articles attached to comment-feed entries, seven nested quotes/crossposts,
+five navigation/recommendation links and one secondary video-description link.
+The accepted archive contains 449 post links and 17 distinct comment mentions
+across 437 videos. No raw source captures were removed.
+
+Covered by [extraction tests](../tests/test_youtube_references.py),
+[migration tests](../tests/web/test_reader_youtube_index.py),
+[API tests](../tests/web/test_reader_youtube.py) and
+[reader browser tests](../reader/tests/youtube-collection.spec.ts).
+
 ### YouTube channel identity and totals
 
 Channel identity comes from the channel page metadata/header, never from

@@ -44,6 +44,10 @@ export function YouTubeCard({
   const discovery = itemDiscovery(item, feed);
   const ranked =
     !!feed && discovery?.feed_url === feed && discovery.feed_kind === "hype";
+  const views = item.views_text
+    .replace(/(\d)\s+thousand\b/gi, "$1K")
+    .replace(/(\d)\s+million\b/gi, "$1M")
+    .replace(/(\d)\s+billion\b/gi, "$1B");
   const text = item.text || item.title;
   const longPost = item.kind === "post" && text.length > 350;
   const title =
@@ -189,9 +193,8 @@ export function YouTubeCard({
             <p className="yt-channel">{item.channel.name}</p>
           )}
           <p className="yt-video-meta">
-            {[item.views_text, item.published_text]
-              .filter(Boolean)
-              .join(" · ") || "Discovered in your collected feeds"}
+            {[views, item.published_text].filter(Boolean).join(" · ") ||
+              "Discovered in your collected feeds"}
           </p>
         </>
       )}
@@ -205,7 +208,7 @@ export function YouTubeCard({
                 ? "Additional video details were collected."
                 : item.discoveries.length
                   ? "Feed information is saved. Video details, transcripts and comments are not part of this snapshot."
-                  : "Found in collected source posts. A YouTube feed snapshot has not been captured."
+                  : "Found in collected posts or comments. Video title and channel details have not been collected."
           }
         >
           {localVideo ? (
@@ -227,7 +230,7 @@ export function YouTubeCard({
         {item.reference_count > 0 && (
           <span
             className="yt-reference-count"
-            title={`${item.reference_count} collected posts link to this video`}
+            title={`${item.reference_count} verified post links or comment mentions`}
           >
             <Link2 size={12} />
             {item.reference_count}

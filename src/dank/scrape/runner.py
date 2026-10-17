@@ -77,6 +77,7 @@ from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
 from dank.youtube import discovery_from_post, payload_object
+from dank.youtube_references import reference_rows
 
 logger = logging.getLogger(__name__)
 # Community avatars should remain small even when post media is unlimited.
@@ -1364,6 +1365,14 @@ async def _flush_posts(
         [{key: value for key, value in post._asdict().items()
           if key != "is_reference"} for post in pending_posts],
     )
+    evidence = [link for post in pending_posts
+                for link in reference_rows(post._asdict(), raw=True)]
+
+    if evidence:
+        await clickhouse_client.insert_rows(
+            "youtube_reference_evidence", evidence,
+        )
+
     references = sum(post.is_reference for post in pending_posts)
     logger.info(
         "Saved %d raw posts and %d ID-only references", count - references,

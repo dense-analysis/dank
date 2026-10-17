@@ -78,6 +78,13 @@ const first = {
       title: "A different view of the future of our cities",
       source: "x",
       reader_url: "/reader/?article=source-post&article_source=x.com",
+      kind: "post" as const,
+      reference_id: "",
+      author: "reporter",
+      reference_url: "https://x.com/reporter/status/123",
+      matched_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      excerpt: "Watch this view of our cities.",
+      observed_at: capture,
     },
     {
       domain: "lobste.rs",
@@ -86,6 +93,13 @@ const first = {
       title: "Urban design worth watching",
       source: "rss",
       reader_url: "/reader/?article=blog-link&article_source=lobste.rs",
+      kind: "comment" as const,
+      reference_id: "comment-one",
+      author: "reader",
+      reference_url: "https://lobste.rs/s/video#comment-one",
+      matched_url: "https://youtu.be/dQw4w9WgXcQ?t=45",
+      excerpt: "This section explains the design at 45 seconds.",
+      observed_at: capture,
     },
   ],
 };
@@ -653,10 +667,10 @@ test("raw-only source references open their original and processed references re
   ).toBe(false);
   await expect(
     references.getByRole("link", {
-      name: "Open original source: Urban design worth watching",
+      name: "Open comment: reader",
       exact: true,
     }),
-  ).toHaveAttribute("href", first.references[1].url);
+  ).toHaveAttribute("href", first.references[1].reference_url);
   await references
     .getByRole("link", {
       name: "lobste.rs Urban design worth watching",
@@ -767,4 +781,42 @@ test("nested sections collapse independently without changing the selected feed"
   await nav.getByRole("button", { name: "Collapse YouTube News" }).click();
   await expect(page.locator("#youtube-news")).toBeHidden();
   await expect(page.locator("#youtube-channels")).toBeVisible();
+});
+
+test("references show post and comment evidence with exact destinations", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto(`/reader/?view=youtube&feed=linked&youtube_item=${first.id}`);
+  const region = page.getByRole("region", {
+    name: "Linked from collected posts",
+  });
+  await expect(
+    region.getByText("Post link · reporter", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    region.getByText("Comment mention · reader", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    region.getByText("This section explains the design at 45 seconds."),
+  ).toBeVisible();
+  await expect(
+    region.getByRole("link", { name: "Open comment: reader", exact: true }),
+  ).toHaveAttribute("href", "https://lobste.rs/s/video#comment-one");
+  await expect(
+    region
+      .locator(".yt-reference-row")
+      .nth(1)
+      .getByRole("link", { name: "Matched video link" }),
+  ).toHaveAttribute("href", "https://youtu.be/dQw4w9WgXcQ?t=45");
+  await expect(region.getByText("2 references", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    region.getByRole("link", { name: "Open comment: reader", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });
