@@ -1898,6 +1898,7 @@ input[type="checkbox"] {
 }
 
 .reddit-video {
+  --reddit-video-max-height: min(70vh, 720px);
   margin: 4px 0 28px;
 }
 .reddit-video-frame {
@@ -1911,8 +1912,19 @@ input[type="checkbox"] {
   display: block;
   width: 100%;
   min-height: 220px;
-  max-height: 70vh;
+  max-height: var(--reddit-video-max-height);
   object-fit: contain;
+}
+.reddit-video-frame.reddit-video-sized {
+  width: min(
+    100%,
+    calc(var(--reddit-video-max-height) * var(--reddit-video-ratio))
+  );
+}
+.reddit-video-sized video {
+  min-height: 0;
+  height: auto;
+  aspect-ratio: var(--reddit-video-ratio);
 }
 .reddit-video-play {
   position: absolute;
@@ -2107,7 +2119,7 @@ input[type="checkbox"] {
   .reddit-comment-meta time {
     font-size: 9px;
   }
-  .reddit-video video {
+  .reddit-video-frame:not(.reddit-video-sized) video {
     min-height: 180px;
   }
 }

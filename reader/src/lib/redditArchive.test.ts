@@ -97,6 +97,7 @@ describe("Reddit archive response validation", () => {
     { ...video, url: null },
     { ...video, hls_url: 42 },
     { ...video, poster_url: {} },
+    { ...video, source_url: 42 },
   ])("rejects malformed video metadata", (video) => {
     expect(isPost({ ...post, reddit: { ...post.reddit, video } })).toBe(false);
   });

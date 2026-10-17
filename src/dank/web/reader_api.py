@@ -377,7 +377,7 @@ def _add_reddit_archive(
             if local in posters
         )
         post["html"] = without_video_posters(
-            post["html"], posters, snapshot.get("url"),
+            post["html"], posters,
         )
 
 

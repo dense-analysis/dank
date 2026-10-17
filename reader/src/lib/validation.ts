@@ -46,7 +46,8 @@ function isRedditVideo(value: unknown): boolean {
     (value.poster_url === null || typeof value.poster_url === "string") &&
     typeof value.remote === "boolean" &&
     isOptionalIcon(value.hls_url) &&
-    isOptionalIcon(value.fallback_url)
+    isOptionalIcon(value.fallback_url) &&
+    isOptionalIcon(value.source_url)
   );
 }
 

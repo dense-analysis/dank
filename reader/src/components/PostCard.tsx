@@ -1,7 +1,7 @@
 import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useRedditContent } from "../hooks/useRedditContent";
 import { hasArticleContent } from "../lib/article";
-import { redditVideos } from "../lib/reddit";
 import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
@@ -74,9 +74,11 @@ export function PostCard({
   selectFlair: (community: string, flair: string) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const hasContent = useMemo(() => hasArticleContent(post.html), [post.html]);
-  const videos = redditVideos(post.reddit);
+  const { videos, html, excerpt, onUnavailable } = useRedditContent(post);
+  const hasContent = useMemo(() => hasArticleContent(html), [html]);
   const hasReadableContent = hasContent || videos.length > 0;
+  const summary =
+    excerpt || (!videos.length && hasContent ? "Open to read this story." : "");
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
   const communityContext =
     filters.kind === "reddit" &&
@@ -143,12 +145,9 @@ export function PostCard({
               query={query}
             />
           </h2>
-          {(post.excerpt || hasContent) && (
+          {summary && (
             <p>
-              <HighlightedText
-                text={post.excerpt || "Open to read this story."}
-                query={query}
-              />
+              <HighlightedText text={summary} query={query} />
             </p>
           )}
         </ReaderLink>
@@ -174,7 +173,12 @@ export function PostCard({
         )}
       </div>
       {videos.map((video) => (
-        <RedditVideo key={video.url} video={video} originalUrl={post.url} />
+        <RedditVideo
+          key={video.url}
+          video={video}
+          originalUrl={post.url}
+          onUnavailable={onUnavailable}
+        />
       ))}
       <div className="post-bottom">
         <AuthorLink

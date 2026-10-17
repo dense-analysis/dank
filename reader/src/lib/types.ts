@@ -24,6 +24,7 @@ export interface RedditCommentCapture {
 
 export interface RedditVideo {
   url: string;
+  source_url?: string | null;
   poster_url: string | null;
   remote: boolean;
   hls_url?: string | null;

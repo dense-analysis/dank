@@ -1,6 +1,6 @@
 import type Hls from "hls.js";
 import { ExternalLink, Globe2, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { observeVideoPlayback } from "../lib/playback";
 import type { RedditVideo as Video } from "../lib/types";
@@ -9,14 +9,42 @@ import { safeUrl } from "../lib/urls";
 export function RedditVideo({
   video,
   originalUrl,
+  onUnavailable,
 }: {
   video: Video;
   originalUrl: string;
+  onUnavailable?: (url: string) => void;
 }) {
   const { preferences } = useReaderPreferences();
   const element = useRef<HTMLVideoElement>(null);
   const [started, setStarted] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [loadedRatio, setLoadedRatio] = useState<number>();
+  const [posterSize, setPosterSize] = useState<{
+    url: string;
+    ratio: number;
+  }>();
+  const poster = video.poster_url ? safeUrl(video.poster_url) : undefined;
+  const ratio =
+    loadedRatio ?? (posterSize?.url === poster ? posterSize?.ratio : undefined);
+
+  useEffect(() => {
+    if (!poster) return;
+
+    const image = new Image();
+    image.onload = () => {
+      if (image.naturalWidth > 0 && image.naturalHeight > 0)
+        setPosterSize({
+          url: poster,
+          ratio: image.naturalWidth / image.naturalHeight,
+        });
+    };
+    image.src = poster;
+
+    return () => {
+      image.onload = null;
+    };
+  }, [poster]);
   const url = safeUrl(video.remote ? video.hls_url || video.url : video.url);
   const fallback =
     video.remote && video.fallback_url
@@ -59,6 +87,7 @@ export function RedditVideo({
       } else {
         playback.pause();
         setFailed(true);
+        onUnavailable?.(video.url);
       }
     };
     media.addEventListener("error", fail);
@@ -101,18 +130,30 @@ export function RedditVideo({
       media.removeAttribute("src");
       media.load();
     };
-  }, [started, url, isHls, fallback]);
+  }, [started, url, isHls, fallback, onUnavailable, video.url]);
 
   return (
     <figure className="reddit-video">
-      <div className="reddit-video-frame">
+      <div
+        className={`reddit-video-frame${ratio ? " reddit-video-sized" : ""}`}
+        style={
+          ratio
+            ? ({ "--reddit-video-ratio": ratio } as CSSProperties)
+            : undefined
+        }
+      >
         <video
           ref={element}
           controls={started}
           playsInline
           preload="none"
-          poster={video.poster_url ? safeUrl(video.poster_url) : undefined}
+          poster={poster}
           aria-label="Reddit video"
+          onLoadedMetadata={(event) => {
+            const media = event.currentTarget;
+            if (media.videoWidth > 0 && media.videoHeight > 0)
+              setLoadedRatio(media.videoWidth / media.videoHeight);
+          }}
         >
           <track kind="captions" />
         </video>

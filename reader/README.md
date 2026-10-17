@@ -157,7 +157,10 @@ Reddit videos play on demand in feed cards and opened posts, including audio
 when provided by the source. Only one video plays at a time across All; starting
 a Reddit, X or YouTube video pauses the previous player.
 Downloaded videos play locally; remote videos stream from Reddit and carry a
-small label. If a stream becomes unavailable, use **Watch on Reddit**.
+small label. Raw video URLs represented by a player are hidden in cards and
+opened posts; descriptive links remain. Failed players restore the raw link.
+Portrait players use poster proportions before playback and the video's actual
+dimensions once loaded. If a stream becomes unavailable, use **Watch on Reddit**.
 
 Settings can hide captured comments or remote video labels in this browser.
 Collection options, including video downloads and comment limits/sort, remain

@@ -142,6 +142,7 @@ def test_video_keeps_audio_capable_hls_and_uses_verified_local_asset():
     )[0]
     assert archived == {
         "url": "/assets/clip.mp4",
+        "source_url": VIDEO,
         "poster_url": "/assets/poster.jpg",
         "remote": False,
         "hls_url": None,
@@ -279,17 +280,18 @@ def test_historical_native_video_reuses_its_separately_collected_preview():
     assert video["poster_url"] is None
 
 
-def test_video_poster_variants_and_generated_link_do_not_repeat():
+def test_video_poster_variants_are_removed_and_links_remain_recoverable():
     from dank.web.reader_reddit import without_video_posters
 
     body = '<p><img src="' + POSTER + '?width=1080"></p>'
     body += '<p><a href="https://v.redd.it/abc">https://v.redd.it/abc</a></p>'
     body += '<p>Source: <a href="https://example.com">The source</a></p>'
     result = without_video_posters(
-        body, {POSTER + "?width=640"}, "https://v.redd.it/abc",
+        body, {POSTER + "?width=640"},
     )
     assert "<img" not in result
-    assert "v.redd.it/abc" not in result
+    # The reader can restore these links if playback fails.
+    assert "v.redd.it/abc" in result
     assert "The source" in result
 
 

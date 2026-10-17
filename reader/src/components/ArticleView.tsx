@@ -9,10 +9,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
+import { useRedditContent } from "../hooks/useRedditContent";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
-import { redditVideos as getRedditVideos } from "../lib/reddit";
 import type { Filters, Post } from "../lib/types";
 import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
@@ -74,11 +74,8 @@ export function ArticleView({
     // Feed summaries omit discussion details and must never count as a fresh detail response.
     placeholderData: initial,
   });
-  const hasContent = useMemo(
-    () => hasArticleContent(post?.html ?? ""),
-    [post?.html],
-  );
-  const redditVideos = getRedditVideos(post?.reddit);
+  const { videos: redditVideos, html, onUnavailable } = useRedditContent(post);
+  const hasContent = useMemo(() => hasArticleContent(html), [html]);
   const xPost = isXPost(post ?? { domain, source: "" });
   const hasReadableContent =
     post && xPost ? hasXContent(post) : hasContent || redditVideos.length > 0;
@@ -244,9 +241,10 @@ export function ArticleView({
                   key={video.url}
                   video={video}
                   originalUrl={post.url}
+                  onUnavailable={onUnavailable}
                 />
               ))}
-              {hasContent && <ArticleBody html={post.html} />}
+              {hasContent && <ArticleBody html={html} />}
             </>
           ) : (
             <aside className="collection-notice" aria-label="Collection status">

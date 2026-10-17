@@ -1,4 +1,4 @@
-"""Safe article-only projections of archived Reddit discussions and video."""
+"""Safe reader projections of archived Reddit discussions and video."""
 
 from __future__ import annotations
 
@@ -215,6 +215,7 @@ def _video(
 
     return {
         "url": local or hls or fallback or url,
+        "source_url": url,
         "poster_url": (_local_media(poster, local_urls) or poster)
         if poster else None,
         "remote": local is None,
@@ -250,19 +251,13 @@ def _local_media(url: str, local_urls: dict[str, str]) -> str | None:
 
 
 def without_video_posters(
-    body: str, posters: set[str], destination: object = None,
+    body: str, posters: set[str],
 ) -> str:
     parser = _VideoPosters(posters)
     parser.feed(body)
 
     for tag in parser.tags:
         body = body.replace(tag, "")
-
-    url = _url(destination)
-
-    if url and urlsplit(url).hostname == "v.redd.it":
-        escaped = html.escape(url, quote=True)
-        body = body.replace(f'<p><a href="{escaped}">{escaped}</a></p>', "")
 
     return body
 
