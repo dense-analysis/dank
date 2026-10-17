@@ -31,6 +31,11 @@ export interface RedditVideo {
   fallback_url?: string | null;
 }
 
+export interface RedditImage {
+  url: string;
+  source_url: string;
+}
+
 export interface RedditPost {
   community: string;
   score: number | null;
@@ -40,6 +45,7 @@ export interface RedditPost {
   comment_capture?: RedditCommentCapture | null;
   video?: RedditVideo | null;
   videos?: RedditVideo[];
+  images?: RedditImage[];
 }
 
 export interface RedditFlair {

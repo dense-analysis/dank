@@ -247,7 +247,13 @@ export function ArticleView({
                   onUnavailable={onUnavailable}
                 />
               ))}
-              {hasContent && <ArticleBody html={html} />}
+              {hasContent && (
+                <ArticleBody
+                  html={html}
+                  redditImages={post.reddit?.images}
+                  redditPostId={post.reddit ? post.id : undefined}
+                />
+              )}
             </>
           ) : (
             <aside className="collection-notice" aria-label="Collection status">

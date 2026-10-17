@@ -124,6 +124,14 @@ function isRedditPost(value: unknown): value is RedditPost {
       isRedditVideo(value.video)) &&
     (value.videos === undefined ||
       (Array.isArray(value.videos) && value.videos.every(isRedditVideo))) &&
+    (value.images === undefined ||
+      (Array.isArray(value.images) &&
+        value.images.every(
+          (image) =>
+            isRecord(image) &&
+            typeof image.url === "string" &&
+            typeof image.source_url === "string",
+        ))) &&
     (value.comment_capture === undefined ||
       value.comment_capture === null ||
       isCommentCapture(value.comment_capture))

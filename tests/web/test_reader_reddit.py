@@ -302,3 +302,52 @@ def test_reused_comments_keep_their_original_capture_date():
     }}, PERMALINK)
     assert capture['captured_at'] == '2026-10-16T12:00:00+00:00'
     assert 'latest_attempt_status' not in capture
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_image_sources_survive_local_archiving_and_invalid_media_is_ignored(
+    *, local: bool,
+):
+    from dank.web.reader_reddit import images
+
+    source = "https://preview.redd.it/image.jpg?s=new"
+    snapshot = {"media": [
+        {"asset_type": "photo", "url": source},
+        {"asset_type": "photo", "url": source},
+        {"asset_type": "photo", "url": "javascript:bad()"},
+        {"asset_type": "video", "url": VIDEO},
+    ]}
+    urls = {source.replace("new", "old"): "/assets/image.jpg"} if local else {}
+    assert images(snapshot, urls) == [{
+        "url": "/assets/image.jpg" if local else source,
+        "source_url": source,
+    }]
+
+
+@pytest.mark.parametrize("kind", ["all", "reddit", "detail"])
+async def test_image_reference_metadata_reaches_feeds_and_opened_posts(
+    app: web.Application, tmp_path: pathlib.Path, kind: str,
+):
+    source = "https://i.redd.it/image.jpg"
+    image_file = tmp_path / "assets" / "image.jpg"
+    image_file.touch()
+    post = row("reddit.com", "t3_abc")
+    post.update(source="reddit", url=PERMALINK,
+                html=f'<p><img src="{source}"></p>')
+    snapshot = {"media": [{"asset_type": "photo", "url": source}]}
+    app["clickhouse"] = FakeClickHouse(
+        [post],
+        [{"domain": "reddit.com", "post_id": "t3_abc", "url": source,
+          "local_path": str(image_file), "content_type": "image/jpeg",
+          "size_bytes": 0}],
+        [{"post_id": "t3_abc", "payload": json.dumps(snapshot)}], [],
+    )
+    path = "/api/reader/post?domain=reddit.com&id=t3_abc" if kind == "detail" \
+        else f"/api/reader/posts?kind={kind}"
+    response = await request(app, path)
+    assert response.status == 200
+    result = json.loads(response.text or "")
+    payload = result if kind == "detail" else result["posts"][0]
+    assert payload["reddit"]["images"] == [{
+        "url": "/assets/image.jpg", "source_url": source,
+    }]

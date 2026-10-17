@@ -179,6 +179,8 @@ a Reddit, X or YouTube video pauses the previous player.
 Downloaded videos play locally; remote videos stream from Reddit and carry a
 small label. Raw video URLs represented by a player are hidden in cards and
 opened posts; descriptive links remain. Failed players restore the raw link.
+Raw image and gallery links are hidden when a clickable image preview represents
+them. Missing or failed images keep their original links available.
 Portrait players use poster proportions before playback and the video's actual
 dimensions once loaded. If a stream becomes unavailable, use **Watch on Reddit**.
 

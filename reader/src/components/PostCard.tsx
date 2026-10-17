@@ -2,6 +2,11 @@ import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { hasArticleContent } from "../lib/article";
+import {
+  displayedRedditImages,
+  redditImageKey,
+  withoutRedditImageUrls,
+} from "../lib/redditImages";
 import { postKey } from "../lib/storage";
 import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
@@ -78,9 +83,25 @@ export function PostCard({
   const { videos, html, excerpt, onUnavailable } = useRedditContent(post);
   const hasContent = useMemo(() => hasArticleContent(html), [html]);
   const hasReadableContent = hasContent || videos.length > 0;
-  const summary =
-    excerpt || (!videos.length && hasContent ? "Open to read this story." : "");
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
+  const imageKeys = useMemo(
+    () =>
+      displayedRedditImages(
+        post.reddit?.images ?? [],
+        new Set(
+          !imageFailed && !videos.length && thumbnail
+            ? [redditImageKey(thumbnail) ?? ""]
+            : [],
+        ),
+        post.id,
+      ),
+    [post.reddit?.images, post.id, imageFailed, videos.length, thumbnail],
+  );
+  const summary =
+    withoutRedditImageUrls(excerpt, imageKeys) ||
+    (!videos.length && (!post.reddit || !thumbnail) && hasContent
+      ? "Open to read this story."
+      : "");
   const communityContext =
     filters.kind === "reddit" &&
     !!filters.community &&

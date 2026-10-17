@@ -154,6 +154,29 @@ def _comment(value: dict[str, Any], permalink: str) -> dict[str, Any] | None:
     }
 
 
+def images(
+    snapshot: dict[str, Any], local_urls: dict[str, str],
+) -> list[dict[str, str]]:
+    media = snapshot.get("media")
+
+    if not isinstance(media, list):
+        return []
+
+    result: dict[str, dict[str, str]] = {}
+
+    for item in cast(list[object], media):
+        asset = _mapping(item)
+        source = _url(asset.get("url"))
+
+        if source and asset.get("asset_type") == "photo":
+            result[source] = {
+                "url": _local_media(source, local_urls) or source,
+                "source_url": source,
+            }
+
+    return list(result.values())
+
+
 def videos(
     snapshot: dict[str, Any], local_urls: dict[str, str],
 ) -> list[dict[str, Any]]:

@@ -44,6 +44,7 @@ from dank.web.reader_query import (
 )
 from dank.web.reader_reddit import (
     comment_capture,
+    images,
     videos,
     without_video_posters,
 )
@@ -370,6 +371,10 @@ def _add_reddit_archive(
 
     post["reddit"]["video"] = media[0] if media else None
     post["reddit"]["videos"] = media
+    image_media = images(snapshot, local_urls)
+
+    if image_media:
+        post["reddit"]["images"] = image_media
 
     if not include_discussion:
         return

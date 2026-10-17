@@ -1,15 +1,21 @@
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { type ArticleContent, renderArticle } from "../lib/article";
+import { enhanceRedditImageLinks } from "../lib/redditImages";
+import type { RedditImage } from "../lib/types";
 import { CodeCopyButton } from "./CodeCopyButton";
 import { ImageBackgroundToggle } from "./ImageBackgroundToggle";
 
 export function ArticleBody({
   html,
   query = "",
+  redditImages,
+  redditPostId,
 }: {
   html: string;
   query?: string;
+  redditImages?: RedditImage[];
+  redditPostId?: string;
 }) {
   const [article, setArticle] = useState<ArticleContent | null>(null);
   const attach = useCallback(
@@ -18,6 +24,9 @@ export function ArticleBody({
 
       const content = renderArticle(element, html, query);
       setArticle(content);
+      const disposeImageLinks = redditImages
+        ? enhanceRedditImageLinks(element, redditImages, redditPostId)
+        : undefined;
       let active = true;
 
       if (
@@ -36,9 +45,10 @@ export function ArticleBody({
 
       return () => {
         active = false;
+        disposeImageLinks?.();
       };
     },
-    [html, query],
+    [html, query, redditImages, redditPostId],
   );
 
   // The adapter owns source markup; React owns only the controls in its portal hosts.
