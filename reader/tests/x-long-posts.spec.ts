@@ -447,4 +447,81 @@ test("long conversation replies fully expand when no internal reader destination
   );
   await reply.getByRole("button", { name: "Show less", exact: true }).click();
   await expect(reply.getByText(ending, { exact: true })).toHaveCount(0);
+  const header = await reply.locator(".x-post-header").boundingBox();
+  const toolbar = await page.locator(".reader-toolbar").boundingBox();
+  expect(header?.y).toBeGreaterThanOrEqual(
+    (toolbar?.y ?? 0) + (toolbar?.height ?? 0),
+  );
+  expect((header?.y ?? 0) + (header?.height ?? 0)).toBeLessThan(720);
+  await expect(
+    reply.getByRole("button", { name: "Show more", exact: true }),
+  ).toBeFocused();
 });
+
+for (const [width, query] of [
+  [1440, ""],
+  [1440, "view=x&account=researcher"],
+  [390, "view=x&account=researcher"],
+] as const) {
+  test(`Show less returns to the same post below the header at ${width}px in ${query || "All"}`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const filler = (id: string) =>
+      makePost(id, `<p>${"A short surrounding post. ".repeat(5)}</p>`);
+    await mockPosts(context, [
+      ...Array.from({ length: 3 }, (_, index) => filler(`before-${index}`)),
+      article,
+      ...Array.from({ length: 6 }, (_, index) => filler(`after-${index}`)),
+    ]);
+    await page.goto(`/reader/?${query}`);
+    const originalUrl = page.url();
+    const card = page.locator(".post-card").filter({
+      has: page.getByRole("link", {
+        name: `Read ${article.title}`,
+        exact: true,
+      }),
+    });
+
+    for (const input of ["pointer", "keyboard"]) {
+      await card
+        .getByRole("button", { name: "Show more", exact: true })
+        .click();
+      const collapse = card.getByRole("button", {
+        name: "Show less",
+        exact: true,
+      });
+      await collapse.evaluate((button) =>
+        window.scrollBy(0, button.getBoundingClientRect().top - 160),
+      );
+      expect(
+        (await card.locator(".x-post-header").boundingBox())?.y,
+      ).toBeLessThan(0);
+
+      if (input === "keyboard") {
+        await collapse.focus();
+        await collapse.press("Enter");
+      } else {
+        await collapse.click();
+      }
+
+      const expand = card.getByRole("button", {
+        name: "Show more",
+        exact: true,
+      });
+      await expect(expand).toHaveAttribute("aria-expanded", "false");
+      await expect(expand).toBeFocused();
+      await expect(page).toHaveURL(originalUrl);
+      const edge = query ? 56 : 0;
+      await expect
+        .poll(async () =>
+          Math.abs(((await card.boundingBox())?.y ?? -1000) - edge),
+        )
+        .toBeLessThanOrEqual(2);
+      const header = await card.locator(".x-post-header").boundingBox();
+      expect(header?.y).toBeGreaterThanOrEqual(edge);
+      expect((header?.y ?? 0) + (header?.height ?? 0)).toBeLessThan(900);
+    }
+  });
+}

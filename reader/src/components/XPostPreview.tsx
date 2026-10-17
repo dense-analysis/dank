@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   truncateXText,
   X_COLLAPSED_CHARACTERS,
@@ -21,6 +21,34 @@ export function XPostPreview({
 }) {
   const [expanded, setExpanded] = useState(false);
   const textId = useId();
+  const text = useRef<HTMLDivElement>(null);
+  const returnToPost = useRef(false);
+
+  useLayoutEffect(() => {
+    if (expanded || !returnToPost.current) return;
+
+    returnToPost.current = false;
+    const post = text.current?.closest("article");
+    if (!post) return;
+
+    // Measure after collapsing, before paint, so browser anchoring cannot leave
+    // the reader among the following cards. Respect both feed and reader headers.
+    const header =
+      Number.parseFloat(
+        getComputedStyle(post).getPropertyValue("--sticky-header-height"),
+      ) || 0;
+    const toolbar = post
+      .closest(".article-page")
+      ?.querySelector(".reader-toolbar");
+    const offset = header + (toolbar?.getBoundingClientRect().height ?? 0);
+    window.scrollTo({
+      top: Math.max(
+        0,
+        window.scrollY + post.getBoundingClientRect().top - offset,
+      ),
+      behavior: "instant",
+    });
+  }, [expanded]);
   const paragraphs = useMemo(() => xTextParagraphs(html), [html]);
   const length = useMemo(() => xPostLength(paragraphs), [paragraphs]);
   const canExpand = length.characters > X_COLLAPSED_CHARACTERS;
@@ -38,7 +66,7 @@ export function XPostPreview({
 
   return (
     <>
-      <div id={textId}>
+      <div id={textId} ref={text}>
         {expanded && !navigation ? (
           <ArticleBody html={html} query={query} />
         ) : (
@@ -56,7 +84,10 @@ export function XPostPreview({
             className="text-button"
             aria-expanded={expanded}
             aria-controls={textId}
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => {
+              returnToPost.current = expanded;
+              setExpanded(!expanded);
+            }}
           >
             {expanded ? "Show less" : "Show more"}
           </button>
