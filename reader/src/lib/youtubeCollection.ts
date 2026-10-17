@@ -1,5 +1,9 @@
 import { request } from "./api";
 import { isRecord } from "./validation";
+import {
+  isYouTubeMetadataCapture,
+  type YouTubeMetadataCapture,
+} from "./youtubeMetadata";
 
 export type YouTubeKind = "video" | "short" | "post";
 export interface YouTubeDiscovery {
@@ -60,6 +64,7 @@ export interface YouTubeItem {
   published_text: string;
   observed_at: string;
   detail_capture: { status: "disabled" | "captured" | "failed" };
+  metadata_capture?: YouTubeMetadataCapture;
   discoveries: YouTubeDiscovery[];
   references: YouTubeReference[];
   reference_count: number;
@@ -155,6 +160,8 @@ export function isYouTubeItem(value: unknown): value is YouTubeItem {
     ["disabled", "captured", "failed"].includes(
       String(value.detail_capture.status),
     ) &&
+    (value.metadata_capture === undefined ||
+      isYouTubeMetadataCapture(value.metadata_capture)) &&
     Array.isArray(value.discoveries) &&
     value.discoveries.every(
       (item) =>

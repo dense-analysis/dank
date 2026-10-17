@@ -526,6 +526,33 @@
   min-width: 0;
   flex: 1;
 }
+.yt-metadata-status {
+  margin-top: 16px;
+}
+.yt-metadata-status .yt-capture-note {
+  margin-top: 0;
+}
+.yt-metadata-status small {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+}
+.yt-metadata-status .text-button {
+  min-height: 32px;
+}
+.yt-metadata-spinner {
+  animation: yt-metadata-spin 1.2s linear infinite;
+}
+@keyframes yt-metadata-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .yt-metadata-spinner {
+    animation: none;
+  }
+}
 .yt-reference-kind {
   margin: 0 0 9px;
   color: var(--green);

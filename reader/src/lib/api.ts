@@ -5,10 +5,14 @@ import { isPost, isRecord, isSource } from "./validation";
 export async function request(
   path: string,
   signal?: AbortSignal,
+  options: RequestInit = {},
 ): Promise<unknown> {
+  const headers = new Headers(options.headers);
+  headers.set("Accept", "application/json");
   const response = await fetch(`/api/reader${path}`, {
+    ...options,
     signal,
-    headers: { Accept: "application/json" },
+    headers,
   });
 
   if (!response.ok) {

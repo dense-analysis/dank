@@ -42,6 +42,7 @@ export function YouTubeCard({
   const embed = youtubeEmbedUrl(item.url, window.location.origin);
   const original = safeUrl(item.url);
   const discovery = itemDiscovery(item, feed);
+  const metadataSaved = item.metadata_capture?.available === true;
   const ranked =
     !!feed && discovery?.feed_url === feed && discovery.feed_kind === "hype";
   const views = item.views_text
@@ -200,15 +201,17 @@ export function YouTubeCard({
       )}
       <div className="yt-card-footer">
         <span
-          className={`yt-capture-status ${localVideo || item.detail_capture.status === "captured" ? "captured" : ""}`}
+          className={`yt-capture-status ${localVideo || metadataSaved || item.detail_capture.status === "captured" ? "captured" : ""}`}
           title={
             localVideo
               ? "The video is downloaded and plays locally."
               : item.detail_capture.status === "captured"
                 ? "Additional video details were collected."
-                : item.discoveries.length
-                  ? "Feed information is saved. Video details, transcripts and comments are not part of this snapshot."
-                  : "Found in collected posts or comments. Video title and channel details have not been collected."
+                : metadataSaved
+                  ? "Video preview details were collected from YouTube."
+                  : item.discoveries.length
+                    ? "Feed information is saved. Video details, transcripts and comments are not part of this snapshot."
+                    : "Found in collected posts or comments. Video title and channel details have not been collected."
           }
         >
           {localVideo ? (
@@ -218,6 +221,10 @@ export function YouTubeCard({
           ) : item.detail_capture.status === "captured" ? (
             <>
               <Check size={11} /> Details collected
+            </>
+          ) : metadataSaved ? (
+            <>
+              <Check size={11} /> Metadata saved
             </>
           ) : item.detail_capture.status === "failed" ? (
             "Details unavailable"
