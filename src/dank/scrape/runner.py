@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
 import pathlib
 import re
@@ -14,6 +15,7 @@ import aiohttp
 
 from dank.config import (
     MEDIA_DOWNLOAD_TYPES,
+    RedditSettings,
     RedditSourceConfig,
     Settings,
     SourceConfig,
@@ -34,6 +36,8 @@ from dank.scrape.metrics import (
     current_source,
 )
 from dank.scrape.reddit import scrape_reddit_communities
+from dank.scrape.reddit.access import RedditRequests, current_requests
+from dank.scrape.reddit.cache import DetailSnapshot
 from dank.scrape.rss import (
     FeedLink,
     FeedType,
@@ -194,6 +198,8 @@ async def _collect_with_history(
         domain: asyncio.Lock() for domain in ("x.com", "reddit.com")
     }
     token = current_limiter.set(RequestLimiter(settings.scrape))
+    reddit_requests = RedditRequests(settings.reddit.request_interval_seconds)
+    reddit_token = current_requests.set(reddit_requests)
     progress = asyncio.create_task(history.report_progress())
 
     async def worker() -> None:
@@ -220,6 +226,13 @@ async def _collect_with_history(
         progress.cancel()
         await asyncio.gather(progress, return_exceptions=True)
         current_limiter.reset(token)
+        current_requests.reset(reddit_token)
+
+        if reddit_requests.requests:
+            logger.info(
+                "Reddit pacing: %d browser actions; minimum interval=%.1fs",
+                reddit_requests.requests, reddit_requests.interval,
+            )
 
 
 async def _collect_source(
@@ -338,9 +351,13 @@ async def _discover_source_batches(
             communities = tuple(
                 urlsplit(url).path.split("/")[2] for url in source.feed_urls
             )
+            cached_details = await _load_reddit_details(
+                clickhouse_client, communities, settings.reddit,
+            )
             batches_iter = scrape_reddit_communities(
                 settings.reddit, communities, session,
                 sort=options.sort, time_filter=options.time_filter,
+                cached_details=cached_details,
             )
         case "x.com":
             logger.info(
@@ -447,6 +464,51 @@ async def _load_x_posts(
         )
 
     return posts
+
+
+async def _load_reddit_details(
+    client: ClickHouseClient, communities: tuple[str, ...],
+    settings: RedditSettings,
+) -> dict[str, DetailSnapshot]:
+    if not settings.detail_cache_hours:
+        return {}
+
+    result = await client.fetch_json(
+        "SELECT post_id, payload, scraped_at FROM raw_posts "
+        "WHERE source = 'reddit' AND domain = 'reddit.com' "
+        "AND scraped_at >= %(cutoff)s "
+        "AND lowerUTF8(JSONExtractString(payload, 'subreddit')) "
+        "IN %(communities)s "
+        "AND JSONExtractString(payload, 'detail_capture', 'status') "
+        "= 'captured' ORDER BY scraped_at DESC LIMIT 1 BY post_id",
+        {
+            "cutoff": datetime.datetime.now(datetime.UTC)
+            - datetime.timedelta(hours=settings.detail_cache_hours),
+            "communities": [name.lower() for name in communities],
+        },
+    )
+    cached: dict[str, DetailSnapshot] = {}
+
+    for row in result.rows:
+        captured_at = parse_datetime(row.get("scraped_at"))
+
+        try:
+            payload = json.loads(row["payload"])
+        except (TypeError, ValueError):
+            continue
+
+        if captured_at is not None and isinstance(payload, dict):
+            cached[str(row["post_id"])] = DetailSnapshot(
+                cast(dict[str, object], payload), captured_at.replace(
+                    tzinfo=captured_at.tzinfo or datetime.UTC,
+                ),
+            )
+
+    logger.info(
+        "Reddit detail cache: %d successful snapshots loaded", len(cached),
+    )
+
+    return cached
 
 
 async def _load_failed_rss_pages(

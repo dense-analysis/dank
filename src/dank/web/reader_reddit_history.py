@@ -54,7 +54,7 @@ async def preserve_reddit_archives(
             else:
                 target[field] = {
                     **capture,
-                    "captured_at": timestamp,
+                    "captured_at": capture.get("captured_at") or timestamp,
                     "latest_attempt_status": snapshots[key][field]["status"],
                 }
 

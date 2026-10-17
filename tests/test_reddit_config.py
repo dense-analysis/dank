@@ -80,6 +80,10 @@ def test_invalid_reddit_source_is_not_sent_to_rss(
     'stall_scrolls = 0', 'scroll_pause_seconds = nan',
     'scroll_pause_seconds = inf', 'scroll_pause_seconds = true',
     'scroll_pause_seconds = 0', 'scroll_pause_seconds = 61',
+    'request_interval_seconds = 0', 'request_interval_seconds = true',
+    'request_interval_seconds = nan', 'request_interval_seconds = 61',
+    'detail_cache_hours = -1', 'detail_cache_hours = inf',
+    'detail_cache_hours = true', 'detail_cache_hours = 169',
 ])
 def test_invalid_reddit_collection_limits(
     tmp_path: pathlib.Path, option: str,

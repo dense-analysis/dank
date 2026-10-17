@@ -109,6 +109,20 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   affected listing posts were saved, with explicit capture reasons. The outcome
   was correctly partial, with no failed media downloads. Full Reddit coverage
   remains constrained by the site's quota; the collector does not bypass it.
+- [x] **P1: Pace Reddit requests and reuse unchanged details.** Reddit browser
+  actions now share a configurable interval (10 seconds by default). Successful
+  details can be reused for 24 hours when listing content, comment counts and
+  comment capture options still match. Cache hits retain original capture dates
+  and do not extend expiry; fresh scores and listing metadata are still saved.
+  Each completed post is yielded for persistence before the next detail visit;
+  comment scrolling stops when its load-more control disappears.
+  Existing successful archives are eligible using their original listing payloads.
+  A denied comments JSON endpoint is tried only once per run before falling back
+  to rendered threads. Browser subrequests and upstream quotas remain outside
+  this pacing control; a full fresh archive can take considerably longer.
+  [Configuration and limitations](features/reddit.md#pacing-and-saved-details),
+  [cache tests](../tests/scrape/test_reddit_cache.py),
+  [pacing tests](../tests/scrape/test_reddit_pacing.py).
 - [ ] **P1: Restore YouTube format discovery and downloads.** Logs reported
   unavailable requested formats and missing challenge-solver scripts. The
   container has Node and yt-dlp `2026.8.19`, but no `yt-dlp-ejs`. Pin compatible

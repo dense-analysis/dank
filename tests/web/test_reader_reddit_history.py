@@ -159,3 +159,18 @@ async def test_newer_history_cannot_leak_into_processed_article(
         )
         == snapshots
     )
+
+
+async def test_recovery_from_reused_archive_keeps_original_comment_date():
+    client = AsyncMock()
+    original = '2026-10-15T12:00:00+00:00'
+    client.fetch_json.return_value = _Result([_row({
+        'comment_capture': {
+            'status': 'captured', 'comments': [], 'captured_at': original,
+        },
+    })])
+    result = await preserve_reddit_archives(
+        client, {'t3_post': {'comment_capture': {'status': 'failed'}}},
+        VERSIONS, include_discussion=True,
+    )
+    assert result['t3_post']['comment_capture']['captured_at'] == original

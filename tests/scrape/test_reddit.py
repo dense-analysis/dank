@@ -425,7 +425,7 @@ async def test_pagination_resumes_after_details_hide_the_listing(
 
     async def visit_details(batch: Any, *args: Any) -> Any:
         page.active = False
-        return batch
+        yield batch
 
     monkeypatch.setattr(
         "dank.scrape.reddit._capture_batch_details", visit_details,

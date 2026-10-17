@@ -270,3 +270,49 @@ def _gallery_images(candidate: dict[str, object]) -> dict[str, str]:
         for value in as_dict(candidate.get("media_metadata")).values()
         if (url := public_url(as_dict(as_dict(value).get("s")).get("u")))
     }
+
+
+def merge_candidates(
+    candidates: list[tuple[dict[str, object], str]],
+) -> list[tuple[dict[str, object], str]]:
+    merged: dict[str, tuple[dict[str, object], str]] = {}
+
+    for post, origin in candidates:
+        post_id = text(post.get("id"))
+
+        if post_id not in merged:
+            merged[post_id] = (dict(post), origin)
+            continue
+
+        previous, _ = merged[post_id]
+
+        for key in ("selftext", "selftext_html"):
+            if len(text(post.get(key))) > len(text(previous.get(key))):
+                previous[key] = post[key]
+
+        media = {
+            text(as_dict(item).get("url")): item
+            for item in cast(list[object], previous.get("media", []))
+            + cast(list[object], post.get("media", []))
+        }
+        previous["media"] = list(media.values())
+
+        if previous.get("raw") != post.get("raw"):
+            previous["raw"] = {
+                "captures": [previous.get("raw"), post.get("raw")],
+            }
+
+        for key in (
+            "author",
+            "link_flair_text",
+            "created_utc",
+            "score",
+            "num_comments",
+        ):
+            if not previous.get(key) and post.get(key):
+                previous[key] = post[key]
+
+        if previous.get("url") == previous.get("permalink"):
+            previous["url"] = post.get("url", previous["url"])
+
+    return list(merged.values())

@@ -29,11 +29,18 @@ from dank.scrape.zendriver import (
     NetworkResponse,
 )
 
-from .access import RedditScrapeError, check_page_responses
+from .access import RedditScrapeError, check_page_responses, pace_request
+from .cache import DetailSnapshot, reuse_detail
 from .communities import discover_community
 from .details import capture_post_detail, defer_post_detail
 from .html import extract_html_posts
-from .payloads import as_dict, extract_json_posts, text, timestamp
+from .payloads import (
+    as_dict,
+    extract_json_posts,
+    merge_candidates,
+    text,
+    timestamp,
+)
 
 logger = logging.getLogger(__name__)
 REDDIT_SOURCE = "reddit"
@@ -106,6 +113,7 @@ async def scrape_reddit_communities(
     *,
     sort: RedditSort = DEFAULT_LISTING.sort,
     time_filter: RedditTimeFilter = DEFAULT_LISTING.time_filter,
+    cached_details: dict[str, DetailSnapshot] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     # Each source owns a tab so X and other Reddit sources cannot navigate it.
     async with asyncio.timeout(30):
@@ -140,11 +148,12 @@ async def scrape_reddit_communities(
                             except Exception:
                                 logger.warning("Reddit detail tab unavailable")
 
-                        batch = await _capture_batch_details(
-                            batch, detail_page, settings,
-                        )
-
-                    yield batch
+                        async for detailed in _capture_batch_details(
+                            batch, detail_page, settings, cached_details,
+                        ):
+                            yield detailed
+                    else:
+                        yield batch
             except Exception as error:
                 count("fetch_failures")
                 stats = current_source.get()
@@ -178,42 +187,66 @@ async def _close_tabs(*tabs: zendriver.Tab | None) -> None:
 
 async def _capture_batch_details(
     batch: ScrapeBatch, page: zendriver.Tab | None, settings: RedditSettings,
-) -> ScrapeBatch:
-    posts: list[RawPost] = []
+    cached_details: dict[str, DetailSnapshot] | None = None,
+) -> AsyncIterator[ScrapeBatch]:
     rate_limited = False
     deferred = 0
+    reused = 0
+    fetched = 0
     fresh_ids = {post.post_id for post in batch.posts}
     assets = {
         f"{item.post_id}:{item.url}": item for item in batch.assets
         if item.post_id not in fresh_ids
     }
 
-    for post in batch.posts:
-        if rate_limited:
+    for index, post in enumerate(batch.posts):
+        cached = (cached_details or {}).get(post.post_id)
+        enriched = reuse_detail(post, cached, settings) if cached else None
+
+        if enriched is not None:
+            reused += 1
+        elif rate_limited:
             enriched = defer_post_detail(post, settings)
             deferred += 1
         else:
+            fetched += 1
+            logger.info("Reddit detail: fetching %s", post.post_id)
             enriched = await capture_post_detail(page, post, settings)
 
         payload = as_dict(json.loads(enriched.payload))
-        rate_limited = (
+        rate_limited = rate_limited or (
             as_dict(payload.get("detail_capture")).get("reason")
             == "rate_limited"
         )
-        posts.append(enriched)
+        if cached_details is not None and as_dict(
+            payload.get("detail_capture"),
+        ).get("status") == "captured":
+            cached_details[post.post_id] = DetailSnapshot(
+                payload, enriched.scraped_at,
+            )
 
         for asset in _discover_assets(
             payload, post.post_id, set(),
         ):
             assets[f"{asset.post_id}:{asset.url}"] = asset
 
+        # Pacing can make a batch lengthy; let the runner persist each result.
+        yield batch._replace(
+            posts=[enriched], assets=list(assets.values()),
+            communities=batch.communities if index == 0 else (),
+        )
+        assets.clear()
+
+    logger.info(
+        "Reddit details: reused=%d fetched=%d deferred=%d",
+        reused, fetched, deferred,
+    )
+
     if deferred:
         logger.warning(
             "Reddit rate limited: kept %d listing posts and deferred their "
             "detail visits to a later run", deferred,
         )
-
-    return batch._replace(posts=posts, assets=list(assets.values()))
 
 
 async def _scrape_community(
@@ -254,6 +287,8 @@ async def _scrape_community(
             await capture.start()
 
         async with limiter.slot(url) if limiter else nullcontext():
+            await pace_request()
+
             async with asyncio.timeout(20):
                 await page.activate()
                 await page.send(cdp.page.navigate(url))
@@ -321,6 +356,8 @@ async def _scrape_community(
 
             if step < limits.max_scrolls:
                 async with limiter.slot(url) if limiter else nullcontext():
+                    await pace_request()
+
                     async with asyncio.timeout(10):
                         # Restore the listing after detail visits hide it.
                         await page.activate()
@@ -429,7 +466,7 @@ def extract_posts_and_assets(
         (post, request_url) for post in extract_html_posts(dom_html, community)
     )
 
-    for post, origin in _merge_candidates(candidates):
+    for post, origin in merge_candidates(candidates):
         post_id = text(post.get("id"))
 
         if post_id in seen_posts:
@@ -495,49 +532,3 @@ def _discover_assets(
             )
 
     return assets
-
-
-def _merge_candidates(
-    candidates: list[tuple[dict[str, object], str]],
-) -> list[tuple[dict[str, object], str]]:
-    merged: dict[str, tuple[dict[str, object], str]] = {}
-
-    for post, origin in candidates:
-        post_id = text(post.get("id"))
-
-        if post_id not in merged:
-            merged[post_id] = (dict(post), origin)
-            continue
-
-        previous, _ = merged[post_id]
-
-        for key in ("selftext", "selftext_html"):
-            if len(text(post.get(key))) > len(text(previous.get(key))):
-                previous[key] = post[key]
-
-        media = {
-            text(as_dict(item).get("url")): item
-            for item in cast(list[object], previous.get("media", []))
-            + cast(list[object], post.get("media", []))
-        }
-        previous["media"] = list(media.values())
-
-        if previous.get("raw") != post.get("raw"):
-            previous["raw"] = {
-                "captures": [previous.get("raw"), post.get("raw")],
-            }
-
-        for key in (
-            "author",
-            "link_flair_text",
-            "created_utc",
-            "score",
-            "num_comments",
-        ):
-            if not previous.get(key) and post.get(key):
-                previous[key] = post[key]
-
-        if previous.get("url") == previous.get("permalink"):
-            previous["url"] = post.get("url", previous["url"])
-
-    return list(merged.values())

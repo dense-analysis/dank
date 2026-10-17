@@ -60,6 +60,8 @@ class RedditSettings(NamedTuple):
     comment_limit: int = 50
     comment_sort: RedditCommentSort = RedditCommentSort.BEST
     download_videos: bool = False
+    request_interval_seconds: float = 10.0
+    detail_cache_hours: float = 24.0
 
 
 class RedditSort(StrEnum):
@@ -346,7 +348,25 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
             "reddit.comment_limit must be an integer from 1 to 500",
         )
 
+    intervals: dict[str, float] = {}
+
+    for key, minimum, maximum in (
+        ("request_interval_seconds", 1, 60),
+        ("detail_cache_hours", 0, 168),
+    ):
+        setting = data.get(key, getattr(defaults, key))
+
+        if (
+            not isinstance(setting, int | float) or isinstance(setting, bool)
+            or not math.isfinite(setting) or not minimum <= setting <= maximum
+        ):
+            raise ConfigError(f"reddit.{key} must be {minimum} to {maximum}")
+
+        intervals[key] = float(setting)
+
     return RedditSettings(
+        request_interval_seconds=intervals["request_interval_seconds"],
+        detail_cache_hours=intervals["detail_cache_hours"],
         capture_comments=data.get(
             "capture_comments", defaults.capture_comments,
         ),

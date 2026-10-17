@@ -51,6 +51,8 @@ async def test_browser_rate_limit_keeps_retry_after_even_without_body(
 
 @pytest.mark.parametrize("url,resource", [
     (URL, "Document"),
+    ("https://www.reddit.com/svc/shreddit/more-comments/python/t3_post",
+     "Fetch"),
     ("https://www.reddit.com/svc/shreddit/community-more-posts/top/?after=id",
      "Fetch"),
 ])

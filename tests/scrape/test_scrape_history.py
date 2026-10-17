@@ -44,6 +44,9 @@ class _Client:
     async def __aexit__(self, *args: object) -> None:
         pass
 
+    async def fetch_json(self, *args: object) -> SimpleNamespace:
+        return SimpleNamespace(rows=[])
+
     async def execute(self, statement: str) -> None:
         self.statements.append(statement)
 

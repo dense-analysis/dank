@@ -315,9 +315,9 @@ async def test_next_community_is_activated_after_detail_visits(
 
     page = _FocusedPage()
 
-    async def visit_details(batch: ScrapeBatch, *args: Any) -> ScrapeBatch:
+    async def visit_details(batch: ScrapeBatch, *args: Any) -> Any:
         page.active = False
-        return batch
+        yield batch
 
     monkeypatch.setattr(
         "dank.scrape.reddit._capture_batch_details", visit_details,

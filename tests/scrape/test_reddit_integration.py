@@ -19,6 +19,7 @@ from dank.scrape.runner import (
     _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.types import ScrapeBatch
+from dank.storage.clickhouse import QueryResult
 
 
 async def test_loaded_defaults_reach_the_collector_as_top_for_the_day(
@@ -38,8 +39,10 @@ async def test_loaded_defaults_reach_the_collector_as_top_for_the_day(
         yield ScrapeBatch([], [])
 
     monkeypatch.setattr(runner, "scrape_reddit_communities", collect)
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([])
     _ = [batch async for batch in _discover_source_batches(
-        settings, source, cast(Any, None), cast(Any, None), cast(Any, None),
+        settings, source, client, cast(Any, None), cast(Any, None),
         feed_staleness=datetime.timedelta(days=1), batch_size=50,
     )]
     assert received[0]["sort"] is RedditSort.TOP
@@ -62,16 +65,18 @@ async def test_reddit_dispatch_uses_community_sort_and_limits(
         yield ScrapeBatch([], [])
 
     monkeypatch.setattr(runner, "scrape_reddit_communities", collect)
-    # Any attempt to use RSS discovery or a client fails this test.
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([])
+    # Reddit reads the detail archive but does not use RSS HTTP discovery.
     batches = [batch async for batch in _discover_source_batches(
-        settings, source, cast(Any, None), cast(Any, None),
+        settings, source, client, cast(Any, None),
         cast(Any, session), feed_staleness=datetime.timedelta(days=1),
         batch_size=50,
     )]
     assert batches == [ScrapeBatch([], [])]
     assert calls == [(
         settings.reddit, ("LocalLLaMA",), session,
-        {"sort": "top", "time_filter": "week"},
+        {"sort": "top", "time_filter": "week", "cached_details": {}},
     )]
 
 

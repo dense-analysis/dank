@@ -289,3 +289,12 @@ def test_video_poster_variants_and_generated_link_do_not_repeat():
     assert "<img" not in result
     assert "v.redd.it/abc" not in result
     assert "The source" in result
+
+
+def test_reused_comments_keep_their_original_capture_date():
+    capture = comment_capture({'comment_capture': {
+        'status': 'captured', 'comments': [], 'reused': True,
+        'captured_at': '2026-10-16T12:00:00+00:00',
+    }}, PERMALINK)
+    assert capture['captured_at'] == '2026-10-16T12:00:00+00:00'
+    assert 'latest_attempt_status' not in capture

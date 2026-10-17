@@ -2,7 +2,7 @@
 
 DANK collects posts from community listing pages with a Chromium browser.
 It reads the page's network responses and rendered posts while scrolling,
-then visits each discovered post for its full body, media and discussion.
+then visits new or changed posts for their full body, media and discussion.
 Post details use the same browser session: captured network responses, a
 bounded comments JSON request where Reddit permits it, and rendered comments
 as a fallback. Access restrictions remain visible as capture failures.
@@ -21,6 +21,8 @@ sources = [
 ]
 
 [reddit]
+request_interval_seconds = 10.0
+detail_cache_hours = 24.0
 max_posts = 100
 max_scrolls = 20
 scroll_pause_seconds = 1.5
@@ -76,13 +78,37 @@ For Docker, omit `MODE=native`. Docker already includes Chromium and runs
 collection headlessly. Reddit uses its own browser and persistent profile at
 `<storage.data_dir>/reddit-browser-profile`, independently of X's saved login.
 An X scrape waiting on its browser does not hold Reddit's browser lock.
-Each collected post batch is saved before visiting the next batch or waiting
-for media downloads. A later community failure does not discard saved posts.
+Each completed detail capture or cache hit is saved before visiting the next
+post or waiting for media downloads. A later community failure does not discard saved posts.
 An inaccessible community, login requirement, blocked page or collection error
 is logged and counted as a fetch failure; DANK continues with the next community.
 Successful captures alongside failures produce a partial source/run outcome.
 A recognized empty listing is normal and does not count as a fetch failure;
 an unrecognized blank page is still reported as a failure.
+
+## Pacing and saved details
+
+DANK spaces Reddit navigation, pagination, comments JSON requests and comment
+scrolls by at least `request_interval_seconds` (default **10 seconds**, allowed
+1–60). This is a conservative DANK setting, not a published Reddit quota. The
+clock is shared across Reddit sources in a run. Browser subrequests still
+belong to Reddit's pages, so spacing cannot guarantee access or eliminate 429s.
+An uncached collection can take substantially longer; logs identify each detail
+visit and report reused, fetched and deferred counts for every batch.
+
+Successful details are reused for up to `detail_cache_hours` (default **24 hours**,
+allowed 0–168; zero forces refreshes). Reuse requires matching visible post
+content, media identity and comment count, plus compatible comment sort/limit.
+Scores and ranking can change without forcing another detail visit. Listing
+metadata is still saved on each run. Failed captures are retried; expired or
+changed captures are refreshed. The cache reads the existing database in both
+native and Docker mode, and keeps the original capture timestamps across reuse.
+Edits to comments or content not exposed by the listing may remain unseen until
+the cache expires. Lower the age or set it to zero when a fresh discussion matters.
+
+After a comments JSON endpoint denies access with 401/403, DANK uses rendered
+threads for the remainder of that run instead of making another denied JSON
+request for every post. A new run may try that endpoint again.
 
 ## Collection limits
 
@@ -115,11 +141,12 @@ rate-limit reason in capture metadata, instead of issuing a request per post
 against the same restriction. Cooldown waiting has a separate budget from
 reading a detail page.
 
-Each detail visit has a 35-second budget and shares the browser session's
-request pacing. A blocked or timed-out detail page keeps the listing post.
+Each detail visit has a 35-second page-read budget plus the intentional waits
+for at most one JSON request and five comment scrolls. A blocked or timed-out detail page keeps the listing post.
 Comments can be fewer than the configured limit when Reddit returns collapsed
 threads, unavailable replies, or stops loading; DANK makes at most five
-additional scroll attempts and reports that more discussion is available.
+additional scroll attempts, stopping when the top-level load-more control is
+gone, and reports that more discussion is available.
 It does not expand every hidden reply. Raw post and comment payloads are
 retained for reprocessing.
 

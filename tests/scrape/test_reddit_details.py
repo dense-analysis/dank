@@ -281,17 +281,18 @@ async def test_rate_limit_defers_batch_details_without_losing_listings(
     originals = [post.payload for post in posts]
     visit = AsyncMock(return_value=defer_post_detail(posts[0], settings))
     monkeypatch.setattr("dank.scrape.reddit.capture_post_detail", visit)
-    result = await _capture_batch_details(
+    batches = [batch async for batch in _capture_batch_details(
         ScrapeBatch(posts, []), AsyncMock(), settings,
-    )
+    )]
+    results = [post for batch in batches for post in batch.posts]
 
     visit.assert_awaited_once()
-    assert [post.post_id for post in result.posts] == [
+    assert [post.post_id for post in results] == [
         post.post_id for post in posts
     ]
     assert [post.payload for post in posts] == originals
 
-    for post in result.posts:
+    for post in results:
         payload = json.loads(post.payload)
         assert payload["selftext"] == "short"
         assert payload["detail_capture"]["reason"] == "rate_limited"
@@ -436,6 +437,7 @@ async def test_json_denied_uses_rendered_comments_and_original_html() -> (
             "comments": comments,
             "comments_html": "<shreddit-comment>original</shreddit-comment>",
             "has_more": True,
+            "can_scroll": False,
         },
     )
     page = AsyncMock()
@@ -460,7 +462,7 @@ async def test_json_denied_uses_rendered_comments_and_original_html() -> (
                 await capture_post_detail(
                     page,
                     _raw(),
-                    RedditSettings(comment_limit=1),
+                    RedditSettings(comment_limit=50),
                 )
             ).payload,
         )
@@ -469,6 +471,8 @@ async def test_json_denied_uses_rendered_comments_and_original_html() -> (
     assert result["comment_capture"]["comments"][0]["id"] == "t1_first"
     assert result["comment_capture"]["has_more"] is True
     assert "original" in result["raw"]["detail"]["comments_html"]
+
+    assert page.evaluate.await_count == 2  # JSON, then one DOM snapshot.
 
 
 def test_native_video_preserves_download_identity_and_playback_metadata() -> (

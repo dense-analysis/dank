@@ -93,7 +93,7 @@ def comment_capture(
     previous_status = _text(capture.get("latest_attempt_status"))
     captured_at = _text(capture.get("captured_at"))
 
-    if status == "captured" and previous_status in {"disabled", "failed"}:
+    if status == "captured" and captured_at:
         try:
             captured = dt.datetime.fromisoformat(captured_at)
         except ValueError:
@@ -102,7 +102,9 @@ def comment_capture(
             result["captured_at"] = captured.replace(
                 tzinfo=captured.tzinfo or dt.UTC,
             ).isoformat()
-            result["latest_attempt_status"] = previous_status
+
+            if previous_status in {"disabled", "failed"}:
+                result["latest_attempt_status"] = previous_status
 
     return result
 

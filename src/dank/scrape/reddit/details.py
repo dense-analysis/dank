@@ -23,7 +23,10 @@ from .access import (
     RedditScrapeError,
     check_page_responses,
     check_response_status,
+    current_requests,
+    pace_request,
 )
+from .cache import listing_signature
 from .html import extract_html_posts
 from .payloads import (
     POST_PATH,
@@ -67,6 +70,8 @@ DETAIL_SNAPSHOT_SCRIPT = """JSON.stringify((() => {
         comments_html: comments.filter(node =>
             !node.parentElement?.closest('shreddit-comment'))
             .map(node => node.outerHTML).join('\\n'),
+        can_scroll: !!document.querySelector(
+            '#top-level-more-comments-partial'),
         has_more: !!document.querySelector(
             'shreddit-comment-tree [slot="more-comments"], '
             + 'shreddit-comment-tree faceplate-partial[src*="comment"]'),
@@ -374,6 +379,12 @@ async def _fetch_thread(
     listing: dict[str, object],
     settings: RedditSettings,
 ) -> dict[str, object] | None:
+    requests = current_requests.get()
+
+    if requests is not None and not requests.json_available:
+        return None
+
+    await pace_request()
     # Abort in-page too, so a CDP timeout leaves no stray fetch behind.
     script = """(async () => {
         try {
@@ -404,6 +415,13 @@ async def _fetch_thread(
             check_response_status(
                 status, thread_url(listing, settings),
                 text(response.get("retry_after")),
+            )
+
+        if status in (401, 403) and requests is not None:
+            requests.json_available = False
+            logger.info(
+                "Reddit comments JSON denied (%d); using rendered threads "
+                "for the rest of this run", status,
             )
 
         # JSON denial can still leave a usable rendered thread.
@@ -440,9 +458,14 @@ async def _rendered_detail(
             else 0
         )
 
-        if count >= settings.comment_limit or stalls >= 2:
+        if (
+            count >= settings.comment_limit or stalls >= 2
+            or (count > 0 and snapshot.get("has_more") is False)
+            or snapshot.get("can_scroll") is False
+        ):
             break
 
+        await pace_request()
         await page.evaluate("""(() => {
             const more = document.querySelector(
                 '#top-level-more-comments-partial');
@@ -483,6 +506,23 @@ async def _rendered_detail(
     return post
 
 
+def _captured_detail(
+    listing: dict[str, object], detail: dict[str, object],
+) -> dict[str, object]:
+    post = _merge_detail(listing, detail)
+    captured_at = datetime.datetime.now(datetime.UTC).isoformat()
+    post["detail_capture"] = {
+        "status": "captured", "captured_at": captured_at,
+        "listing_signature": listing_signature(listing),
+    }
+    comments = as_dict(post.get("comment_capture"))
+
+    if comments.get("status") == "captured":
+        post["comment_capture"] = {**comments, "captured_at": captured_at}
+
+    return post
+
+
 async def capture_post_detail(
     page: zendriver.Tab | None,
     raw: RawPost,
@@ -514,9 +554,17 @@ async def capture_post_detail(
         if page is None:
             raise RuntimeError("Detail browser tab unavailable")
 
-        # Host cooldowns have their own budget; keep time to read the page.
+        # Navigation cooldown and pacing do not consume the page-read budget.
+        # Allow the bounded JSON/comment steps their intentional pacing waits.
+        requests = current_requests.get()
+        pacing_budget = (
+            requests.interval * (MAX_COMMENT_SCROLLS + 1) if requests else 0
+        )
+
         async with limiter.slot(url) if limiter else nullcontext():
-            async with asyncio.timeout(DETAIL_TIMEOUT_SECONDS):
+            await pace_request()
+
+            async with asyncio.timeout(DETAIL_TIMEOUT_SECONDS + pacing_budget):
                 await capture.start()
                 await page.activate()
                 await page.send(cdp.page.navigate(url))
@@ -535,10 +583,12 @@ async def capture_post_detail(
 
                 if detail is None:
                     detail = await _rendered_detail(page, raw, settings)
+                    check_page_responses(
+                        await capture.drain(timeout_seconds=0.05), url,
+                    )
 
                 if detail is not None:
-                    post = _merge_detail(post, detail)
-                    post["detail_capture"] = {"status": "captured"}
+                    post = _captured_detail(post, detail)
 
                 if not settings.capture_comments:
                     post["comment_capture"] = comment_capture(
