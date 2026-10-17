@@ -515,8 +515,7 @@
   display: grid;
   gap: 9px;
 }
-.yt-reference-list a {
-  text-decoration: none;
+.yt-reference-row {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -525,9 +524,30 @@
   border: 1px solid var(--line);
   border-radius: 11px;
 }
-.yt-reference-list a:hover {
+.yt-reference-row:hover {
   background: var(--surface-hover);
   border-color: #b1e2bd45;
+}
+.yt-reference-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  text-decoration: none;
+}
+.yt-reference-original {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.yt-reference-original:hover,
+.yt-reference-main:hover {
+  color: var(--green);
 }
 .yt-reference-source {
   color: var(--green);
@@ -630,10 +650,15 @@
     padding-bottom: 12px;
     scrollbar-width: thin;
   }
-  .yt-reference-list a {
+  .yt-reference-row {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 12px;
     padding: 14px;
+  }
+  .yt-reference-main {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: 7px;
   }
   .yt-reference-source {
     width: 100%;

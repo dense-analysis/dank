@@ -565,3 +565,62 @@ test("failed local video offers explicit remote playback and community links rem
     .click();
   await expect(page.locator("iframe")).toHaveCount(1);
 });
+
+test("raw-only source references open their original and processed references retain a separate original link", async ({
+  page,
+  context,
+}) => {
+  const state = await fixture(page);
+  const raw = {
+    ...first.references[0],
+    reader_url: "",
+    title: "A newly collected source post",
+  };
+  state.data = [{ ...first, references: [raw, first.references[1]] }];
+  await context.route("https://x.com/reporter/status/123", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<p>Original source fixture</p>",
+    }),
+  );
+  await page.goto(`/reader/?view=youtube&feed=linked&youtube_item=${first.id}`);
+  const references = page.getByRole("region", {
+    name: "Linked from collected posts",
+  });
+  const rawLink = references.getByRole("link", {
+    name: "X A newly collected source post",
+    exact: true,
+  });
+  await expect(rawLink).toHaveAttribute("href", raw.url);
+  await expect(rawLink).toHaveAttribute("target", "_blank");
+  const originalPromise = page.waitForEvent("popup");
+  await rawLink.click();
+  const original = await originalPromise;
+  await expect(original).toHaveURL(raw.url);
+  await original.close();
+  expect(
+    state.requests.some(
+      (url) =>
+        url.pathname.endsWith("/post") &&
+        url.searchParams.get("id") === raw.post_id,
+    ),
+  ).toBe(false);
+  await expect(
+    references.getByRole("link", {
+      name: "Open original source: Urban design worth watching",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", first.references[1].url);
+  await references
+    .getByRole("link", {
+      name: "lobste.rs Urban design worth watching",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("main", { name: "Article reader" }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(references).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("feed")).toBe("linked");
+});

@@ -264,31 +264,12 @@ export function YouTubeCollection({
                 </div>
                 <div className="yt-reference-list">
                   {selected.references.map((reference) => (
-                    <a
+                    <YouTubeSourceReference
                       key={`${reference.domain}:${reference.post_id}`}
-                      href={`/reader/?${articleParams(params, { domain: reference.domain, id: reference.post_id })}`}
-                      onClick={(event) => {
-                        if (
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        )
-                          return;
-                        event.preventDefault();
-                        openReference(reference);
-                      }}
-                    >
-                      <span className="yt-reference-source">
-                        {reference.source === "x"
-                          ? "X"
-                          : reference.source === "reddit"
-                            ? "Reddit"
-                            : reference.domain}
-                      </span>
-                      <strong>{reference.title || reference.url}</strong>
-                      <ArrowUpRight size={17} />
-                    </a>
+                      reference={reference}
+                      params={params}
+                      open={() => openReference(reference)}
+                    />
                   ))}
                 </div>
                 {selected.reference_count > selected.references.length && (
@@ -600,6 +581,68 @@ function YouTubeError({
       <button type="button" className="secondary-button" onClick={retry}>
         <RefreshCw size={15} /> Try again
       </button>
+    </div>
+  );
+}
+
+function YouTubeSourceReference({
+  reference,
+  params,
+  open,
+}: {
+  reference: YouTubeReference;
+  params: URLSearchParams;
+  open: () => void;
+}) {
+  const original = safeUrl(reference.url);
+  const reader = reference.reader_url
+    ? `/reader/?${articleParams(params, { domain: reference.domain, id: reference.post_id })}`
+    : undefined;
+  const source =
+    reference.source === "x"
+      ? "X"
+      : reference.source === "reddit"
+        ? "Reddit"
+        : reference.domain;
+
+  return (
+    <div className="yt-reference-row">
+      <a
+        className="yt-reference-main"
+        href={reader || original}
+        target={reader ? undefined : "_blank"}
+        rel={reader ? undefined : "noopener noreferrer"}
+        onClick={
+          reader
+            ? (event) => {
+                if (
+                  event.button ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                open();
+              }
+            : undefined
+        }
+      >
+        <span className="yt-reference-source">{source}</span>
+        <strong>{reference.title || reference.url}</strong>
+      </a>
+      {original && (
+        <a
+          className="yt-reference-original"
+          href={original}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Open original source: ${reference.title || reference.domain}`}
+        >
+          Open original <ArrowUpRight size={14} />
+        </a>
+      )}
     </div>
   );
 }
