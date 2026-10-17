@@ -39,6 +39,23 @@ News tabs can include `top_stories`, `sports`, `entertainment`, `business` and
 `world`. These are requested feed destinations; availability and headings can
 change on YouTube. Set `hype = false` or `news_tabs = []` to omit those feeds.
 
+To collect an additional country's Hype playlist, configure its explicit URL.
+The current region still uses the discovered **View all** playlist; an explicit
+entry for that same region replaces discovery. `hype = false` disables both.
+
+```toml
+[youtube.hype_playlists]
+US = "https://www.youtube.com/playlist?list=OLAK5uy_lSbPjCHn-9LSQeRc6T1LWfz-DN8gOqNdw"
+```
+
+[YouTube says](https://support.google.com/youtube/answer/15334500?hl=en) Hype
+rankings update about every few minutes and are shared within each country.
+Its normal interface only exposes the viewer's country. An explicit playlist
+lets DANK collect a separately discovered destination; changing `region` alone
+is not a verified way to choose another country's Hype. Playlist URL longevity
+is unverified. Saved ranks, IDs and capture times support comparison across
+runs; see the [follow-up](../known-issues.md#youtube-feed-discovery).
+
 ## Collect and read
 
 ```sh

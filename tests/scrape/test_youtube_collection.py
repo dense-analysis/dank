@@ -352,3 +352,29 @@ async def test_hype_stops_after_top_100_without_extra_scrolls(
     assert sum(len(batch.posts) for batch in batches) == 100
     page.evaluate.assert_not_awaited()
     capture.stop.assert_awaited_once()
+
+
+async def test_explicit_regional_hype_skips_local_discovery_and_saves_region(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    url = "https://www.youtube.com/playlist?list=US_LEADERBOARD"
+    feed = YouTubeFeed(url, "Hype · US", "hype", region="US")
+    navigation = AsyncMock()
+    states = AsyncMock(return_value={"initial": {}, "url": url})
+    monkeypatch.setattr("dank.scrape.youtube.navigate", navigation)
+    monkeypatch.setattr("dank.scrape.youtube.snapshot", states)
+    page = AsyncMock()
+    resolved, _ = await _resolve_feed(page, feed, YouTubeSettings(region="GB"))
+    navigation.assert_awaited_once_with(page, url + "&gl=US&hl=en-GB")
+    assert resolved == url
+
+    captured = FeedCapture(feed, YouTubeSettings(region="GB"), set())
+    video = json.loads(FIXTURE.read_text())["videoRenderer"]
+    post = captured.extract([("videoRenderer", video, "")], resolved).posts[0]
+    discovery = json.loads(post.payload)["discovery"]
+    assert discovery["region"] == "US"
+    assert discovery["feed_url"] == url
+    assert discovery["playlist_id"] == "US_LEADERBOARD"
+    assert discovery["feed_kind"] == "hype"
+    assert discovery["rank"] == 1
+    assert discovery["observed_at"]

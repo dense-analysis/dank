@@ -100,3 +100,27 @@ async def test_channel_counts_match_unique_items_across_all_feed_discoveries():
     assert "uniqExact(item_id)" in query
     assert "arrayIntersect" in query
     assert params == {"ids": ["UC4News"]}
+
+
+
+def test_configured_hype_regions_are_distinct_before_collection() -> None:
+    from dank.config import YouTubeSettings
+
+    playlist = "https://www.youtube.com/playlist?list=US_LEADERBOARD"
+    settings = load_settings("config.example.toml")._replace(
+        sources=(SourceConfig("youtube.com", (), (playlist,)),),
+        youtube=YouTubeSettings(hype_playlists=(("US", playlist),)),
+    )
+    feeds, _ = configured_sources(settings, [])
+    hyped = [feed for feed in feeds if feed["kind"] == "hype"]
+    assert {(feed["url"], feed["region"]) for feed in hyped} == {
+        ("https://www.youtube.com/feed/hype", "GB"), (playlist, "US"),
+    }
+    assert all(feed["count"] == 0 for feed in hyped)
+
+    feeds, _ = configured_sources(settings._replace(
+        youtube=settings.youtube._replace(region="US"),
+    ), [])
+    assert [feed["url"] for feed in feeds if feed["kind"] == "hype"] == [
+        playlist,
+    ]

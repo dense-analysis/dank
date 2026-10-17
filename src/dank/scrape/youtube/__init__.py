@@ -156,7 +156,8 @@ def _candidates(
 async def _resolve_feed(
     page: zendriver.Tab, feed: YouTubeFeed, settings: YouTubeSettings,
 ) -> tuple[str, dict[str, object]]:
-    await navigate(page, _localized(feed.url, settings.region))
+    region = feed.region or settings.region
+    await navigate(page, _localized(feed.url, region))
     state = await snapshot(page)
 
     if settings.authenticated and not state.get("signed_in"):
@@ -164,7 +165,7 @@ async def _resolve_feed(
             "Saved YouTube session is not signed in; run youtube-login",
         )
 
-    if feed.kind != "hype":
+    if feed.kind != "hype" or urlsplit(feed.url).path == "/playlist":
         return str(state.get("url") or feed.url), state
 
     playlist = hype_playlist(state.get("initial"))
@@ -177,7 +178,7 @@ async def _resolve_feed(
         state = await snapshot(page)
         playlist = hype_playlist(state.get("initial"))
 
-    if playlist is None and settings.region == "GB":
+    if playlist is None and region == "GB":
         playlist = f"{ORIGIN}/playlist?list={UK_HYPE_PLAYLIST}"
         logger.warning(
             "Hype View all unavailable; trying the UK Top 100 fallback",
@@ -187,7 +188,7 @@ async def _resolve_feed(
         raise YouTubeFeedError("No regional Hype Top 100 playlist found")
 
     # Follow View all; its playlist carries authoritative rank.
-    await navigate(page, _localized(playlist, settings.region))
+    await navigate(page, _localized(playlist, region))
 
     return playlist, await snapshot(page)
 

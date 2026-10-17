@@ -57,7 +57,11 @@ def _configured_feeds(settings: Settings) -> dict[str, dict[str, Any]]:
     region = str(getattr(youtube, "region", "GB"))
     feeds: dict[str, dict[str, Any]] = {}
 
-    if getattr(youtube, "hype", True):
+    playlists: dict[str, str] = dict(
+        getattr(youtube, "hype_playlists", ()),
+    )
+
+    if getattr(youtube, "hype", True) and region not in playlists:
         feeds[YOUTUBE_ORIGIN + "/feed/hype"] = _feed(
             YOUTUBE_ORIGIN + "/feed/hype", "Hype · Top 100", "hype", region,
         )
@@ -88,6 +92,10 @@ def _configured_feeds(settings: Settings) -> dict[str, dict[str, Any]]:
         for url in source.feed_urls:
             feed = _configured_feed(url, region)
             feeds[str(feed["url"])] = feed
+
+    if getattr(youtube, "hype", True):
+        for country, url in playlists.items():
+            feeds[url] = _feed(url, "Hype · " + country, "hype", country)
 
     return feeds
 

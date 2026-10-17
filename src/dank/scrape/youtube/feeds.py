@@ -61,7 +61,7 @@ def configured_feeds(
 ) -> tuple[YouTubeFeed, ...]:
     urls: list[str] = []
 
-    if settings.hype:
+    if settings.hype and settings.region not in dict(settings.hype_playlists):
         urls.append(ORIGIN + "/feed/hype")
 
     for tab in settings.news_tabs:
@@ -83,6 +83,12 @@ def configured_feeds(
             urls.append(ORIGIN + "/@" + account.lstrip("@") + "/videos")
 
     feeds = {feed.url: feed for feed in map(describe_feed, urls)}
+
+    if settings.hype:
+        for region, url in settings.hype_playlists:
+            feeds[url] = YouTubeFeed(
+                url, "Hype · " + region, "hype", region=region,
+            )
 
     if any(feed.kind == "home" for feed in feeds.values()) and not (
         settings.authenticated and settings.homepage
