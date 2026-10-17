@@ -13,6 +13,7 @@ from multidict import MultiDict
 from dank.storage.clickhouse import ClickHouseClient, QueryResult
 from dank.web.reader_youtube import (
     _local_media,  # pyright: ignore[reportPrivateUsage]
+    _thumbnail_history,  # pyright: ignore[reportPrivateUsage]
     ensure_youtube_storage,
     youtube_items,
 )
@@ -92,7 +93,7 @@ async def test_item_keeps_provenance_and_multiple_source_references():
         for domain, source in (("x.com", "x"), ("reddit.com", "reddit"))
     ]
     client.fetch_json.side_effect = [
-        QueryResult(observations), QueryResult(references),
+        QueryResult(observations), QueryResult(references), QueryResult([]),
     ]
     items = await youtube_items(cast(ClickHouseClient, client), [{
         "item_id": "video:AbCdEfGhIjK", "kind": "short",
@@ -175,14 +176,14 @@ async def test_local_media_requires_an_existing_file_inside_assets(
     outside = tmp_path / "outside.jpg"
     outside.write_bytes(b"not in assets")
     client.fetch_json.side_effect = [
-        QueryResult([]), QueryResult([]), QueryResult([
+        QueryResult([]), QueryResult([]), QueryResult([]), QueryResult([
             {"post_id": "video:AbCdEfGhIjK", "url": "https://example/video",
              "asset_type": "video", "local_path": str(video),
              "scraped_at": timestamp},
             {"post_id": "video:AbCdEfGhIjK", "url": "https://example/thumb",
              "asset_type": "image", "local_path": str(outside),
              "scraped_at": timestamp},
-        ]),
+        ]), QueryResult([]),
     ]
     items = await youtube_items(cast(ClickHouseClient, client), [{
         "item_id": "video:AbCdEfGhIjK", "kind": "video",
@@ -244,3 +245,169 @@ def test_recommendation_pages_and_total_keep_original_snapshot():
     first_query, first_params = build_youtube_query(filters)
     assert "snapshot_time" not in first_query
     assert "snapshot_time" not in first_params
+
+
+async def test_changed_titles_keep_one_video_and_preserve_observation_dates():
+    client = AsyncMock()
+    first = dt.datetime(2026, 10, 15, tzinfo=dt.UTC)
+    latest = dt.datetime(2026, 10, 17, tzinfo=dt.UTC)
+    item_id = "video:AbCdEfGhIjK"
+    client.fetch_json.side_effect = [
+        QueryResult([]), QueryResult([]), QueryResult([
+            {"item_id": item_id, "title": "A revised title",
+             "first_seen": latest, "last_seen": latest},
+            {"item_id": item_id, "title": "The original title",
+             "first_seen": first, "last_seen": first + dt.timedelta(days=1)},
+        ]),
+    ]
+    items = await youtube_items(cast(ClickHouseClient, client), [{
+        "item_id": item_id, "kind": "video", "observed_at": latest,
+        "payload": json.dumps({"title": "A revised title"}),
+    }], YouTubeFilters())
+    assert len(items) == 1
+    assert items[0]["id"] == item_id
+    assert items[0]["title"] == "A revised title"
+    assert items[0]["title_history"] == [
+        {"title": "A revised title", "first_seen": latest.isoformat(),
+         "last_seen": latest.isoformat()},
+        {"title": "The original title", "first_seen": first.isoformat(),
+         "last_seen": (first + dt.timedelta(days=1)).isoformat()},
+    ]
+    query, params = client.fetch_json.call_args.args
+    assert "GROUP BY item_id, title" in query
+    assert "min(observed_at) AS first_seen" in query
+    assert "max(observed_at) AS last_seen" in query
+    assert params == {"ids": [item_id], "limit": 20}
+
+    listing, _ = build_youtube_query(YouTubeFilters())
+    assert "GROUP BY item_id" in listing
+    assert "GROUP BY item_id, title" not in listing
+    assert "argMax(d.payload, d.observed_at)" in listing
+
+
+async def test_title_history_does_not_replace_selected_feed_snapshot_title():
+    client = AsyncMock()
+    first = dt.datetime(2026, 10, 15, tzinfo=dt.UTC)
+    latest = dt.datetime(2026, 10, 17, tzinfo=dt.UTC)
+    item_id = "video:AbCdEfGhIjK"
+    client.fetch_json.side_effect = [
+        QueryResult([]), QueryResult([]), QueryResult([
+            {"item_id": item_id, "title": "A later observation",
+             "first_seen": latest, "last_seen": latest},
+            {"item_id": item_id, "title": "The snapshot title",
+             "first_seen": first, "last_seen": first},
+        ]),
+    ]
+    items = await youtube_items(cast(ClickHouseClient, client), [{
+        "item_id": item_id, "kind": "video", "observed_at": first,
+        "payload": json.dumps({"title": "The snapshot title"}),
+    }], YouTubeFilters(feed="https://www.youtube.com/feed/hype"))
+    assert items[0]["title"] == "The snapshot title"
+    assert items[0]["title_history"][0]["title"] == "A later observation"
+
+
+async def test_thumbnail_history_groups_renditions_and_checks_local_files(
+    tmp_path: pathlib.Path,
+) -> None:
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    first = dt.datetime(2026, 10, 15, tzinfo=dt.UTC)
+    latest = first + dt.timedelta(days=2)
+    rows: list[dict[str, Any]] = []
+
+    for name, fingerprint, color, width, height, captured in (
+        ("current.jpg", "0" * 64, "100,100,100", 1280, 720, latest),
+        ("recompressed.jpg", "0" * 63 + "1", "101,100,100", 480, 270,
+         first + dt.timedelta(days=1)),
+        ("old.jpg", "f" * 64, "50,150,200", 1280, 720, first),
+    ):
+        path = assets / name
+        path.write_bytes(b"saved image")
+        rows.append({
+            "post_id": "video:AbCdEfGhIjK", "local_path": str(path),
+            "content_hash": name, "visual_hash": fingerprint,
+            "visual_color": color, "width": width, "height": height,
+            "first_seen": captured, "last_seen": captured,
+        })
+
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"outside")
+    rows[:0] = [
+        {**rows[0], "post_id": "video:Outside1234",
+         "local_path": str(outside)},
+        {**rows[0], "local_path": str(assets / "missing.jpg")},
+    ]
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult(rows)
+    history = await _thumbnail_history(
+        cast(ClickHouseClient, client),
+        ["video:AbCdEfGhIjK", "video:Outside1234"], assets,
+    )
+    assert history == {"video:AbCdEfGhIjK": [
+        {"url": "/assets/current.jpg",
+         "first_seen": (first + dt.timedelta(days=1)).isoformat(),
+         "last_seen": latest.isoformat()},
+        {"url": "/assets/old.jpg", "first_seen": first.isoformat(),
+         "last_seen": first.isoformat()},
+    ]}
+    query, params = client.fetch_json.call_args.args
+    assert "GROUP BY d.post_id, d.content_hash" in query
+    assert "min(d.observed_at) AS first_seen" in query
+    assert "WHERE d.post_id IN %(ids)s AND d.local_path != ''" in query
+    assert params["limit"] == 64
+
+
+async def test_thumbnail_history_is_bounded_after_visual_grouping(
+    tmp_path: pathlib.Path,
+) -> None:
+    first = dt.datetime(2026, 10, 15, tzinfo=dt.UTC)
+    rows: list[dict[str, Any]] = []
+
+    for index in range(12):
+        path = tmp_path / f"capture-{index}.jpg"
+        path.write_bytes(b"saved image")
+        rows.append({
+            "post_id": "video:AbCdEfGhIjK", "local_path": str(path),
+            "content_hash": str(index), "visual_hash": "0" * 64,
+            "visual_color": f"{index * 10},100,100",
+            "width": 1280, "height": 720,
+            "first_seen": first, "last_seen": first,
+        })
+
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult(rows)
+    history = await _thumbnail_history(
+        cast(ClickHouseClient, client), ["video:AbCdEfGhIjK"], tmp_path,
+    )
+    assert len(history["video:AbCdEfGhIjK"]) == 8
+    assert history["video:AbCdEfGhIjK"][0]["url"] == "/assets/capture-0.jpg"
+
+
+async def test_latest_successful_snapshot_overrides_remote_thumbnail(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "latest.jpg"
+    path.write_bytes(b"saved image")
+    timestamp = dt.datetime(2026, 10, 17, tzinfo=dt.UTC)
+    client = AsyncMock()
+    client.fetch_json.side_effect = [
+        QueryResult([]), QueryResult([]), QueryResult([]), QueryResult([]),
+        QueryResult([{
+            "post_id": "video:AbCdEfGhIjK", "local_path": str(path),
+            "content_hash": "different-image", "visual_hash": "0" * 64,
+            "visual_color": "100,100,100", "width": 1280, "height": 720,
+            "first_seen": timestamp, "last_seen": timestamp,
+        }]),
+    ]
+    items = await youtube_items(cast(ClickHouseClient, client), [{
+        "item_id": "video:AbCdEfGhIjK", "kind": "video",
+        "observed_at": timestamp, "payload": json.dumps({
+            "title": "Captured title",
+            "thumbnail_url": "https://i.ytimg.com/vi/AbCdEfGhIjK/missing.jpg",
+        }),
+    }], YouTubeFilters(), tmp_path)
+    assert items[0]["thumbnail_url"] == "/assets/latest.jpg"
+    assert items[0]["thumbnail_variants"] == [{
+        "url": "/assets/latest.jpg", "first_seen": timestamp.isoformat(),
+        "last_seen": timestamp.isoformat(),
+    }]

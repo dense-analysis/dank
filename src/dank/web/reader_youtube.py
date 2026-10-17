@@ -10,6 +10,7 @@ from urllib.parse import urlencode, urlsplit
 from aiohttp import web
 
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
+from dank.thumbnails import ThumbnailSignature, similar_thumbnail_signatures
 from dank.web.app import (
     AssetRow,
     _asset_view,  # pyright: ignore[reportPrivateUsage]
@@ -26,6 +27,10 @@ from dank.youtube import VIDEO_ID, payload_object
 
 MAX_ITEM_DISCOVERIES = 100
 MAX_ITEM_REFERENCES = 100
+# Keep reader responses bounded while the append-only archive retains all data.
+MAX_ITEM_TITLE_HISTORY = 20
+MAX_THUMBNAIL_CANDIDATES = 64
+MAX_THUMBNAIL_VARIANTS = 8
 INDEX_VERSION = 1
 
 
@@ -103,17 +108,28 @@ async def youtube_items(
     ids = [str(row["item_id"]) for row in rows]
     discoveries = await _discoveries(client, ids, filters)
     references, counts = await _references(client, ids)
+    titles = await _title_history(client, ids)
     media = await _local_media(client, ids, assets_dir) if assets_dir else {}
+    thumbnails = (
+        await _thumbnail_history(client, ids, assets_dir) if assets_dir else {}
+    )
     items: list[dict[str, Any]] = []
 
     for row in rows:
         item_id = str(row["item_id"])
         item = _item(row)
         item.update(media.get(item_id, {}))
+
+        if variants := thumbnails.get(item_id):
+            item.update(
+                thumbnail_url=variants[0]["url"], thumbnail_variants=variants,
+            )
+
         item.update(
             discoveries=discoveries.get(item_id, []),
             references=references.get(item_id, []),
             reference_count=counts.get(item_id, 0),
+            title_history=titles.get(item_id, []),
         )
 
         if not item["title"]:
@@ -154,6 +170,7 @@ def _item(row: dict[str, Any]) -> dict[str, Any]:
             f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
             if video_id and VIDEO_ID.fullmatch(video_id) else None
         ),
+        "thumbnail_variants": [],
         "video_url": None,
         "duration_text": str(payload.get("duration_text") or ""),
         "views_text": str(payload.get("views_text") or ""),
@@ -195,6 +212,35 @@ async def _discoveries(
             "rank": int(row.get("rank") or 0) or None,
         }
         grouped.setdefault(str(row["item_id"]), []).append(observation)
+
+    return grouped
+
+
+async def _title_history(
+    client: ClickHouseClient, ids: list[str],
+) -> dict[str, list[dict[str, str]]]:
+    video_ids = [item for item in ids if item.startswith("video:")]
+
+    if not video_ids:
+        return {}
+
+    result = await client.fetch_json(
+        "SELECT item_id, trimBoth(JSONExtractString(payload, 'title')) "
+        "AS title, min(observed_at) AS first_seen, "
+        "max(observed_at) AS last_seen FROM youtube_discoveries "
+        "WHERE item_id IN %(ids)s AND notEmpty(title) "
+        "GROUP BY item_id, title ORDER BY last_seen DESC, title ASC "
+        "LIMIT %(limit)s BY item_id",
+        {"ids": video_ids, "limit": MAX_ITEM_TITLE_HISTORY},
+    )
+    grouped: dict[str, list[dict[str, str]]] = {}
+
+    for row in result.rows:
+        grouped.setdefault(str(row["item_id"]), []).append({
+            "title": str(row["title"]),
+            "first_seen": _timestamp(row.get("first_seen")),
+            "last_seen": _timestamp(row.get("last_seen")),
+        })
 
     return grouped
 
@@ -397,3 +443,68 @@ async def _local_media(
             media.setdefault(str(row["post_id"]), {})[key] = view["url"]
 
     return media
+
+
+async def _thumbnail_history(
+    client: ClickHouseClient, ids: list[str], assets_dir: pathlib.Path,
+) -> dict[str, list[dict[str, str]]]:
+    video_ids = [item for item in ids if item.startswith("video:")]
+
+    if not video_ids:
+        return {}
+
+    # Aggregate before bounding so repeated captures do not crowd out older
+    # artwork or lose each content hash's first and last observation dates.
+    result = await client.fetch_json(
+        "SELECT d.post_id AS post_id, d.content_hash AS content_hash, "
+        "argMax(d.local_path, d.observed_at) AS local_path, "
+        "argMax(d.visual_hash, d.observed_at) AS visual_hash, "
+        "argMax(d.visual_color, d.observed_at) AS visual_color, "
+        "argMax(d.width, d.observed_at) AS width, "
+        "argMax(d.height, d.observed_at) AS height, "
+        "min(d.observed_at) AS first_seen, max(d.observed_at) AS last_seen "
+        "FROM youtube_thumbnail_observations AS d WHERE d.post_id IN %(ids)s "
+        "AND d.local_path != '' AND d.content_hash != '' "
+        "GROUP BY d.post_id, d.content_hash "
+        "ORDER BY last_seen DESC, content_hash ASC "
+        "LIMIT %(limit)s BY post_id",
+        {"ids": video_ids, "limit": MAX_THUMBNAIL_CANDIDATES},
+    )
+    groups: dict[str, list[tuple[ThumbnailSignature, dict[str, str]]]] = {}
+
+    for row in result.rows:
+        asset = AssetRow(
+            post_id=str(row["post_id"]), url="",
+            local_path=str(row["local_path"]),
+            content_type="", size_bytes=0,
+        )
+        view = _asset_view(asset, assets_dir=assets_dir)
+
+        if view is None:
+            continue
+
+        signature = ThumbnailSignature(
+            str(row.get("visual_hash") or ""),
+            str(row.get("visual_color") or ""),
+            int(row.get("width") or 0), int(row.get("height") or 0),
+        )
+        value = {
+            "url": view["url"],
+            "first_seen": _timestamp(row.get("first_seen")),
+            "last_seen": _timestamp(row.get("last_seen")),
+        }
+        variants = groups.setdefault(str(row["post_id"]), [])
+        same = next((saved for fingerprint, saved in variants
+                     if similar_thumbnail_signatures(signature, fingerprint)),
+                    None)
+
+        if same is not None:
+            same["first_seen"] = min(same["first_seen"], value["first_seen"])
+            same["last_seen"] = max(same["last_seen"], value["last_seen"])
+        else:
+            variants.append((signature, value))
+
+    return {
+        item_id: [value for _, value in variants[:MAX_THUMBNAIL_VARIANTS]]
+        for item_id, variants in groups.items()
+    }
