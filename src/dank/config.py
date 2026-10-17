@@ -106,6 +106,24 @@ class RedditSourceConfig(NamedTuple):
     time_filter: RedditTimeFilter = RedditTimeFilter.DAY
 
 
+class HackerNewsFilter(StrEnum):
+    TOP10 = "top10"
+    TOP20 = "top20"
+    TOP50 = "top50"
+    ALL = "all"
+
+
+class HackerNewsSourceConfig(NamedTuple):
+    filter: HackerNewsFilter = HackerNewsFilter.TOP50
+
+
+class HackerNewsSettings(NamedTuple):
+    days: int = 7
+    comment_limit: int = 50
+    detail_max_posts: int = 20
+    detail_timeout_seconds: float = 60.0
+
+
 class ClickHouseSettings(NamedTuple):
     host: str
     port: int
@@ -122,6 +140,7 @@ class SourceConfig(NamedTuple):
     feed_urls: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     reddit: RedditSourceConfig | None = None
+    hacker_news: HackerNewsSourceConfig | None = None
 
 
 class BrowserSettings(NamedTuple):
@@ -158,6 +177,7 @@ class Settings(NamedTuple):
     media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
     reddit: RedditSettings = RedditSettings()
     youtube: YouTubeSettings = YouTubeSettings()
+    hacker_news: HackerNewsSettings = HackerNewsSettings()
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -216,6 +236,38 @@ def _parse_source(
     tags = tuple(dict.fromkeys(
         tag.lower() for tag in _source_strings(options.get("tags", []), "tags")
     ))
+    hacker_news_domains = {
+        f"{scheme}{host}{suffix}"
+        for scheme in ("", "http://", "https://")
+        for host in (
+            "hckrnews.com", "www.hckrnews.com", "news.ycombinator.com",
+        )
+        for suffix in ("", "/", "/news", "/news/")
+    }
+
+    if domain in hacker_news_domains:
+        feeds = _source_strings(options.get("feed_urls", []), "feed_urls")
+
+        if accounts or feeds or {
+            "reddit_sort", "reddit_time_filter",
+        }.intersection(options):
+            raise ConfigError(
+                "Hacker News sources use hacker_news_filter, not accounts, "
+                "feed_urls or Reddit sorting options",
+            )
+
+        return SourceConfig(
+            domain="news.ycombinator.com", accounts=(), tags=tags,
+            hacker_news=HackerNewsSourceConfig(filter=_parse_enum(
+                HackerNewsFilter,
+                options.get("hacker_news_filter", HackerNewsFilter.TOP50),
+                "sources.hacker_news_filter",
+            )),
+        )
+
+    if "hacker_news_filter" in options:
+        raise ConfigError("hacker_news_filter requires a Hacker News source")
+
     reddit_domains = {
         f"{scheme}{host}{suffix}"
         for scheme in ("", "http://", "https://")
@@ -412,6 +464,41 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
         ),
         stall_scrolls=limits["stall_scrolls"],
     )
+
+
+def _parse_hacker_news_settings(value: object) -> HackerNewsSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("hacker_news must be a table")
+
+    defaults = HackerNewsSettings()
+    limits: dict[str, int] = {}
+
+    for key, maximum in (
+        ("days", 90), ("comment_limit", 500), ("detail_max_posts", 100),
+    ):
+        setting = data.get(key, getattr(defaults, key))
+
+        if (not isinstance(setting, int) or isinstance(setting, bool)
+                or not 1 <= setting <= maximum):
+            raise ConfigError(
+                f"hacker_news.{key} must be an integer from 1 to {maximum}",
+            )
+
+        limits[key] = setting
+
+    timeout = data.get(
+        "detail_timeout_seconds", defaults.detail_timeout_seconds,
+    )
+
+    if (not isinstance(timeout, int | float) or isinstance(timeout, bool)
+            or not math.isfinite(timeout) or not 1 <= timeout <= 300):
+        raise ConfigError(
+            "hacker_news.detail_timeout_seconds must be 1 to 300",
+        )
+
+    return HackerNewsSettings(**limits, detail_timeout_seconds=float(timeout))
 
 
 def _source_strings(value: object, field: str) -> tuple[str, ...]:
@@ -709,6 +796,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         ),
         reddit=_parse_reddit_settings(data.get("reddit", {})),
         youtube=_parse_youtube_settings(data.get("youtube", {})),
+        hacker_news=_parse_hacker_news_settings(data.get("hacker_news", {})),
     )
 
 
