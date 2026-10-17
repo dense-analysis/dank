@@ -100,6 +100,12 @@ rules. Old unvisited videos and unobserved A/B-test versions cannot gain history
 without another capture. Known-overlap stopping still refreshes encountered
 videos before ending the channel pass.
 
+Live verification on 2026-10-17 recovered all six missing thumbnail URLs with
+five `sddefault.jpg` images and one `hqdefault.jpg`. Existing captures of
+`bVRiUa04bHE` yielded two distinct images and two titles while remaining one
+video; Chrome verified hover crossfades without playback at desktop and mobile
+widths.
+
 Regression coverage checks 404 recovery, same-URL changed bytes, immutable
 storage, resolution deduplication, dated title history and stable video identity.
 Browser coverage checks hover/focus crossfades, image failures, static reduced

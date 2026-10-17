@@ -163,14 +163,17 @@ export function YouTubeCollection({
         {selected ? (
           <>
             <div className="yt-detail-layout">
-              <YouTubeCard
-                key={selected.id}
-                item={selected}
-                feed={filters.feed}
-                open={() => {}}
-                href={href(selected)}
-                detailed
-              />
+              <div className="yt-detail-main">
+                <YouTubeCard
+                  key={selected.id}
+                  item={selected}
+                  feed={filters.feed}
+                  open={() => {}}
+                  href={href(selected)}
+                  detailed
+                />
+                <YouTubeVersionHistory item={selected} />
+              </div>
               <aside
                 className="yt-detail-context"
                 aria-label="Discovery context"
@@ -256,7 +259,6 @@ export function YouTubeCollection({
                 </p>
               </aside>
             </div>
-            <YouTubeVersionHistory item={selected} />
             {!!selected.references.length && (
               <section
                 className="yt-references"
