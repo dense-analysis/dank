@@ -127,7 +127,10 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
 
   **Docker verification, 2026-10-17:** run
   `03ccaaa1-29db-448f-8041-0d6cf4ba1423` completed all **36 account timelines** in
-  **6m23s**, saving **1,065 records / 1,049 distinct posts**. Account 21,
+  **6m23s**, saving **1,065 records / 1,049 distinct raw IDs**. Processing made
+  1,046 posts readable; the three remaining IDs are content-free references
+  described below. Earlier discussion archives were retained with their original
+  capture times. Account 21,
   `lexfridman`, genuinely timed out after 30s; the browser restarted with the saved
   session and its one retry collected 32 posts. All later accounts completed.
   ClickHouse confirms zero final fetch/parse failures, zero media failures,
@@ -137,6 +140,13 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   bounded cleanup and login/cancellation behavior. A separate bounded refresh
   (`9061e460`) selected and saved two discussions in 24.8s without any timeline
   visits: one captured, one partial with 22 replies/context and a remaining cursor.
+- [ ] **P2: Distinguish ID-only X references from readable posts.** Three saved
+  objects in `03ccaaa1` contained only `__typename: Tweet` and `rest_id`, with no
+  text, author or media. They remain in raw storage and are correctly omitted
+  from processing, but inflate the raw post count. Classify these references
+  separately so collection totals do not imply their content was captured;
+  preserve the original payloads. [Parser](../src/dank/scrape/x/payloads.py),
+  [processor](../src/dank/process/x.py).
 - [x] **P1: Verify Reddit pagination beyond the initial cards.** A controlled
   Docker check reproduced three cards while the listing was hidden, then 27
   after activating it and scrolling. The collector now activates the listing
