@@ -420,3 +420,35 @@ def test_poster_only_fallback_does_not_claim_playable_video_metadata() -> None:
         "alt": "",
         "remote": True,
     }]
+
+
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("source", [
+    "https://x.com/alice/status/123/photo/1",
+    "https://twitter.com/alice/status/123/photo/2?s=20",
+    "http://mobile.twitter.com/alice/status/123/photo/1",
+])
+def test_photo_source_reference_survives_local_asset_selection(
+    source: str, *, local: bool,
+) -> None:
+    image = "https://pbs.twimg.com/media/photo.jpg"
+    payload = video_post(
+        type="photo", expanded_url=source, media_url_https=image,
+    )
+    media = post_media(payload, {image: "/assets/photo.jpg"} if local else {})
+    assert media[0].get("source_url") == source
+    assert media[0]["url"] == ("/assets/photo.jpg" if local else image)
+
+
+@pytest.mark.parametrize("source", [
+    None, "https://x.com/alice/status/123/video/1",
+    "https://x.com/alice/status/123/photo/0",
+    "https://x.com.evil.com/alice/status/123/photo/1",
+    "https://user@x.com/alice/status/123/photo/1",
+    "https://x.com:444/alice/status/123/photo/1",
+])
+def test_photo_source_reference_rejects_unrelated_or_unsafe_urls(
+    source: object,
+) -> None:
+    media = post_media(video_post(type="photo", expanded_url=source), {})
+    assert "source_url" not in media[0]

@@ -212,6 +212,7 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
             "full_text": "Same capture",
             "extended_entities": {"media": [{
                 "type": "photo", "media_url_https": image,
+                "expanded_url": "https://x.com/Example/status/1/photo/1",
             }, {
                 "type": "video",
                 "expanded_url": "https://x.com/Example/status/1/video/1",
@@ -252,7 +253,8 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
         "handle": "example", "name": "Example Person", "icon_url": ICON,
         "media": [{"type": "image",
                    "url": "/assets/photo.jpg" if file_exists else image,
-                   "poster_url": None, "alt": "", "remote": not file_exists},
+                   "poster_url": None, "alt": "", "remote": not file_exists,
+                   "source_url": "https://x.com/Example/status/1/photo/1"},
                   {"type": "video",
                    "url": "https://video.twimg.com/video.mp4",
                    "poster_url": None, "alt": "", "remote": True,

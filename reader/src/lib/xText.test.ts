@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import {
+  imageReferenceKey,
   previewReferenceKey,
   videoReferenceKey,
   withoutDisplayedLinks,
@@ -120,4 +121,46 @@ it("keeps preview destinations distinct and rejects unsafe URLs", () => {
   expect(
     previewReferenceKey("https://user:secret@example.com"),
   ).toBeUndefined();
+});
+
+it("hides only represented raw photo references, preserving gallery slots and descriptive links", () => {
+  const photo = "https://x.com/author/status/123/photo/1";
+  const other = "https://x.com/author/status/123/photo/2";
+  const html = `<p>Some text.<br><a href="${photo}">twitter.com/author/status/123/photo/1?s=20</a></p><p>See <a href="${photo}">the original photograph</a>.</p><p><a href="${other}">${other}</a></p>`;
+  const target = document.createElement("div");
+  target.innerHTML = withoutDisplayedLinks(
+    html,
+    new Set([imageReferenceKey(photo) ?? ""]),
+  );
+  expect(target.querySelectorAll("a")).toHaveLength(2);
+  expect(target.querySelector("p")?.innerHTML).toBe("Some text.");
+  expect(target.querySelector(`a[href="${photo}"]`)?.textContent).toBe(
+    "the original photograph",
+  );
+  expect(target.querySelector(`a[href="${other}"]`)).not.toBeNull();
+  expect(withoutDisplayedLinks(html, new Set())).toBe(html);
+});
+
+it("matches only native photo aliases and exact image addresses", () => {
+  const key = imageReferenceKey("https://x.com/author/status/123/photo/1");
+  expect(
+    imageReferenceKey(
+      "https://mobile.twitter.com/author/status/123/photo/1?s=20",
+    ),
+  ).toBe(key);
+  expect(imageReferenceKey("https://x.com/author/status/123/photo/2")).not.toBe(
+    key,
+  );
+  expect(
+    imageReferenceKey("https://x.com/author/status/123/video/1"),
+  ).toBeUndefined();
+  expect(
+    imageReferenceKey("https://example.com/author/status/123/photo/1"),
+  ).toBeUndefined();
+  expect(
+    imageReferenceKey("https://user:secret@x.com/author/status/123/photo/1"),
+  ).toBeUndefined();
+  expect(imageReferenceKey("https://pbs.twimg.com/media/photo.jpg")).toBe(
+    "https://pbs.twimg.com/media/photo.jpg",
+  );
 });

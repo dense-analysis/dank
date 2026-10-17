@@ -6,6 +6,7 @@ import type { Post, XMedia } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
 import { xMedia, xMediaUrl } from "../lib/x";
 import {
+  imageReferenceKey,
   previewReferenceKey,
   videoReferenceKey,
   withoutDisplayedLinks,
@@ -28,19 +29,18 @@ export function XPostContent({
 }) {
   const [failedMedia, setFailedMedia] = useState<Set<string>>(() => new Set());
   const media = useMemo(() => xMedia(post), [post]);
-  const displayedVideos = useMemo(
+  const displayedMedia = useMemo(
     () =>
       new Set(
         media.flatMap((asset) => {
-          if (
-            asset.type === "image" ||
-            failedMedia.has(asset.url) ||
-            !xMediaUrl(asset.url)
-          )
-            return [];
+          if (failedMedia.has(asset.url) || !xMediaUrl(asset.url)) return [];
+
+          const referenceKey =
+            asset.type === "image" ? imageReferenceKey : videoReferenceKey;
 
           return [asset.source_url, asset.url].flatMap((value) => {
-            const key = value ? videoReferenceKey(value) : undefined;
+            const key = value ? referenceKey(value) : undefined;
+
             return key ? [key] : [];
           });
         }),
@@ -52,17 +52,17 @@ export function XPostContent({
       (post.x?.links ?? []).filter(
         (link) =>
           previewReferenceKey(link.url) &&
-          !displayedVideos.has(videoReferenceKey(link.url) ?? ""),
+          !displayedMedia.has(videoReferenceKey(link.url) ?? ""),
       ),
-    [post.x?.links, displayedVideos],
+    [post.x?.links, displayedMedia],
   );
   const displayedPreviews = useMemo(
     () => new Set(previews.map((link) => previewReferenceKey(link.url) ?? "")),
     [previews],
   );
   const html = useMemo(
-    () => withoutDisplayedLinks(post.html, displayedVideos, displayedPreviews),
-    [post.html, displayedVideos, displayedPreviews],
+    () => withoutDisplayedLinks(post.html, displayedMedia, displayedPreviews),
+    [post.html, displayedMedia, displayedPreviews],
   );
 
   return (
@@ -87,7 +87,7 @@ export function XPostContent({
                   ? (videoReferenceKey(asset.source_url) ?? index)
                   : index,
               )}
-              onVideoFailure={() =>
+              onFailure={() =>
                 setFailedMedia((previous) => new Set(previous).add(asset.url))
               }
             />
@@ -109,13 +109,13 @@ function XAttachment({
   asset,
   original,
   index,
-  onVideoFailure,
+  onFailure,
   positionKey,
 }: {
   asset: XMedia;
   original: string;
   index: number;
-  onVideoFailure: () => void;
+  onFailure: () => void;
   positionKey: string;
 }) {
   const [failed, setFailed] = useState(false);
@@ -150,7 +150,10 @@ function XAttachment({
             alt={asset.alt || `Image ${index + 1} attached to this post`}
             loading="lazy"
             referrerPolicy="no-referrer"
-            onError={() => setFailed(true)}
+            onError={() => {
+              setFailed(true);
+              onFailure();
+            }}
           />
         </a>
       ) : (
@@ -175,7 +178,7 @@ function XAttachment({
           }}
           onError={() => {
             setFailed(true);
-            onVideoFailure();
+            onFailure();
           }}
         >
           <track kind="captions" />

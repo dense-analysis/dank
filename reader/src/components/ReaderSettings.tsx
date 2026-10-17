@@ -88,6 +88,46 @@ export function ReaderSettings() {
           difficult to read. You can still change each image’s background.
         </p>
       </div>
+      <fieldset className="media-preview-settings">
+        <legend>Media previews</legend>
+        <p className="settings-help">
+          Fit Reddit and X frames to the media’s proportions, removing empty
+          space. Turn off for wider frames. The full image or video stays
+          visible.
+        </p>
+        <div className="image-background-setting">
+          <label htmlFor="fit-image-previews">
+            <input
+              id="fit-image-previews"
+              type="checkbox"
+              checked={preferences.fitImagePreviews}
+              onChange={(event) =>
+                updatePreferences({
+                  ...preferences,
+                  fitImagePreviews: event.target.checked,
+                })
+              }
+            />
+            Fit image previews to their aspect ratio
+          </label>
+        </div>
+        <div className="image-background-setting">
+          <label htmlFor="fit-video-previews">
+            <input
+              id="fit-video-previews"
+              type="checkbox"
+              checked={preferences.fitVideoPreviews}
+              onChange={(event) =>
+                updatePreferences({
+                  ...preferences,
+                  fitVideoPreviews: event.target.checked,
+                })
+              }
+            />
+            Fit video previews to their aspect ratio
+          </label>
+        </div>
+      </fieldset>
       <fieldset className="reddit-reading-settings">
         <legend>Reddit reading</legend>
         <div className="image-background-setting">

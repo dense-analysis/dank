@@ -2176,19 +2176,22 @@ input[type="checkbox"] {
   margin-top: 12px;
   font-size: 12px;
 }
-.reddit-reading-settings {
+.reddit-reading-settings,
+.media-preview-settings {
   min-width: 0;
   border: 0;
   border-top: 1px solid var(--line);
   margin: 0 0 32px;
   padding: 24px 0 0;
 }
-.reddit-reading-settings legend {
+.reddit-reading-settings legend,
+.media-preview-settings legend {
   padding-right: 12px;
   font-size: 14px;
   font-weight: 600;
 }
-.reddit-reading-settings .image-background-setting {
+.reddit-reading-settings .image-background-setting,
+.media-preview-settings .image-background-setting {
   margin: 0 0 20px;
 }
 @media (max-width: 600px) {
@@ -2352,6 +2355,53 @@ html:has(.x-text-expanding:not([hidden] *)) {
 .x-attachment video.x-video-sized {
   width: min(100%, calc(var(--x-video-max-height) * var(--x-video-ratio)));
   aspect-ratio: var(--x-video-ratio);
+}
+/* Fit the frame, keeping the entire image or video visible in either mode. */
+[data-fit-image-previews="true"] .x-attachment img {
+  width: auto;
+  height: auto;
+}
+[data-fit-image-previews="true"] .x-attachment-image a {
+  width: fit-content;
+  max-width: 100%;
+}
+.reddit-card .thumbnail {
+  --thumbnail-width: 150px;
+  --thumbnail-height: 110px;
+}
+.reddit-card .thumbnail img {
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+}
+[data-fit-image-previews="true"] .reddit-card .thumbnail {
+  width: fit-content;
+  height: fit-content;
+  max-width: var(--thumbnail-width);
+  align-self: flex-start;
+}
+[data-fit-image-previews="true"] .reddit-card .thumbnail img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: var(--thumbnail-height);
+}
+[data-source="reddit"] .article-body img {
+  max-height: min(70vh, 720px);
+  object-fit: contain;
+}
+[data-fit-image-previews="false"] [data-source="reddit"] .article-body img {
+  width: 100%;
+}
+[data-fit-video-previews="false"] .x-attachment video,
+[data-fit-video-previews="false"] .reddit-video-frame {
+  width: 100%;
+}
+@media (max-width: 760px) {
+  .reddit-card .thumbnail {
+    --thumbnail-width: 88px;
+    --thumbnail-height: 80px;
+  }
 }
 .x-attachment figcaption {
   margin-top: 5px;

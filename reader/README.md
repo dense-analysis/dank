@@ -71,6 +71,9 @@ browser channel. No live collection is needed for the fixture tests.
   Enable it to give sparse transparent figures a light background when contrast
   clearly improves. Mixed or uncertain images keep their original background;
   the per-image toggle overrides the automatic choice while the article is open.
+- **Media previews** in Settings independently fit image and video frames to
+  their aspect ratios on Reddit and X. Both are on by default; turn either off
+  for wider frames. The full media remains visible, and choices stay in this browser.
 - Reopening an article resumes where you left off.
 - Code blocks use their declared language for syntax highlighting, with copy
   controls and horizontal scrolling. Unsupported or unlabelled code stays plain.
@@ -114,8 +117,8 @@ links open the account's collected posts, with initials when an avatar is unavai
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
 Portrait videos keep their natural proportions within the available space.
-The raw video reference is hidden while its player is shown and returns if
-playback fails. Raw URLs represented by clickable preview cards, including
+Raw photo and video references are hidden while their attachments are shown
+and return if the image or player fails. Raw URLs represented by clickable preview cards, including
 YouTube cards, are also hidden. Descriptive links and links without previews
 remain available. YouTube previews play inline when selected, with a separate
 **Watch on YouTube** link for videos that cannot be embedded. Closing the video
