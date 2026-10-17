@@ -102,6 +102,11 @@ recoverable request and media failures:
   User-Agent was rejected by Ars Technica, a Microsoft article and Wikimedia
   image delivery. Wikimedia's [published policy](https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy)
   requires a descriptive client identifier and contact information.
+- A feed explicitly linking back to its own page with **Read full article** is
+  treated as an excerpt even inside `content:encoded`. When a page is available,
+  the processor uses its article body; ordinary full feeds remain preferred and
+  failed fetches retain their excerpt. This repairs Ars Technica's short previews
+  after a successful page recovery.
 - RSS media requests carry the source page's origin as their referrer. This
   restores the `shkspr.mobi` favicon images without sending article paths,
   query strings or credentials. HTTPS origins are not sent to HTTP media.
@@ -135,6 +140,16 @@ saved as a successful article or silently reclassified as an intentional skip.
 
 See [recovery regressions](../tests/scrape/test_publisher_recovery.py) and
 [browser recovery](../src/dank/scrape/page_recovery.py).
+
+**Live verification, 2026-10-17:** rerun
+`3bb45aab-d1bd-4799-ad0a-3ee0dce6ae4a` selected all 13 affected source entries:
+nine completed, three remained partial, and Niche Gamer remained blocked.
+It retained 202 post captures; media failures fell from 12 to the two missing
+Microsoft diagrams. The original failed-page set contained 70 article URLs;
+44 recovered, while Etsy's 20 and LWN's six remained inaccessible. A separate
+saved-page retry (`16a5ec3f-c06c-49c4-b090-b04b1317624e`) recovered 81 older
+captures outside the current feeds, leaving five older Register captures
+incomplete after bounded recovery. Original payloads remain available.
 
 ## Latest full-scrape check
 

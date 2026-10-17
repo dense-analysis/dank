@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 from html.parser import HTMLParser
 from typing import NamedTuple
+from urllib.parse import urljoin, urlsplit
 
 from dank.html_utils import VOID_TAGS, html_text, remove_page_noise
 from dank.process.page import extract_article_html
@@ -14,6 +15,64 @@ BODY_BLOCKS = {
     "pre", "table",
 }
 MEDIA_BLOCKS = {"figure", "picture", "img"}
+
+
+class _ExcerptLink(HTMLParser):
+    def __init__(self, page_url: str) -> None:
+        super().__init__()
+        self.page_url = page_url
+        self.href: str | None = None
+        self.parts: list[str] = []
+        self.found = False
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag == "a":
+            self.href = dict(attrs).get("href")
+            self.parts.clear()
+
+    def handle_data(self, data: str) -> None:
+        if self.href is not None:
+            self.parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a":
+            return
+
+        label = " ".join("".join(self.parts).split()).casefold()
+
+        if label == "read full article" and self.href:
+            self.found |= self._links_to_article(self.href)
+
+        self.href = None
+
+    def _links_to_article(self, href: str) -> bool:
+        if href.startswith("#"):
+            return False
+
+        try:
+            linked = urlsplit(urljoin(self.page_url, href))
+            page = urlsplit(self.page_url)
+
+            return (
+                linked.scheme in {"http", "https"}
+                and not linked.username and not linked.password
+                and linked.hostname == page.hostname
+                and linked.port == page.port
+                and linked.path.rstrip("/") == page.path.rstrip("/")
+                and linked.query == page.query
+            )
+        except ValueError:
+            return False
+
+
+def feed_is_excerpt(value: str, page_url: str) -> bool:
+    """An explicit self-link can identify excerpts inside content:encoded."""
+    parser = _ExcerptLink(page_url)
+    parser.feed(value)
+
+    return parser.found
 
 
 class _BodyBlock(NamedTuple):

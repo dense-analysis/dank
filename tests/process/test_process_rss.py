@@ -134,6 +134,55 @@ def test_wordpress_captions_survive_feed_and_page_processing(
     assert raw.payload == payload
 
 
+@pytest.mark.parametrize("href, label, expanded", [
+    ("https://example.com/story", "Read full article", True),
+    ("/story", "<span>Read full</span> article", True),
+    ("/story", "Read full&nbsp;article", True),
+    ("https://other.test/story", "Read full article", False),
+    ("#details", "Read full article", False),
+    ("/story?different=article", "Read full article", False),
+])
+def test_explicit_feed_excerpt_uses_the_fetched_article(
+    href: str, label: str, *, expanded: bool,
+) -> None:
+    feed = (
+        '<item xmlns:c="http://purl.org/rss/1.0/modules/content/">'
+        '<title>Story</title><c:encoded><![CDATA[<p>Introduction.</p>'
+        f'<p><a href="{href}">{label}</a></p>]]></c:encoded></item>'
+    )
+    raw = _raw_post(
+        payload=json.dumps({
+            "feed_xml": feed,
+            "page_html": '<article><p>Introduction.</p>'
+                         '<p>Details available only on the page.</p>'
+                         '</article>',
+        }),
+        url="https://example.com/story",
+        scraped_at=datetime.datetime(2026, 10, 17, tzinfo=datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert ("Details available only on the page" in post.html) == expanded
+
+
+def test_excerpt_remains_readable_when_the_page_is_unavailable() -> None:
+    raw = _raw_post(
+        payload=json.dumps({
+            "feed_xml": '<item xmlns:c="http://purl.org/rss/1.0/modules/content/">'
+                        '<title>Story</title><c:encoded><![CDATA['
+                        '<p>Retained excerpt.</p><a href="https://example.com/story">'
+                        'Read full article</a>]]></c:encoded></item>',
+            "page_html": "", "page_fetch_status": "failed",
+        }),
+        url="https://example.com/story",
+        scraped_at=datetime.datetime(2026, 10, 17, tzinfo=datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+
+    assert post is not None and "Retained excerpt" in post.html
+
+
 def test_convert_raw_post_atom_entry() -> None:
     scraped_at = datetime.datetime(2026, 2, 1, 2, 0, tzinfo=datetime.UTC)
     raw = _raw_post(
