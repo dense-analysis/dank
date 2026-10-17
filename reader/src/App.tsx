@@ -62,6 +62,19 @@ export function App() {
   const { read, markRead, storageError } = useReadPosts();
   const { preferences } = useReaderPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const desktop = window.matchMedia("(min-width: 761px)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) setMobileOpen(false);
+    };
+    closeOnDesktop();
+    desktop.addEventListener("change", closeOnDesktop);
+
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, [mobileOpen]);
   const section = sectionFromView(params.get("view"));
   const feedSection =
     section !== "sources" && section !== "settings" && section !== "youtube";
@@ -325,6 +338,7 @@ export function App() {
           label="Navigation"
           onClose={() => setMobileOpen(false)}
           className="navigation-dialog"
+          dismissOnBackdrop
         >
           {sidebar}
         </Modal>
@@ -341,6 +355,7 @@ export function App() {
             (feedSection || section === "youtube") && !readingArticle
           }
           openNavigation={() => setMobileOpen(true)}
+          navigationOpen={mobileOpen}
           back={
             collectionContext
               ? {

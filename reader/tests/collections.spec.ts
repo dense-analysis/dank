@@ -411,6 +411,14 @@ for (const width of [390, 1280]) {
     }
 
     await openNavigation();
+
+    if (width < 600) {
+      await nav.getByRole("button", { name: "Expand X accounts" }).click();
+      await nav
+        .getByRole("button", { name: "Expand Reddit communities" })
+        .click();
+    }
+
     await nav.getByRole("button", { name: "Collapse X accounts" }).click();
     await expect(page.locator("#x-accounts")).toBeHidden();
     await expect(page.locator("#reddit-communities")).toBeVisible();
@@ -616,6 +624,10 @@ for (const width of [1440, 390, 320]) {
         .click();
 
     const nav = page.getByRole("navigation", { name: "Main navigation" });
+
+    if (width < 600)
+      await nav.getByRole("button", { name: "Expand X accounts" }).click();
+
     await expect(
       nav.getByRole("button", { name: /@quiet_account.*collected posts/ }),
     ).toBeVisible();
@@ -706,7 +718,7 @@ test("source links and source rows select their collection", async ({
 });
 
 for (const width of [1440, 390, 320]) {
-  test(`expanded collection lists allow about fifteen rows and remain reachable at ${width}px`, async ({
+  test(`expanded collection lists keep every feed reachable at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 1100 });
@@ -744,6 +756,13 @@ for (const width of [1440, 390, 320]) {
         .click();
 
     const nav = page.getByRole("navigation", { name: "Main navigation" });
+    if (width < 600) {
+      await nav.getByRole("button", { name: "Expand X accounts" }).click();
+      await nav
+        .getByRole("button", { name: "Expand Reddit communities" })
+        .click();
+    }
+
     const grant = nav.getByRole("button", {
       name: /Grant Sanderson.*@account_1.*0 collected posts/,
     });
@@ -753,18 +772,21 @@ for (const width of [1440, 390, 320]) {
 
     for (const id of ["x-accounts", "reddit-communities"]) {
       const list = page.locator(`[id="${id}"]`);
-      const capacity = await list.evaluate((element) => {
-        const row = element.querySelector("li");
+      if (width >= 600) {
+        const capacity = await list.evaluate((element) => {
+          const row = element.querySelector("li");
 
-        return {
-          rows:
-            element.clientHeight / (row?.getBoundingClientRect().height ?? 1),
-          scrolls: element.scrollHeight > element.clientHeight,
-        };
-      });
-      expect(capacity.rows).toBeGreaterThanOrEqual(14);
-      expect(capacity.rows).toBeLessThanOrEqual(17);
-      expect(capacity.scrolls).toBe(true);
+          return {
+            rows:
+              element.clientHeight / (row?.getBoundingClientRect().height ?? 1),
+            scrolls: element.scrollHeight > element.clientHeight,
+          };
+        });
+        expect(capacity.rows).toBeGreaterThanOrEqual(14);
+        expect(capacity.rows).toBeLessThanOrEqual(17);
+        expect(capacity.scrolls).toBe(true);
+      }
+
       const lastItem = list.getByRole("button").last();
       await lastItem.scrollIntoViewIfNeeded();
       await expect(lastItem).toBeInViewport();

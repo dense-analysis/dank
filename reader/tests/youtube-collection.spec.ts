@@ -504,10 +504,15 @@ for (const width of [1440, 390, 320]) {
       path: testInfo.outputPath(`youtube-detail-${width}.png`),
       fullPage: true,
     });
-    if (width < 600)
+    if (width < 600) {
       await page
         .getByRole("button", { name: "Open navigation", exact: true })
         .click();
+      await page
+        .getByRole("button", { name: "Expand YouTube News", exact: true })
+        .click();
+    }
+
     await page
       .getByRole("navigation", { name: "Main navigation" })
       .getByRole("button", {

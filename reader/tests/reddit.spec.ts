@@ -366,6 +366,9 @@ test("supports Reddit communities on mobile without leaving the navigation overl
   await page.screenshot({
     path: testInfo.outputPath("reddit-mobile-navigation.png"),
   });
+  await dialog
+    .getByRole("button", { name: "Expand Reddit communities" })
+    .click();
   await dialog.getByRole("button", { name: /r\/LocalLLaMA/ }).click();
   await expect(dialog).toHaveCount(0);
   await expect(

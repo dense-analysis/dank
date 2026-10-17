@@ -1,4 +1,5 @@
 import { Layers3, Newspaper, Rss, Settings2, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { RedditCommunity, Section, XAccount } from "../lib/types";
 import type { YouTubeSources } from "../lib/youtubeCollection";
 import { CollectionNavGroup } from "./CollectionNavGroup";
@@ -42,20 +43,36 @@ export function Sidebar({
   mobileOpen: boolean;
   close: () => void;
 }) {
+  const navigation = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const frame = requestAnimationFrame(() => {
+      navigation.current
+        ?.querySelector('[aria-current="page"]')
+        ?.scrollIntoView({ block: "nearest" });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [mobileOpen]);
+
   return (
     <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
-      <a className="brand" href="/reader/" aria-label="DANK reader home">
-        <span>DANK</span>
-      </a>
-      <button
-        type="button"
-        className="icon-button close-menu"
-        onClick={close}
-        aria-label="Close navigation"
-      >
-        <X size={20} />
-      </button>
-      <nav aria-label="Main navigation">
+      <div className="sidebar-header">
+        <a className="brand" href="/reader/" aria-label="DANK reader home">
+          <span>DANK</span>
+        </a>
+        <button
+          type="button"
+          className="icon-button close-menu"
+          onClick={close}
+          aria-label="Close navigation"
+        >
+          <X size={20} />
+        </button>
+      </div>
+      <nav id="reader-navigation" ref={navigation} aria-label="Main navigation">
         <button
           type="button"
           className={`nav-item ${section === "all" ? "active" : ""}`}

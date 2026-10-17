@@ -5,13 +5,16 @@ export function Modal({
   onClose,
   className = "",
   label,
+  dismissOnBackdrop = false,
 }: {
   children: ReactNode;
   onClose: () => void;
   className?: string;
   label: string;
+  dismissOnBackdrop?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const backdropPressed = useRef(false);
   useEffect(() => {
     const dialog = ref.current;
     const opener = document.activeElement;
@@ -31,6 +34,28 @@ export function Modal({
       ref={ref}
       className={`modal ${className}`}
       aria-label={label}
+      onPointerDown={(event) => {
+        const { left, right, top, bottom } =
+          event.currentTarget.getBoundingClientRect();
+        backdropPressed.current =
+          event.clientX < left ||
+          event.clientX > right ||
+          event.clientY < top ||
+          event.clientY > bottom;
+      }}
+      onPointerCancel={() => {
+        backdropPressed.current = false;
+      }}
+      onPointerUp={(event) => {
+        if (
+          dismissOnBackdrop &&
+          backdropPressed.current &&
+          event.target === event.currentTarget
+        )
+          onClose();
+
+        backdropPressed.current = false;
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();

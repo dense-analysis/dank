@@ -39,10 +39,15 @@ export function CollectionNavGroup({
 }) {
   const storageKey = `dank-reader:collection-expanded:v1:${id}`;
   const [expanded, setExpanded] = useState(() => {
+    const defaultExpanded =
+      active || !window.matchMedia("(max-width: 760px)").matches;
+
     try {
-      return globalThis.localStorage.getItem(storageKey) !== "false";
+      const saved = globalThis.localStorage.getItem(storageKey);
+
+      return saved === "true" || (saved !== "false" && defaultExpanded);
     } catch {
-      return true;
+      return defaultExpanded;
     }
   });
 

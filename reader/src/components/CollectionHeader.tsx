@@ -10,6 +10,7 @@ export function CollectionHeader({
   back,
   pageHeading,
   openNavigation,
+  navigationOpen,
 }: {
   title: string;
   titleContent?: ReactNode;
@@ -19,6 +20,7 @@ export function CollectionHeader({
   back?: { label: string; onClick: () => void };
   pageHeading: boolean;
   openNavigation: () => void;
+  navigationOpen: boolean;
 }) {
   const Title = pageHeading ? "h1" : "span";
 
@@ -29,6 +31,9 @@ export function CollectionHeader({
         className="icon-button menu-button"
         onClick={openNavigation}
         aria-label="Open navigation"
+        aria-expanded={navigationOpen}
+        aria-controls="reader-navigation"
+        aria-haspopup="dialog"
       >
         <Menu size={21} />
       </button>
