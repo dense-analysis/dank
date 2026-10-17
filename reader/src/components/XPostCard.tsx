@@ -43,6 +43,14 @@ export function XPostCard({
             </span>
           )}
         </ReaderLink>
+        {(post.x?.replies_status === "captured" ||
+          post.x?.replies_status === "partial") &&
+          post.x.replies_captured_count != null && (
+            <span className="x-conversation-summary">
+              {post.x.replies_captured_count.toLocaleString()} saved
+              {post.x.replies_status === "partial" ? " · partial" : ""}
+            </span>
+          )}
         {read && (
           <span className="read-indicator">
             <Check size={12} /> Read

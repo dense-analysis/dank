@@ -97,7 +97,7 @@ describe("reader API", () => {
 
     for (const bad of [
       { reply_count: -1 },
-      { replies_status: "captured" },
+      { replies_status: "invented" },
       { links: [{ ...x.links[0], image_url: 7 }] },
       { media: [{ ...x.media[0], remote: "false" }] },
       { media: [{ ...x.media[0], type: "iframe" }] },

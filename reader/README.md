@@ -101,9 +101,17 @@ initials when an avatar is unavailable.
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
 Remote media is labelled and video plays only on demand. **Open post** shows
-the full content and an explicit **Replies not collected** notice; reported
-reply counts are snapshots, not saved conversations. **View conversation on X**
-opens the original. Reply and thread collection are not implemented yet.
+the full content, saved parent context, and captured replies in thread order.
+Author continuations are labelled, and missing reply parents are explicit.
+
+**Partial conversation** means a limit, interrupted request, unexpanded branch
+or missing context prevented a complete capture. Saved reply counts stay
+separate from X's reported counts. Older posts show **Replies not collected**;
+failed or disabled collection has its own status. A failed refresh keeps the
+previously saved conversation and its capture date. **View conversation on X**
+opens the current conversation. Collection runs with the X scraper, not when
+opening a post; see [X collection](../docs/features/x.md) for limits and targeted
+capture of a saved post.
 
 ## Reddit
 

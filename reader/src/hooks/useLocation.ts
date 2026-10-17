@@ -24,6 +24,13 @@ function navigationKey() {
   return crypto.getRandomValues(new Uint32Array(4)).join("-");
 }
 
+function readingBody() {
+  return (
+    document.querySelector(".article-page .x-focused-post .article-body") ??
+    document.querySelector(".article-page .article-body")
+  );
+}
+
 function currentEntry(): HistoryEntry {
   const entry = window.history.state?.readerNavigation;
   if (entry && typeof entry.key === "string") return entry;
@@ -50,7 +57,7 @@ export function useLocation() {
     positions.current.set(activeKey.current, window.scrollY);
     if (document.activeElement instanceof HTMLElement)
       focused.current.set(activeKey.current, document.activeElement);
-    const body = document.querySelector(".article-page .article-body");
+    const body = readingBody();
     if (activeArticle.current && body)
       setPositionError(
         !saveReadingPosition(
@@ -134,7 +141,10 @@ export function useLocation() {
     let observer: MutationObserver | undefined;
 
     const restore = () => {
-      const body = document.querySelector(".article-page .article-body");
+      if (document.querySelector('.article-page[data-reader-pending="true"]'))
+        return;
+
+      const body = readingBody();
       if (articleKey && !body) {
         if (document.querySelector('.article-page [role="alert"]'))
           document
@@ -164,6 +174,8 @@ export function useLocation() {
       observer.observe(document.querySelector(".main-shell") ?? document.body, {
         childList: true,
         subtree: true,
+        attributes: true,
+        attributeFilter: ["data-reader-pending"],
       });
     }
     return () => observer?.disconnect();

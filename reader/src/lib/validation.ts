@@ -119,6 +119,10 @@ function isXProfile(value: unknown): value is XProfile {
 }
 
 export function isPost(value: unknown): value is Post {
+  return validPost(value, true);
+}
+
+function validPost(value: unknown, allowConversation: boolean): value is Post {
   return (
     isRecord(value) &&
     [
@@ -135,7 +139,9 @@ export function isPost(value: unknown): value is Post {
     (value.reddit === undefined ||
       value.reddit === null ||
       isRedditPost(value.reddit)) &&
-    (value.x === undefined || value.x === null || isXPost(value.x)) &&
+    (value.x === undefined ||
+      value.x === null ||
+      isXPost(value.x, allowConversation)) &&
     (value.collection_incomplete === undefined ||
       typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
@@ -149,7 +155,51 @@ export function isPost(value: unknown): value is Post {
   );
 }
 
-function isXPost(value: unknown): boolean {
+function isConversationStatus(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    ["captured", "partial", "failed", "disabled", "not_collected"].includes(
+      value,
+    )
+  );
+}
+
+function isConversationNode(value: unknown): boolean {
+  return (
+    validPost(value, false) &&
+    isRecord(value) &&
+    value.source === "x" &&
+    ["x.com", "twitter.com"].includes(value.domain) &&
+    (value.parent_id === null || typeof value.parent_id === "string") &&
+    isCount(value.depth) &&
+    value.depth <= 20 &&
+    typeof value.is_author === "boolean" &&
+    typeof value.missing_parent === "boolean"
+  );
+}
+
+function isConversation(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isConversationStatus(value.status) &&
+    (value.captured_at === null || typeof value.captured_at === "string") &&
+    typeof value.has_more === "boolean" &&
+    (value.reason === null || typeof value.reason === "string") &&
+    (value.reported_replies === null || isCount(value.reported_replies)) &&
+    isCount(value.limit) &&
+    Array.isArray(value.context) &&
+    value.context.length <= 100 &&
+    value.context.every(isConversationNode) &&
+    Array.isArray(value.replies) &&
+    value.replies.length <= 500 &&
+    value.replies.every(isConversationNode) &&
+    (value.latest_attempt_status === undefined ||
+      isConversationStatus(value.latest_attempt_status)) &&
+    isOptionalIcon(value.latest_attempt_at)
+  );
+}
+
+function isXPost(value: unknown, allowConversation: boolean): boolean {
   return (
     isRecord(value) &&
     (isXProfile(value) ||
@@ -181,8 +231,12 @@ function isXPost(value: unknown): boolean {
       value.reply_count === null ||
       isCount(value.reply_count)) &&
     (value.replies_status === undefined ||
-      value.replies_status === "not_collected") &&
-    isOptionalIcon(value.captured_at)
+      isConversationStatus(value.replies_status)) &&
+    (value.replies_captured_count === undefined ||
+      isCount(value.replies_captured_count)) &&
+    isOptionalIcon(value.captured_at) &&
+    (value.conversation === undefined ||
+      (allowConversation && isConversation(value.conversation)))
   );
 }
 

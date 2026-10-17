@@ -99,6 +99,9 @@ export function ArticleView({
       id="main"
       className="article-page"
       aria-label={xPost ? "X post reader" : "Article reader"}
+      data-reader-pending={
+        xPost && isPlaceholderData && !error ? "true" : undefined
+      }
     >
       <div className="reader-toolbar">
         <button
@@ -157,7 +160,12 @@ export function ArticleView({
         </div>
       )}
       {post && xPost && (
-        <XPostDetail post={post} selectAccount={selectAccount} />
+        <XPostDetail
+          post={post}
+          selectAccount={selectAccount}
+          pending={isPlaceholderData && !error}
+          loadError={!!error}
+        />
       )}
       {post && !xPost && (
         <div className="article-inner">

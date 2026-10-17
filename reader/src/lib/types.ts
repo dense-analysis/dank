@@ -110,8 +110,37 @@ export interface XPost extends XProfile {
   links?: XLink[];
   media?: XMedia[];
   reply_count?: number | null;
-  replies_status?: "not_collected";
+  replies_status?: XConversationStatus;
+  replies_captured_count?: number;
   captured_at?: string | null;
+  conversation?: XConversation;
+}
+
+export type XConversationStatus =
+  | "captured"
+  | "partial"
+  | "failed"
+  | "disabled"
+  | "not_collected";
+
+export interface XConversationNode extends Post {
+  parent_id: string | null;
+  depth: number;
+  is_author: boolean;
+  missing_parent: boolean;
+}
+
+export interface XConversation {
+  status: XConversationStatus;
+  captured_at: string | null;
+  has_more: boolean;
+  reason: string | null;
+  reported_replies: number | null;
+  limit: number;
+  context: XConversationNode[];
+  replies: XConversationNode[];
+  latest_attempt_status?: XConversationStatus;
+  latest_attempt_at?: string | null;
 }
 
 export type FeedKind = "all" | "stories" | "x" | "reddit";
