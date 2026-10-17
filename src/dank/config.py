@@ -28,9 +28,18 @@ class XOnePasswordSettings(NamedTuple):
     password: str
 
 
+class XConversationSettings(NamedTuple):
+    enabled: bool = True
+    max_posts_per_account: int = 5
+    max_replies: int = 50
+    max_scrolls: int = 3
+    timeout_seconds: float = 30.0
+
+
 class XSettings(NamedTuple):
     scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
     onepassword: XOnePasswordSettings | None = None
+    conversation: XConversationSettings = XConversationSettings()
 
 
 class RedditCommentSort(StrEnum):
@@ -471,6 +480,48 @@ def _parse_optional_int(value: object) -> int | None:
     return None
 
 
+def _parse_x_conversation(value: object) -> XConversationSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("x.conversation must be a table")
+
+    defaults = XConversationSettings()
+    enabled = data.get("enabled", defaults.enabled)
+
+    if not isinstance(enabled, bool):
+        raise ConfigError("x.conversation.enabled must be a boolean")
+
+    values: dict[str, int] = {}
+
+    for key, minimum, maximum in (
+        ("max_posts_per_account", 1, 100), ("max_replies", 1, 200),
+        ("max_scrolls", 0, 20),
+    ):
+        setting = data.get(key, getattr(defaults, key))
+
+        if (not isinstance(setting, int) or isinstance(setting, bool)
+                or not minimum <= setting <= maximum):
+            raise ConfigError(
+                f"x.conversation.{key} must be an integer "
+                f"between {minimum} and {maximum}",
+            )
+
+        values[key] = setting
+
+    timeout = data.get("timeout_seconds", defaults.timeout_seconds)
+
+    if (not isinstance(timeout, int | float) or isinstance(timeout, bool)
+            or not math.isfinite(timeout) or not 1 <= timeout <= 120):
+        raise ConfigError(
+            "x.conversation.timeout_seconds must be between 1 and 120",
+        )
+
+    return XConversationSettings(
+        enabled=enabled, timeout_seconds=float(timeout), **values,
+    )
+
+
 def _parse_x_onepassword(value: object) -> XOnePasswordSettings | None:
     if value is None:
         return None
@@ -524,6 +575,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
             )),
         ),
         onepassword=_parse_x_onepassword(x_data.get("onepassword")),
+        conversation=_parse_x_conversation(x_data.get("conversation", {})),
     )
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}

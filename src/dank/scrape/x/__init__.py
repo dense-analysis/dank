@@ -6,10 +6,9 @@ import json
 import logging
 from collections.abc import AsyncIterator, Iterable
 from typing import cast
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import zendriver
-from zendriver import cdp
 
 from dank.config import XSettings
 from dank.model import AssetDiscovery, RawPost
@@ -21,13 +20,18 @@ from dank.scrape.zendriver import (
     NetworkResponse,
 )
 
+from .conversations import ConversationCapture, capture_conversation
+from .navigation import (
+    check_login_required as _check_login_required,
+    ensure_navigation as _ensure_navigation,
+    scroll as _scroll,
+)
 from .payloads import (
     XAsset,
     XExtractedPost,
     extract_posts_from_payload,
 )
 from .session import (
-    LOGIN_REQUIRED_MESSAGE,
     SESSION_CHECK_TIMEOUT_SECONDS,
     X_HOME_URL,
     LoginRequiredError,
@@ -47,8 +51,6 @@ BROWSER_ACTION_TIMEOUT_SECONDS = 30
 FAST_SCROLL_PAUSE_SECONDS = 0.35
 INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
-READY_STATE_TIMEOUT_SECONDS = 2
-LOGIN_PROMPT_TIMEOUT_SECONDS = 0.25
 
 
 async def scrape_x_accounts(
@@ -75,7 +77,9 @@ async def scrape_x_accounts(
         )
 
         for account in accounts:
-            async for batch in _scrape_account(page, account, settings):
+            async for batch in _scrape_account_with_conversations(
+                page, account, settings,
+            ):
                 yield batch
     except (LoginRequiredError, TimeoutError) as error:
         count("fetch_failures")
@@ -93,6 +97,76 @@ async def scrape_x_accounts(
             await session.close()
         else:
             logger.warning("X collection stopped: %s", error)
+
+
+async def _scrape_account_with_conversations(
+    page: zendriver.Tab, account: str, settings: XSettings,
+) -> AsyncIterator[ScrapeBatch]:
+    candidates: dict[str, RawPost] = {}
+
+    async for batch in _scrape_account(page, account, settings):
+        # Yield first so the runner persists timelines before details.
+        yield batch
+
+        for post in batch.posts:
+            if (urlsplit(post.url).path.split("/")[1].lower()
+                    == account.strip("@").strip().lower()):
+                candidates[post.post_id] = post
+
+    if settings.conversation.enabled:
+        newest = sorted(candidates.values(),
+                        key=lambda post: int(post.post_id),
+                        reverse=True)
+
+        limit = settings.conversation.max_posts_per_account
+
+        for post in newest[:limit]:
+            captured = await capture_conversation(page, post,
+                                                  settings.conversation)
+            yield ScrapeBatch(posts=[captured], assets=[])
+
+
+async def scrape_x_posts(
+    settings: XSettings, posts: list[RawPost], session: BrowserSession,
+) -> AsyncIterator[ScrapeBatch]:
+    if not posts:
+        return
+
+    reason = None
+    page = None
+
+    if settings.conversation.enabled:
+        try:
+            async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+                browser = await session.get_browser()
+                page = await browser.get(X_HOME_URL)
+
+            await wait_for_x_session(
+                page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
+            )
+        except LoginRequiredError:
+            reason = "login_required"
+        except TimeoutError:
+            reason = "timeout"
+        except Exception:
+            logger.warning("X conversation browser unavailable", exc_info=True)
+            reason = "unavailable"
+    else:
+        reason = "disabled"
+
+    for post in posts:
+        if page is None or reason:
+            captured = ConversationCapture(
+                post, settings.conversation.max_replies,
+            ).finish(reason)
+
+            if reason != "disabled":
+                count("fetch_failures")
+        else:
+            captured = await capture_conversation(page, post,
+                                                  settings.conversation)
+
+        yield ScrapeBatch(posts=[captured], assets=[])
 
 
 async def _scrape_account(
@@ -200,87 +274,6 @@ async def _scrape_account(
     finally:
         await capture.stop()
         logger.info("Finished X scrape for account=%s", handle)
-
-
-async def _check_login_required(page: zendriver.Tab) -> None:
-    if await _is_login_page(page):
-        raise LoginRequiredError(LOGIN_REQUIRED_MESSAGE)
-
-
-async def _is_login_page(page: zendriver.Tab) -> bool:
-    location = await _get_location(page)
-
-    if not location:
-        return await _has_login_prompt(page)
-
-    if any(path in location for path in (
-        "/i/flow/", "/login", "/i/jf/onboarding/", "/account/access",
-    )):
-        return True
-
-    return await _has_login_prompt(page)
-
-
-async def _ensure_navigation(page: zendriver.Tab, url: str) -> None:
-    await _wait_for_ready_state(page)
-
-    location = await _get_location(page)
-
-    if location and location != "about:blank":
-        return
-
-    try:
-        await page.send(cdp.page.navigate(url))
-    except Exception:
-        return
-
-    await _wait_for_ready_state(page)
-
-
-async def _wait_for_ready_state(page: zendriver.Tab) -> None:
-    try:
-        # Bound ready-state waits because X keeps active requests open.
-        await page.wait_for_ready_state(timeout=READY_STATE_TIMEOUT_SECONDS)
-    except TimeoutError:
-        pass
-
-
-async def _get_location(page: zendriver.Tab) -> str | None:
-    try:
-        location = await page.evaluate("location.href")
-    except Exception:
-        return None
-
-    if not isinstance(location, str):
-        return None
-
-    return location
-
-
-async def _has_login_prompt(page: zendriver.Tab) -> bool:
-    # Only wait briefly for a login selector to appear.
-    try:
-        await page.select(
-            'a[href="/i/flow/signup"]',
-            timeout=LOGIN_PROMPT_TIMEOUT_SECONDS,
-        )
-    except TimeoutError:
-        return False
-    else:
-        return True
-
-
-async def _scroll(page: zendriver.Tab) -> None:
-    await page.evaluate(
-        "(() => {"
-        "const viewport = window.innerHeight || 800;"
-        "const step = Math.max(500, Math.floor(viewport * 1.5));"
-        "const root = document.scrollingElement || document.documentElement;"
-        "const maxTop = Math.max(0, root.scrollHeight - viewport);"
-        "const nextTop = Math.min(root.scrollTop + step, maxTop);"
-        "window.scrollTo(0, nextTop);"
-        "})()",
-    )
 
 
 async def _drain_posts_and_assets(

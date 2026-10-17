@@ -210,3 +210,44 @@ def test_invalid_media_download_types_are_rejected(
 
     with pytest.raises(ConfigError, match="media"):
         load_settings(path)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("enabled", '"true"'), ("enabled", "1"),
+    ("max_posts_per_account", "0"), ("max_posts_per_account", "101"),
+    ("max_posts_per_account", "true"), ("max_replies", "0"),
+    ("max_replies", "201"), ("max_replies", '"50"'),
+    ("max_replies", "50.5"), ("max_scrolls", "-1"), ("max_scrolls", "21"),
+    ("max_scrolls", "false"), ("timeout_seconds", "0"),
+    ("timeout_seconds", "121"), ("timeout_seconds", "nan"),
+    ("timeout_seconds", "inf"), ("timeout_seconds", "true"),
+])
+def test_invalid_x_conversation_settings(
+    tmp_path: pathlib.Path, field: str, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[x.conversation]\n{field} = {value}\n")
+
+    with pytest.raises(ConfigError, match=f"x.conversation.{field}"):
+        load_settings(path)
+
+
+def test_x_conversation_defaults_and_explicit_limits(
+    tmp_path: pathlib.Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("")
+    assert tuple(load_settings(path).x.conversation) == (True, 5, 50, 3, 30.0)
+    path.write_text(
+        "[x.conversation]\nenabled = false\nmax_posts_per_account = 2\n"
+        "max_replies = 20\nmax_scrolls = 0\ntimeout_seconds = 10.5\n",
+    )
+    assert tuple(load_settings(path).x.conversation) == (False, 2, 20, 0, 10.5)
+
+
+def test_x_conversation_requires_table(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("[x]\nconversation = false\n")
+
+    with pytest.raises(ConfigError, match=r"x\.conversation"):
+        load_settings(path)

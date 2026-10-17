@@ -4,6 +4,7 @@ import argparse
 import re
 
 from dank.scrape.runner import run_scrape_from_config
+from dank.scrape.x.conversations import canonical_post_url
 
 
 def main() -> None:
@@ -31,7 +32,19 @@ def main() -> None:
         help="Retry saved RSS page failures instead of collecting feeds",
     )
 
+    parser.add_argument(
+        "--x-post", action="append", default=[], type=canonical_post_url,
+        help="Capture a saved X conversation; repeat for multiple posts",
+    )
+
     args = parser.parse_args()
+
+    if args.x_post and (args.domains or args.retry_failed_pages):
+        parser.error(
+            "--x-post cannot be combined with --domains "
+            "or --retry-failed-pages",
+        )
+
     domain_regex = None
 
     if args.domains:
@@ -45,6 +58,7 @@ def main() -> None:
         headless=args.headless,
         domain_regex=domain_regex,
         retry_failed_pages=args.retry_failed_pages,
+        x_posts=tuple(args.x_post),
     )
 
 

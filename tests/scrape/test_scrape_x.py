@@ -4,11 +4,11 @@ from typing import Any, cast
 
 import pytest
 
-from dank.scrape.x import (
+from dank.scrape.x import extract_posts_and_assets
+from dank.scrape.x.navigation import (
     LOGIN_PROMPT_TIMEOUT_SECONDS,
-    _has_login_prompt,  # pyright: ignore[reportPrivateUsage]
-    _is_login_page,  # pyright: ignore[reportPrivateUsage]
-    extract_posts_and_assets,
+    has_login_prompt as _has_login_prompt,
+    is_login_page as _is_login_page,
 )
 from dank.scrape.zendriver import NetworkResponse
 

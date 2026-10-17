@@ -43,7 +43,8 @@ from dank.scrape.rss import (
 )
 from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
-from dank.scrape.x import scrape_x_accounts
+from dank.scrape.x import scrape_x_accounts, scrape_x_posts
+from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
@@ -58,6 +59,7 @@ async def run_scrape(
     headless: bool = False,
     batch_size: int = 50,
     retry_failed_pages: bool = False,
+    x_posts: tuple[str, ...] = (),
 ) -> None:
     if not settings.sources:
         logger.warning("No sources selected; check sources and --domains.")
@@ -127,7 +129,7 @@ async def run_scrape(
                 await _collect_with_history(
                     settings, clickhouse_client, http_client,
                     x_session, reddit_session, history, assets_dir,
-                    retry_failed_pages=retry_failed_pages,
+                    retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 )
         except BaseException as error:
             history.finish(error)
@@ -185,6 +187,7 @@ async def _collect_with_history(
     assets_dir: pathlib.Path,
     *,
     retry_failed_pages: bool = False,
+    x_posts: tuple[str, ...] = (),
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     browser_locks = {
@@ -205,7 +208,7 @@ async def _collect_with_history(
                 settings, source, index, client, http_client, session,
                 history, assets_dir, profile_dir,
                 browser_locks.get(source.domain),
-                retry_failed_pages=retry_failed_pages,
+                retry_failed_pages=retry_failed_pages, x_posts=x_posts,
             )
 
     try:
@@ -232,6 +235,7 @@ async def _collect_source(
     browser_lock: asyncio.Lock | None,
     *,
     retry_failed_pages: bool = False,
+    x_posts: tuple[str, ...] = (),
 ) -> None:
     stats = SourceMetrics(index, source)
     history.sources[index] = stats
@@ -260,7 +264,7 @@ async def _collect_source(
                         days=settings.feed_staleness_days,
                     ),
                     batch_size=history.batch_size,
-                    retry_failed_pages=retry_failed_pages,
+                    retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 ):
                     stats.discovered(len(batch.posts), len(batch.assets))
                     stats.pending += len(batch.communities)
@@ -317,17 +321,12 @@ async def _discover_source_batches(
     feed_staleness: datetime.timedelta,
     batch_size: int,
     retry_failed_pages: bool = False,
+    x_posts: tuple[str, ...] = (),
 ) -> AsyncIterator[ScrapeBatch]:
-    if retry_failed_pages:
-        if source.domain in {"x.com", "reddit.com"}:
-            return
-
-        posts = await _load_failed_rss_pages(clickhouse_client, source)
-        logger.info("%s: retrying %d saved article pages", source.domain,
-                    len(posts))
-
-        async for batch in retry_feed_pages(
-            http_client, posts, batch_size=batch_size,
+    if x_posts or retry_failed_pages:
+        async for batch in _retry_saved_posts(
+            settings, source, clickhouse_client, http_client, session,
+            x_posts=x_posts, batch_size=batch_size,
         ):
             yield batch
 
@@ -395,6 +394,59 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _retry_saved_posts(
+    settings: Settings, source: SourceConfig, client: ClickHouseClient,
+    http_client: aiohttp.ClientSession, session: BrowserSession,
+    *, x_posts: tuple[str, ...], batch_size: int,
+) -> AsyncIterator[ScrapeBatch]:
+    if x_posts:
+        posts = await _load_x_posts(client, x_posts)
+        batches = scrape_x_posts(settings.x, posts, session)
+    elif source.domain in {"x.com", "reddit.com"}:
+        return
+    else:
+        posts = await _load_failed_rss_pages(client, source)
+        logger.info("%s: retrying %d saved article pages", source.domain,
+                    len(posts))
+        batches = retry_feed_pages(http_client, posts, batch_size=batch_size)
+
+    async for batch in batches:
+        yield batch
+
+
+async def _load_x_posts(
+    client: ClickHouseClient, urls: tuple[str, ...],
+) -> list[RawPost]:
+    by_id = {canonical_post_url(url).rsplit("/", 1)[1]: canonical_post_url(url)
+             for url in urls}
+    result = await client.fetch_json(
+        "SELECT domain, post_id, url, post_created_at, scraped_at, source, "
+        "request_url, payload FROM raw_posts "
+        "WHERE domain = 'x.com' AND post_id IN %(post_ids)s "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id",
+        {"post_ids": list(by_id)},
+    )
+    posts = [
+        RawPost(
+            domain="x.com", post_id=str(row["post_id"]),
+            url=by_id[str(row["post_id"])],
+            post_created_at=parse_datetime(row["post_created_at"]),
+            scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+            source=str(row["source"]), request_url=str(row["request_url"]),
+            payload=str(row["payload"]),
+        )
+        for row in result.rows
+    ]
+    missing = set(by_id) - {post.post_id for post in posts}
+
+    if missing:
+        raise ValueError(
+            "X posts must already be saved: " + ", ".join(sorted(missing)),
+        )
+
+    return posts
 
 
 async def _load_failed_rss_pages(
@@ -815,15 +867,22 @@ def run_scrape_from_config(
     headless: bool = False,
     domain_regex: re.Pattern[str] | None = None,
     retry_failed_pages: bool = False,
+    x_posts: tuple[str, ...] = (),
 ) -> None:
     settings = load_settings(path)
     configure_logging(settings.logging, component="scrape")
 
-    if domain_regex:
+    if x_posts:
+        x_posts = tuple(dict.fromkeys(
+            canonical_post_url(url) for url in x_posts
+        ))
+        settings = settings._replace(sources=(SourceConfig("x.com", ()),))
+    elif domain_regex:
         settings = filter_settings_sources(settings, domain_regex)
 
     asyncio.run(run_scrape(
         settings, headless=headless, retry_failed_pages=retry_failed_pages,
+        x_posts=x_posts,
     ))
 
 

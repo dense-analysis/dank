@@ -17,6 +17,13 @@ sources = [{ domain = "x.com", accounts = ["example", "another_account"] }]
 max_posts = 200
 max_scrolls = 20
 scroll_pause_seconds = 1.5
+
+[x.conversation]
+enabled = true
+max_posts_per_account = 5
+max_replies = 50
+max_scrolls = 3
+timeout_seconds = 30
 ```
 
 Sign in once using the command below. DANK reuses the saved browser session;
@@ -170,10 +177,49 @@ available local files are preferred, with captured X media URLs as a fallback.
 Remote media may expire or become unavailable. A link card remains a usable
 external link when its image cannot load; previews never embed third-party pages.
 
-The post's reply count is a snapshot from the same capture as its body.
-**Replies not collected** means the conversation has not been archived, even
-when X reported zero replies at capture time. Open the conversation on X to see
-current replies. Capturing conversations is not implemented yet.
+## Conversation snapshots
+
+After saving an account's timeline, collection opens its newest owned posts
+(up to `max_posts_per_account`) and captures replies and parent context from
+X's detail responses. The post reader shows the saved context before the
+selected post and replies below it. Conversation posts retain their identity,
+text, links and media references; reply media uses remote URLs rather than
+starting extra downloads. Existing timeline collection and saving continue
+when an individual conversation fails.
+
+Each conversation has a `timeout_seconds` budget and at most `max_scrolls`
+scrolls. `max_replies` bounds the total archived replies **and parent context**.
+The accepted ranges are 1–100 posts per account, 1–200 related posts,
+0–20 scrolls and 1–120 seconds. `enabled = false` stops new conversation
+capture without deleting existing snapshots.
+
+The reader distinguishes a captured snapshot, a partial snapshot, a failed
+attempt and replies not yet collected. Partial means X still supplied a
+pagination cursor or unexpanded branch, a limit or timeout was reached, parent
+context was missing, or reported replies exceeded the replies saved. Reported
+counts and capture times describe that snapshot, not the current conversation.
+A missing or mismatched detail response is a failure, never an empty thread.
+Newer failed attempts retain the earlier saved conversation in the reader.
+
+DANK uses the existing signed-in browser and read-only navigation; it does not
+post, like, follow, or expand hidden branches. X's relevance ordering, restricted
+or deleted posts and unexpanded branches can leave gaps. Open the original
+conversation on X for current or missing replies.
+
+To revisit a particular **already saved** post without crawling account feeds:
+
+```sh
+uv run scrape --headless --x-post https://x.com/example/status/123456789
+uv run process --domains '^x\.com$' --age 1h
+```
+
+Repeat `--x-post URL` for several saved posts. X and Twitter status URLs are
+accepted; `--domains` and `--retry-failed-pages` cannot be combined with it.
+Docker users can pass the same options to `docker compose run --rm dank scrape`
+and `docker compose run --rm dank process`. No new source or login is needed
+when the saved X session remains valid.
+
+## Rebuild saved posts
 
 Previously saved X posts can be rebuilt without collecting them again:
 

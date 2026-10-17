@@ -57,6 +57,14 @@ level = "INFO"
 # Sign in with make x-login MODE=native before collecting X accounts.
 # See docs/features/x.md for account and collection settings.
 
+# Bounded conversation snapshots for each account's newest owned posts.
+# [x.conversation]
+# enabled = true
+# max_posts_per_account = 5
+# max_replies = 50
+# max_scrolls = 3
+# timeout_seconds = 30
+
 # Optional autofill via 1Password CLI; values are fetched only during sign-in.
 # [x.onepassword]
 # username = "op://Personal/X/username"

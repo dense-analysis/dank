@@ -61,6 +61,14 @@ level = "INFO"
 # max_scrolls = 20
 # scroll_pause_seconds = 1.5
 
+# Bounded conversation snapshots for each account's newest owned posts.
+# [x.conversation]
+# enabled = true
+# max_posts_per_account = 5
+# max_replies = 50
+# max_scrolls = 3
+# timeout_seconds = 30
+
 # Optional autofill via the host's 1Password CLI; you submit each step yourself.
 # [x.onepassword]
 # username = "op://Personal/X/username"
