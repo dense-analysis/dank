@@ -18,7 +18,7 @@ it("preserves YouTube's rounded source total and its provenance", () => {
     "144 videos collected / 26K videos reported by YouTube at last capture",
   );
   expect(container.querySelector(".collection-count-values")?.textContent).toBe(
-    "144/26Kvideos",
+    "144/≈26Kvideos",
   );
 });
 

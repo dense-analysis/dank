@@ -664,6 +664,18 @@ test("channel header uses a cached icon and stable video totals while channel ca
   await expect(header).toContainText("26K");
   await expect(header).toContainText("7");
   await expect(page.locator(".yt-rank")).toHaveCount(0);
+  await expect(page.locator(".yt-card h3").first()).toHaveCSS(
+    "font-size",
+    "16px",
+  );
+  await expect(page.locator(".yt-card h3").first()).toHaveCSS(
+    "font-weight",
+    "700",
+  );
+  await expect(page.locator(".yt-short h3").first()).toHaveCSS(
+    "font-size",
+    "16px",
+  );
   await page.getByRole("button", { name: "Posts", exact: true }).click();
   await expect(page.locator(".yt-card")).toHaveCount(1);
   await expect(header).toContainText("26K");

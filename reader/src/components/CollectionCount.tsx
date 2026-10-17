@@ -28,6 +28,7 @@ export function CollectionCount({
   reportedText?: string | null;
 }) {
   const reportedTotal = estimate?.count ?? total;
+  const approximate = !!estimate || /\d\s*[KMB]\b/i.test(reportedText ?? "");
   const description = estimate
     ? `${count.toLocaleString()} posts collected / approximately ${estimate.count.toLocaleString()} total posts, based on Arctic Shift's archive. Archive count updated ${provenanceDate.format(new Date(estimate.updated_at))} UTC; retrieved ${provenanceDate.format(new Date(estimate.captured_at))} UTC. Archive coverage may be incomplete.`
     : reportedTotal == null
@@ -43,7 +44,7 @@ export function CollectionCount({
           <>
             <span className="collection-count-divider">/</span>
             <span>
-              {estimate && "≈"}
+              {approximate && "≈"}
               {compactCount.format(reportedTotal)}
             </span>
           </>

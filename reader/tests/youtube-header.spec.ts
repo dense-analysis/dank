@@ -49,7 +49,7 @@ for (const width of [320, 390, 1280]) {
     ).toBeVisible();
     await expect(header.locator(".channel-avatar img")).toBeVisible();
     await expect(header.locator(".collection-count-values")).toHaveText(
-      "144/26Kvideos",
+      "144/≈26Kvideos",
     );
     await expect(header.locator(".collection-count-pill")).toHaveAttribute(
       "title",

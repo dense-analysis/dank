@@ -351,9 +351,6 @@
 .yt-short .yt-thumbnail {
   aspect-ratio: 9 / 16;
 }
-.yt-short h3 {
-  font-size: 13px;
-}
 .yt-short .yt-capture-status {
   border: 0;
   padding-left: 0;
@@ -693,9 +690,6 @@
   }
   .yt-filter-row {
     gap: 10px;
-  }
-  .yt-short h3 {
-    font-size: 15px;
   }
   .yt-grid-short {
     grid-template-columns: repeat(3, minmax(145px, 1fr));

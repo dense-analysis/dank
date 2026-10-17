@@ -43,3 +43,8 @@
   color: var(--text);
   border-bottom-color: var(--text);
 }
+
+#youtube-feeds {
+  max-height: none;
+  overflow: visible;
+}
