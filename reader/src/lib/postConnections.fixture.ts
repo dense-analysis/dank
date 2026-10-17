@@ -1,8 +1,5 @@
-import type {
-  PostConnection,
-  PostConnectionsData,
-} from "../../src/lib/postConnections";
-import type { PostReference } from "../../src/lib/types";
+import type { PostConnection, PostConnectionsData } from "./postConnections";
+import type { PostReference } from "./types";
 
 export const connectionRoot: PostReference = {
   domain: "example.com",

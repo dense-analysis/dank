@@ -11,7 +11,7 @@ import type {
 } from "../../src/lib/postConnections";
 import type { ConnectionDirection } from "../../src/lib/postConnectionsGraph";
 import "../../src/styles.css";
-import { connectionRoot } from "./post-connections-data";
+import { connectionRoot } from "../../src/lib/postConnections.fixture";
 
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false } },

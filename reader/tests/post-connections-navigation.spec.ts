@@ -1,7 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { Core } from "cytoscape";
-import type { Post, PostReference } from "../src/lib/types";
-import type { YouTubeItem } from "../src/lib/youtubeCollection";
 import {
   connectionDiscussion,
   connectionRoot,
@@ -9,7 +7,9 @@ import {
   incomingConnection,
   outgoingConnection,
   videoConnection,
-} from "./fixtures/post-connections-data";
+} from "../src/lib/postConnections.fixture";
+import type { Post, PostReference } from "../src/lib/types";
+import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
 const saved = "2026-10-17T12:00:00Z";
 const rootQuery = new URLSearchParams({

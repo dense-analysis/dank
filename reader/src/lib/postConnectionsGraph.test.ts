@@ -5,7 +5,7 @@ import {
   incomingConnection,
   outgoingConnection,
   videoConnection,
-} from "../../tests/fixtures/post-connections-data";
+} from "./postConnections.fixture";
 import { connectionNodeId, postConnectionsGraph } from "./postConnectionsGraph";
 import { graphTopology } from "./relationshipGraph";
 

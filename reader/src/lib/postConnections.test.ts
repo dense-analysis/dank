@@ -1,16 +1,16 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  connectionsFixture,
-  incomingConnection,
-  outgoingConnection,
-  videoConnection,
-} from "../../tests/fixtures/post-connections-data";
-import {
   connectionNeighbor,
   connectionTargetLabel,
   fetchPostConnections,
   isPostConnections,
 } from "./postConnections";
+import {
+  connectionsFixture,
+  incomingConnection,
+  outgoingConnection,
+  videoConnection,
+} from "./postConnections.fixture";
 
 afterEach(() => vi.unstubAllGlobals());
 

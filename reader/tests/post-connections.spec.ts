@@ -1,8 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import type { Core } from "cytoscape";
+import { connectionsFixture } from "../src/lib/postConnections.fixture";
 import { connectionNodeId } from "../src/lib/postConnectionsGraph";
-import { connectionsFixture } from "./fixtures/post-connections-data";
 
 async function fixture(page: Page, data = connectionsFixture) {
   const requests: string[] = [];

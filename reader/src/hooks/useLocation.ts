@@ -148,6 +148,9 @@ export function useLocation() {
       positions.current.get(entry.key) ?? (articleKey ? null : entry.scroll);
     const saved = articleKey ? loadReadingPosition(articleKey) : undefined;
     let observer: MutationObserver | undefined;
+    let cancelled = false;
+    let fontsReady = false;
+    let waitingForFonts = false;
 
     const restore = () => {
       if (document.querySelector('.article-page[data-reader-pending="true"]'))
@@ -190,6 +193,26 @@ export function useLocation() {
           document
             .querySelector<HTMLElement>(".article-page .back-button")
             ?.focus({ preventScroll: true });
+        return;
+      }
+      // Font metrics change both paragraph positions and the pinned toolbar's
+      // height. Restore only after the fonts used by this rendered page settle.
+      if (
+        !fontsReady &&
+        document.fonts &&
+        ((historyScroll !== null && historyScroll !== undefined) ||
+          saved ||
+          destinationFocus)
+      ) {
+        if (!waitingForFonts) {
+          body?.getBoundingClientRect();
+          waitingForFonts = true;
+          void document.fonts.ready.then(() => {
+            if (cancelled) return;
+            fontsReady = true;
+            restore();
+          });
+        }
         return;
       }
       const top =
@@ -235,7 +258,10 @@ export function useLocation() {
         ],
       });
     }
-    return () => observer?.disconnect();
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
   }, [search]);
 
   function navigate(
