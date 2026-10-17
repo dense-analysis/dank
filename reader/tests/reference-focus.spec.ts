@@ -186,6 +186,8 @@ async function fixtures(page: Page, post = article(), linkedPost?: Post) {
       return route.fulfill({
         json: { items: [video], next_cursor: null, total: 1 },
       });
+    if (url.pathname.endsWith("/connection"))
+      return route.fulfill({ json: { evidence: ref } });
     if (url.pathname.endsWith("/sources"))
       return route.fulfill({ json: { sources: [], total_posts: 1 } });
     if (url.pathname.endsWith("/post"))
@@ -498,3 +500,148 @@ test("plain-text captured comments preserve line breaks and highlight only the e
   );
   await expect(body).toContainText("<not markup>");
 });
+
+const articleUrl = "https://publisher.example/research?edition=2#results";
+function genericFocusUrl(post: Post, kind = "comment", id = "t1_target") {
+  return `/reader/?${new URLSearchParams({
+    article: post.id,
+    article_source: post.domain,
+    connections: "graph",
+    reference_kind: kind,
+    reference_id: id,
+    reference_url: articleUrl,
+    reference_saved: saved,
+  })}`;
+}
+
+for (const width of [1210, 390]) {
+  test(`article references reveal and highlight the exact comment across history at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "dank-reader:preferences:v1",
+        JSON.stringify({ showRedditComments: false }),
+      ),
+    );
+    const post = article();
+    for (const comment of post.reddit?.comment_capture?.comments ?? []) {
+      comment.body_html = `<p><a href="${articleUrl}">Read the original research</a><a href="https://publisher.example/research?edition=2#other">Other section</a></p>`;
+    }
+    await fixtures(page, post);
+    await page.goto(
+      `/reader/?article=${post.id}&article_source=${post.domain}&connections=graph`,
+    );
+    await expect(page.locator('[data-reference-match="true"]')).toHaveCount(0);
+    await page.evaluate((url) => {
+      window.history.pushState({}, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, genericFocusUrl(post));
+    const match = page.locator('[data-reference-match="true"]');
+    await expect(match).toHaveText("Read the original research");
+    await expect(match).toBeFocused();
+    await expect(match).toBeInViewport();
+    await expect(
+      page.locator('[data-reference-comment="t1_other"] .reference-match'),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("complementary", { name: "Link reference" }),
+    ).toContainText("matching link is highlighted");
+    await page.goBack();
+    await expect(match).toHaveCount(0);
+    await page.goForward();
+    await expect(match).toHaveText("Read the original research");
+    await expect(match).toBeInViewport();
+    await page.reload();
+    await expect(match).toBeFocused();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
+
+test("article evidence opens the exact source excerpt when the current comment has lost its link", async ({
+  page,
+}) => {
+  const post = article();
+  const ref = await fixtures(page, post);
+  ref.matched_url = articleUrl;
+  ref.excerpt = "The research explained this result in the earlier capture.";
+  await page.goto(genericFocusUrl(post));
+  await expect(page.locator('[data-reference-match="true"]')).toHaveCount(0);
+  const notice = page.getByRole("complementary", { name: "Link reference" });
+  await expect(notice).toContainText(ref.excerpt);
+  await expect(notice).toBeFocused();
+  await expect(
+    notice.getByRole("link", { name: "Original comment" }),
+  ).toHaveAttribute("href", ref.reference_url);
+});
+
+test("a relative article link highlights its source destination and keeps source DOM stable", async ({
+  page,
+}) => {
+  const post = article("rss");
+  post.url = "https://publisher.example/news/story";
+  post.html = `${filler}<p><a href="../research?edition=2#results">Underlying research</a><a href="https://publisher.example/research?edition=1#results">Earlier edition</a></p>`;
+  await fixtures(page, post);
+  await page.goto(genericFocusUrl(post, "post", ""));
+  const match = page.locator('[data-reference-match="true"]');
+  await expect(match).toHaveText("Underlying research");
+  await expect(match).toHaveAttribute("href", articleUrl);
+  await expect(match).toBeFocused();
+  await match.evaluate((node) => {
+    Reflect.set(window, "originalReference", node);
+  });
+  await page.getByRole("button", { name: "Larger article text" }).click();
+  expect(
+    await match.evaluate(
+      (node) => Reflect.get(window, "originalReference") === node,
+    ),
+  ).toBe(true);
+});
+
+test("an X article preview exposes and highlights its descriptive source link", async ({
+  page,
+}) => {
+  const post = article("x");
+  post.html = `<p>${articleUrl}</p>`;
+  if (post.x?.links)
+    post.x.links[0] = {
+      url: articleUrl,
+      title: "Original research",
+      description: "The cited research",
+      image_url: null,
+    };
+  await fixtures(page, post);
+  await page.goto(genericFocusUrl(post, "post", ""));
+  await expect(
+    page.locator('.x-focused-post .article-body [data-reference-match="true"]'),
+  ).toHaveText(articleUrl);
+  await expect(
+    page.locator(
+      '.x-link-preview[data-reference-match="true"], .x-link-preview [data-reference-match="true"]',
+    ),
+  ).toHaveCount(1);
+});
+
+for (const html of ["<p>A saved aggregator summary.</p>", ""]) {
+  test(`an RSS aggregator primary destination focuses its original link with ${html ? "saved" : "missing"} body text`, async ({
+    page,
+  }) => {
+    const post = article("rss");
+    post.url = articleUrl;
+    post.html = html;
+    await fixtures(page, post);
+    await page.goto(genericFocusUrl(post, "post", ""));
+    const match = page.locator('[data-reference-match="true"]');
+    await expect(match).toHaveCount(1);
+    await expect(match).toHaveAttribute("href", articleUrl);
+    await expect(match).toBeFocused();
+    await expect(
+      page.getByRole("complementary", { name: "Link reference" }),
+    ).toContainText("matching link is highlighted");
+  });
+}

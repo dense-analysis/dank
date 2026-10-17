@@ -76,7 +76,8 @@ export function prepareRedditLinkVisibility(
   return {
     update(displayed: Set<string>, hide = true) {
       for (const { node, key } of targets)
-        node.hidden = hide && displayed.has(key);
+        node.hidden =
+          hide && displayed.has(key) && !node.closest(".reference-match");
       for (const block of blocks) block.hidden = false;
 
       for (const block of blocks) {

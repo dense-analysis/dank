@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { type ArticleContent, renderArticle } from "../lib/article";
+import { normalizedLinkUrl } from "../lib/linkIdentity";
 import { enhanceRedditImageLinks } from "../lib/redditImages";
 import { prepareRedditLinkVisibility } from "../lib/redditLinkVisibility";
 import {
@@ -9,7 +10,7 @@ import {
   redditVideoKey,
   withoutRedditVideoUrls,
 } from "../lib/redditText";
-import { highlightVideoReferences } from "../lib/referenceFocus";
+import { highlightLinkReferences } from "../lib/referenceFocus";
 import type { RedditImage, RedditVideo } from "../lib/types";
 import { CodeCopyButton } from "./CodeCopyButton";
 import { ImageBackgroundToggle } from "./ImageBackgroundToggle";
@@ -22,6 +23,8 @@ export function ArticleBody({
   redditVideos,
   redditVideoKeys,
   referenceVideoId,
+  referenceUrl,
+  sourceUrl,
   referenceCommentId,
   referenceIsPost,
 }: {
@@ -32,6 +35,8 @@ export function ArticleBody({
   redditVideos?: RedditVideo[];
   redditVideoKeys?: Set<string>;
   referenceVideoId?: string;
+  referenceUrl?: string;
+  sourceUrl?: string;
   referenceCommentId?: string;
   referenceIsPost?: boolean;
 }) {
@@ -54,14 +59,34 @@ export function ArticleBody({
         referenceCommentId,
         referenceIsPost,
       );
+      // Publisher-relative anchors must navigate to their source, not this reader.
+      if (sourceUrl) {
+        for (const anchor of element.querySelectorAll<HTMLAnchorElement>(
+          "a[href]",
+        )) {
+          const href = anchor.getAttribute("href") ?? "";
+          if (
+            !/^[a-z][a-z0-9+.-]*:/i.test(href) &&
+            normalizedLinkUrl(href, sourceUrl)
+          )
+            anchor.href = new URL(href, sourceUrl).href;
+        }
+      }
+
       const scope = referenceCommentId
         ? element.querySelector<HTMLElement>(
             '[data-reader-comment-target="true"]',
           )
         : element;
 
-      if (scope && referenceVideoId)
-        highlightVideoReferences(scope, referenceVideoId);
+      const destination =
+        referenceUrl ??
+        (referenceVideoId
+          ? `https://www.youtube.com/watch?v=${referenceVideoId}`
+          : undefined);
+
+      if (scope && destination)
+        highlightLinkReferences(scope, destination, sourceUrl);
       setArticle(content);
       const imageVisibility = redditImages
         ? enhanceRedditImageLinks(element, redditImages, redditPostId)
@@ -110,6 +135,8 @@ export function ArticleBody({
       redditPostId,
       redditVideos,
       referenceVideoId,
+      referenceUrl,
+      sourceUrl,
       referenceCommentId,
       referenceIsPost,
     ],

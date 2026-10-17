@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderArticle } from "./article";
 import {
   clearReferenceParams,
+  highlightLinkReferences,
   highlightVideoReferences,
   parseReferenceTarget,
   referenceParams,
@@ -39,6 +40,7 @@ describe("video reference navigation", () => {
       kind: "comment",
       id: "t1_target",
       videoId: video,
+      url: reference.matched_url,
       saved: reference.observed_at,
     });
     expect(params.get("article_source")).toBe("reddit.com");
@@ -146,4 +148,75 @@ it("does not satisfy a post link with a hidden link, source comment, or recommen
   expect(
     body.lastElementChild?.querySelector('[data-reference-match="true"]'),
   ).not.toBeNull();
+});
+
+describe("article reference navigation", () => {
+  const url = "https://publisher.test/article?edition=2#security";
+
+  it("round trips the matched destination separately from its source permalink", () => {
+    const params = referenceParams(new URLSearchParams("connections=graph"), {
+      ...reference,
+      matched_url: url,
+    });
+    expect(params.get("reference_url")).toBe(url);
+    expect(params.has("reference_video")).toBe(false);
+    expect(params.get("connections")).toBe("graph");
+    expect(parseReferenceTarget(params)).toMatchObject({
+      url,
+      videoId: "",
+      id: "t1_target",
+    });
+  });
+
+  it("retains old video-only deep links and rejects conflicting destinations", () => {
+    const params = referenceParams(new URLSearchParams(), reference);
+    params.delete("reference_url");
+    expect(parseReferenceTarget(params)?.url).toBe(
+      `https://www.youtube.com/watch?v=${video}`,
+    );
+    params.set("reference_url", url);
+    expect(parseReferenceTarget(params)).toBeUndefined();
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "/reader/",
+    "https://user:password@example.com/post",
+  ])("rejects malicious destination parameters: %s", (input) => {
+    const params = referenceParams(new URLSearchParams(), {
+      ...reference,
+      matched_url: url,
+    });
+    params.set("reference_url", input);
+    expect(parseReferenceTarget(params)).toBeUndefined();
+  });
+
+  it("highlights the descriptive anchor and plain URL only in the selected body", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      `<p><a href="${url}">Read <em>the source</em></a> ${url}. <a href="https://publisher.test/article?edition=1#security">Wrong edition</a><a href="https://publisher.test/article?edition=2#other">Wrong section</a><a href="https://publisher.test.evil.example/article?edition=2#security">Wrong host</a></p>`,
+    );
+    highlightLinkReferences(body, url);
+    expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
+      2,
+    );
+    expect(body.querySelector("a em")?.textContent).toBe("the source");
+    expect(body.querySelector("mark")?.textContent).toBe(url);
+  });
+
+  it("uses the publisher base for relative anchors without trusting source match markers", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      '<div data-reference-match="true" class="reference-match">Spoofed</div><a href="../article?edition=2#security">Relative source</a>',
+    );
+    highlightLinkReferences(body, url, "https://publisher.test/news/story");
+    expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
+      1,
+    );
+    expect(
+      body.querySelector('[data-reference-match="true"]')?.textContent,
+    ).toBe("Relative source");
+  });
 });

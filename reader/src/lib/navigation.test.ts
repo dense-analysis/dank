@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterParams, parseFilters } from "./navigation";
+import { articleParams, filterParams, parseFilters } from "./navigation";
 import { defaultFilters } from "./storage";
 import type { Filters } from "./types";
 
@@ -156,4 +156,23 @@ describe("filter URLs", () => {
       expect(filterParams(filters).has("mode")).toBe(false);
     },
   );
+});
+
+it("normal article navigation clears every reference target without losing graph context", () => {
+  const params = new URLSearchParams({
+    connections: "graph",
+    article: "previous",
+    article_source: "source.test",
+    reference_kind: "comment",
+    reference_id: "123",
+    reference_url: "https://target.test/post",
+    reference_video: "NnV_cWeoo5Q",
+    reference_saved: "2026-10-17T12:00:00Z",
+  });
+  const next = articleParams(params, { domain: "new.test", id: "next" });
+  expect([...next.keys()].some((key) => key.startsWith("reference_"))).toBe(
+    false,
+  );
+  expect(next.get("connections")).toBe("graph");
+  expect(params.get("reference_id")).toBe("123");
 });

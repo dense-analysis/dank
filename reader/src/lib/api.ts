@@ -2,6 +2,16 @@ import { filterParams } from "./navigation";
 import type { Filters, Post, PostPage, Source } from "./types";
 import { isPost, isRecord, isSource } from "./validation";
 
+export class ReaderRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ReaderRequestError";
+  }
+}
+
 export async function request(
   path: string,
   signal?: AbortSignal,
@@ -27,9 +37,10 @@ export async function request(
       // A proxy may return HTML instead of the API's JSON error body.
     }
 
-    throw new Error(
+    throw new ReaderRequestError(
       detail ||
         `The reader could not load this request (${response.status}). Please try again.`,
+      response.status,
     );
   }
 

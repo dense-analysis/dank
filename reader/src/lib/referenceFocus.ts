@@ -2,13 +2,14 @@ import { articleParams, clearReferenceParams } from "./navigation";
 
 export { clearReferenceParams } from "./navigation";
 
+import { matchesLinkUrl, normalizedLinkUrl } from "./linkIdentity";
 import { youtubeEmbedUrl } from "./youtube";
-import type { YouTubeReference } from "./youtubeCollection";
 
 export interface ReferenceTarget {
   kind: "post" | "comment";
   id: string;
   videoId: string;
+  url: string;
   saved: string;
 }
 
@@ -18,21 +19,34 @@ export function videoReferenceId(value: string): string | undefined {
   return embed ? new URL(embed).pathname.split("/").at(-1) : undefined;
 }
 
+export interface SourceReference {
+  domain: string;
+  post_id: string;
+  kind: "post" | "comment";
+  reference_id: string;
+  matched_url: string;
+  observed_at: string;
+}
+
 export function referenceParams(
   params: URLSearchParams,
-  reference: YouTubeReference,
+  reference: SourceReference,
 ): URLSearchParams {
   const next = articleParams(params, {
     domain: reference.domain,
     id: reference.post_id,
   });
   clearReferenceParams(next);
-  const videoId = videoReferenceId(reference.matched_url);
+  const url = normalizedLinkUrl(reference.matched_url);
+  const videoId = url?.match(
+    /^https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})$/,
+  )?.[1];
 
-  if (videoId) {
+  if (url) {
     next.set("reference_kind", reference.kind);
     next.set("reference_id", reference.reference_id);
-    next.set("reference_video", videoId);
+    next.set("reference_url", reference.matched_url);
+    if (videoId) next.set("reference_video", videoId);
     if (reference.observed_at)
       next.set("reference_saved", reference.observed_at);
   }
@@ -47,13 +61,20 @@ export function parseReferenceTarget(
   const id = params.get("reference_id") ?? "";
   const videoId = params.get("reference_video") ?? "";
   const saved = params.get("reference_saved") ?? "";
+  const url =
+    params.get("reference_url") ??
+    (videoId ? `https://www.youtube.com/watch?v=${videoId}` : "");
+  const identity = url.length <= 8192 ? normalizedLinkUrl(url) : undefined;
 
   if (
     !params.get("article") ||
     !params.get("article_source") ||
     (kind !== "comment" && kind !== "post") ||
     (kind === "comment" && (!id || id.length > 300)) ||
-    !/^[A-Za-z0-9_-]{11}$/.test(videoId)
+    !identity ||
+    (videoId &&
+      (!/^[A-Za-z0-9_-]{11}$/.test(videoId) ||
+        identity !== `https://www.youtube.com/watch?v=${videoId}`))
   )
     return undefined;
 
@@ -61,6 +82,7 @@ export function parseReferenceTarget(
     kind,
     id,
     videoId,
+    url,
     saved: saved && Number.isFinite(Date.parse(saved)) ? saved : "",
   };
 }
@@ -82,12 +104,16 @@ function visibleReference(node: Element, scope: HTMLElement): boolean {
   return true;
 }
 
-/** Mark only verified video destinations, never text that merely names an ID. */
-export function highlightVideoReferences(scope: HTMLElement, videoId: string) {
+/** Mark actual destinations within the selected source body, never matching labels alone. */
+export function highlightLinkReferences(
+  scope: HTMLElement,
+  url: string,
+  base?: string,
+) {
   for (const anchor of scope.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     if (
       !visibleReference(anchor, scope) ||
-      videoReferenceId(anchor.href) !== videoId
+      !matchesLinkUrl(anchor.getAttribute("href") ?? "", url, base)
     )
       continue;
 
@@ -116,18 +142,20 @@ export function highlightVideoReferences(scope: HTMLElement, videoId: string) {
     let offset = 0;
 
     for (const match of node.data.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
-      const url = match[0].replace(/[.,!?;:)\]]+$/, "");
+      const candidate = matchesLinkUrl(match[0], url)
+        ? match[0]
+        : match[0].replace(/[.,!?;:)\]]+$/, "");
 
-      if (videoReferenceId(url) !== videoId) continue;
+      if (!matchesLinkUrl(candidate, url)) continue;
 
       fragment.append(node.data.slice(offset, match.index));
       const mark = document.createElement("mark");
       mark.className = "reference-match";
       mark.dataset.referenceMatch = "true";
       mark.tabIndex = -1;
-      mark.textContent = url;
+      mark.textContent = candidate;
       fragment.append(mark);
-      offset = match.index + url.length;
+      offset = match.index + candidate.length;
     }
 
     if (offset) {
@@ -135,4 +163,9 @@ export function highlightVideoReferences(scope: HTMLElement, videoId: string) {
       node.replaceWith(fragment);
     }
   }
+}
+
+/** Compatibility for existing video deep links and consumers. */
+export function highlightVideoReferences(scope: HTMLElement, videoId: string) {
+  highlightLinkReferences(scope, `https://www.youtube.com/watch?v=${videoId}`);
 }

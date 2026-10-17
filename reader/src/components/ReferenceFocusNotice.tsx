@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { normalizedLinkUrl } from "../lib/linkIdentity";
+import { fetchReferenceEvidence } from "../lib/referenceEvidence";
 import type { ReferenceTarget } from "../lib/referenceFocus";
 import { safeUrl } from "../lib/urls";
-import { fetchYouTubeItems } from "../lib/youtubeCollection";
 
 export function ReferenceFocusNotice({
   target,
@@ -16,44 +17,30 @@ export function ReferenceFocusNotice({
   matched: boolean;
   close: () => void;
 }) {
-  const itemId = `video:${target.videoId}`;
   const evidence = useQuery({
-    queryKey: ["youtube-item", itemId],
+    queryKey: ["reference-evidence", domain, postId, target],
     queryFn: ({ signal }) =>
-      fetchYouTubeItems(
-        { feed: "", channel: "", kind: "", q: "" },
-        undefined,
-        signal,
-        itemId,
-      ),
+      fetchReferenceEvidence(domain, postId, target, signal),
     enabled: !matched,
   });
-  const reference = evidence.data?.items
-    .find((item) => item.id === itemId)
-    ?.references.find(
-      (entry) =>
-        entry.domain === domain &&
-        entry.post_id === postId &&
-        entry.kind === target.kind &&
-        entry.reference_id === target.id,
-    );
-  const sameCapture =
-    reference &&
-    (!target.saved ||
-      Date.parse(reference.observed_at) === Date.parse(target.saved));
-  const original = safeUrl(reference?.reference_url ?? "");
+  const reference = evidence.data;
+  const original =
+    reference && normalizedLinkUrl(reference.reference_url)
+      ? safeUrl(reference.reference_url)
+      : undefined;
+  const label = target.videoId ? "video link" : "link";
 
   return (
     <aside
       className="reference-focus-notice"
-      aria-label="Video reference"
+      aria-label={target.videoId ? "Video reference" : "Link reference"}
       data-reference-fallback={!matched ? "true" : undefined}
       tabIndex={-1}
     >
       <p>
         {matched
-          ? `The matching video link is highlighted in this saved ${target.kind}.`
-          : `The referenced ${target.kind === "comment" ? "comment or its video link" : "video link"} is not available in the current saved post.`}
+          ? `The matching ${label} is highlighted in this saved ${target.kind}.`
+          : `The referenced ${target.kind === "comment" ? `comment or its ${label}` : label} is not available in the current saved post.`}
       </p>
       {target.saved && (
         <p className="reference-focus-date">
@@ -71,12 +58,28 @@ export function ReferenceFocusNotice({
       )}
       {!matched && (
         <>
-          {sameCapture && reference.excerpt && (
-            <blockquote>{reference.excerpt}</blockquote>
+          {reference?.excerpt && <blockquote>{reference.excerpt}</blockquote>}
+          {evidence.isPending && <p role="status">Loading saved evidence…</p>}
+          {evidence.isError && (
+            <p>
+              Saved evidence could not be loaded.{" "}
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => void evidence.refetch()}
+              >
+                Try again
+              </button>
+            </p>
+          )}
+          {evidence.isSuccess && !reference && (
+            <p>No archived evidence is available for this reference.</p>
           )}
           <div className="reference-focus-actions">
             <button type="button" className="text-button" onClick={close}>
-              Back to video evidence
+              {target.videoId
+                ? "Back to video evidence"
+                : "Back to connections"}
             </button>
             {original && (
               <a href={original} target="_blank" rel="noopener noreferrer">

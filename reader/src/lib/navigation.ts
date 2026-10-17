@@ -9,6 +9,7 @@ export function clearReferenceParams(params: URLSearchParams) {
     "reference_kind",
     "reference_id",
     "reference_video",
+    "reference_url",
     "reference_saved",
   ])
     params.delete(key);

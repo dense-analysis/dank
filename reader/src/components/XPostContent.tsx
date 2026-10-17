@@ -2,7 +2,7 @@ import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
-import { videoReferenceId } from "../lib/referenceFocus";
+import { matchesLinkUrl } from "../lib/linkIdentity";
 import { postKey } from "../lib/storage";
 import type { Post, XMedia } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
@@ -24,12 +24,12 @@ export function XPostContent({
   compact = false,
   query = "",
   navigation,
-  referenceVideoId,
+  referenceUrl,
 }: {
   post: Post;
   compact?: boolean;
   query?: string;
-  referenceVideoId?: string;
+  referenceUrl?: string;
   navigation?: { href: string; open: () => void };
 }) {
   const { preferences } = useReaderPreferences();
@@ -53,12 +53,16 @@ export function XPostContent({
 
         displayed.add(key);
 
-        if (image ? hideRawImageLinks : hideRawVideoLinks) hidden.add(key);
+        if (
+          (image ? hideRawImageLinks : hideRawVideoLinks) &&
+          !(referenceUrl && matchesLinkUrl(value ?? "", referenceUrl))
+        )
+          hidden.add(key);
       }
     }
 
     return { displayed, hidden };
-  }, [media, failedMedia, hideRawImageLinks, hideRawVideoLinks]);
+  }, [media, failedMedia, hideRawImageLinks, hideRawVideoLinks, referenceUrl]);
   const previews = useMemo(
     () =>
       (post.x?.links ?? []).filter(
@@ -72,11 +76,7 @@ export function XPostContent({
     () =>
       new Set(
         previews.flatMap((link) => {
-          if (
-            referenceVideoId &&
-            videoReferenceId(link.url) === referenceVideoId
-          )
-            return [];
+          if (referenceUrl && matchesLinkUrl(link.url, referenceUrl)) return [];
           if (
             (!hideRawImageLinks && imageReferenceKey(link.url)) ||
             (!hideRawVideoLinks &&
@@ -90,7 +90,7 @@ export function XPostContent({
           return key ? [key] : [];
         }),
       ),
-    [previews, hideRawImageLinks, hideRawVideoLinks, referenceVideoId],
+    [previews, hideRawImageLinks, hideRawVideoLinks, referenceUrl],
   );
   const html = useMemo(
     () =>
@@ -109,8 +109,9 @@ export function XPostContent({
       ) : (
         <ArticleBody
           html={html}
+          sourceUrl={post.url}
           query={query}
-          referenceVideoId={referenceVideoId}
+          referenceUrl={referenceUrl}
           referenceIsPost
         />
       )}
@@ -140,10 +141,7 @@ export function XPostContent({
         <XLinkPreview
           key={link.url}
           link={link}
-          highlighted={
-            !!referenceVideoId &&
-            videoReferenceId(link.url) === referenceVideoId
-          }
+          highlighted={!!referenceUrl && matchesLinkUrl(link.url, referenceUrl)}
           positionScope={postKey(post)}
         />
       ))}

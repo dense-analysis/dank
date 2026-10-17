@@ -260,3 +260,31 @@ it("keeps reference anchors, focus and image controls stable through preference 
   expect(container.querySelector("img")).toBe(image);
   expect(document.activeElement).toBe(anchor);
 });
+
+it("keeps a cited raw image link visible while unrelated media links follow preferences", async () => {
+  const cited = "https://i.redd.it/research.png";
+  const other = "https://i.redd.it/other.png";
+  await act(() =>
+    root.render(
+      <ReaderPreferencesProvider>
+        <ArticleBody
+          html={`<p><a href="${cited}">${cited}</a> <a href="${other}">${other}</a></p><img src="/assets/research.png"><img src="/assets/other.png">`}
+          referenceUrl={cited}
+          redditImages={[
+            { url: "/assets/research.png", source_url: cited },
+            { url: "/assets/other.png", source_url: other },
+          ]}
+        />
+      </ReaderPreferencesProvider>,
+    ),
+  );
+  const match = container.querySelector<HTMLElement>(
+    '[data-reference-match="true"]',
+  );
+  expect(match?.textContent).toBe(cited);
+  expect(match?.hidden).toBe(false);
+  expect(match?.closest("[hidden]")).toBeNull();
+  expect(
+    container.querySelector<HTMLAnchorElement>(`a[href="${other}"]`)?.hidden,
+  ).toBe(true);
+});

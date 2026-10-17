@@ -1,7 +1,8 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { hackerNewsCaptureReason, hasHackerNewsBody } from "../lib/hackerNews";
-import { type ReferenceTarget, videoReferenceId } from "../lib/referenceFocus";
+import { matchesLinkUrl } from "../lib/linkIdentity";
+import type { ReferenceTarget } from "../lib/referenceFocus";
 import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ArticleBody } from "./ArticleBody";
@@ -44,7 +45,7 @@ export function HackerNewsDetail({
   const externalMatch =
     referenceTarget?.kind === "post" &&
     externalUrl &&
-    videoReferenceId(externalUrl) === referenceTarget.videoId;
+    matchesLinkUrl(externalUrl, referenceTarget.url);
   const discussionUrl = safeUrl(story.discussion_url);
   const complete = capture.status === "captured";
   const partial = capture.status === "partial" || (hasComments && !complete);
@@ -95,11 +96,10 @@ export function HackerNewsDetail({
       {hasText ? (
         <ArticleBody
           html={post.html}
+          sourceUrl={post.url}
           referenceIsPost
-          referenceVideoId={
-            referenceTarget?.kind === "post"
-              ? referenceTarget.videoId
-              : undefined
+          referenceUrl={
+            referenceTarget?.kind === "post" ? referenceTarget.url : undefined
           }
         />
       ) : (
@@ -182,10 +182,11 @@ export function HackerNewsDetail({
                     )}
                     <ArticleBody
                       html={comment.html}
-                      referenceVideoId={
+                      sourceUrl={story.discussion_url}
+                      referenceUrl={
                         referenceTarget?.kind === "comment" &&
                         referenceTarget.id === comment.id
-                          ? referenceTarget.videoId
+                          ? referenceTarget.url
                           : undefined
                       }
                     />

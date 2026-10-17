@@ -14,6 +14,7 @@ import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
 import { hasHackerNewsBody } from "../lib/hackerNews";
+import { matchesLinkUrl, normalizedLinkUrl } from "../lib/linkIdentity";
 import { articleParams } from "../lib/navigation";
 import type { ReferenceTarget } from "../lib/referenceFocus";
 import { postKey } from "../lib/storage";
@@ -134,6 +135,15 @@ export function ArticleView({
   }, [targetKey, post, isPlaceholderData]);
   const referenceReady =
     !!post && !isPlaceholderData && referenceResult.key === targetKey;
+  const originalUrl = post && normalizedLinkUrl(post.url);
+  const originalMatch = !!(
+    post?.source === "rss" &&
+    originalUrl &&
+    referenceTarget?.kind === "post" &&
+    new URL(originalUrl).hostname.replace(/^www\./, "") !==
+      post.domain.toLowerCase().replace(/^www\./, "") &&
+    matchesLinkUrl(post.url, referenceTarget.url)
+  );
   const postLinks = post && (
     <PostLinks post={post} params={params} open={openPost} />
   );
@@ -225,10 +235,8 @@ export function ArticleView({
           post={post}
           links={postLinks}
           selectAccount={selectAccount}
-          referenceVideoId={
-            referenceTarget?.kind === "post"
-              ? referenceTarget.videoId
-              : undefined
+          referenceUrl={
+            referenceTarget?.kind === "post" ? referenceTarget.url : undefined
           }
           pending={isPlaceholderData && !error}
           loadError={!!error}
@@ -304,7 +312,8 @@ export function ArticleView({
           {hasReadableContent ? (
             <>
               <a
-                className="original-link"
+                className={`original-link${originalMatch ? " reference-match" : ""}`}
+                data-reference-match={originalMatch ? "true" : undefined}
                 href={safeUrl(post.url)}
                 target="_blank"
                 rel="noreferrer"
@@ -344,10 +353,11 @@ export function ArticleView({
               {hasContent && (
                 <ArticleBody
                   html={html}
-                  referenceVideoId={
+                  sourceUrl={post.url}
+                  referenceUrl={
                     referenceTarget?.kind === "post" ||
                     (!post.reddit && referenceTarget?.kind === "comment")
-                      ? referenceTarget.videoId
+                      ? referenceTarget.url
                       : undefined
                   }
                   referenceIsPost={referenceTarget?.kind === "post"}
@@ -378,7 +388,8 @@ export function ArticleView({
                 </p>
                 {safeUrl(post.url) && (
                   <a
-                    className="collection-source-link"
+                    className={`collection-source-link${originalMatch ? " reference-match" : ""}`}
+                    data-reference-match={originalMatch ? "true" : undefined}
                     href={safeUrl(post.url)}
                     target="_blank"
                     rel="noreferrer"

@@ -116,9 +116,10 @@ export function RedditComments({
                     {comment.body_html ? (
                       <ArticleBody
                         html={comment.body_html}
-                        referenceVideoId={
+                        sourceUrl={originalUrl}
+                        referenceUrl={
                           revealReference && referenceTarget.id === comment.id
-                            ? referenceTarget.videoId
+                            ? referenceTarget.url
                             : undefined
                         }
                       />
@@ -129,9 +130,9 @@ export function RedditComments({
                           .replaceAll("<", "&lt;")
                           .replaceAll(">", "&gt;")
                           .replaceAll("\n", "<br>")}
-                        referenceVideoId={
+                        referenceUrl={
                           revealReference && referenceTarget.id === comment.id
-                            ? referenceTarget.videoId
+                            ? referenceTarget.url
                             : undefined
                         }
                       />
