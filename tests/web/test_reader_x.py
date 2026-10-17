@@ -15,6 +15,7 @@ ICON = "https://pbs.twimg.com/profile_images/123/account_normal.png"
 EMPTY_CONTENT: dict[str, Any] = {
     "links": [], "reply_count": None,
     "replies_status": "not_collected", "captured_at": None,
+    "replies_captured_count": 0,
 }
 CAPTURED_CONTENT: dict[str, Any] = {
     **EMPTY_CONTENT, "media": [],
@@ -137,6 +138,11 @@ async def test_x_cards_and_details_use_captured_profile_or_handle_fallback(
     captured = CAPTURED_CONTENT if profile is not None and not isinstance(
         profile, str,
     ) else EMPTY_CONTENT
+    if "/post?" in path:
+        conversation = result["x"].pop("conversation")
+        assert conversation["status"] == "not_collected"
+        assert conversation["context"] == conversation["replies"] == []
+
     assert result["x"] == {**expected, **captured}
     assert len(fake.calls) == 3
     assert fake.calls[2][1] == {
@@ -224,6 +230,11 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
     result = json.loads(response.text or "")
     post = result["posts"][0] if "posts" in result else result
     assert post["html"] == "<p>Processed body</p>"
+    if "/post?" in path:
+        conversation = post["x"].pop("conversation")
+        assert conversation["reported_replies"] == 24
+        assert conversation["status"] == "not_collected"
+
     assert post["x"] == {
         "handle": "example", "name": "Example Person", "icon_url": ICON,
         "media": [{"type": "image",
@@ -232,6 +243,7 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
         "links": [{"url": "https://youtu.be/id", "title": "",
                    "description": "", "image_url": None}],
         "reply_count": 24, "replies_status": "not_collected",
+        "replies_captured_count": 0,
         "captured_at": "2026-10-08T12:30:45.123000+00:00",
     }
     assert fake.calls[2][1] == {

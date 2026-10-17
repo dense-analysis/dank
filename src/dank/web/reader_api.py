@@ -260,7 +260,10 @@ async def _post_payloads(
         )
         for post in posts
     ]
-    x_content = await post_x_content(client, posts, assets, assets_dir)
+    x_content = await post_x_content(
+        client, posts, assets, assets_dir,
+        include_discussion=include_discussion,
+    )
 
     for post in payloads:
         content = x_content.get((post["domain"], post["id"]))

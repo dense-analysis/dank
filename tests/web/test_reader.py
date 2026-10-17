@@ -312,7 +312,7 @@ async def test_x_account_api_keeps_search_and_returns_a_bound_cursor(
     first.update(url="https://x.com/Example/status/2", source="x")
     second = row("x.com", "1")
     second.update(url="https://x.com/Example/status/1", source="x")
-    fake = FakeClickHouse([first, second], [], [])
+    fake = FakeClickHouse([first, second], [], [], [])
     app["clickhouse"] = fake
     path = "/api/reader/posts?kind=x&account=Example&q=article&limit=1"
     response = await request(app, path)
