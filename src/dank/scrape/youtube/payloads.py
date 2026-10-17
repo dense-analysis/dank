@@ -328,6 +328,7 @@ def normalize_renderer(
     observed_at: datetime.datetime,
     playlist_name: str = "",
     channel: tuple[str, str, str] = ("", "", ""),
+    position: int = 0,
 ) -> RawPost | None:
     kind, identifier = _identity(key, renderer)
 
@@ -409,6 +410,7 @@ def normalize_renderer(
             "tab": feed.tab,
             "shelf": shelf or ("Top 100" if feed.kind == "hype" else ""),
             "rank": _rank(renderer, rank),
+            "position": position,
             "region": settings.region,
             "playlist_id": parse_qs(urlsplit(request_url).query).get(
                 "list",

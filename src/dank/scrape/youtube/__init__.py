@@ -84,6 +84,7 @@ class FeedCapture:
                 request_url=request_url,
                 observed_at=self.observed_at,
                 playlist_name=self.playlist_name,
+                position=len(self.seen) + 1,
                 channel=cast(tuple[str, str, str], self.channel),
             )
 
@@ -136,11 +137,12 @@ class FeedCapture:
 def _candidates(
     state: dict[str, object], responses: list[object],
 ) -> Iterable[tuple[str, dict[str, Any], str]]:
+    # Initial data includes collapsed shelf items in their original order.
+    yield from renderers(state.get("initial"))
+
     for item in cast(list[object], state.get("items", [])):
         data = as_dict(item)
         yield from renderers(data.get("value"), str(data.get("shelf", "")))
-
-    yield from renderers(state.get("initial"))
 
     for response in responses:
         yield from renderers(response)

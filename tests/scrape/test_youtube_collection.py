@@ -244,3 +244,21 @@ def test_post_links_expand_short_display_urls_without_fetching() -> None:
     assert json.loads(post.payload)["text"] == (
         "See https://news.example/full-article"
     )
+
+
+def test_global_positions_preserve_shelves_across_batches() -> None:
+    capture = FeedCapture(NEWS, YouTubeSettings(), set())
+    first = capture.extract([
+        ("videoRenderer", {"videoId": "aaaaaaaaaaa"}, "World"),
+        ("videoRenderer", {"videoId": "bbbbbbbbbbb"}, "World"),
+    ], NEWS.url)
+    second = capture.extract([
+        ("videoRenderer", {"videoId": "aaaaaaaaaaa"}, "World"),
+        ("videoRenderer", {"videoId": "ccccccccccc"}, "Economy"),
+    ], NEWS.url)
+    context = [json.loads(post.payload)["discovery"]
+               for post in [*first.posts, *second.posts]]
+    assert [item["position"] for item in context] == [1, 2, 3]
+    assert [item["rank"] for item in context] == [1, 2, 1]
+    timestamps = {post.scraped_at for post in [*first.posts, *second.posts]}
+    assert len(timestamps) == 1
