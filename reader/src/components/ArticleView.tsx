@@ -13,6 +13,7 @@ import { useRedditContent } from "../hooks/useRedditContent";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
+import { hasHackerNewsBody } from "../lib/hackerNews";
 import { postKey } from "../lib/storage";
 import type { Filters, Post } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
@@ -82,10 +83,20 @@ export function ArticleView({
     onUnavailable,
     displayed: redditVideoKeys,
   } = useRedditContent(post, { preserveVideoLinks: true });
-  const hasContent = useMemo(() => hasArticleContent(html), [html]);
+  const hasContent = useMemo(
+    () =>
+      post?.hacker_news
+        ? hasHackerNewsBody(html, post.hacker_news.external_url)
+        : hasArticleContent(html),
+    [html, post?.hacker_news],
+  );
   const xPost = isXPost(post ?? { domain, source: "" });
   const hasReadableContent =
-    post && xPost ? hasXContent(post) : hasContent || redditVideos.length > 0;
+    post && xPost
+      ? hasXContent(post)
+      : hasContent ||
+        redditVideos.length > 0 ||
+        (post?.hacker_news?.comments_items?.length ?? 0) > 0;
   const attachedMedia =
     post?.media.filter(
       (asset) =>

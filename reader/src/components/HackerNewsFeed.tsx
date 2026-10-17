@@ -1,6 +1,6 @@
 import { ArrowUp, Check, ExternalLink, MessageCircle } from "lucide-react";
 import { calendarDate } from "../lib/dateRanges";
-import { hackerNewsFilters } from "../lib/hackerNews";
+import { hackerNewsExcerpt, hackerNewsFilters } from "../lib/hackerNews";
 import type { HackerNewsFilter, HackerNewsPost, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { HighlightedText } from "./HighlightedText";
@@ -91,6 +91,11 @@ export function HackerNewsCard({
   if (!story) return null;
   const externalUrl = story.external_url && safeUrl(story.external_url);
   const discussionUrl = safeUrl(story.discussion_url);
+  const excerpt = hackerNewsExcerpt(
+    post.excerpt,
+    story.external_url,
+    post.html,
+  );
 
   return (
     <article className={`post-card hn-card ${read ? "is-read" : ""}`}>
@@ -113,9 +118,9 @@ export function HackerNewsCard({
         <h2>
           <HighlightedText text={post.title || "Untitled post"} query={query} />
         </h2>
-        {post.excerpt && (
+        {excerpt && (
           <p>
-            <HighlightedText text={post.excerpt} query={query} />
+            <HighlightedText text={excerpt} query={query} />
           </p>
         )}
       </ReaderLink>

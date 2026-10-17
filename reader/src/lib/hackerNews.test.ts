@@ -1,6 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { fetchPosts } from "./api";
 import { sourceKind, sourcesForFeed } from "./collections";
+import {
+  hackerNewsCaptureReason,
+  hackerNewsExcerpt,
+  hasHackerNewsBody,
+} from "./hackerNews";
 import { filterParams, parseFilters } from "./navigation";
 import { defaultFilters } from "./storage";
 import type { HackerNewsPost, Post } from "./types";
@@ -131,4 +136,93 @@ it("accepts summary metadata without comments and validates detailed capture dat
   ]) {
     expect(isPost({ ...post, hacker_news: { ...detail, ...bad } })).toBe(false);
   }
+});
+
+it.each([
+  ["comment_limit", "The configured comment limit was reached."],
+  [
+    "timeout",
+    "Comment collection timed out before the discussion was complete.",
+  ],
+  [
+    "Comments retained from an earlier detailed scrape. comment_limit",
+    "Comments retained from an earlier detailed scrape. The configured comment limit was reached.",
+  ],
+  [
+    "Comments retained from an earlier detailed scrape. timeout",
+    "Comments retained from an earlier detailed scrape. Comment collection timed out before the discussion was complete.",
+  ],
+  [
+    "Comments retained from an earlier detailed scrape.",
+    "Comments retained from an earlier detailed scrape.",
+  ],
+  [
+    "request_failed: internal error GET https://example.com/token",
+    "Comment collection could not complete.",
+  ],
+  [
+    "Comments retained from an earlier detailed scrape. HTTP 403: internal details",
+    "Comments retained from an earlier detailed scrape. Comment collection could not complete.",
+  ],
+  [null, "Some comments or replies were not captured."],
+])(
+  "explains capture reason %s without exposing collector error details",
+  (reason, message) => {
+    expect(hackerNewsCaptureReason(reason)).toBe(message);
+  },
+);
+
+it("omits only duplicate original URLs while preserving useful self-post text and media", () => {
+  const url = "https://example.com/article?a=1&b=2";
+  expect(hackerNewsExcerpt(url, url)).toBe("");
+  expect(
+    hackerNewsExcerpt("  https://example.com  ", "https://example.com/"),
+  ).toBe("");
+  expect(hackerNewsExcerpt(`${url} Some context`, url)).toBe(
+    `${url} Some context`,
+  );
+  expect(hackerNewsExcerpt(url, null)).toBe(url);
+  expect(
+    hasHackerNewsBody(
+      `<p><a href="${url}">https://example.com/article?a=1&amp;b=2</a></p>`,
+      url,
+    ),
+  ).toBe(false);
+  expect(
+    hasHackerNewsBody(`<p>${url}</p><script>malicious()</script>`, url),
+  ).toBe(false);
+  expect(hasHackerNewsBody("<p>Ask HN: What are you building?</p>", null)).toBe(
+    true,
+  );
+  expect(
+    hasHackerNewsBody(`<p><a href="${url}">Project details</a></p>`, url),
+  ).toBe(true);
+  expect(
+    hasHackerNewsBody(`<p>${url}</p><p>My project description.</p>`, url),
+  ).toBe(true);
+  expect(
+    hasHackerNewsBody(
+      `<p>${url}</p><img src="https://example.com/image.png">`,
+      url,
+    ),
+  ).toBe(true);
+  expect(hasHackerNewsBody("", url)).toBe(false);
+});
+
+it("uses the full saved body to recognize a truncated URL excerpt", () => {
+  const url = `https://example.com/${"long-path-segment/".repeat(30)}`;
+  const excerpt = `${url.slice(0, 200)}…`;
+  expect(
+    hackerNewsExcerpt(excerpt, url, `<p><a href="${url}">${url}</a></p>`),
+  ).toBe("");
+  expect(
+    hackerNewsExcerpt(
+      "A useful project",
+      url,
+      `<p>A useful project: ${url}</p>`,
+    ),
+  ).toBe("A useful project");
+  expect(hackerNewsExcerpt("A useful project", url, "")).toBe(
+    "A useful project",
+  );
 });

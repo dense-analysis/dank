@@ -11,8 +11,8 @@ function story(index: number): Post {
     url: `https://news.ycombinator.com/item?id=${index + 1}`,
     title: `Building better software ${index + 1}`,
     author: "builder",
-    excerpt: "",
-    html: "",
+    excerpt: `https://example.com/software-${index + 1}`,
+    html: `<p><a href="https://example.com/software-${index + 1}">https://example.com/software-${index + 1}</a></p>`,
     created_at: `${day}T12:00:00Z`,
     thumbnail: null,
     media: [],
@@ -162,6 +162,7 @@ for (const width of [390, 1280]) {
     await selection.getByRole("button", { name: "All", exact: true }).click();
     await expect(page).toHaveURL(/hn_filter=all/);
     await expect(page.locator(".hn-card").first()).toBeVisible();
+    await expect(page.locator(".hn-card .post-open p")).toHaveCount(0);
     await page.screenshot({
       path: testInfo.outputPath(`hacker-news-${width}.png`),
       fullPage: true,
@@ -182,6 +183,7 @@ for (const width of [390, 1280]) {
     await expect(
       page.getByRole("heading", { name: "Comments not captured" }),
     ).toBeVisible();
+    await expect(page.locator(".hn-detail > .article-body")).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: "Read original article", exact: true }),
     ).toHaveAttribute("href", "https://example.com/software-1");
@@ -197,6 +199,7 @@ for (const width of [390, 1280]) {
     await expect(
       selection.getByRole("button", { name: "All", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".hn-card").first()).not.toHaveClass(/is-read/);
   });
 }
 
@@ -208,7 +211,8 @@ test("saved comments preserve nesting, expose partial capture, and sanitize untr
       status: "partial",
       captured: 2,
       total: 20,
-      reason: "Comment limit reached.",
+      reason:
+        "Comments retained from an earlier detailed scrape. comment_limit",
     },
     comments_items: [
       {
@@ -235,7 +239,11 @@ test("saved comments preserve nesting, expose partial capture, and sanitize untr
   await expect(
     page.getByRole("heading", { name: "Partial discussion" }),
   ).toBeVisible();
-  await expect(page.getByText("Comment limit reached.")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Comments retained from an earlier detailed scrape. The configured comment limit was reached.",
+    ),
+  ).toBeVisible();
   await expect(page.getByText(/2 saved of 20 reported/)).toBeVisible();
   await expect(page.locator(".hn-comment")).toHaveCount(2);
   await expect(page.locator(".hn-comment").last()).toHaveAttribute(
@@ -254,6 +262,10 @@ test("saved comments preserve nesting, expose partial capture, and sanitize untr
   await expect(
     page.getByRole("link", { name: "Reference", exact: true }),
   ).toHaveAttribute("href", "https://example.com/reference");
+  await page
+    .getByRole("button", { name: "Back to stories", exact: true })
+    .click();
+  await expect(page.locator(".hn-card").first()).toHaveClass(/is-read/);
 });
 
 test("failed capture is explicit and API failure never becomes an empty feed", async ({

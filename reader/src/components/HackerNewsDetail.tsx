@@ -1,6 +1,6 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
 import type { CSSProperties } from "react";
-import { hasArticleContent } from "../lib/article";
+import { hackerNewsCaptureReason, hasHackerNewsBody } from "../lib/hackerNews";
 import type { Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ArticleBody } from "./ArticleBody";
@@ -27,7 +27,7 @@ export function HackerNewsDetail({
   };
   const comments = story.comments_items ?? [];
   const hasComments = comments.length > 0;
-  const hasText = hasArticleContent(post.html);
+  const hasText = hasHackerNewsBody(post.html, story.external_url);
   const externalUrl = story.external_url && safeUrl(story.external_url);
   const discussionUrl = safeUrl(story.discussion_url);
   const complete = capture.status === "captured";
@@ -102,11 +102,8 @@ export function HackerNewsDetail({
                     : ""}{" "}
                   · counts may have changed on Hacker News.
                 </p>
-                {partial && (
-                  <p>
-                    {capture.reason ||
-                      "Some comments or replies were not captured."}
-                  </p>
+                {(partial || capture.reason) && (
+                  <p>{hackerNewsCaptureReason(capture.reason)}</p>
                 )}
               </div>
             ) : (
