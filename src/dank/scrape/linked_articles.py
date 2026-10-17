@@ -46,7 +46,13 @@ async def scrape_linked_articles(
 ) -> AsyncIterator[ScrapeBatch]:
     """Retain failures; caller resolves known and social destinations."""
     semaphore = asyncio.Semaphore(concurrency)
-    unique = {urldefrag(article.url).url: article for article in articles}
+    unique: dict[str, LinkedArticle] = {}
+
+    for article in articles:
+        try:
+            unique[urldefrag(article.url).url] = article
+        except ValueError:
+            continue
 
     async def collect(
         url: str, article: LinkedArticle,

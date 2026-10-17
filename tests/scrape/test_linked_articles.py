@@ -210,6 +210,7 @@ async def test_non_web_and_credential_links_are_not_requested(
     monkeypatch.setattr("dank.scrape.linked_articles._fetch_text", fetch)
     batches = [batch async for batch in scrape_linked_articles(
         cast(Any, object()), [
+            LinkedArticle("https://[malformed/article"),
             LinkedArticle("file:///private/file"),
             LinkedArticle("javascript:alert(1)"),
             LinkedArticle("https://user:password@publisher.test/article"),
