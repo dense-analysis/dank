@@ -13,6 +13,8 @@ from dank.model import AssetDiscovery, RawAsset
 from dank.scrape.http import http_response
 from dank.scrape.metrics import count
 
+from .limits import AssetSizeExceeded
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,12 +52,15 @@ async def download_file_http(
         try:
             async with http_response(
                 http_client, discovery.url,
+                preserve_url=urlparse(discovery.url).hostname in {
+                    "preview.redd.it", "external-preview.redd.it",
+                },
             ) as response:
                 response.raise_for_status()
                 content_length = response.content_length
                 bytes_read = 0
                 exceeded_limit = (
-                    max_asset_bytes is not None
+                    max_asset_bytes is not None and max_asset_bytes > 0
                     and content_length is not None
                     and content_length > max_asset_bytes
                 )
@@ -74,6 +79,7 @@ async def download_file_http(
                             # Enforce the limit even for a wrong header.
                             if (
                                 max_asset_bytes is not None
+                                and max_asset_bytes > 0
                                 and bytes_read > max_asset_bytes
                             ):
                                 exceeded_limit = True
@@ -82,7 +88,7 @@ async def download_file_http(
                             file.write(chunk)
 
                 if exceeded_limit:
-                    raise OSError(
+                    raise AssetSizeExceeded(
                         (
                             f"Exceeded maximum download size "
                             f"of {max_asset_bytes} "
@@ -91,6 +97,8 @@ async def download_file_http(
                         ),
                     )
             temp_path.replace(target_path)
+        except AssetSizeExceeded:
+            raise
         except Exception as error:
             if (
                 isinstance(error, aiohttp.ClientResponseError)

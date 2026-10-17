@@ -153,10 +153,21 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   earlier responses. A fresh-process repeat (`82188e64`) saved the same 25
   LLMDevs posts in 11.9s without collection or media failures.
   [Recovery tests](../tests/scrape/test_reddit_recovery.py).
-- [ ] **P2: Investigate Reddit preview-image 403 responses.** One external-preview
-  image failed in the same run. Check URL freshness and signed-query handling;
-  neither cause is established. Preserve the post and distinguish unavailable
-  media from collection failures.
+- [x] **P2: Preserve Reddit preview-image signatures.** The HTTP client rewrote
+  `crop=1%3A1%2Csmart` as `crop=1:1,smart` in a signed external-preview URL.
+  A controlled Docker check reproduced 403 twice for the rewritten URL and 200
+  twice for the original URL (4,167-byte JPEG), without changing cookies or
+  refreshing the signature. Preview downloads now preserve the escaped URL
+  through redirects. Genuine 403 responses still count as failures and retain
+  their post/reference. This fixes the observed URL, not every possible CDN denial.
+  [Signed-URL regressions](../tests/scrape/test_signed_media_urls.py).
+
+  **Docker verification, 2026-10-17:** run `813da81f` completed all 15 communities
+  in 3m21s, saving 605 distinct posts and reporting zero collection, parse, 429
+  or media failures. Six oversized files counted as skips under the unchanged
+  10 MiB cap. DomainDrivenDesign and ExperiencedDevs were explicitly empty for
+  Top/day. A separate retry of the exact six earlier failures saved the 4,167-byte
+  preview JPEG and retained five size-skipped GIF references, with zero failures.
 - [ ] **P1: Restore YouTube format discovery and downloads.** Logs reported
   unavailable requested formats and missing challenge-solver scripts. The
   container has Node and yt-dlp `2026.8.19`, but no `yt-dlp-ejs`. Pin compatible
@@ -175,16 +186,24 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   records from durable rows. Done when a heartbeat identifies active browser
   work, waiting and stalled work without inspecting network traffic.
   [Progress metrics](../src/dank/scrape/metrics.py).
-- [ ] **P2: Separate size exclusions from download failures.** The configured
-  10 MiB cap rejected many videos, while empty download paths count as failures.
-  The posts-first Reddit run also rejected five GIFs of roughly 15–46 MB under
-  that cap; those posts were saved.
-  X selects the largest variant before applying that cap. Preserve a structured
-  outcome such as size-excluded, unavailable or failed, and consider a smaller
-  eligible variant. Done when policy exclusions do not inflate failure counts,
-  usable smaller variants can be saved, and the configured limit is still enforced.
-  [Variant selection](../src/dank/scrape/x/payloads.py),
+- [x] **P2: Count known media size exclusions as skips.** Five Reddit GIFs of
+  roughly 15–46 MB exceeded the configured 10 MiB cap and were previously counted
+  as failures. Oversized estimates, HTTP headers/streams and completed media files
+  now use an explicit size-exclusion signal, increment `media_skipped`, and log
+  the reason at info level. Partial files are removed; posts and raw references
+  are retained. Other failures remain failures. Regressions check exact-limit
+  downloads, missing/incorrect headers, cleanup and a completed source outcome.
+  [Size-limit tests](../tests/scrape/test_media_limits.py),
   [outcome counters](../src/dank/scrape/assets/__init__.py).
+- [ ] **P2: Choose smaller video variants and classify yt-dlp aborts.** X still
+  selects the largest variant before the size policy is applied. Prefer an
+  eligible smaller variant where available. Internal yt-dlp size aborts without
+  a completed file still lack a structured result and can count as failures;
+  distinguish those from unavailable formats and network errors without assuming
+  every missing file was size-excluded. Raw references currently retain only the
+  URL/path, not a durable per-asset outcome reason.
+  [Variant selection](../src/dank/scrape/x/payloads.py),
+  [video downloader](../src/dank/scrape/assets/audio_video.py).
 - [ ] **P2: Make blocked feed/article recovery actionable.** Niche Gamer's feeds
   returned 403; article fetches also failed across several publishers, and
   Order Order exhausted its 429 retries. Retain host/status and retry eligibility
@@ -263,7 +282,7 @@ test fixtures establish behavior, not an incident at a particular publisher.
 | X, YouTube or Reddit video keeps playing outside the reading view | A shared reader controller pauses the previous player when another starts, and pauses a player when it leaves the viewport or the reader navigates. Pausing preserves position; returning to view requires manual resume. Reddit cards and opened posts share the same controller, including HLS and verified MP4 fallbacks; delayed loading cannot restart a cancelled player. | **Reader behavior covered.** YouTube is controlled through its iframe message channel, restricted to the matching frame and origin. The bridge waits for readiness before starting, cancels stale starts, and cleans up listeners and polling. This provider protocol may change; unavailable embeds retain **Watch on YouTube**. [Playback lifecycle tests](../reader/src/lib/playback.test.ts), [browser coverage](../reader/tests/youtube.spec.ts). |
 | X conversations contain only part of the replies or thread context | Collection saves bounded, focal-post-validated `TweetDetail` snapshots after account timelines, or for selected saved posts via `--x-post`. Parent context and replies are archived together; ads, nested quotes and unrelated recommendations are excluded from conversation slots. The reader retains earlier snapshots when a later attempt fails or skips detail capture. | **Partial coverage is explicit.** Budgets, remaining cursors, hidden branches, missing context and reply-count shortfalls mark snapshots partial. Missing responses, sign-in failures and HTTP failures never claim zero replies or completeness. A live signed-in Docker check on 2026-10-17 saved 22 related posts from a validated detail response and correctly reported a remaining cursor. Capture does not expand hidden branches or download extra reply media; remote media may expire. [Conversation guide](features/x.md#conversation-snapshots), [collector tests](../tests/scrape/test_x_conversations.py), [CLI tests](../tests/scrape/test_x_conversation_cli.py). |
 | Flattened feeds, lost figures/captions, relative URLs | Full plain-text feeds recover structure only from complete ordered text matches. Supported figures between matching sibling blocks are retained. WordPress caption containers become figures; final response URLs and valid HTML base URLs resolve links/media. | Formatted feeds stay authoritative; incomplete matches stay unchanged. Older captures without redirect metadata may need a fresh scrape. These rules do not validate every page layout. [Processing behavior](features/processing.md), [caption tests](../tests/test_readable_html.py), [redirect tests](../tests/scrape/test_rss_redirects.py). |
-| Missing or failed media downloads | Failed direct HTTP downloads remove partial files; absent local files are omitted from processed assets. `files_failed` and `media_skipped` distinguish failures from intentional reference-only/disabled downloads. | Media failure alone does not trigger **Incomplete scrape**. An article may remain readable with remote images or unavailable media. Configured size limits can also prevent downloads. [Media guide](features/media.md), [asset tests](../tests/scrape/test_scrape_assets.py). |
+| Missing or failed media downloads | Failed direct HTTP downloads remove partial files; absent local files are omitted from processed assets. `files_failed` and `media_skipped` distinguish failures from reference-only, disabled and known size-excluded downloads. | Media failure alone does not trigger **Incomplete scrape**. An article may remain readable with remote images or unavailable media. Configured size limits can also prevent downloads. [Media guide](features/media.md), [asset tests](../tests/scrape/test_scrape_assets.py). |
 | Extensionless images, observed on Microsoft Community Hub | A downloaded image with no known filename type is recognized as PNG from its signature, letting the reader use its local copy instead of the remote URL. Known filename types stay authoritative. | **Handled for PNG.** Other unknown formats remain unclassified. Existing asset processing is incremental; already-processed unknown metadata needs a refreshed raw asset. This does not discover or download embedded media automatically. [Media guide](features/media.md), [classification and reader tests](../tests/process/test_process_assets.py). |
 | Processing fails or produces no usable post | Raw captures remain available for reprocessing. Converters can return no post and be skipped; embedding/database exceptions can stop processing after earlier batches have been saved. | There is no per-article processing-error pill or durable processing-status ledger. The reader may show an older processed version or no record. Use process logs and compare raw/processed timestamps. [Processor](../src/dank/process/runner.py), [tests](../tests/process/test_process_runner.py). |
 

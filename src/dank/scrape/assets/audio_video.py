@@ -13,6 +13,8 @@ from yt_dlp import ParsedOptions, YoutubeDL, parse_options  # type: ignore
 
 from dank.model import AssetDiscovery, RawAsset
 
+from .limits import AssetSizeExceeded
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -152,12 +154,9 @@ def _download_audio_video_asset_sync(
     if max_asset_bytes is not None and max_asset_bytes > 0:
         if local_path.stat().st_size > max_asset_bytes:
             local_path.unlink(missing_ok=True)
-            logger.warning(
-                "Media exceeds %d-byte limit; skipped %s",
-                max_asset_bytes, url,
+            raise AssetSizeExceeded(
+                f"Downloaded media exceeds {max_asset_bytes}-byte limit",
             )
-
-            return None
 
     return str(local_path)
 

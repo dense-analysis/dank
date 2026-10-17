@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import logging
 import pathlib
 from collections.abc import Iterable
 from contextlib import nullcontext
@@ -22,6 +23,9 @@ from dank.scrape.metrics import (
 
 from .audio_video import download_audio_video_asset
 from .http import download_file_http, http_asset_path
+from .limits import AssetSizeExceeded
+
+logger = logging.getLogger(__name__)
 
 SKIP_ASSET_TYPES = {"iframe", "link"}
 ASSET_FILENAMES_TO_NEVER_DOWNLOAD = {
@@ -80,12 +84,11 @@ async def download_assets(
                     source.active_media += 1
 
                 try:
-                    before: set[pathlib.Path] = set()
-
-                    if source is not None:
-                        before = await asyncio.to_thread(
+                    before: set[pathlib.Path] = (
+                        await asyncio.to_thread(
                             _existing_files, assets_dir, discovery,
-                        )
+                        ) if source is not None else set()
+                    )
 
                     result = await _download_one(
                         discovery, assets_dir, browser_profile_dir,
@@ -104,6 +107,16 @@ async def download_assets(
                 finally:
                     if source is not None:
                         source.active_media -= 1
+        except AssetSizeExceeded as error:
+            count("media_skipped")
+            logger.info(
+                "Media skipped (size limit): %s (%s)", discovery.url, error,
+            )
+
+            return RawAsset(
+                discovery.domain, discovery.post_id, discovery.url,
+                discovery.asset_type, timestamp, discovery.source, "",
+            )
         finally:
             current_source.reset(token)
             progress.advance()
@@ -144,6 +157,16 @@ async def _download_one(
     *, download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
 ) -> RawAsset | None:
     target_dir = assets_dir / discovery.domain / discovery.post_id
+
+    if (
+        max_asset_bytes is not None and max_asset_bytes > 0
+        and discovery.estimated_size_bytes is not None
+        and discovery.estimated_size_bytes > max_asset_bytes
+    ):
+        raise AssetSizeExceeded(
+            f"Estimated {discovery.estimated_size_bytes} bytes exceeds "
+            f"{max_asset_bytes}-byte limit",
+        )
 
     if _uses_media_downloader(discovery):
         # Assemble adaptive streams instead of saving a manifest as media.

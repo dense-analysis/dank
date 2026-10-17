@@ -76,9 +76,20 @@ The example sets a 10 MiB limit for each media file. Omitting
 configured size limit. It is not a total disk or run-wide download budget.
 
 HTTP downloads check both declared size and bytes received, and remove partial
-files after failure. The YouTube path passes the limit to yt-dlp and also checks
-the downloaded media file. Its additional metadata and thumbnail files are not
-covered by a total storage budget.
+files after failure or a size exclusion. A known oversized estimate, HTTP header,
+stream or completed media file counts as `media_skipped`, not `files_failed`.
+The post and its media reference are retained, and the log states the size-limit
+reason. These exclusions alone do not make the run partial. Genuine HTTP,
+network and filesystem errors remain failures.
+
+Reddit preview downloads preserve the original escaped signed URL, including
+through redirects; rewriting its query can invalidate the signature and return
+403. Other HTTP URLs retain the client's normal URL handling.
+
+The YouTube path passes the limit to yt-dlp and also checks the downloaded media
+file. An internal yt-dlp abort without a completed file still lacks a structured
+size-exclusion result and may count as a failure. Additional metadata and
+thumbnail files are not covered by a total storage budget.
 
 ## Collect and view
 

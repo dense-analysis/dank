@@ -3,9 +3,10 @@ from typing import Any, NamedTuple, cast
 
 import pytest
 
-from dank.config import MEDIA_DOWNLOAD_TYPES
+from dank.config import MEDIA_DOWNLOAD_TYPES, SourceConfig
 from dank.model import AssetDiscovery
 from dank.scrape.assets import download_assets
+from dank.scrape.metrics import SourceMetrics
 
 
 class _ParsedOptions(NamedTuple):
@@ -163,15 +164,19 @@ async def test_download_assets_deletes_oversized_youtube_file(
         asset_type="youtube",
         estimated_size_bytes=None,
     )
+    stats = SourceMetrics(1, SourceConfig("example.com", ()))
     assets = await download_assets(
         [discovery],
         assets_dir=assets_dir,
         http_client=cast(Any, _UnusedHttpClient()),
         max_asset_bytes=4,
+        owners={discovery: stats},
     )
 
     assert assets
     assert assets[0].local_path == ""
+    assert stats.counts["media_skipped"] == 1
+    assert stats.counts["files_failed"] == 0
     assert not created_path.exists()
 
 
@@ -187,15 +192,19 @@ async def test_download_assets_skips_oversized_estimated_asset(
         asset_type="video",
         estimated_size_bytes=10,
     )
+    stats = SourceMetrics(1, SourceConfig("example.com", ()))
     assets = await download_assets(
         [discovery],
         assets_dir=assets_dir,
         http_client=cast(Any, _UnusedHttpClient()),
         max_asset_bytes=4,
+        owners={discovery: stats},
     )
 
     assert assets
     assert assets[0].local_path == ""
+    assert stats.counts["media_skipped"] == 1
+    assert stats.counts["files_failed"] == 0
 
 
 async def test_download_assets_skips_loader_gif_by_filename(

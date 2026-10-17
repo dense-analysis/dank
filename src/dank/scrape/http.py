@@ -5,12 +5,13 @@ import datetime
 import time
 from collections import Counter
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
+from yarl import URL
 
 from dank.config import ScrapeSettings
 from dank.scrape.metrics import request_metrics, retry_sleep
@@ -121,10 +122,11 @@ async def http_response(
     client: aiohttp.ClientSession, url: str, *,
     headers: dict[str, str] | None = None,
     retry: int = 0, max_redirects: int = 5,
+    preserve_url: bool = False,
 ) -> AsyncGenerator[aiohttp.ClientResponse]:
     limiter = current_limiter.get()
 
-    if limiter is None:
+    if limiter is None and not preserve_url:
         with request_metrics(retry=retry > 0):
             async with client.get(
                 url, headers=headers, max_redirects=max_redirects,
@@ -136,13 +138,17 @@ async def http_response(
 
     # Acquire the destination host's limit at every redirect hop.
     for hop in range(max_redirects + 1):
-        async with limiter.slot(url):
+        async with limiter.slot(url) if limiter else nullcontext():
             with request_metrics(retry=retry > 0):
+                # Signed CDN URLs require the original escaped query bytes.
+                # https://docs.aiohttp.org/en/stable/client_quickstart.html#passing-parameters-in-urls
+                request_url = URL(url, encoded=True) if preserve_url else url
+
                 async with client.get(
-                    url, headers=headers, allow_redirects=False,
+                    request_url, headers=headers, allow_redirects=False,
                     max_field_size=MAX_HEADER_FIELD_BYTES,
                 ) as response:
-                    if response.status == 429:
+                    if response.status == 429 and limiter is not None:
                         limiter.cool_down(url, max(
                             2.0 * 2 ** retry,
                             retry_after_seconds(
