@@ -19,6 +19,40 @@ function respond(body: unknown, status = 200): void {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("reader API", () => {
+  it("validates optional X post identities while accepting missing profile images and older posts", () => {
+    const post = {
+      id: "1",
+      domain: "x.com",
+      url: "https://x.com/reporter/status/1",
+      author: "Display name",
+      title: "A dispatch",
+      excerpt: "A dispatch",
+      html: "<p>A dispatch</p>",
+      created_at: "2026-10-17T12:00:00Z",
+      source: "x",
+      thumbnail: null,
+      media: [],
+    };
+    const profile = {
+      handle: "reporter",
+      name: "Display name",
+      icon_url: null,
+    };
+    expect(isPost(post)).toBe(true);
+    expect(isPost({ ...post, x: null })).toBe(true);
+    expect(isPost({ ...post, x: profile })).toBe(true);
+
+    for (const bad of [
+      { handle: "../wrong" },
+      { handle: "" },
+      { handle: "x".repeat(16) },
+      { name: null },
+      { icon_url: 42 },
+    ]) {
+      expect(isPost({ ...post, x: { ...profile, ...bad } })).toBe(false);
+    }
+  });
+
   it.each(["all", "stories", "x"] as const)(
     "sends the %s collection without the UI view parameter",
     async (kind) => {

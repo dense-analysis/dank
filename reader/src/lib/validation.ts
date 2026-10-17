@@ -1,4 +1,4 @@
-import type { Post, RedditFlair, RedditPost, Source } from "./types";
+import type { Post, RedditFlair, RedditPost, Source, XProfile } from "./types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -108,6 +108,16 @@ function isRedditPost(value: unknown): value is RedditPost {
   );
 }
 
+function isXProfile(value: unknown): value is XProfile {
+  return (
+    isRecord(value) &&
+    typeof value.handle === "string" &&
+    /^[a-zA-Z0-9_]{1,15}$/.test(value.handle) &&
+    typeof value.name === "string" &&
+    isOptionalIcon(value.icon_url)
+  );
+}
+
 export function isPost(value: unknown): value is Post {
   return (
     isRecord(value) &&
@@ -125,6 +135,7 @@ export function isPost(value: unknown): value is Post {
     (value.reddit === undefined ||
       value.reddit === null ||
       isRedditPost(value.reddit)) &&
+    (value.x === undefined || value.x === null || isXProfile(value.x)) &&
     (value.collection_incomplete === undefined ||
       typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
@@ -152,12 +163,7 @@ export function isSource(value: unknown): value is Source {
       (Array.isArray(value.accounts) &&
         value.accounts.every(
           (account) =>
-            isRecord(account) &&
-            typeof account.handle === "string" &&
-            /^[a-zA-Z0-9_]{1,15}$/.test(account.handle) &&
-            typeof account.name === "string" &&
-            isCount(account.count) &&
-            isOptionalIcon(account.icon_url),
+            isXProfile(account) && isRecord(account) && isCount(account.count),
         ))) &&
     (value.communities === undefined ||
       (Array.isArray(value.communities) &&

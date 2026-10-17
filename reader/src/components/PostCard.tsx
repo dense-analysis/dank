@@ -13,6 +13,7 @@ import {
   RedditMetadata,
 } from "./RedditMetadata";
 import { SourceLink, sourceName } from "./SourceLink";
+import { XAccountLink } from "./XAccountLink";
 export function readingTime(post: Post) {
   return Math.max(
     1,
@@ -64,6 +65,7 @@ export function PostCard({
   filters,
   selectAuthor,
   selectCommunity,
+  selectAccount,
   selectFlair,
 }: {
   post: Post;
@@ -75,6 +77,7 @@ export function PostCard({
   filters: Filters;
   selectAuthor: (author: string) => void;
   selectCommunity: (community: string) => void;
+  selectAccount: (handle: string) => void;
   selectFlair: (community: string, flair: string) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -92,20 +95,23 @@ export function PostCard({
         {!communityContext && (
           <>
             {post.reddit ? (
-              <CommunityAvatar
-                community={post.reddit.community}
-                iconUrl={post.reddit.icon_url}
-              />
+              <>
+                <CommunityAvatar
+                  community={post.reddit.community}
+                  iconUrl={post.reddit.icon_url}
+                />
+                <RedditCommunityLink
+                  community={post.reddit.community}
+                  select={selectCommunity}
+                />
+              </>
+            ) : post.x ? (
+              <XAccountLink account={post.x} select={selectAccount} />
             ) : (
-              <SourceMark domain={post.domain} />
-            )}
-            {post.reddit ? (
-              <RedditCommunityLink
-                community={post.reddit.community}
-                select={selectCommunity}
-              />
-            ) : (
-              <SourceLink domain={post.domain} select={selectSource} />
+              <>
+                <SourceMark domain={post.domain} />
+                <SourceLink domain={post.domain} select={selectSource} />
+              </>
             )}
             <span className="meta-dot">·</span>
           </>

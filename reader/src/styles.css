@@ -516,6 +516,17 @@ input[type="checkbox"] {
 .source-link {
   text-decoration: none;
 }
+.x-account-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.account-handle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .source-link:hover {
   color: var(--green);
   text-decoration: underline;

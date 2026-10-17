@@ -93,6 +93,10 @@ host; Reddit icons use cached local assets. Account selection follows the post's
 handle, independently of the author filter, and stays in the URL through search
 and article navigation.
 
+X post cards show the account's avatar and handle in every feed, including
+All. Select either to open that account's collected posts. Missing or unavailable
+images fall back to the account's initial.
+
 ## Reddit
 
 Expand Reddit's community list to browse each configured subreddit, including

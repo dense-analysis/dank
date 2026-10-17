@@ -376,6 +376,7 @@ export function App() {
                           filters={filters}
                           selectAuthor={selectAuthor}
                           selectCommunity={selectCommunity}
+                          selectAccount={selectAccount}
                           selectFlair={selectFlair}
                         />
                       ))}

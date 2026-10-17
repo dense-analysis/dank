@@ -65,6 +65,7 @@ export interface Post {
   created_at: string;
   source: string;
   reddit?: RedditPost | null;
+  x?: XProfile | null;
   thumbnail: string | null;
   media: { url: string; content_type: string }[];
 }
@@ -80,11 +81,14 @@ export interface Source {
   count: number;
 }
 
-export interface XAccount {
+export interface XProfile {
   handle: string;
   name: string;
-  count: number;
   icon_url?: string | null;
+}
+
+export interface XAccount extends XProfile {
+  count: number;
 }
 
 export type FeedKind = "all" | "stories" | "x" | "reddit";
