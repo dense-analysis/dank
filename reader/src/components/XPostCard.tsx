@@ -1,6 +1,7 @@
 import { Check, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
+import { Count } from "./Count";
 import { safeUrl } from "./PostCard";
 import { XEngagement } from "./XEngagement";
 import { XPostContent } from "./XPostContent";
@@ -39,7 +40,7 @@ export function XPostCard({
           post.x?.replies_status === "partial") &&
           post.x.replies_captured_count != null && (
             <span className="x-conversation-summary">
-              {post.x.replies_captured_count.toLocaleString()} saved
+              <Count value={post.x.replies_captured_count} /> saved
               {post.x.replies_status === "partial" ? " · partial" : ""}
             </span>
           )}

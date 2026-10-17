@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { Count } from "./Count";
 
 interface CollectionItem {
   id: string;
@@ -113,7 +114,7 @@ export function CollectionNavGroup({
                 {item.avatar}
                 <span className="collection-name">{item.label}</span>
                 <span className="collection-count" aria-hidden="true">
-                  {item.count.toLocaleString()}
+                  <Count value={item.count} />
                 </span>
               </button>
             </li>

@@ -10,6 +10,7 @@ import type {
 } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
+import { Count } from "./Count";
 import { HighlightedText } from "./HighlightedText";
 import { PlatformIcon } from "./PlatformIcon";
 import { dateLabel } from "./PostCard";
@@ -69,12 +70,12 @@ export function HackerNewsMetrics({ story }: { story: HackerNewsPost }) {
     <span className="hn-metrics">
       <span title="Points at collection">
         <ArrowUp size={13} aria-hidden="true" />
-        {story.points?.toLocaleString() ?? "—"}
+        <Count value={story.points} />
         <span className="visually-hidden"> points</span>
       </span>
       <span title="Comments reported at collection">
         <MessageCircle size={13} aria-hidden="true" />
-        {story.comments?.toLocaleString() ?? "—"}
+        <Count value={story.comments} />
         <span className="visually-hidden"> comments</span>
       </span>
     </span>

@@ -27,6 +27,7 @@ import {
   youtubeShelves,
 } from "../lib/youtubeCollection";
 import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
+import { Count } from "./Count";
 import { CountryFlag } from "./CountryFlag";
 import { YouTubeCard } from "./YouTubeCard";
 import { YouTubeMetadataStatus } from "./YouTubeMetadataStatus";
@@ -290,7 +291,7 @@ export function YouTubeCollection({
                   </h2>
                   <div className="yt-reference-toolbar">
                     <span>
-                      {selected.reference_count}{" "}
+                      <Count value={selected.reference_count} />{" "}
                       {selected.reference_count === 1
                         ? "reference"
                         : "references"}
@@ -340,8 +341,8 @@ export function YouTubeCollection({
                 )}
                 {selected.reference_count > selected.references.length && (
                   <p className="result-note">
-                    Showing {selected.references.length} of{" "}
-                    {selected.reference_count} references.
+                    Showing <Count value={selected.references.length} /> of{" "}
+                    <Count value={selected.reference_count} /> references.
                   </p>
                 )}
               </section>
@@ -386,11 +387,9 @@ export function YouTubeCollection({
           </div>
           <span className="yt-total">
             <strong>
-              {(
-                query.data?.pages[0]?.total ??
-                sources?.total ??
-                0
-              ).toLocaleString()}
+              <Count
+                value={query.data?.pages[0]?.total ?? sources?.total ?? 0}
+              />
             </strong>
             <span>{linked ? "linked videos" : "discoveries"}</span>
           </span>
@@ -532,7 +531,7 @@ export function YouTubeCollection({
                   </h2>
                 </div>
                 <span>
-                  {shelf.items.length}{" "}
+                  <Count value={shelf.items.length} />{" "}
                   {shelf.kind === "post"
                     ? shelf.items.length === 1
                       ? "post"

@@ -4,13 +4,9 @@ import {
   MessageCircle,
   Repeat2,
 } from "lucide-react";
+import { formatCount } from "../lib/counts";
 import type { XPost } from "../lib/types";
 import { ReaderLink } from "./ReaderLink";
-
-const compactCount = new Intl.NumberFormat(undefined, {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
 
 export function XEngagement({
   post,
@@ -37,7 +33,7 @@ export function XEngagement({
           count == null
             ? `${label} not captured`
             : `${count.toLocaleString()} ${label.toLowerCase()} reported when collected`;
-        const value = count == null ? "—" : compactCount.format(count);
+        const value = count == null ? "—" : formatCount(count);
         const contents = (
           <>
             <Icon size={16} aria-hidden="true" />

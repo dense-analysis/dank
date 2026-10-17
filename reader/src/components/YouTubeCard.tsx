@@ -3,6 +3,7 @@ import { useState } from "react";
 import { safeUrl } from "../lib/urls";
 import { youtubeEmbedUrl } from "../lib/youtube";
 import {
+  formatYouTubeViews,
   itemDiscovery,
   type YouTubeItem,
   youtubeImageUrl,
@@ -10,6 +11,7 @@ import {
   youtubePostLinks,
   youtubeThumbnailSources,
 } from "../lib/youtubeCollection";
+import { Count } from "./Count";
 import { YouTubeLocalVideo } from "./YouTubeLocalVideo";
 import { YouTubePlayer } from "./YouTubePlayer";
 import { YouTubeThumbnail } from "./YouTubeThumbnail";
@@ -45,10 +47,7 @@ export function YouTubeCard({
   const metadataSaved = item.metadata_capture?.available === true;
   const ranked =
     !!feed && discovery?.feed_url === feed && discovery.feed_kind === "hype";
-  const views = item.views_text
-    .replace(/(\d)\s+thousand\b/gi, "$1K")
-    .replace(/(\d)\s+million\b/gi, "$1M")
-    .replace(/(\d)\s+billion\b/gi, "$1B");
+  const views = formatYouTubeViews(item.views_text);
   const text = item.text || item.title;
   const longPost = item.kind === "post" && text.length > 350;
   const title =
@@ -193,7 +192,7 @@ export function YouTubeCard({
           {item.channel.name && (
             <p className="yt-channel">{item.channel.name}</p>
           )}
-          <p className="yt-video-meta">
+          <p className="yt-video-meta" title={item.views_text || undefined}>
             {[views, item.published_text].filter(Boolean).join(" · ") ||
               "Discovered in your collected feeds"}
           </p>
@@ -237,10 +236,10 @@ export function YouTubeCard({
         {item.reference_count > 0 && (
           <span
             className="yt-reference-count"
-            title={`${item.reference_count} verified post links or comment mentions`}
+            title={`${item.reference_count.toLocaleString()} verified post links or comment mentions`}
           >
             <Link2 size={12} />
-            {item.reference_count}
+            <Count value={item.reference_count} />
           </span>
         )}
         {!detailed && (

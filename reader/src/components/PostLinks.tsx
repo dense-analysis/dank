@@ -3,6 +3,7 @@ import { sourceKind } from "../lib/collections";
 import { articleParams } from "../lib/navigation";
 import { postKey } from "../lib/storage";
 import type { Post, PostReference } from "../lib/types";
+import { Count } from "./Count";
 import { ReaderLink } from "./ReaderLink";
 
 function sourceLabel(post: PostReference) {
@@ -36,8 +37,10 @@ export function PostLinks({
   return (
     <details className="post-links">
       <summary>
-        <LinkIcon size={13} aria-hidden="true" /> Links (
-        {count.toLocaleString()})
+        <LinkIcon size={13} aria-hidden="true" />
+        <span>
+          Links (<Count value={count} />)
+        </span>
       </summary>
       <ul>
         {links.map((link) => (
@@ -54,7 +57,7 @@ export function PostLinks({
       </ul>
       {links.length < count && (
         <p>
-          Showing {links.length.toLocaleString()} of {count.toLocaleString()}{" "}
+          Showing <Count value={links.length} /> of <Count value={count} />{" "}
           collected links.
         </p>
       )}
