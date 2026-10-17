@@ -759,32 +759,58 @@ async def _load_pending_hacker_news_posts(
     client: ClickHouseClient, settings: HackerNewsSettings,
 ) -> list[RawPost]:
     result = await client.fetch_json(
-        "SELECT * FROM (SELECT domain, post_id, url, post_created_at, "
+        "WITH latest AS (SELECT domain, post_id, url, post_created_at, "
         "scraped_at, source, request_url, payload FROM raw_posts "
         "WHERE source = 'hacker_news' AND domain = 'news.ycombinator.com' "
         "AND scraped_at >= %(cutoff)s "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
-        "WHERE post_id NOT IN (SELECT post_id FROM raw_posts "
+        "SELECT latest.*, history.detail_payload FROM latest "
+        "LEFT JOIN (SELECT post_id, "
+        "argMaxIf(payload, scraped_at, "
+        "JSONHas(payload, 'comment_capture')) AS detail_payload, "
+        "countIf(JSONExtractString(payload, 'comment_capture', 'status') "
+        "= 'captured') AS complete FROM raw_posts "
         "WHERE domain = 'news.ycombinator.com' AND source = 'hacker_news' "
-        "AND (JSONExtractString(payload, 'comment_capture', 'status') "
-        "= 'captured' OR (JSONExtractString(payload, "
-        "'comment_capture', 'status') = 'partial' AND "
-        "JSONExtractString(payload, 'comment_capture', 'reason') "
-        "= 'comment_limit'))) "
-        "ORDER BY post_created_at DESC, post_id DESC LIMIT %(limit)s",
+        "AND post_id IN (SELECT post_id FROM latest) GROUP BY post_id) "
+        "AS history ON latest.post_id = history.post_id "
+        "WHERE history.complete = 0 AND (%(all_comments)s "
+        "OR JSONExtractString(detail_payload, 'comment_capture', 'status') "
+        "!= 'partial' OR JSONExtractString(detail_payload, "
+        "'comment_capture', 'reason') != 'comment_limit' "
+        "OR JSONExtractUInt(detail_payload, 'comment_capture', 'captured') "
+        "< %(comment_limit)s) "
+        "ORDER BY JSONExtractString(detail_payload, "
+        "'comment_capture', 'status') = 'partial' DESC, "
+        "latest.post_created_at DESC, latest.post_id DESC LIMIT %(limit)s",
         {"limit": settings.detail_max_posts,
+         "all_comments": settings.comment_limit is None,
+         "comment_limit": settings.comment_limit or 0,
          "cutoff": datetime.datetime.now(datetime.UTC)
          - datetime.timedelta(days=settings.days)},
     )
+    posts: list[RawPost] = []
 
-    return [RawPost(
-        domain=str(row["domain"]), post_id=str(row["post_id"]),
-        url=str(row["url"]),
-        post_created_at=parse_datetime(row["post_created_at"]),
-        scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
-        source=str(row["source"]), request_url=str(row["request_url"]),
-        payload=str(row["payload"]),
-    ) for row in result.rows]
+    for row in result.rows:
+        payload = json.loads(str(row["payload"]))
+        detail_payload = str(row.get("detail_payload") or "")
+
+        if detail_payload:
+            previous = json.loads(detail_payload)
+
+            for key in ("comments", "comment_capture"):
+                if key in previous:
+                    payload[key] = previous[key]
+
+        posts.append(RawPost(
+            domain=str(row["domain"]), post_id=str(row["post_id"]),
+            url=str(row["url"]),
+            post_created_at=parse_datetime(row["post_created_at"]),
+            scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+            source=str(row["source"]), request_url=str(row["request_url"]),
+            payload=json.dumps(payload, ensure_ascii=False),
+        ))
+
+    return posts
 
 
 async def _load_pending_reddit_posts(
