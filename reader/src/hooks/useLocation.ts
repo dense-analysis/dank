@@ -236,7 +236,10 @@ export function useLocation() {
       const target =
         previousFocus?.isConnected && previousFocus.getClientRects().length > 0
           ? previousFocus
-          : (destinationFocus ??
+          : (connectionFocus?.querySelector<HTMLElement>(
+              ".post-connections-toggle",
+            ) ??
+            destinationFocus ??
             [
               ...document.querySelectorAll<HTMLElement>("[data-page-focus]"),
             ].find((element) => element.getClientRects().length > 0));

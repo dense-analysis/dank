@@ -1,7 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import type { Core } from "cytoscape";
-import { connectionsFixture } from "../src/lib/postConnections.fixture";
+import {
+  connectionsFixture,
+  outgoingConnection,
+} from "../src/lib/postConnections.fixture";
 import { connectionNodeId } from "../src/lib/postConnectionsGraph";
 
 async function fixture(page: Page, data = connectionsFixture) {
@@ -269,4 +272,123 @@ test("unsafe saved URLs remain text and do not create active links", async ({
   await expect(
     incoming.getByRole("link", { name: "Open comment in DANK" }),
   ).toBeVisible();
+});
+
+test("a crowded mobile graph opens at readable scale and reveals selected destinations without overriding history", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 958 });
+  const outgoing = Array.from({ length: 8 }, (_, index) => {
+    const url = `https://destination-${index}.example/research`;
+    const post =
+      index < 2
+        ? {
+            domain: `destination-${index}.example`,
+            id: `post-${index}`,
+            url,
+            title: `Collected research ${index}`,
+            source: "rss",
+          }
+        : null;
+
+    return {
+      ...outgoingConnection,
+      id: `outgoing-${index}`,
+      target: { url, post, youtube_item_id: null },
+      evidence: {
+        ...outgoingConnection.evidence,
+        kind: index < 4 ? ("post" as const) : ("comment" as const),
+        reference_id: index < 4 ? "" : `comment-${index}`,
+        author: index < 4 ? "" : `Reader ${index}`,
+        matched_url: url,
+      },
+    };
+  });
+  await fixture(page, {
+    ...connectionsFixture,
+    incoming: [],
+    incoming_count: 0,
+    outgoing,
+    outgoing_count: outgoing.length,
+  });
+  await page.getByRole("button", { name: "Graph view" }).click();
+  const graph = page.locator(".relationship-graph");
+  await expect(graph).toHaveAttribute("data-status", "ready");
+  const renderer = () =>
+    page
+      .locator(".relationship-graph-canvas")
+      .evaluateHandle(
+        (element) =>
+          (element as HTMLDivElement & { _cyreg: { cy: Core } })._cyreg.cy,
+      );
+  const cy = await renderer();
+  const rootId = connectionNodeId(
+    "post",
+    connectionsFixture.root.domain,
+    connectionsFixture.root.id,
+  );
+  const lastId = connectionNodeId("url", outgoing[7].target.url);
+  const bounds = (instance: Core, id: string) => {
+    const box = instance.getElementById(id).renderedBoundingBox();
+
+    return {
+      zoom: instance.zoom(),
+      width: instance.width(),
+      height: instance.height(),
+      box,
+      nodes: instance.nodes().length,
+    };
+  };
+  const initial = await cy.evaluate(bounds, rootId);
+  expect(initial.nodes).toBe(16);
+  expect(initial.zoom).toBeGreaterThanOrEqual(0.75);
+  expect(initial.box.w).toBeGreaterThan(130);
+  expect(initial.box.x1).toBeGreaterThan(0);
+  expect(initial.box.x2).toBeLessThan(initial.width);
+  expect(initial.box.y1).toBeGreaterThan(0);
+  expect(initial.box.y2).toBeLessThan(initial.height);
+  const offscreen = await cy.evaluate(bounds, lastId);
+  expect(
+    offscreen.box.x2 > offscreen.width || offscreen.box.y2 > offscreen.height,
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Fit", exact: true }).click();
+  expect(await cy.evaluate((instance) => instance.zoom())).toBeLessThan(0.75);
+  await page.getByLabel("Explore nodes").selectOption(lastId);
+  const selected = await cy.evaluate(bounds, lastId);
+  expect(selected.zoom).toBeGreaterThanOrEqual(0.75);
+  expect(selected.box.x1).toBeGreaterThan(0);
+  expect(selected.box.x2).toBeLessThan(selected.width);
+  expect(selected.box.y1).toBeGreaterThan(0);
+  expect(selected.box.y2).toBeLessThan(selected.height);
+
+  // Deliberately leave the selected node outside a zoomed-out viewport: returning
+  // must restore user navigation rather than refocusing an existing selection.
+  await cy.evaluate((instance) => {
+    instance.zoom(0.3);
+    instance.pan({ x: 37, y: 51 });
+  });
+  const snapshot = (instance: Core) => ({
+    zoom: instance.zoom(),
+    pan: instance.pan(),
+  });
+  const remembered = await cy.evaluate(snapshot);
+  await page.getByRole("button", { name: "Toggle connections" }).click();
+  await page.getByRole("button", { name: "Toggle connections" }).click();
+  await expect(graph).toHaveAttribute("data-status", "ready");
+  await expect(page.getByLabel("Explore nodes")).toHaveValue(lastId);
+  const restored = await renderer();
+  expect(await restored.evaluate(snapshot)).toEqual(remembered);
+
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  const reset = await restored.evaluate(bounds, rootId);
+  expect(reset.zoom).toBeGreaterThanOrEqual(0.75);
+  expect(reset.box.x1).toBeGreaterThan(0);
+  expect(reset.box.x2).toBeLessThan(reset.width);
+  await page.locator(".relationship-graph-viewport").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("readable-mobile-graph.png"),
+  });
+  await cy.dispose();
+  await restored.dispose();
 });

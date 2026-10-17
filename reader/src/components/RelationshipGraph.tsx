@@ -3,6 +3,7 @@ import { Maximize, Minus, Plus, RotateCcw } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -21,6 +22,11 @@ import {
   rememberGraphViewport,
 } from "../lib/relationshipGraphState";
 import "../relationship-graph.css";
+
+// Keep an initial focal node readable when an overview would shrink its label.
+const MIN_READABLE_ZOOM = 0.75;
+const FOCUSED_ZOOM = 0.8;
+const NODE_VIEWPORT_PADDING = 20;
 
 const styles: StylesheetStyle[] = [
   {
@@ -138,14 +144,44 @@ function fitGraph(cy: Core) {
   }
 }
 
+function defaultViewport(cy: Core, initialFocusNodeId?: string) {
+  fitGraph(cy);
+  const focus = initialFocusNodeId
+    ? cy.getElementById(initialFocusNodeId)
+    : undefined;
+
+  if (focus && !focus.empty() && cy.zoom() < MIN_READABLE_ZOOM) {
+    cy.zoom(FOCUSED_ZOOM);
+    cy.center(focus);
+  }
+}
+
+function revealNode(cy: Core, id: string) {
+  const node = cy.getElementById(id);
+
+  if (node.empty()) return;
+  const bounds = node.renderedBoundingBox();
+  const tiny = cy.zoom() < MIN_READABLE_ZOOM;
+  const outside =
+    bounds.x1 < NODE_VIEWPORT_PADDING ||
+    bounds.y1 < NODE_VIEWPORT_PADDING ||
+    bounds.x2 > cy.width() - NODE_VIEWPORT_PADDING ||
+    bounds.y2 > cy.height() - NODE_VIEWPORT_PADDING;
+
+  if (tiny) cy.zoom(FOCUSED_ZOOM);
+  if (tiny || outside) cy.center(node);
+}
+
 /** Cytoscape owns only this canvas; React owns controls, selection, and details. */
 export function RelationshipGraph({
   graph,
+  initialFocusNodeId,
   selectedNodeId,
   onSelectNode,
   children,
 }: {
   graph: RelationshipGraphData;
+  initialFocusNodeId?: string;
   selectedNodeId: string | null;
   onSelectNode: (id: string | null) => void;
   children?: ReactNode;
@@ -153,8 +189,13 @@ export function RelationshipGraph({
   const canvas = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const renderedGraph = useRef(graph);
-  const current = useRef({ graph, selectedNodeId, onSelectNode });
-  current.current = { graph, selectedNodeId, onSelectNode };
+  const current = useRef({
+    graph,
+    selectedNodeId,
+    onSelectNode,
+    initialFocusNodeId,
+  });
+  current.current = { graph, selectedNodeId, onSelectNode, initialFocusNodeId };
   const topology = useRef("");
   const vertical = useRef(false);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(
@@ -163,6 +204,16 @@ export function RelationshipGraph({
   const helpId = useId();
   const selectId = useId();
   const graphId = graph.id;
+
+  const chooseNode = useCallback((id: string | null) => {
+    const cy = cyRef.current;
+    const active = current.current;
+
+    // Selection restored on mount must not override its remembered viewport.
+    if (cy && active.initialFocusNodeId && id && id !== active.selectedNodeId)
+      revealNode(cy, id);
+    active.onSelectNode(id);
+  }, []);
 
   useEffect(() => {
     const container = canvas.current;
@@ -201,10 +252,10 @@ export function RelationshipGraph({
         cyRef.current = cy;
         renderedGraph.current = activeGraph;
         topology.current = graphTopology(activeGraph);
-        if (!viewport) fitGraph(cy);
+        if (!viewport) defaultViewport(cy, current.current.initialFocusNodeId);
         selectNode(cy, current.current.selectedNodeId);
         cy.on("tap", "node", (event) => {
-          current.current.onSelectNode(event.target.id());
+          chooseNode(event.target.id());
         });
         cy.on("tap", (event) => {
           if (event.target === cy) current.current.onSelectNode(null);
@@ -223,7 +274,7 @@ export function RelationshipGraph({
               ),
               fit: false,
             }).run();
-            fitGraph(cy);
+            defaultViewport(cy, current.current.initialFocusNodeId);
           }
         });
         observer.observe(container);
@@ -256,7 +307,7 @@ export function RelationshipGraph({
 
       cyRef.current = null;
     };
-  }, [graphId]);
+  }, [graphId, chooseNode]);
 
   useEffect(() => {
     rememberGraphSelection(graph, selectedNodeId);
@@ -285,7 +336,7 @@ export function RelationshipGraph({
         positions: relationshipPositions(graph.nodes, vertical.current),
         fit: false,
       }).run();
-      fitGraph(cy);
+      defaultViewport(cy, current.current.initialFocusNodeId);
     }
 
     selectNode(cy, selectedNodeId);
@@ -312,7 +363,7 @@ export function RelationshipGraph({
       positions: relationshipPositions(graph.nodes, vertical.current),
       fit: false,
     }).run();
-    fitGraph(cy);
+    defaultViewport(cy, initialFocusNodeId);
     onSelectNode(null);
   }
 
@@ -420,7 +471,7 @@ export function RelationshipGraph({
         <select
           id={selectId}
           value={selectedNodeId ?? ""}
-          onChange={(event) => onSelectNode(event.target.value || null)}
+          onChange={(event) => chooseNode(event.target.value || null)}
         >
           <option value="">All connections</option>
           {graph.nodes.map((node) => (

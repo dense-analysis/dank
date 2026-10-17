@@ -64,6 +64,7 @@ export default function PostConnectionsGraph({
       </fieldset>
       <RelationshipGraph
         graph={graph}
+        initialFocusNodeId={rootNodeId}
         selectedNodeId={selected?.id ?? null}
         onSelectNode={(node) => setSelection({ graph: graph.id, node })}
       >
