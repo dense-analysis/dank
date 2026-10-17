@@ -65,9 +65,9 @@ preview on each card is an excerpt of the stored content.
 
 Open **Connections** on a saved article or post to switch between the evidence
 list and graph. Incoming links show which saved posts or comments cited this
-item; outgoing links show the destinations it cites. Select an edge or comment
-to inspect the saved excerpt, author and capture date, then **Open evidence**
-to reveal the matching link in DANK. Collected neighbours can become the centre
+item; outgoing links show the destinations it cites. Select a node
+to inspect the saved excerpt, author and capture date, then **Open link in DANK**
+or **Open comment in DANK** to reveal the match. Collected neighbours can become the centre
 of the next graph; uncollected destinations retain their external URL.
 
 Connections come from explicit saved links, not inferred similarity. Each view

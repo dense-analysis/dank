@@ -12,6 +12,7 @@ import {
   ConnectionEvidence,
   type ConnectionNavigation,
 } from "./ConnectionEvidence";
+import { Count } from "./Count";
 
 export type { ConnectionNavigation } from "./ConnectionEvidence";
 
@@ -159,8 +160,8 @@ function ConnectionCounts({ data }: { data: PostConnectionsData }) {
   return (
     <div className="post-connections-counts">
       <p>
-        {data.incoming_count.toLocaleString()} incoming ·{" "}
-        {data.outgoing_count.toLocaleString()} outgoing references
+        <Count value={data.incoming_count} /> incoming ·{" "}
+        <Count value={data.outgoing_count} /> outgoing references
       </p>
       {(data.incoming.length < data.incoming_count ||
         data.outgoing.length < data.outgoing_count) && (

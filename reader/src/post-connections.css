@@ -13,8 +13,10 @@
   flex-wrap: wrap;
 }
 .post-connections-heading h2 {
+  display: flex;
   margin: 0;
   font-size: 17px;
+  line-height: 1.4;
 }
 .post-connections-toggle,
 .post-connections-modes button,
@@ -29,6 +31,7 @@
   border-radius: 7px;
   color: var(--text);
   background: transparent;
+  line-height: 1.4;
 }
 .post-connections-toggle {
   margin-left: -10px;

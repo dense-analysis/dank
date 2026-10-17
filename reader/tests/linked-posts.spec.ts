@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import type { PostConnection } from "../src/lib/postConnections";
 import type { Post, PostReference } from "../src/lib/types";
 
 function destination(kind: "blog" | "x" | "reddit"): Post {
@@ -81,9 +82,35 @@ async function fixtures(
   };
   original.links = [
     reference(story),
-    { ...reference(story), id: "2", title: "Another collected discussion" },
+    {
+      ...reference(story),
+      id: "2",
+      title: "Another collected discussion",
+      url: "https://news.ycombinator.com/item?id=2",
+    },
   ];
   original.links_count = 2;
+  const incoming: PostConnection[] = original.links.map((origin) => ({
+    id: `incoming-${origin.id}`,
+    direction: "incoming",
+    origin,
+    target: {
+      url: original.url,
+      post: reference(original),
+      youtube_item_id: null,
+    },
+    evidence: {
+      domain: origin.domain,
+      post_id: origin.id,
+      kind: "post",
+      reference_id: "",
+      reference_url: origin.url,
+      author: story.author,
+      matched_url: original.url,
+      excerpt: `Posted the original source: ${original.title}`,
+      observed_at: story.created_at,
+    },
+  }));
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.includes("/youtube/")) {
@@ -111,6 +138,21 @@ async function fixtures(
             },
           ],
           total_posts: 3,
+        },
+      });
+    } else if (url.pathname.endsWith("/connections")) {
+      const discussion = url.searchParams.get("domain") === story.domain;
+      await route.fulfill({
+        json: {
+          root: reference(discussion ? story : original),
+          incoming: discussion ? [] : incoming,
+          outgoing: discussion
+            ? [{ ...incoming[0], direction: "outgoing" }]
+            : [],
+          incoming_count: discussion ? 0 : incoming.length,
+          outgoing_count: discussion ? 1 : 0,
+          limit: 100,
+          coverage: "saved_evidence",
         },
       });
     } else if (url.pathname.endsWith("/post")) {
@@ -168,19 +210,37 @@ for (const kind of ["blog", "x", "reddit"] as const) {
       await expect(
         article.getByText(original.excerpt, { exact: true }),
       ).toBeVisible();
-      const incoming = article.locator(".post-links");
-      await incoming.locator("summary").focus();
-      await page.keyboard.press("Enter");
-      await expect(incoming).toHaveAttribute("open", "");
-      const backlink = incoming.getByRole("link", {
-        name: `Hacker News ${story.title}`,
+      const connections = article.locator(".post-connections");
+      const toggle = connections.getByRole("button", {
+        name: "Connections",
         exact: true,
       });
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const incoming = connections.getByRole("region", {
+        name: "Links to this post",
+      });
+      await expect(incoming.locator(".post-connection-evidence")).toHaveCount(
+        2,
+      );
+      const backlink = incoming
+        .locator(".post-connection-evidence")
+        .filter({
+          has: page.getByRole("heading", { name: story.title, exact: true }),
+        })
+        .getByRole("link", { name: "Open link in DANK", exact: true });
       await expect(backlink).toHaveAttribute(
         "href",
         /article=1&article_source=news.ycombinator.com/,
       );
+      await expect(backlink).toHaveAttribute("href", /reference_kind=post/);
+      await expect(backlink).toHaveAttribute("href", /connections_from=/);
       await backlink.click();
+      await expect(page.locator('[data-reference-match="true"]')).toHaveText(
+        "Read original article",
+      );
+      await expect(page.locator('[data-reference-match="true"]')).toBeFocused();
       await expect(
         page.getByText("A captured Hacker News reply."),
       ).toBeVisible();
@@ -194,6 +254,14 @@ for (const kind of ["blog", "x", "reddit"] as const) {
       await expect(
         page.getByText("A captured Hacker News reply."),
       ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Back to connections", exact: true })
+        .click();
+      await expect(page).toHaveURL(
+        new RegExp(`article_source=${original.domain}`),
+      );
+      await expect(incoming).toBeVisible();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
       await page
         .getByRole("button", { name: "Back to stories", exact: true })
         .click();
@@ -210,6 +278,15 @@ for (const kind of ["blog", "x", "reddit"] as const) {
       await expect(
         page.getByText("A captured Hacker News reply."),
       ).toBeVisible();
+      expect(new URL(page.url()).searchParams.has("reference_kind")).toBe(
+        false,
+      );
+      expect(new URL(page.url()).searchParams.has("connections_from")).toBe(
+        false,
+      );
+      await expect(page.locator('[data-reference-match="true"]')).toHaveCount(
+        0,
+      );
       await page.goto("/reader/");
       await expect(page.locator(".post-card")).toHaveCount(1);
       await expect(page.locator(".hn-card")).toHaveCount(0);

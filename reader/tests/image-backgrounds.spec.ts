@@ -120,9 +120,9 @@ test("transparent SVGs can switch backgrounds on hover and keep full-size links"
   await expect(image).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await page.mouse.move(0, 0);
   await expect(toggle).toHaveCSS("opacity", "0");
-  const bounds = await image.boundingBox();
   await image.hover();
   await expect(toggle).toHaveCSS("opacity", "1");
+  const bounds = await image.boundingBox();
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(image).toHaveCSS("background-color", "rgb(255, 255, 255)");
