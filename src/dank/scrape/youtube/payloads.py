@@ -36,6 +36,7 @@ class YouTubeFeed(NamedTuple):
     name: str
     kind: str
     tab: str = ""
+    region: str = ""
 
 
 def as_dict(value: object) -> dict[str, Any]:
@@ -411,7 +412,7 @@ def normalize_renderer(
             "shelf": shelf or ("Top 100" if feed.kind == "hype" else ""),
             "rank": _rank(renderer, rank),
             "position": position,
-            "region": settings.region,
+            "region": feed.region or settings.region,
             "playlist_id": parse_qs(urlsplit(request_url).query).get(
                 "list",
                 [""],

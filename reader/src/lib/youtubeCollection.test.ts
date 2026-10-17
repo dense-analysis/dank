@@ -199,3 +199,42 @@ it("keeps full safe post destinations separate from preview labels", async () =>
   expect(youtubeLocalVideoUrl("https://i.ytimg.com/video.mp4")).toBeUndefined();
   expect(youtubeLocalVideoUrl("//evil.test/assets/video.mp4")).toBeUndefined();
 });
+
+it("channel shelves ignore unrelated recommendation ranks and topics", () => {
+  const shelf = youtubeShelves([video], "", true)[0][1];
+  expect(shelf.title).toBe("Videos");
+  expect(shelf.context).toBe("");
+});
+
+it("rejects malformed channel totals and avatars", async () => {
+  for (const extra of [
+    { reported_video_count: -1 },
+    { avatar_url: 5 },
+    { reported_video_count_text: {} },
+  ]) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            feeds: [],
+            channels: [
+              {
+                id: "channel",
+                name: "Channel",
+                url: "https://www.youtube.com/@channel",
+                count: 7,
+                ...extra,
+              },
+            ],
+            total: 7,
+            linked_count: 0,
+          }),
+        ),
+      ),
+    );
+    await expect(fetchYouTubeSources()).rejects.toThrow(
+      "unexpected YouTube sources",
+    );
+  }
+});

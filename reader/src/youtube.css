@@ -1,14 +1,11 @@
-.youtube-shell > .topbar {
+.youtube-shell:not(.collection-context) > .topbar {
   position: sticky;
   top: 0;
   height: 62px;
   padding-inline: 32px;
   z-index: 10;
-  background: var(--header-glass);
-  backdrop-filter: var(--header-blur);
-  -webkit-backdrop-filter: var(--header-blur);
 }
-.youtube-shell .collection-title {
+.youtube-shell:not(.collection-context) .collection-title {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -22,6 +19,10 @@
 .yt-collection,
 .yt-detail {
   padding-top: 34px;
+}
+.youtube-shell.collection-context .yt-collection,
+.youtube-shell.collection-context .yt-detail {
+  padding-top: 0;
 }
 .yt-intro {
   display: flex;
@@ -251,10 +252,10 @@
   right: 8px;
 }
 .yt-card h3 {
-  font-size: 14px;
-  line-height: 1.5;
-  letter-spacing: -0.15px;
-  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.4;
+  letter-spacing: -0.2px;
+  font-weight: 700;
   margin: 11px 0 4px;
 }
 .yt-card h3 a {
@@ -349,9 +350,6 @@
 }
 .yt-short .yt-thumbnail {
   aspect-ratio: 9 / 16;
-}
-.yt-short h3 {
-  font-size: 13px;
 }
 .yt-short .yt-capture-status {
   border: 0;
@@ -612,7 +610,7 @@
   .youtube-page {
     padding-inline: 20px;
   }
-  .youtube-shell > .topbar {
+  .youtube-shell:not(.collection-context) > .topbar {
     padding-inline: 20px;
   }
   .yt-collection,
@@ -692,12 +690,6 @@
   }
   .yt-filter-row {
     gap: 10px;
-  }
-  .yt-card h3 {
-    font-size: 15px;
-  }
-  .yt-short h3 {
-    font-size: 12px;
   }
   .yt-grid-short {
     grid-template-columns: repeat(3, minmax(145px, 1fr));

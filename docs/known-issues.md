@@ -11,8 +11,9 @@ means a fallback exists; “handled” means the specific case has a tested fix.
 ## YouTube feed discovery
 
 YouTube collection saves feed appearances and their original renderers, with
-video downloads off by default. Shelf headings, rank, region, playlist identity
-and capture time are observations from YouTube, not DANK-generated categories.
+video downloads off by default. Shelf headings, rank and playlist identity come
+from YouTube; country codes record the configured regional context and capture
+times record when DANK observed the listing.
 Separate discovery records preserve repeated appearances across feeds and runs.
 Watch-page details, transcripts and comments are deferred; the reader labels
 these as feed snapshots. Live and upcoming broadcasts are excluded.
@@ -25,6 +26,24 @@ feed. Unrecognized/empty or failed feeds increment failure counters and allow
 later feeds to continue. Already persisted appearances remain available.
 Channel latest-video listings stop after consecutive known items; this heuristic
 does not apply to ranked or personalized feeds.
+
+- [ ] **P2: Verify regional Hype playlist freshness across days.** The configured
+  US playlist was supplied after viewing Hype through a US VPN on 2026-10-17.
+  A same-day public yt-dlp metadata check returned **United States's top hyped
+  videos** with 100 items. This verifies its current identity, not future
+  freshness. DANK follows it directly while GB still discovers **View all**.
+  [YouTube documents](https://support.google.com/youtube/answer/15334500?hl=en)
+  country-specific rankings updated about every few minutes, but does not
+  promise stable playlist URLs or cross-country selection. No daily-only update
+  schedule is assumed. Compare each region's saved playlist IDs, ordered video
+  IDs/ranks and capture times over several days, including a weekly boundary.
+  Unchanged captures warrant checking against that country's live leaderboard;
+  they do not alone prove staleness. If the URL rotates or the playlist freezes,
+  implement regional discovery using a verified country-specific session/network
+  path. There is no automatic stale verdict or region-switch guarantee yet.
+  [Configuration tests](../tests/test_youtube_config.py) and
+  [collection tests](../tests/scrape/test_youtube_collection.py) cover distinct
+  regions, direct playlist selection and retained snapshot context.
 
 Signed-out runs use a temporary profile; optional signed-in runs use YouTube's
 own saved profile and require a valid session. Neither shares X's or Reddit's
@@ -44,6 +63,20 @@ off. Repeat run `5d17dbdc-0617-4afc-ba00-356500ecf303` stopped at Hype's 100 ite
 without scrolling and at five known channel videos, completing in 20.2 seconds.
 Reader checks reconciled all 100 Hype ranks across pages and channel-wide counts
 across feeds. The existing collection supplied 430 distinct linked videos.
+
+### YouTube channel identity and totals
+
+Channel identity comes from the channel page metadata/header, never from
+recommended videos. Avatar caching uses the same bounded image download and
+signature checks as Reddit icons; a failed or disabled refresh preserves an
+existing cached icon. Displayed channel totals can be rounded by YouTube;
+missing totals remain unknown. Collected channel counts include unique videos
+and Shorts across feeds, excluding community posts. Existing channels gain
+this metadata on their next collection. After first-visit consent, collection
+waits up to five seconds for delayed channel initial data. A public Channel 4
+News check on 2026-10-17 captured its avatar and displayed `26k videos` total.
+See [channel metadata tests](../tests/scrape/test_youtube_channels.py)
+and [source API tests](../tests/web/test_reader_youtube_sources.py).
 
 ## Reddit community total estimates
 

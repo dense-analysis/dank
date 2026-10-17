@@ -6,7 +6,7 @@ import re
 import tomllib
 from enum import StrEnum
 from typing import Any, NamedTuple, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 MEDIA_DOWNLOAD_TYPES = ("image", "audio", "video")
 
@@ -52,6 +52,7 @@ class YouTubeSettings(NamedTuple):
     authenticated: bool = False
     homepage: bool = False
     hype: bool = True
+    hype_playlists: tuple[tuple[str, str], ...] = ()
     news_tabs: tuple[str, ...] = ("top_stories", "business", "world")
     region: str = "GB"
     stall_scrolls: int = 3
@@ -806,6 +807,7 @@ def _parse_youtube_settings(value: object) -> YouTubeSettings:
 
     return YouTubeSettings(
         **flags, region=region.upper(),
+        hype_playlists=_youtube_hype_playlists(data.get("hype_playlists", {})),
         news_tabs=tuple(dict.fromkeys(cast(list[str], tabs))),
         profile_dir=_youtube_profile(data.get("profile_dir")),
         stall_scrolls=limits["stall_scrolls"],
@@ -822,3 +824,54 @@ def _youtube_profile(value: object) -> pathlib.Path | None:
         raise ConfigError("youtube.profile_dir must be a non-empty path")
 
     return _parse_path(value)
+
+
+def _youtube_hype_playlists(value: object) -> tuple[tuple[str, str], ...]:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError(
+            "youtube.hype_playlists must be a country-to-URL table",
+        )
+
+    playlists: dict[str, str] = {}
+
+    for region, url in data.items():
+        if not re.fullmatch("[A-Za-z]{2}", region):
+            raise ConfigError(
+                "youtube.hype_playlists keys must be two-letter country codes",
+            )
+
+        try:
+            parsed = (
+                urlsplit(_youtube_feed_url(url))
+                if isinstance(url, str) else None
+            )
+            identifiers = (
+                parse_qs(parsed.query).get("list", []) if parsed else []
+            )
+        except (ValueError, ConfigError):
+            parsed, identifiers = None, []
+
+        if (parsed is None or parsed.path != "/playlist"
+                or len(identifiers) != 1
+                or not re.fullmatch(r"[A-Za-z0-9_-]+", identifiers[0])):
+            raise ConfigError(
+                "youtube.hype_playlists values must be YouTube playlist URLs",
+            )
+
+        if region.upper() in playlists:
+            raise ConfigError(
+                "youtube.hype_playlists country codes must be unique",
+            )
+
+        playlists[region.upper()] = (
+            "https://www.youtube.com/playlist?list=" + identifiers[0]
+        )
+
+    if len(set(playlists.values())) != len(playlists):
+        raise ConfigError(
+            "youtube.hype_playlists must use distinct regional playlists",
+        )
+
+    return tuple(playlists.items())

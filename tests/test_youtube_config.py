@@ -104,3 +104,62 @@ def test_news_channel_alias_and_disabled_defaults() -> None:
     assert len(feeds) == 1
     assert feeds[0].kind == "news"
     assert feeds[0].tab == "top_stories"
+
+
+US_HYPE = (
+    "https://www.youtube.com/playlist?list="
+    "OLAK5uy_lSbPjCHn-9LSQeRc6T1LWfz-DN8gOqNdw"
+)
+
+
+def test_regional_hype_playlists_preserve_identity_and_default_region(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        'sources = ["youtube.com"]\n[youtube.hype_playlists]\n'
+        f'us = "{US_HYPE}&gl=GB"',
+    )
+    settings = load_settings(path)
+    assert settings.youtube.hype_playlists == (("US", US_HYPE),)
+    feeds = configured_feeds(settings.youtube, settings.sources[0])
+    hyped = [feed for feed in feeds if feed.kind == "hype"]
+    assert [(feed.url, feed.region) for feed in hyped] == [
+        ("https://www.youtube.com/feed/hype", ""), (US_HYPE, "US"),
+    ]
+    disabled = configured_feeds(
+        settings.youtube._replace(hype=False), settings.sources[0],
+    )
+    assert not any(feed.kind == "hype" for feed in disabled)
+
+
+def test_explicit_hype_playlist_replaces_matching_default_and_plain_playlist():
+    feeds = configured_feeds(
+        YouTubeSettings(region="US", news_tabs=(),
+                        hype_playlists=(("US", US_HYPE),)),
+        SourceConfig("youtube.com", (), (US_HYPE,)),
+    )
+    assert len(feeds) == 1
+    assert feeds[0].kind == "hype"
+    assert feeds[0].region == "US"
+
+
+@pytest.mark.parametrize("table", [
+    'hype_playlists = []',
+    'hype_playlists = {USA = "' + US_HYPE + '"}',
+    'hype_playlists = {US = 5}',
+    'hype_playlists = {US = "https://evil.test/playlist?list=abc"}',
+    'hype_playlists = {US = "https://www.youtube.com/@channel/videos"}',
+    'hype_playlists = {US = "https://www.youtube.com/playlist"}',
+    'hype_playlists = {US = "https://www.youtube.com/playlist?list=a&list=b"}',
+    'hype_playlists = {US = "' + US_HYPE + '", us = "' + US_HYPE + '"}',
+    'hype_playlists = {US = "' + US_HYPE + '", GB = "' + US_HYPE + '"}',
+])
+def test_hype_playlist_configuration_rejects_ambiguous_destinations(
+    tmp_path: Path, table: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("[youtube]\n" + table)
+
+    with pytest.raises(ConfigError, match=r"youtube\.hype_playlists"):
+        load_settings(path)

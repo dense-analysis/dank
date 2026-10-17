@@ -17,6 +17,7 @@ NEWS_LABELS = {
 
 def configured_sources(
     settings: Settings, captured: list[dict[str, Any]],
+    metadata: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     feeds = _configured_feeds(settings)
 
@@ -29,6 +30,10 @@ def configured_sources(
 
     observations = {str(row["feed_url"]): row for row in captured}
     channels: list[dict[str, Any]] = []
+    identities = {
+        key: row for row in metadata or []
+        for key in (str(row["channel_id"]), _channel_url(str(row["feed_url"])))
+    }
 
     for url, feed in feeds.items():
         observation = observations.get(url, {})
@@ -38,12 +43,25 @@ def configured_sources(
                 feed[key] = observation[key]
 
         if feed["kind"] == "channel":
-            channel_url = str(observation.get("channel_url") or url)
-            channel_url = _channel_url(channel_url)
+            channel_url = _channel_url(str(
+                observation.get("channel_url") or url,
+            ))
+            identity = identities.get(
+                str(observation.get("channel_id")),
+                identities.get(_channel_url(url), {}),
+            )
             channels.append({
-                "id": str(observation.get("channel_id") or channel_url),
-                "name": str(observation.get("channel_name") or feed["name"]),
+                "id": str(identity.get("channel_id")
+                          or observation.get("channel_id") or channel_url),
+                "name": str(identity.get("channel_name")
+                            or observation.get("channel_name")
+                            or feed["name"]),
                 "url": channel_url, "count": int(feed["count"]),
+                "avatar_url": identity.get("avatar_url"),
+                "reported_video_count": identity.get("reported_video_count"),
+                "reported_video_count_text": (
+                    identity.get("reported_video_count_text") or None
+                ),
             })
 
     # Accounts and explicit feed URLs can name the same channel twice.
@@ -57,7 +75,11 @@ def _configured_feeds(settings: Settings) -> dict[str, dict[str, Any]]:
     region = str(getattr(youtube, "region", "GB"))
     feeds: dict[str, dict[str, Any]] = {}
 
-    if getattr(youtube, "hype", True):
+    playlists: dict[str, str] = dict(
+        getattr(youtube, "hype_playlists", ()),
+    )
+
+    if getattr(youtube, "hype", True) and region not in playlists:
         feeds[YOUTUBE_ORIGIN + "/feed/hype"] = _feed(
             YOUTUBE_ORIGIN + "/feed/hype", "Hype · Top 100", "hype", region,
         )
@@ -88,6 +110,10 @@ def _configured_feeds(settings: Settings) -> dict[str, dict[str, Any]]:
         for url in source.feed_urls:
             feed = _configured_feed(url, region)
             feeds[str(feed["url"])] = feed
+
+    if getattr(youtube, "hype", True):
+        for country, url in playlists.items():
+            feeds[url] = _feed(url, "Hype · " + country, "hype", country)
 
     return feeds
 

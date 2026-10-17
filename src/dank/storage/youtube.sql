@@ -1,3 +1,20 @@
+CREATE TABLE IF NOT EXISTS youtube_channels (
+    channel_id String,
+    channel_name String,
+    channel_url String,
+    feed_url String,
+    icon_url String,
+    local_path String,
+    content_type String,
+    reported_video_count Nullable(UInt64),
+    reported_video_count_text String,
+    observed_at DateTime64(3, 'UTC'),
+    request_url String,
+    payload String CODEC(ZSTD(3))
+)
+ENGINE = ReplacingMergeTree(observed_at)
+ORDER BY channel_id;
+
 CREATE TABLE IF NOT EXISTS youtube_discoveries (
     run_id String,
     item_id String,

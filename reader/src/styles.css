@@ -195,9 +195,8 @@ input[type="checkbox"] {
   align-items: center;
   gap: 12px;
   padding: 0 48px;
-  background: var(--canvas);
 }
-.collection-context > .topbar,
+.topbar,
 .reader-toolbar {
   background: var(--header-glass);
   -webkit-backdrop-filter: var(--header-blur);
@@ -1529,7 +1528,7 @@ input[type="checkbox"] {
   .collection-context .breadcrumb > .collection-title {
     font-size: 13px;
   }
-  .collection-context .topbar .identity-avatar {
+  .collection-context .topbar .identity-avatar:not(.channel-avatar) {
     display: none;
   }
   .collection-count-pill {

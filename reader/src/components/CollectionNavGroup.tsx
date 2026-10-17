@@ -17,7 +17,8 @@ export function CollectionNavGroup({
   icon,
   active,
   selected,
-  items,
+  items = [],
+  children,
   select,
   selectItem,
   countLabel = "collected posts",
@@ -29,8 +30,9 @@ export function CollectionNavGroup({
   icon: ReactNode;
   active: boolean;
   selected: string;
-  items: CollectionItem[];
-  select: () => void;
+  items?: CollectionItem[];
+  children?: ReactNode;
+  select?: () => void;
   selectItem: (id: string) => void;
   countLabel?: string;
   caseSensitive?: boolean;
@@ -44,11 +46,13 @@ export function CollectionNavGroup({
           type="button"
           className={`nav-item ${active && !selected ? "active" : ""}`}
           aria-current={active && !selected ? "page" : undefined}
-          onClick={select}
+          onClick={select ?? (() => setExpanded(!expanded))}
+          aria-expanded={select ? undefined : expanded}
+          aria-controls={select ? undefined : id}
         >
           {icon} {label}
         </button>
-        {items.length > 0 && (
+        {(items.length > 0 || children) && (
           <button
             type="button"
             className="icon-button collection-toggle"
@@ -64,7 +68,7 @@ export function CollectionNavGroup({
       <ul
         id={id}
         className="collection-items"
-        hidden={!expanded || !items.length}
+        hidden={!expanded || (!items.length && !children)}
       >
         {items.map((item) => {
           const current =
@@ -92,6 +96,7 @@ export function CollectionNavGroup({
             </li>
           );
         })}
+        {children}
       </ul>
     </div>
   );

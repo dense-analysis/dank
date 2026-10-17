@@ -52,7 +52,15 @@ export interface YouTubeFeed {
 }
 export interface YouTubeSources {
   feeds: YouTubeFeed[];
-  channels: { id: string; name: string; url: string; count: number }[];
+  channels: {
+    id: string;
+    name: string;
+    url: string;
+    count: number;
+    avatar_url?: string | null;
+    reported_video_count?: number | null;
+    reported_video_count_text?: string | null;
+  }[];
   total: number;
   linked_count: number;
 }
@@ -155,7 +163,12 @@ export async function fetchYouTubeSources(
       (item) =>
         isRecord(item) &&
         strings(item, ["id", "name", "url"]) &&
-        count(item.count),
+        count(item.count) &&
+        (item.avatar_url == null || typeof item.avatar_url === "string") &&
+        (item.reported_video_count == null ||
+          count(item.reported_video_count)) &&
+        (item.reported_video_count_text == null ||
+          typeof item.reported_video_count_text === "string"),
     )
   ) {
     throw new Error(
@@ -213,13 +226,18 @@ export function itemDiscovery(item: YouTubeItem, feed: string) {
     item.discoveries[0]
   );
 }
-export function youtubeShelves(items: YouTubeItem[], feed: string) {
+export function youtubeShelves(
+  items: YouTubeItem[],
+  feed: string,
+  channel = false,
+) {
   const shelves = new Map<
     string,
     { title: string; context: string; kind: YouTubeKind; items: YouTubeItem[] }
   >();
   for (const item of items) {
-    const discovery = feed === "linked" ? undefined : itemDiscovery(item, feed);
+    const discovery =
+      feed === "linked" || channel ? undefined : itemDiscovery(item, feed);
     const title =
       item.kind === "short"
         ? "Shorts"

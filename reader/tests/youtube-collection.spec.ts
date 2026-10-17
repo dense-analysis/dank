@@ -5,6 +5,8 @@ import type { YouTubeItem, YouTubeSources } from "../src/lib/youtubeCollection";
 
 const news = "https://www.youtube.com/feed/news_destination";
 const hype = "https://www.youtube.com/feed/hype";
+const usaHype =
+  "https://www.youtube.com/playlist?list=OLAK5uy_lSbPjCHn-9LSQeRc6T1LWfz-DN8gOqNdw";
 const capture = "2026-10-17T16:00:00Z";
 function item(
   id: string,
@@ -109,6 +111,15 @@ const sources: YouTubeSources = {
       tab: "",
     },
     {
+      id: usaHype,
+      url: usaHype,
+      name: "Hype · US",
+      kind: "hype",
+      count: 0,
+      region: "US",
+      tab: "",
+    },
+    {
       id: news,
       url: news,
       name: "News · Top stories",
@@ -141,7 +152,10 @@ const sources: YouTubeSources = {
       id: "channel4",
       name: "Channel 4 News",
       url: "https://www.youtube.com/@Channel4News/videos",
-      count: 8,
+      count: 7,
+      avatar_url: "/assets/channel-icon.png",
+      reported_video_count: 26000,
+      reported_video_count_text: "26K videos",
     },
   ],
   total: videos.length,
@@ -157,6 +171,12 @@ async function fixture(page: Page) {
     failMore: false,
     pageSize: 30,
   };
+  await page.route("**/assets/channel-icon.png", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="purple"/></svg>',
+    }),
+  );
   await page.route("https://i.ytimg.com/**", (route) =>
     route.fulfill({
       contentType: "image/svg+xml",
@@ -346,7 +366,10 @@ test("configured feeds and channels are selectable and their disclosure is keybo
     .getByRole("button", { name: "Expand YouTube feeds" })
     .press("Space");
   await nav
-    .getByRole("button", { name: "Channel 4 News, 8 discoveries", exact: true })
+    .getByRole("button", {
+      name: "Channel 4 News, 7 collected videos",
+      exact: true,
+    })
     .click();
   await expect(page).toHaveURL(/channel=channel4/);
   await expect(
@@ -357,7 +380,7 @@ test("configured feeds and channels are selectable and their disclosure is keybo
   expect(new URL(page.url()).searchParams.get("format")).toBe("short");
   await nav
     .getByRole("button", {
-      name: "News · Business, 0 discoveries",
+      name: "Business, 0 discoveries",
       exact: true,
     })
     .click();
@@ -451,7 +474,7 @@ for (const width of [1440, 390, 320]) {
     await page
       .getByRole("navigation", { name: "Main navigation" })
       .getByRole("button", {
-        name: "News · Top stories, 7 discoveries",
+        name: "Top stories, 7 discoveries",
         exact: true,
       })
       .click();
@@ -623,4 +646,102 @@ test("raw-only source references open their original and processed references re
   await page.goBack();
   await expect(references).toBeVisible();
   expect(new URL(page.url()).searchParams.get("feed")).toBe("linked");
+});
+
+test("channel header uses a cached icon and stable video totals while channel cards omit rankings", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/reader/?view=youtube&channel=channel4");
+  const header = page.locator(".topbar");
+  await expect(
+    header.getByRole("heading", { name: "Channel 4 News" }),
+  ).toBeVisible();
+  await expect(header.locator("img")).toHaveAttribute(
+    "src",
+    /assets\/channel-icon.png/,
+  );
+  await expect(header).toContainText("26K");
+  await expect(header).toContainText("7");
+  await expect(page.locator(".yt-rank")).toHaveCount(0);
+  await expect(page.locator(".yt-card h3").first()).toHaveCSS(
+    "font-size",
+    "16px",
+  );
+  await expect(page.locator(".yt-card h3").first()).toHaveCSS(
+    "font-weight",
+    "700",
+  );
+  await expect(page.locator(".yt-short h3").first()).toHaveCSS(
+    "font-size",
+    "16px",
+  );
+  await page.getByRole("button", { name: "Posts", exact: true }).click();
+  await expect(page.locator(".yt-card")).toHaveCount(1);
+  await expect(header).toContainText("26K");
+  await expect(header).toContainText("7");
+  const style = await header.evaluate((element) => ({
+    position: getComputedStyle(element).position,
+    blur: getComputedStyle(element).backdropFilter,
+  }));
+  expect(style.position).toBe("sticky");
+  expect(style.blur).toContain("blur");
+  await header.getByRole("button", { name: "Back to YouTube" }).click();
+  expect(new URL(page.url()).searchParams.has("channel")).toBe(false);
+});
+
+test("News and Hyped headings choose default feeds and tabs retain independent URL state", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/reader/?view=youtube");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+  await nav.getByRole("button", { name: "News", exact: true }).click();
+  expect(new URL(page.url()).searchParams.get("feed")).toBe(news);
+  const topics = page.getByRole("group", { name: "News topics" });
+  await expect(
+    topics.getByRole("button", { name: "Top stories" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await topics.getByRole("button", { name: "Business" }).click();
+  expect(new URL(page.url()).searchParams.get("feed")).toBe(`${news}/business`);
+  await page.goBack();
+  await expect(
+    topics.getByRole("button", { name: "Top stories" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await nav.getByRole("button", { name: "Hyped", exact: true }).click();
+  expect(new URL(page.url()).searchParams.get("feed")).toBe(hype);
+  await expect(page.locator(".yt-rank")).toHaveText("#1");
+  const countries = page.getByRole("group", { name: "Hyped countries" });
+  await expect(
+    countries.getByRole("button", { name: "In UK" }).locator("svg"),
+  ).toBeVisible();
+  await countries.getByRole("button", { name: "In USA" }).click();
+  expect(new URL(page.url()).searchParams.get("feed")).toBe(usaHype);
+  await page.reload();
+  await expect(
+    countries.getByRole("button", { name: "In USA" }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
+test("nested sections collapse independently without changing the selected feed", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/reader/?view=youtube&channel=channel4");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  const location = page.url();
+  await nav
+    .getByRole("button", { name: "Channel Feeds", exact: true })
+    .press("Enter");
+  await expect(page.locator("#youtube-channels")).toBeHidden();
+  await expect(page.locator("#youtube-news")).toBeVisible();
+  await expect(page).toHaveURL(location);
+  await nav
+    .getByRole("button", { name: "Expand YouTube Channel Feeds" })
+    .press("Space");
+  await expect(page.locator("#youtube-channels")).toBeVisible();
+  await nav.getByRole("button", { name: "Collapse YouTube News" }).click();
+  await expect(page.locator("#youtube-news")).toBeHidden();
+  await expect(page.locator("#youtube-channels")).toBeVisible();
 });
