@@ -36,6 +36,7 @@ const socialPost: Post = {
   title: "Housing dispatch from the city",
   html: "<p>A short eyewitness housing dispatch.</p>",
   source: "x",
+  x: { handle: "reporter", name: "City Reporter", icon_url: null },
 };
 const sources: Source[] = [
   {
@@ -549,9 +550,9 @@ test("opens source-specific deep links and returns to their filtered timeline", 
 }) => {
   const state = await mockReader(page);
   await page.goto("/reader/?q=housing&article=shared-id&article_source=x.com");
-  const reader = page.getByRole("main", { name: "Article reader" });
+  const reader = page.getByRole("main", { name: "X post reader" });
   await expect(
-    reader.getByRole("heading", { name: socialPost.title }),
+    reader.getByRole("heading", { name: "Post by City Reporter", exact: true }),
   ).toBeVisible();
   await expect(
     reader.getByText("A short eyewitness housing dispatch."),
@@ -566,7 +567,7 @@ test("opens source-specific deep links and returns to their filtered timeline", 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.reload();
   await expect(
-    reader.getByRole("heading", { name: socialPost.title }),
+    reader.getByRole("heading", { name: "Post by City Reporter", exact: true }),
   ).toBeVisible();
   await reader
     .getByRole("button", { name: "Back to stories", exact: true })
@@ -701,11 +702,11 @@ for (const view of ["saved", "legacy-politics"]) {
     ).toHaveCount(0);
     await story(page, socialPost.title).click();
     await expect(
-      page.getByRole("main", { name: "Article reader" }),
+      page.getByRole("main", { name: "X post reader" }),
     ).toBeVisible();
     await page.reload();
     await expect(
-      page.getByRole("main", { name: "Article reader" }),
+      page.getByRole("main", { name: "X post reader" }),
     ).toBeVisible();
     await page
       .getByRole("button", { name: "Back to stories", exact: true })
@@ -741,9 +742,7 @@ test("preserves old library data while recording read stories by source", async 
   await expect(articleCard.getByText("Read", { exact: true })).toBeVisible();
   await expect(socialCard.getByText("Read", { exact: true })).toHaveCount(0);
   await story(page, socialPost.title).click();
-  await expect(
-    page.getByRole("main", { name: "Article reader" }),
-  ).toBeVisible();
+  await expect(page.getByRole("main", { name: "X post reader" })).toBeVisible();
   await page
     .getByRole("button", { name: "Back to stories", exact: true })
     .click();
@@ -933,9 +932,7 @@ test("has no serious or critical accessibility violations in the feed and reader
       })),
   ).toEqual([]);
   await story(page, socialPost.title).click();
-  await expect(
-    page.getByRole("main", { name: "Article reader" }),
-  ).toBeVisible();
+  await expect(page.getByRole("main", { name: "X post reader" })).toBeVisible();
   const reader = await new AxeBuilder({ page }).analyze();
   expect(
     reader.violations

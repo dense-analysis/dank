@@ -21,13 +21,17 @@ const dispatches: Post[] = Array.from({ length: 4 }, (_, index) => ({
   domain: "x.com",
   url: `https://x.com/reporter/status/dispatch-${index}`,
   title: `City dispatch ${index + 1}`,
+  html: `<p>City dispatch ${index + 1}</p>`,
   source: "x",
+  x: { handle: "reporter", name: "City Reporter", icon_url: null },
 }));
 const observer: Post = {
   ...dispatches[0],
   id: "observer",
   url: "https://x.com/observer/status/observer",
   title: "City dispatch from another account",
+  html: "<p>City dispatch from another account</p>",
+  x: { handle: "observer", name: "City Observer", icon_url: null },
 };
 const reddit: Post = {
   ...blog,
@@ -313,7 +317,7 @@ test("account search, author, loaded pages and history survive article navigatio
     Reflect.deleteProperty(window, "IntersectionObserver");
   });
   await page.goto(
-    "/reader/?view=x&account=REPORTER&after=2026-10-01&before=2026-10-31",
+    "/reader/?view=x&account=REPORTER&after=2026-10-01&before=2026-10-31&author=Shared+display+name&author_match=exact",
   );
   await expect(page.locator(".post-card")).toHaveCount(2);
   await page
@@ -323,11 +327,6 @@ test("account search, author, loaded pages and history survive article navigatio
   await page
     .getByRole("combobox", { name: "Order stories" })
     .selectOption("oldest");
-  await page
-    .locator(".post-card")
-    .first()
-    .getByRole("link", { name: "Stories by Shared display name", exact: true })
-    .click();
   await expect(page.locator(".post-card")).toHaveCount(2);
   await page.getByRole("button", { name: "More stories", exact: true }).click();
   await expect(page.locator(".post-card")).toHaveCount(4);
@@ -355,7 +354,7 @@ test("account search, author, loaded pages and history survive article navigatio
   });
   const target = story(page, dispatches[3]);
   await target.click();
-  const article = page.getByRole("main", { name: "Article reader" });
+  const article = page.getByRole("main", { name: "X post reader" });
   await expect(article).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(timeline);
@@ -365,7 +364,7 @@ test("account search, author, loaded pages and history survive article navigatio
   await expect(article).toBeVisible();
   await page.reload();
   await expect(
-    article.getByRole("heading", { name: dispatches[3].title, exact: true }),
+    article.getByText(dispatches[3].title, { exact: true }),
   ).toBeVisible();
   await article
     .getByRole("button", { name: "Back to stories", exact: true })
@@ -458,7 +457,7 @@ for (const width of [1440, 390, 320]) {
     });
     await story(page, dispatches[0]).click();
     await expect(
-      page.getByRole("main", { name: "Article reader" }),
+      page.getByRole("main", { name: "X post reader" }),
     ).toBeVisible();
     await noOverflow(page);
     await page
@@ -482,19 +481,38 @@ test("source links and source rows select their collection", async ({
   ] as const) {
     await page.goto("/reader/");
     const card = page.locator(".post-card").filter({ has: story(page, post) });
-    const link = card.locator(".source-link");
+    const link =
+      post.source === "x"
+        ? card.getByRole("link", { name: "Posts from @reporter", exact: true })
+        : card.locator(".source-link");
     await expect(link).toHaveAttribute("href", new RegExp(`view=${view}`));
     await link.click();
     expect(new URL(page.url()).searchParams.get("view")).toBe(view);
-    expect(new URL(page.url()).searchParams.getAll("domain")).toEqual([
-      post.domain,
-    ]);
+
+    if (post.source === "x") {
+      expect(new URL(page.url()).searchParams.get("account")).toBe("reporter");
+    } else {
+      expect(new URL(page.url()).searchParams.getAll("domain")).toEqual([
+        post.domain,
+      ]);
+    }
+
     await expect(
       story(page, post.source === "x" ? blog : dispatches[0]),
     ).toHaveCount(0);
     await story(page, post).click();
-    const article = page.getByRole("main", { name: "Article reader" });
-    await article.locator(".source-link").click();
+    const article = page.getByRole("main", {
+      name: post.source === "x" ? "X post reader" : "Article reader",
+    });
+
+    if (post.source === "x") {
+      await article
+        .getByRole("link", { name: "Posts from @reporter", exact: true })
+        .click();
+    } else {
+      await article.locator(".source-link").click();
+    }
+
     await expect(article).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get("view")).toBe(view);
     await page.goto("/reader/?view=sources");

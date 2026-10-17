@@ -109,9 +109,9 @@ async function mockCards(page: Page) {
 }
 
 function card(page: Page, title: string) {
-  return page
-    .locator(".post-card")
-    .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+  return page.locator(".post-card").filter({
+    has: page.getByRole("link", { name: `Read ${title}`, exact: true }),
+  });
 }
 
 for (const width of [1440, 390, 320]) {
@@ -128,7 +128,8 @@ for (const width of [1440, 390, 320]) {
         exact: true,
       });
       await expect(identity).toBeVisible();
-      await expect(identity).toHaveText("@long_handle_123");
+      await expect(identity).toContainText("Shared display name");
+      await expect(identity).toContainText("@long_handle_123");
       await expect(identity).toHaveAttribute(
         "href",
         "/reader/?view=x&account=long_handle_123",
