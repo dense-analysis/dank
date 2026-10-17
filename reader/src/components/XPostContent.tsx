@@ -3,7 +3,11 @@ import { type CSSProperties, useMemo, useState } from "react";
 import { articleText } from "../lib/article";
 import type { Post, XLink, XMedia } from "../lib/types";
 import { xMedia, xMediaUrl } from "../lib/x";
-import { videoReferenceKey, withoutDisplayedVideoLinks } from "../lib/xText";
+import {
+  previewReferenceKey,
+  videoReferenceKey,
+  withoutDisplayedLinks,
+} from "../lib/xText";
 import { ArticleBody } from "./ArticleBody";
 import { HighlightedText } from "./HighlightedText";
 import { safeUrl } from "./PostCard";
@@ -46,9 +50,22 @@ export function XPostContent({
       ),
     [media, failedMedia],
   );
+  const previews = useMemo(
+    () =>
+      (post.x?.links ?? []).filter(
+        (link) =>
+          previewReferenceKey(link.url) &&
+          !displayedVideos.has(videoReferenceKey(link.url) ?? ""),
+      ),
+    [post.x?.links, displayedVideos],
+  );
+  const displayedPreviews = useMemo(
+    () => new Set(previews.map((link) => previewReferenceKey(link.url) ?? "")),
+    [previews],
+  );
   const html = useMemo(
-    () => withoutDisplayedVideoLinks(post.html, displayedVideos),
-    [post.html, displayedVideos],
+    () => withoutDisplayedLinks(post.html, displayedVideos, displayedPreviews),
+    [post.html, displayedVideos, displayedPreviews],
   );
   const text = useMemo(() => articleText(html), [html]);
   const canExpand = compact && text.length > PREVIEW_CHARACTERS;
@@ -115,13 +132,9 @@ export function XPostContent({
           ))}
         </section>
       )}
-      {post.x?.links
-        ?.filter(
-          (link) => !displayedVideos.has(videoReferenceKey(link.url) ?? ""),
-        )
-        .map((link) => (
-          <XLinkPreview key={link.url} link={link} />
-        ))}
+      {previews.map((link) => (
+        <XLinkPreview key={link.url} link={link} />
+      ))}
     </div>
   );
 }
@@ -209,7 +222,7 @@ function XAttachment({
 
 function XLinkPreview({ link }: { link: XLink }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const url = safeUrl(link.url);
+  const url = previewReferenceKey(link.url);
   if (!url) return null;
 
   const domain = new URL(url).hostname.replace(/^www\./, "");

@@ -39,7 +39,7 @@ const grant: Post = {
   author: "Grant Sanderson",
   title: postText,
   excerpt: postText,
-  html: `<p>${postText}</p>`,
+  html: `<p>${postText}</p><p><a href="${videoUrl}">${videoUrl}</a></p>`,
   source: "x",
   created_at: "2026-10-16T17:41:00Z",
   x: profile,
@@ -210,6 +210,11 @@ for (const width of [1440, 390, 320]) {
       await expectIdentity(card);
       await expect(card.getByText(postText, { exact: true })).toHaveCount(1);
       await expect(card.locator("h2")).toHaveCount(0);
+      await expect(
+        card
+          .locator(".article-body")
+          .getByRole("link", { name: videoUrl, exact: true }),
+      ).toHaveCount(0);
       await expect(card.getByText("Open post", { exact: true })).toHaveCount(0);
       const engagement = card.getByRole("group", {
         name: "Engagement when collected",
@@ -253,6 +258,11 @@ for (const width of [1440, 390, 320]) {
       const reader = page.getByRole("main", { name: "X post reader" });
       await expectIdentity(reader);
       await expect(reader.getByText(postText, { exact: true })).toHaveCount(1);
+      await expect(
+        reader
+          .locator(".x-focused-post .article-body")
+          .getByRole("link", { name: videoUrl, exact: true }),
+      ).toHaveCount(0);
       await expect(
         reader.getByRole("heading", {
           name: "Post by Grant Sanderson",
@@ -313,6 +323,11 @@ test("preview image failure retains the working destination and keyboard target"
   const preview = card.getByRole("link", { name: `Open link: ${videoTitle}` });
   await expect(preview).toBeVisible();
   await expect(preview).toContainText(videoTitle);
+  await expect(
+    card
+      .locator(".article-body")
+      .getByRole("link", { name: videoUrl, exact: true }),
+  ).toHaveCount(0);
   await preview.focus();
   await expect(preview).toBeFocused();
   const originalUrl = page.url();
@@ -763,3 +778,43 @@ test("saved conversation status has its own row below engagement on a narrow rea
     ),
   ).toBe(true);
 });
+
+for (const shown of [true, false]) {
+  test(`raw preview URLs ${shown ? "hide behind their card" : "remain without a card"} while descriptive links survive`, async ({
+    page,
+    context,
+  }) => {
+    const url = "https://example.com/research?topic=math#proof";
+    const post: Post = {
+      ...grant,
+      html: `<p>${postText}</p><p><a href="${url}">${url}</a></p><p>See <a href="${url}">the research</a>.</p>`,
+      x: {
+        ...profile,
+        links: shown
+          ? [{ url, title: "Math research", description: "", image_url: null }]
+          : [],
+      },
+    };
+    await mockX(context, [post]);
+
+    for (const query of [
+      "view=x",
+      `view=x&article=${post.id}&article_source=x.com`,
+    ]) {
+      await page.goto(`/reader/?${query}`);
+      const content = page.locator(".x-post-content:visible");
+      await expect(
+        content.getByRole("link", { name: url, exact: true }),
+      ).toHaveCount(shown ? 0 : 1);
+      await expect(
+        content.getByRole("link", { name: "the research", exact: true }),
+      ).toHaveAttribute("href", url);
+      await expect(
+        content.getByRole("link", {
+          name: "Open link: Math research",
+          exact: true,
+        }),
+      ).toHaveCount(shown ? 1 : 0);
+    }
+  });
+}

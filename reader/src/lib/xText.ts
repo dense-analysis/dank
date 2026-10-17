@@ -108,22 +108,53 @@ export function videoReferenceKey(value: string): string | undefined {
   return undefined;
 }
 
-export function withoutDisplayedVideoLinks(
+export function previewReferenceKey(value: string): string | undefined {
+  if (!value) return undefined;
+
+  try {
+    const url = new URL(value, window.location.origin);
+    if (
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+    )
+      return url.href;
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+export function withoutDisplayedLinks(
   html: string,
-  displayed: Set<string>,
+  displayedVideos: Set<string>,
+  displayedPreviews: Set<string> = new Set(),
 ): string {
-  if (!displayed.size) return html;
+  if (!displayedVideos.size && !displayedPreviews.size) return html;
 
   const content = sanitizeArticle(html);
 
   for (const anchor of content.querySelectorAll("a[href]")) {
-    const key = videoReferenceKey(anchor.getAttribute("href") ?? "");
-    if (
-      !key ||
-      !displayed.has(key) ||
-      videoReferenceKey(anchor.textContent?.trim() ?? "") !== key
-    )
-      continue;
+    const href = anchor.getAttribute("href") ?? "";
+    const label = anchor.textContent?.trim() ?? "";
+    const videoKey = videoReferenceKey(href);
+    const previewKey = previewReferenceKey(href);
+    const representedVideo =
+      videoKey &&
+      displayedVideos.has(videoKey) &&
+      videoReferenceKey(label) === videoKey;
+    const representedPreview =
+      previewKey &&
+      displayedPreviews.has(previewKey) &&
+      [
+        href,
+        previewKey,
+        href.replace(/^https?:\/\//i, ""),
+        previewKey.replace(/^https?:\/\//i, ""),
+      ].includes(label);
+
+    if (!representedVideo && !representedPreview) continue;
 
     const parent = anchor.parentElement;
     anchor.remove();
