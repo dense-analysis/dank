@@ -16,6 +16,10 @@ from dank.html_utils import html_text
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
+from dank.process.hacker_news import (
+    convert_raw_hacker_news_post,
+    preserve_hacker_news_story,
+)
 from dank.process.reddit import convert_raw_reddit_post, preserve_reddit_body
 from dank.process.rss import (
     convert_raw_post as convert_raw_rss_post,
@@ -103,8 +107,16 @@ async def process_source_posts(
         if domain == "reddit.com" else {}
     )
 
+    hacker_news_stories = (
+        await _previous_hacker_news_stories(clickhouse_client, result.rows)
+        if domain == "news.ycombinator.com" else {}
+    )
+
     for row in result.rows:
         raw = parse_raw_post_row(row)
+
+        if previous_story := hacker_news_stories.get(raw.post_id):
+            raw = preserve_hacker_news_story(raw, previous_story)
 
         if previous_payload := reddit_bodies.get(raw.post_id):
             raw = preserve_reddit_body(raw, previous_payload)
@@ -135,6 +147,46 @@ async def process_source_posts(
     )
 
     return converted
+
+
+async def _previous_hacker_news_stories(
+    client: ClickHouseClient, rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    clauses: list[str] = []
+    params: dict[str, object] = {}
+
+    for index, row in enumerate(rows):
+        raw = parse_raw_post_row(row)
+
+        try:
+            payload = json.loads(raw.payload)
+        except (TypeError, ValueError):
+            continue
+
+        if not isinstance(payload, dict) or "story" in payload:
+            continue
+
+        clauses.append(
+            f"(post_id = %(post_{index})s "
+            f"AND toUnixTimestamp64Milli(scraped_at) < %(before_{index})s)",
+        )
+        params[f"post_{index}"] = raw.post_id
+        params[f"before_{index}"] = round(raw.scraped_at.replace(
+            tzinfo=raw.scraped_at.tzinfo or datetime.UTC,
+        ).timestamp() * 1000)
+
+    if not clauses:
+        return {}
+
+    result = await client.fetch_json(
+        "SELECT post_id, payload FROM raw_posts "
+        "WHERE domain = 'news.ycombinator.com' AND ("
+        + " OR ".join(clauses) + ") "
+        "AND JSONHas(payload, 'story') "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id", params,
+    )
+
+    return {str(row["post_id"]): str(row["payload"]) for row in result.rows}
 
 
 async def _previous_reddit_bodies(
@@ -460,6 +512,7 @@ async def run_process(
                 "x.com": convert_raw_x_post,
                 "reddit.com": convert_raw_reddit_post,
                 "youtube.com": convert_raw_youtube_post,
+                "news.ycombinator.com": convert_raw_hacker_news_post,
             }.get(source.domain, convert_raw_rss_post)
             logger.info("Processing source domain=%s", source.domain)
 

@@ -11,7 +11,7 @@ from typing import Any, NamedTuple, cast
 
 from multidict import MultiMapping
 
-from dank.config import SourceConfig
+from dank.config import HackerNewsFilter, SourceConfig
 from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS
 from dank.web.reader_flairs import (
     FLAIR_WHITESPACE_PATTERN,
@@ -41,6 +41,7 @@ class ReaderFilters(NamedTuple):
     community: str = ""
     flairs: tuple[str, ...] = ()
     account: str = ""
+    hn_filter: str = ""
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -57,7 +58,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
-        "account",
+        "account", "hn_filter",
     }
 
     if unknown:
@@ -66,6 +67,12 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     for key in set(query) - {"domain", "tag", "flair"}:
         if len(query.getall(key)) != 1:
             raise ValueError(f"{key} must appear only once")
+
+    if "hn_filter" in query and (
+        query.get("kind") != "hacker_news"
+        or query["hn_filter"] not in HackerNewsFilter
+    ):
+        raise ValueError("hn_filter requires a valid Hacker News ranking")
 
     filters = ReaderFilters(
         q=query.get("q", "").strip(),
@@ -83,6 +90,9 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         community=query.get("community", "").strip().lower(),
         flairs=_flair_choices(query.getall("flair", [])),
         account=query.get("account", "").strip().removeprefix("@").lower(),
+        hn_filter=query.get(
+            "hn_filter", "top50" if query.get("kind") == "hacker_news" else "",
+        ),
     )
     _validate(filters)
 
@@ -163,8 +173,21 @@ def _validate(filters: ReaderFilters) -> None:
 
 
 def _validate_collection_filters(filters: ReaderFilters) -> None:
-    if filters.kind not in {"", "all", "stories", "reddit", "x", "youtube"}:
-        raise ValueError("kind must be all, stories, reddit, x or youtube")
+    if filters.kind not in {
+        "", "all", "stories", "reddit", "x", "youtube", "hacker_news",
+    }:
+        raise ValueError(
+            "kind must be all, stories, reddit, x, youtube or hacker_news",
+        )
+
+    if filters.hn_filter and (
+        filters.kind != "hacker_news"
+        or filters.hn_filter not in HackerNewsFilter
+    ):
+        raise ValueError(
+            "hn_filter requires kind=hacker_news and "
+            "top10, top20, top50 or all",
+        )
 
     if filters.account and (
         filters.kind != "x"
@@ -333,10 +356,25 @@ def _collection_conditions(
         conditions.append("domain = 'reddit.com'")
     elif filters.kind == "youtube":
         conditions.append("domain = 'youtube.com'")
+    elif filters.kind == "hacker_news":
+        conditions.append("domain = 'news.ycombinator.com'")
+        ranking = filters.hn_filter or "top50"
+
+        if ranking != "all":
+            # Eligibility is captured from the complete hckrnews day, before
+            # collection or search narrows it. Match the processed version.
+            conditions.append(
+                "(post_id, toUnixTimestamp64Milli(updated_at)) IN "
+                "(SELECT post_id, toUnixTimestamp64Milli(scraped_at) "
+                "FROM raw_posts WHERE domain = 'news.ycombinator.com' "
+                "AND has(JSONExtract(payload, 'hacker_news', 'filters', "
+                "'Array(String)'), %(hn_filter)s))",
+            )
+            params["hn_filter"] = ranking
     elif filters.kind == "stories":
         conditions.append(
             "domain != 'reddit.com' AND domain NOT IN %(x_domains)s "
-            "AND domain != 'youtube.com'",
+            "AND domain != 'youtube.com' AND domain != 'news.ycombinator.com'",
         )
         params["x_domains"] = list(X_DOMAINS)
     elif filters.kind == "x":

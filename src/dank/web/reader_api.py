@@ -36,6 +36,7 @@ from dank.web.reader_accounts import (
 from dank.web.reader_communities import community_icons, community_totals
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
+from dank.web.reader_hacker_news import add_hacker_news_metadata
 from dank.web.reader_query import (
     REDDIT_COMMUNITY_SQL,
     build_query,
@@ -105,7 +106,9 @@ async def handle_sources(request: web.Request) -> web.Response:
         tags.setdefault(source.domain, set()).update(source.tags)
 
     sources: list[dict[str, Any]] = [
-        {"domain": domain, "name": domain, "kind": source_kind(domain),
+        {"domain": domain,
+         "name": "Hacker News" if domain == "news.ycombinator.com" else domain,
+         "kind": source_kind(domain),
          "tags": sorted(tags.get(domain, [])),
          "count": counts.get(domain, 0)}
         for domain in sorted(counts.keys() | tags.keys())
@@ -279,6 +282,10 @@ async def _post_payloads(
     await _add_reddit_metadata(
         client, payloads, assets_dir, posts, assets,
         include_discussion=include_discussion,
+    )
+
+    await add_hacker_news_metadata(
+        client, payloads, posts, include_discussion=include_discussion,
     )
 
     return payloads
