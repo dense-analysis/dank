@@ -34,9 +34,22 @@ threshold, so the final batch can exceed it. `max_scrolls` bounds scrolling;
 collection can also stop after repeated idle scrolls. These settings control
 the collection attempt, not a guarantee of complete account history.
 
-Browser startup/navigation and each scroll step have a 30-second response
-budget. A stalled browser stops that X source and records a fetch failure;
-posts already saved remain available and other sources can continue.
+Normal scrapes collect timelines only. Refresh discussions separately with
+`--x-details`; timeline-only captures retain earlier conversation archives in the
+reader instead of replacing them with empty discussions.
+
+Browser startup/navigation, response drains and each scroll step have a
+30-second response budget. A timeout or lost browser connection closes the
+owned browser and retries that account once with the same saved profile.
+Already-saved posts and asset references are filtered from the retry. A second
+failure records a failed/partial account and continues with the next one.
+Account progress and outcomes are logged explicitly; a zero-post response is
+reported as unavailable, not silently treated as a successful empty timeline.
+
+Sign-in requirements and a busy profile stop X without automatic login retries.
+Browser cleanup has a 20-second budget; if it cannot close safely, X stops
+rather than opening another browser on the same profile. Saved posts remain
+available in every case; other sources can continue.
 
 ## Sign in
 
@@ -182,13 +195,27 @@ post body. Missing counts remain unknown, not zero.
 
 ## Conversation snapshots
 
-After saving an account's timeline, collection opens its newest owned posts
-(up to `max_posts_per_account`) and captures replies and parent context from
-X's detail responses. The post reader shows the saved context before the
-selected post and replies below it. Conversation posts retain their identity,
-text, links and media references; reply media uses remote URLs rather than
-starting extra downloads. Existing timeline collection and saving continue
-when an individual conversation fails.
+Discussion refreshes are a separate, explicit pass:
+
+```sh
+make scrape ARGS='--x-details'
+make process ARGS='--domains "^x\.com$" --age 24h'
+```
+
+Add `MODE=native` for native execution. `--x-details` selects configured X
+accounts, uses saved captures from the last 24 hours, and refreshes up to
+`max_posts_per_account` newest pending owned posts per account. Latest snapshots
+already marked captured or partial are left alone; use `--x-post` below to
+explicitly revisit one. No account timelines are visited during this pass.
+`--x-details` cannot be combined with other detail/retry modes.
+
+The collector captures replies and parent context from X's detail responses.
+The reader shows saved context before the selected post and replies below it.
+Conversation posts retain their identity, text, links and media references;
+reply media uses remote URLs rather than starting extra downloads. A discussion
+timeout saves its failure/partial snapshot and restarts the browser before the
+next post. A sign-in requirement stops further refreshes. Earlier useful
+archives remain available after failed attempts and normal timeline scrapes.
 
 Each conversation has a `timeout_seconds` budget and at most `max_scrolls`
 scrolls. `max_replies` bounds the total archived replies **and parent context**.

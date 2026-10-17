@@ -41,11 +41,16 @@ def main() -> None:
         "--reddit-details", action="store_true",
         help="Refresh pending Reddit details saved in the last 24 hours",
     )
+    parser.add_argument(
+        "--x-details", action="store_true",
+        help="Refresh pending X discussions saved in the last 24 hours",
+    )
     args = parser.parse_args()
 
-    if args.reddit_details and (args.x_post or args.retry_failed_pages):
+    if sum((bool(args.x_post), args.x_details, args.reddit_details,
+            args.retry_failed_pages)) > 1:
         parser.error(
-            "--reddit-details cannot be combined with other retry modes",
+            "Discussion/detail refresh and retry modes cannot be combined",
         )
 
     if args.x_post and (args.domains or args.retry_failed_pages):
@@ -69,6 +74,7 @@ def main() -> None:
         retry_failed_pages=args.retry_failed_pages,
         x_posts=tuple(args.x_post),
         reddit_details=args.reddit_details,
+        x_details=args.x_details,
     )
 
 

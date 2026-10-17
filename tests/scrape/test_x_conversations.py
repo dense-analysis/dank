@@ -4,7 +4,7 @@ import asyncio
 import datetime
 import json
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import quote
 
@@ -14,7 +14,7 @@ from dank.config import XConversationSettings, XSettings
 from dank.model import RawPost
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.x import (
-    _scrape_account_with_conversations,  # pyright: ignore[reportPrivateUsage]
+    scrape_x_accounts,
     scrape_x_posts,
 )
 from dank.scrape.x.conversations import (
@@ -466,7 +466,7 @@ async def test_login_required_retains_seed_and_reports_failure(
     assert archive(result)["reason"] == "login_required"
 
 
-async def test_account_saves_all_timeline_batches_before_newest_owned_details(
+async def test_normal_collection_saves_timelines_without_visiting_discussions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
@@ -486,12 +486,17 @@ async def test_account_saves_all_timeline_batches_before_newest_owned_details(
         conversation=XConversationSettings(max_posts_per_account=1),
     )
 
-    async for batch in _scrape_account_with_conversations(
-        cast(Any, None), "writer", settings,
+    page = MagicMock()
+    browser = MagicMock(get=AsyncMock(return_value=page))
+    session = MagicMock(get_browser=AsyncMock(return_value=browser))
+    monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
+
+    async for batch in scrape_x_accounts(
+        settings, ("writer", "second"), session,
     ):
         events.append("save:" + ",".join(post.post_id for post in batch.posts))
 
-    assert events == ["save:100,300", "save:200", "capture:200", "save:200"]
+    assert events == ["save:100,300", "save:200"] * 2
 
 
 async def test_disabled_targeted_capture_does_not_open_browser() -> None:

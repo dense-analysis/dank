@@ -42,8 +42,9 @@ Docker decode/playback checks below remain the playback evidence.
 Overall media: **141 new, 2,996 cached, 297 skipped, 11 failed**. Real media
 failures remain on Wikimedia, Microsoft, `shkspr.mobi` and Internet Archive.
 The four HTTP 429 responses were retries of one Order Order article, not Reddit
-or YouTube limits. Prioritize X recovery and posts-first collection, then scoped
-publisher/media retries. The checkboxes below track those remaining tasks.
+or YouTube limits. Subsequent X-only verification (`03ccaaa1`, below) completed
+all 36 accounts after the recovery and posts-first changes. Scoped publisher/media
+retries remain open; the checkboxes below track the current work.
 
 ## Full-scrape improvement tasks
 
@@ -101,28 +102,41 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   batches. This verifies persistence and continuation, not complete Reddit
   coverage. The empty-state recognizer is regression-tested against the message
   observed in the standalone listing check. Pagination remains open below.
-- [ ] **P1: Collect X timelines before refreshing discussions.** The full check
-  `8d54ed62` saves timeline posts promptly, but then visits five discussions per
-  account before moving to the next account. The first account took about 65s,
-  including about 55s of discussion work. This is active work, not a browser hang,
-  but it postpones collection from the remaining accounts. Separate the fast
-  timeline pass from bounded discussion refreshes, preserve earlier archives,
-  and report account/thread progress. Done when every account's timeline can be
-  attempted before optional discussion visits begin.
-  [Collector](../src/dank/scrape/x/__init__.py).
-- [ ] **P1: Recover X collection after a browser timeout.** Reproduced in
-  `8d54ed62`: four discussion visits timed out on the fourth account, `claudeai`.
-  Navigation to the fifth, `White_Rabbit_OG`, also timed out, ending X with 125
-  distinct posts saved and 31 accounts unattempted. The original run had
-  stopped at account 21. The 30-second deadlines prevent indefinite waits but
-  do not recover the browser; queued discussion attempts repeat against the
-  unresponsive page. Record per-account outcomes and add bounded browser
-  recovery/checkpointing. Do not infer success from “Finished X scrape”: that
-  message currently runs during error cleanup too. Done when a forced mid-run
-  browser failure retains saved records, reports the affected account, and
-  permits remaining accounts to be attempted without automatic sign-in retries.
-  The underlying browser failure remains unknown.
-  [Collector](../src/dank/scrape/x/__init__.py).
+- [x] **P1: Collect X timelines before refreshing discussions.** The full check
+  `8d54ed62` spent about 55s refreshing five discussions after its first 10s
+  timeline. Normal scrapes now collect timelines only. `--x-details` separately
+  refreshes recent saved pending posts, bounded by the existing per-account
+  conversation limit; `--x-post` still revisits explicit saved posts. The reader
+  retains earlier archives when the latest timeline has no discussion snapshot.
+  [Workflow](features/x.md#conversation-snapshots),
+  [CLI and selection tests](../tests/scrape/test_x_conversation_cli.py).
+- [x] **P1: Recover X collection after a browser timeout.** The earlier run
+  timed out on four `claudeai` discussions, then on navigation to the fifth
+  account, leaving 31 accounts unattempted. The collector now closes the owned
+  browser and retries a timed-out/disconnected account once with the saved
+  session, filters already-saved records from retries, and continues after a
+  second failure. Discussion timeouts restart the browser before the next post.
+  Per-account outcomes distinguish completed, partial and failed attempts;
+  cleanup no longer logs false success. Tests force failures during startup,
+  navigation, inspection, scrolling and response drains, and cover deduplication,
+  later-account continuation and cancellation. Sign-in/profile-lock failures and
+  a browser that cannot close safely still stop X; no automatic sign-in occurs.
+  The original browser failure remains unexplained.
+  [Recovery regressions](../tests/scrape/test_x_recovery.py).
+
+
+  **Docker verification, 2026-10-17:** run
+  `03ccaaa1-29db-448f-8041-0d6cf4ba1423` completed all **36 account timelines** in
+  **6m23s**, saving **1,065 records / 1,049 distinct posts**. Account 21,
+  `lexfridman`, genuinely timed out after 30s; the browser restarted with the saved
+  session and its one retry collected 32 posts. All later accounts completed.
+  ClickHouse confirms zero final fetch/parse failures, zero media failures,
+  zero 429s and one retry. No discussion snapshots or visits occurred during the
+  timeline pass. Unit tests additionally cover mid-account retries without
+  duplicate posts/assets, persistent failures followed by healthy accounts,
+  bounded cleanup and login/cancellation behavior. A separate bounded refresh
+  (`9061e460`) selected and saved two discussions in 24.8s without any timeline
+  visits: one captured, one partial with 22 replies/context and a remaining cursor.
 - [x] **P1: Verify Reddit pagination beyond the initial cards.** A controlled
   Docker check reproduced three cards while the listing was hidden, then 27
   after activating it and scrolling. The collector now activates the listing

@@ -77,12 +77,13 @@ async def test_account_network_responses_reach_post_extraction(
 
 
 @pytest.mark.parametrize("stage", [
-    "startup", "home", "capture", "account", "inspection", "scroll",
+    "startup", "home", "capture", "account", "inspection", "scroll", "drain",
 ])
-async def test_stalled_browser_stops_x_and_preserves_earlier_batches(
+async def test_stalled_browser_retries_each_account_and_preserves_batches(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
     timeline_body: str, stage: str,
 ) -> None:
+    caplog.set_level("INFO", logger="dank.scrape.x")
     page = MagicMock()
     page.get = AsyncMock(return_value=page)
     page.wait_for_ready_state = AsyncMock()
@@ -109,13 +110,13 @@ async def test_stalled_browser_stops_x_and_preserves_earlier_batches(
     monkeypatch.setattr("dank.scrape.x._check_login_required", inspect_page)
     monkeypatch.setattr("dank.scrape.x._scroll", scroll)
 
-    async def stalled(*args: Any) -> None:
+    async def stalled(*args: Any, **kwargs: Any) -> None:
         await asyncio.Event().wait()
 
     commands = {
         "startup": session.get_browser, "home": browser.get,
         "capture": capture.start, "account": page.get,
-        "inspection": inspect_page, "scroll": scroll,
+        "inspection": inspect_page, "scroll": scroll, "drain": capture.drain,
     }
     commands[stage].side_effect = stalled
     stats = SourceMetrics(1, SourceConfig("x.com", ("one", "two")))
@@ -131,11 +132,13 @@ async def test_stalled_browser_stops_x_and_preserves_earlier_batches(
         current_source.reset(token)
 
     assert bool(batches) == (stage == "scroll")
-    assert stats.counts["fetch_failures"] == 1
+    assert stats.counts["fetch_failures"] == 2
+    assert stats.counts["retries"] == 2
     assert stats.error_type == "TimeoutError"
-    assert "browser did not respond" in caplog.text
-    session.close.assert_awaited_once()
-    assert page.get.await_count <= 1
+    assert "browser failure=TimeoutError" in caplog.text
+    assert "X timeline [2/2] account=two" in caplog.text
+    assert session.close.await_count == 4
+    assert page.get.await_count <= 4
 
     if stage not in {"startup", "home"}:
-        capture.stop.assert_awaited_once()
+        assert capture.stop.await_count == 4

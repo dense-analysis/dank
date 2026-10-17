@@ -6,15 +6,17 @@ import json
 import logging
 from collections.abc import AsyncIterator, Iterable
 from typing import cast
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 import zendriver
+from zendriver.core.connection import ProtocolException
 
 from dank.config import XSettings
 from dank.model import AssetDiscovery, RawPost
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
+    BrowserProfileBusyError,
     BrowserSession,
     NetworkCapture,
     NetworkResponse,
@@ -53,6 +55,54 @@ INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
 
 
+# Restart only the owned browser, with its existing profile and sign-in state.
+BROWSER_RECOVERY_TIMEOUT_SECONDS = 20
+RECOVERABLE_BROWSER_ERRORS = (TimeoutError, ConnectionError, ProtocolException)
+
+
+class XBrowserRecoveryError(RuntimeError):
+    pass
+
+
+class _XBrowser:
+    def __init__(self, session: BrowserSession) -> None:
+        self.session = session
+        self.page: zendriver.Tab | None = None
+
+    async def get_page(self) -> zendriver.Tab:
+        if self.page is None:
+            async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+                browser = await self.session.get_browser()
+                page = await browser.get(X_HOME_URL)
+
+            await wait_for_x_session(
+                page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
+            )
+            self.page = page
+
+        return self.page
+
+    async def reset(self) -> None:
+        self.page = None
+        logger.info("Restarting X browser with the saved session")
+
+        try:
+            async with asyncio.timeout(BROWSER_RECOVERY_TIMEOUT_SECONDS):
+                await self.session.close()
+        except Exception as error:
+            raise XBrowserRecoveryError(
+                "Could not close the owned X browser safely; stopping X",
+            ) from error
+
+
+def _record_failure(error: Exception) -> None:
+    count("fetch_failures")
+    stats = current_source.get()
+
+    if stats is not None:
+        stats.error_type = type(error).__name__
+
+
 async def scrape_x_accounts(
     settings: XSettings,
     accounts: tuple[str, ...],
@@ -65,108 +115,163 @@ async def scrape_x_accounts(
             stats.skipped = True
 
         logger.warning("No X accounts configured")
+
         return
 
-    try:
-        async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
-            browser = await session.get_browser()
-            page = await browser.get(X_HOME_URL)
+    browser = _XBrowser(session)
+    logger.info(
+        "Collecting X timelines first; discussions are deferred. "
+        "Use --x-details to refresh saved posts separately.",
+    )
 
-        await wait_for_x_session(
-            page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
+    index = 0
+
+    for index, account in enumerate(accounts, 1):
+        logger.info(
+            "X timeline [%d/%d] account=%s", index, len(accounts), account,
         )
 
-        for account in accounts:
-            async for batch in _scrape_account_with_conversations(
-                page, account, settings,
-            ):
+        try:
+            async for batch in _collect_account(browser, account, settings):
                 yield batch
-    except (LoginRequiredError, TimeoutError) as error:
-        count("fetch_failures")
-        stats = current_source.get()
-
-        if stats is not None:
-            stats.error_type = type(error).__name__
-
-        if isinstance(error, TimeoutError):
+        except (LoginRequiredError, BrowserProfileBusyError,
+                XBrowserRecoveryError) as error:
+            _record_failure(error)
             logger.warning(
-                "X collection stopped: browser did not respond within %ss. "
-                "Saved posts are retained; other sources can continue.",
-                BROWSER_ACTION_TIMEOUT_SECONDS,
+                "X timelines stopped at account=%s: %s; "
+                "%d accounts remain unattempted",
+                account, error, len(accounts) - index,
             )
-            await session.close()
-        else:
-            logger.warning("X collection stopped: %s", error)
+            break
+
+    logger.info(
+        "X timeline pass finished; attempted=%d/%d", index, len(accounts),
+    )
 
 
-async def _scrape_account_with_conversations(
-    page: zendriver.Tab, account: str, settings: XSettings,
+async def _collect_account(
+    browser: _XBrowser, account: str, settings: XSettings,
 ) -> AsyncIterator[ScrapeBatch]:
-    candidates: dict[str, RawPost] = {}
+    seen_posts: set[str] = set()
+    seen_assets: set[str] = set()
 
-    async for batch in _scrape_account(page, account, settings):
-        # Yield first so the runner persists timelines before details.
-        yield batch
+    for attempt in range(2):
+        try:
+            page = await browser.get_page()
 
-        for post in batch.posts:
-            if (urlsplit(post.url).path.split("/")[1].lower()
-                    == account.strip("@").strip().lower()):
-                candidates[post.post_id] = post
+            async for batch in _scrape_account(page, account, settings):
+                posts = [p for p in batch.posts if p.post_id not in seen_posts]
+                assets = [a for a in batch.assets if a.url not in seen_assets]
+                seen_posts.update(p.post_id for p in posts)
+                seen_assets.update(a.url for a in assets)
 
-    if settings.conversation.enabled:
-        newest = sorted(candidates.values(),
-                        key=lambda post: int(post.post_id),
-                        reverse=True)
+                if posts or assets:
+                    yield batch._replace(posts=posts, assets=assets)
+        except (LoginRequiredError, BrowserProfileBusyError):
+            raise
+        except RECOVERABLE_BROWSER_ERRORS as error:
+            logger.warning(
+                "X timeline account=%s attempt=%d browser failure=%s; "
+                "retained posts=%d", account, attempt + 1,
+                type(error).__name__, len(seen_posts),
+            )
+            await browser.reset()
 
-        limit = settings.conversation.max_posts_per_account
+            if not attempt:
+                count("retries")
+                continue
 
-        for post in newest[:limit]:
-            captured = await capture_conversation(page, post,
-                                                  settings.conversation)
-            yield ScrapeBatch(posts=[captured], assets=[])
+            _account_failed(account, seen_posts, error)
+
+            return
+        except Exception as error:
+            _account_failed(account, seen_posts, error)
+            await browser.reset()
+
+            return
+        else:
+            if not seen_posts:
+                _account_failed(
+                    account, seen_posts,
+                    ValueError("No usable timeline posts returned"),
+                )
+            else:
+                logger.info(
+                    "X timeline account=%s outcome=completed "
+                    "posts=%d attempts=%d",
+                    account, len(seen_posts), attempt + 1,
+                )
+
+            return
+
+
+def _account_failed(
+    account: str, seen_posts: set[str], error: Exception,
+) -> None:
+    _record_failure(error)
+    logger.warning(
+        "X timeline account=%s outcome=%s posts=%d error=%s: %s; "
+        "continuing with remaining accounts",
+        account, "partial" if seen_posts else "failed", len(seen_posts),
+        type(error).__name__, error,
+    )
 
 
 async def scrape_x_posts(
     settings: XSettings, posts: list[RawPost], session: BrowserSession,
 ) -> AsyncIterator[ScrapeBatch]:
-    if not posts:
-        return
+    browser = _XBrowser(session)
 
-    reason = None
-    page = None
+    for index, post in enumerate(posts, 1):
+        logger.info(
+            "X discussion [%d/%d] post=%s", index, len(posts), post.post_id,
+        )
+
+        try:
+            captured = await _capture_saved_post(browser, post, settings)
+            yield ScrapeBatch(posts=[captured], assets=[])
+            archive = json.loads(captured.payload)["conversation_capture"]
+            reason = archive["reason"]
+
+            if reason == "login_required":
+                logger.warning("X discussions stopped: sign-in required")
+                break
+
+            if reason in {"timeout", "unavailable"}:
+                await browser.reset()
+        except (BrowserProfileBusyError, XBrowserRecoveryError) as error:
+            _record_failure(error)
+            logger.warning("X discussions stopped: %s", error)
+            break
+
+
+async def _capture_saved_post(
+    browser: _XBrowser, post: RawPost, settings: XSettings,
+) -> RawPost:
+    reason = "disabled"
 
     if settings.conversation.enabled:
         try:
-            async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
-                browser = await session.get_browser()
-                page = await browser.get(X_HOME_URL)
-
-            await wait_for_x_session(
-                page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
-            )
+            page = await browser.get_page()
         except LoginRequiredError:
             reason = "login_required"
-        except TimeoutError:
+        except RECOVERABLE_BROWSER_ERRORS:
             reason = "timeout"
+        except BrowserProfileBusyError:
+            raise
         except Exception:
-            logger.warning("X conversation browser unavailable", exc_info=True)
+            logger.warning("X discussion browser unavailable", exc_info=True)
             reason = "unavailable"
-    else:
-        reason = "disabled"
-
-    for post in posts:
-        if page is None or reason:
-            captured = ConversationCapture(
-                post, settings.conversation.max_replies,
-            ).finish(reason)
-
-            if reason != "disabled":
-                count("fetch_failures")
         else:
-            captured = await capture_conversation(page, post,
-                                                  settings.conversation)
+            return await capture_conversation(
+                page, post, settings.conversation,
+            )
 
-        yield ScrapeBatch(posts=[captured], assets=[])
+        count("fetch_failures")
+
+    return ConversationCapture(
+        post, settings.conversation.max_replies,
+    ).finish(reason)
 
 
 async def _scrape_account(
@@ -273,7 +378,6 @@ async def _scrape_account(
             yield ScrapeBatch(posts=posts, assets=assets)
     finally:
         await capture.stop()
-        logger.info("Finished X scrape for account=%s", handle)
 
 
 async def _drain_posts_and_assets(
@@ -283,7 +387,10 @@ async def _drain_posts_and_assets(
     *,
     timeout_seconds: float,
 ) -> tuple[list[RawPost], list[AssetDiscovery]]:
-    responses = await capture.drain(timeout_seconds=max(0.05, timeout_seconds))
+    async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+        responses = await capture.drain(
+            timeout_seconds=max(0.05, timeout_seconds),
+        )
     logger.info("Drained %d X network responses", len(responses))
 
     return extract_posts_and_assets(
