@@ -138,6 +138,41 @@ function isRedditPost(value: unknown): value is RedditPost {
   );
 }
 
+function isHackerNewsPost(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const capture = value.comment_capture;
+
+  return (
+    (value.points === null || isCount(value.points)) &&
+    (value.comments === null || isCount(value.comments)) &&
+    typeof value.discussion_url === "string" &&
+    (value.external_url === null || typeof value.external_url === "string") &&
+    typeof value.day === "string" &&
+    value.day !== "" &&
+    isDateFilter(value.day) &&
+    (value.rank === null || (isCount(value.rank) && value.rank > 0)) &&
+    (capture === undefined ||
+      (isRecord(capture) &&
+        ["captured", "partial", "disabled", "failed", "not_captured"].includes(
+          String(capture.status),
+        ) &&
+        isCount(capture.captured) &&
+        (capture.total === null || isCount(capture.total)) &&
+        (capture.reason === null || typeof capture.reason === "string"))) &&
+    (value.comments_items === undefined ||
+      (Array.isArray(value.comments_items) &&
+        value.comments_items.every(
+          (comment) =>
+            isRecord(comment) &&
+            ["id", "parent_id", "author", "html"].every(
+              (key) => typeof comment[key] === "string",
+            ) &&
+            (comment.created_at === null || isTimestamp(comment.created_at)) &&
+            isCount(comment.depth),
+        )))
+  );
+}
+
 function isXProfile(value: unknown): value is XProfile {
   return (
     isRecord(value) &&
@@ -169,6 +204,9 @@ function validPost(value: unknown, allowConversation: boolean): value is Post {
     (value.reddit === undefined ||
       value.reddit === null ||
       isRedditPost(value.reddit)) &&
+    (value.hacker_news === undefined ||
+      value.hacker_news === null ||
+      isHackerNewsPost(value.hacker_news)) &&
     (value.x === undefined ||
       value.x === null ||
       isXPost(value.x, allowConversation)) &&
@@ -286,7 +324,9 @@ export function isSource(value: unknown): value is Source {
     isCount(value.count) &&
     isOptionalFlairs(value.flairs) &&
     (value.kind === undefined ||
-      ["rss", "x", "reddit", "youtube"].includes(String(value.kind))) &&
+      ["rss", "x", "reddit", "youtube", "hacker_news"].includes(
+        String(value.kind),
+      )) &&
     (value.accounts === undefined ||
       (Array.isArray(value.accounts) &&
         value.accounts.every(

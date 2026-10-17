@@ -4,9 +4,25 @@ export function PlatformIcon({
   platform,
   size = 19,
 }: {
-  platform: "x" | "reddit" | "youtube";
+  platform: "x" | "reddit" | "youtube" | "hacker_news";
   size?: number;
 }) {
+  if (platform === "hacker_news") {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        className="platform-icon"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <rect width="24" height="24" rx="2" fill="#ff6600" />
+        <path d="M6 5h2.5l3.5 6 3.5-6H18l-5 8.4V20h-2v-6.6Z" fill="#fff" />
+      </svg>
+    );
+  }
+
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

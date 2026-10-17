@@ -21,6 +21,7 @@ import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
+import { HackerNewsDetail } from "./HackerNewsDetail";
 import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
 import { RedditComments } from "./RedditComments";
 import {
@@ -170,7 +171,14 @@ export function ArticleView({
           loadError={!!error}
         />
       )}
-      {post && !xPost && (
+      {post?.hacker_news && (
+        <HackerNewsDetail
+          post={post}
+          pending={isPlaceholderData && !error}
+          loadError={!!error}
+        />
+      )}
+      {post && !xPost && !post.hacker_news && (
         <div className="article-inner">
           <div className="post-meta">
             {post.reddit ? (

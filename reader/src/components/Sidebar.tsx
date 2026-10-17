@@ -10,6 +10,7 @@ import { YouTubeNavigation } from "./YouTubeNavigation";
 export function Sidebar({
   section,
   select,
+  hackerNewsEnabled,
   redditEnabled,
   communities,
   community,
@@ -26,6 +27,7 @@ export function Sidebar({
 }: {
   section: Section;
   select: (section: Section) => void;
+  hackerNewsEnabled: boolean;
   redditEnabled: boolean;
   communities: RedditCommunity[];
   community: string;
@@ -128,6 +130,16 @@ export function Sidebar({
               ),
             }))}
           />
+        )}
+        {hackerNewsEnabled && (
+          <button
+            type="button"
+            className={`nav-item ${section === "hacker_news" ? "active" : ""}`}
+            aria-current={section === "hacker_news" ? "page" : undefined}
+            onClick={() => select("hacker_news")}
+          >
+            <PlatformIcon platform="hacker_news" /> Hacker News
+          </button>
         )}
         <YouTubeNavigation
           sources={youtubeSources}

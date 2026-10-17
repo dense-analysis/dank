@@ -200,6 +200,21 @@ The reader orders stored posts by date or search relevance. Reddit collection
 defaults to Top for the past day; source configuration can change the sort
 and time window before scraping. Refreshing this view reloads collected posts.
 
+## Hacker News
+
+**Hacker News** browses collected hckr news stories with **Top 10**, **Top 20**,
+**Top 50%** (default), and **All**. Selections use hckr news's daily score cutoffs,
+including ties. They filter saved content; changing the selection does not collect
+additional stories. Chronological views separate front-page days in UTC and load
+older stories as you scroll. Search, dates, the daily selection and article Back
+navigation stay in the URL.
+
+Cards show captured points and comment counts, plus separate original-article and
+Hacker News discussion links. Opening a story shows any saved post text and comments
+from a detailed scrape, with replies indented. Normal collection skips comments;
+not captured, partial and failed captures are explicit. Counts are saved snapshots.
+See [Hacker News collection settings](../docs/features/hacker-news.md).
+
 ## YouTube
 
 **YouTube** saves the context of discovery: Hype rankings, News topics, channel

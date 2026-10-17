@@ -6,6 +6,7 @@ export const feedLabels: Record<FeedKind, string> = {
   x: "X",
   reddit: "Reddit",
   youtube: "YouTube",
+  hacker_news: "Hacker News",
 };
 
 export function sectionFromView(view: string | null): Section {
@@ -14,6 +15,7 @@ export function sectionFromView(view: string | null): Section {
     case "x":
     case "reddit":
     case "youtube":
+    case "hacker_news":
     case "sources":
     case "settings":
       return view;
@@ -24,6 +26,9 @@ export function sectionFromView(view: string | null): Section {
 
 export function sourceKind(domain: string): Exclude<FeedKind, "all"> {
   switch (domain.toLowerCase().replace(/^www\./, "")) {
+    case "news.ycombinator.com":
+    case "hckrnews.com":
+      return "hacker_news";
     case "youtube.com":
       return "youtube";
     case "reddit.com":

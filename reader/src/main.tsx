@@ -9,6 +9,7 @@ import "@fontsource-variable/newsreader/standard.css";
 import "@fontsource-variable/newsreader/standard-italic.css";
 import "./styles.css";
 import "./youtube.css";
+import "./hacker-news.css";
 
 const client = new QueryClient({
   defaultOptions: {

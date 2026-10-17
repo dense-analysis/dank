@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import {
   type CSSProperties,
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -18,6 +19,11 @@ import { CollectionCount } from "./components/CollectionCount";
 import { CollectionHeader } from "./components/CollectionHeader";
 import { CommunityAvatar } from "./components/CommunityAvatar";
 import { FeedToolbar } from "./components/FeedToolbar";
+import {
+  HackerNewsCard,
+  HackerNewsDay,
+  HackerNewsFilters,
+} from "./components/HackerNewsFeed";
 import { IdentityAvatar } from "./components/IdentityAvatar";
 import { Modal } from "./components/Modal";
 import { PlatformIcon } from "./components/PlatformIcon";
@@ -118,6 +124,7 @@ export function App() {
   );
   const readKeys = new Set(read);
   const allSources = sources.data?.sources ?? [];
+  const hackerNewsSources = sourcesForFeed(allSources, "hacker_news");
   const redditSources = sourcesForFeed(allSources, "reddit");
   const xSources = sourcesForFeed(allSources, "x");
   const accounts = collectedAccounts(xSources);
@@ -181,7 +188,12 @@ export function App() {
       ? section
       : null;
   const headerTitle =
-    section === "youtube" && !youtubeContext ? (
+    section === "hacker_news" ? (
+      <span className="hn-title">
+        <PlatformIcon platform="hacker_news" size={23} />
+        <span>{title}</span>
+      </span>
+    ) : section === "youtube" && !youtubeContext ? (
       <>
         <PlatformIcon platform="youtube" size={23} />
         <span>{youtubeTitle}</span>
@@ -261,6 +273,7 @@ export function App() {
     <Sidebar
       section={section}
       select={select}
+      hackerNewsEnabled={hackerNewsSources.length > 0}
       redditEnabled={redditSources.length > 0}
       communities={communities}
       community={filters.community}
@@ -421,6 +434,11 @@ export function App() {
                 section !== "youtube" && (
                   <div className="page-heading">
                     {feedSection && <p className="eyebrow">{date}</p>}
+                    {section === "hacker_news" && (
+                      <p className="collection-description">
+                        Stories from hckr news, grouped by their front-page day.
+                      </p>
+                    )}
                     {section === "reddit" && (
                       <p className="collection-description">
                         Collected posts from your communities.
@@ -482,11 +500,21 @@ export function App() {
                     sources={visibleSources}
                     change={changeFilters}
                   />
+                  {section === "hacker_news" && (
+                    <HackerNewsFilters
+                      value={filters.hnFilter}
+                      change={(hnFilter) =>
+                        changeFilters({ ...filters, hnFilter })
+                      }
+                    />
+                  )}
                   <div className="timeline-label">
                     <span>
                       {filters.q
                         ? "SEARCH RESULTS"
-                        : section === "reddit" || section === "x"
+                        : section === "reddit" ||
+                            section === "x" ||
+                            section === "hacker_news"
                           ? "COLLECTED POSTS"
                           : "LATEST"}
                       {posts.isFetching && !posts.isPending && (
@@ -511,8 +539,24 @@ export function App() {
                     />
                   ) : timeline.length ? (
                     <div className="post-list">
-                      {timeline.map((post) =>
-                        isXPost(post) ? (
+                      {timeline.map((post, index) =>
+                        post.hacker_news ? (
+                          <Fragment key={postKey(post)}>
+                            {section === "hacker_news" &&
+                              filters.sort !== "relevance" &&
+                              post.hacker_news.day !==
+                                timeline[index - 1]?.hacker_news?.day && (
+                                <HackerNewsDay day={post.hacker_news.day} />
+                              )}
+                            <HackerNewsCard
+                              post={post}
+                              read={readKeys.has(postKey(post))}
+                              open={() => openPost(post)}
+                              href={`/reader/?${articleParams(params, post)}`}
+                              query={filters.q}
+                            />
+                          </Fragment>
+                        ) : isXPost(post) ? (
                           <XPostCard
                             key={postKey(post)}
                             post={post}
@@ -543,7 +587,9 @@ export function App() {
                     <div className="empty-state">
                       <Inbox size={30} strokeWidth={1.3} />
                       <h2>
-                        {section === "reddit" || section === "x"
+                        {section === "reddit" ||
+                        section === "x" ||
+                        section === "hacker_news"
                           ? "No collected posts found"
                           : "No stories found"}
                       </h2>
@@ -556,11 +602,13 @@ export function App() {
                         className="secondary-button"
                         onClick={() => select(section)}
                       >
-                        {section === "reddit" || section === "x"
-                          ? `Show all ${feedLabels[section]} posts`
-                          : section === "stories"
-                            ? "Show all blog articles"
-                            : "Show everything"}{" "}
+                        {section === "hacker_news"
+                          ? "Reset Hacker News filters"
+                          : section === "reddit" || section === "x"
+                            ? `Show all ${feedLabels[section]} posts`
+                            : section === "stories"
+                              ? "Show all blog articles"
+                              : "Show everything"}{" "}
                         <ArrowRight size={14} />
                       </button>
                     </div>

@@ -4,6 +4,8 @@ import { defaultFilters } from "../lib/storage";
 import { ReaderLink } from "./ReaderLink";
 
 export function sourceName(domain: string) {
+  if (sourceKind(domain) === "hacker_news") return "Hacker News";
+
   return domain.replace(/^www\./, "").replace(/\.(com|org|net|co\.uk|io)$/, "");
 }
 

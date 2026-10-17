@@ -80,13 +80,14 @@ export interface Post {
   created_at: string;
   source: string;
   reddit?: RedditPost | null;
+  hacker_news?: HackerNewsPost | null;
   x?: XPost | null;
   thumbnail: string | null;
   media: { url: string; content_type: string }[];
 }
 
 export interface Source {
-  kind?: "rss" | "x" | "reddit" | "youtube";
+  kind?: "rss" | "x" | "reddit" | "youtube" | "hacker_news";
   accounts?: XAccount[];
   communities?: RedditCommunity[];
   flairs?: RedditFlair[];
@@ -164,11 +165,43 @@ export interface XConversation {
   latest_attempt_at?: string | null;
 }
 
-export type FeedKind = "all" | "stories" | "x" | "reddit" | "youtube";
+export type HackerNewsFilter = "top10" | "top20" | "top50" | "all";
+
+export interface HackerNewsPost {
+  points: number | null;
+  comments: number | null;
+  discussion_url: string;
+  external_url: string | null;
+  day: string;
+  rank: number | null;
+  comment_capture?: {
+    status: "captured" | "partial" | "disabled" | "failed" | "not_captured";
+    captured: number;
+    total: number | null;
+    reason: string | null;
+  };
+  comments_items?: {
+    id: string;
+    parent_id: string;
+    author: string;
+    html: string;
+    created_at: string | null;
+    depth: number;
+  }[];
+}
+
+export type FeedKind =
+  | "all"
+  | "stories"
+  | "x"
+  | "reddit"
+  | "youtube"
+  | "hacker_news";
 export type Section = FeedKind | "sources" | "settings";
 
 export interface Filters {
   kind: FeedKind;
+  hnFilter: HackerNewsFilter;
   community: string;
   account: string;
   q: string;

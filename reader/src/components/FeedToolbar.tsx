@@ -41,19 +41,21 @@ export function FeedToolbar({
     return () => window.removeEventListener("keydown", key);
   }, []);
   const searchLabel =
-    filters.kind === "reddit"
-      ? filters.community
-        ? `Search r/${filters.community}`
-        : "Search Reddit"
-      : filters.kind === "x"
-        ? filters.account
-          ? `Search @${filters.account}`
-          : "Search X"
-        : filters.domains.length === 1
-          ? `Search ${filters.domains[0]}`
-          : filters.kind === "stories"
-            ? "Search blogs"
-            : "Search everything";
+    filters.kind === "hacker_news"
+      ? "Search Hacker News"
+      : filters.kind === "reddit"
+        ? filters.community
+          ? `Search r/${filters.community}`
+          : "Search Reddit"
+        : filters.kind === "x"
+          ? filters.account
+            ? `Search @${filters.account}`
+            : "Search X"
+          : filters.domains.length === 1
+            ? `Search ${filters.domains[0]}`
+            : filters.kind === "stories"
+              ? "Search blogs"
+              : "Search everything";
   const activeCount =
     filters.domains.length +
     filters.tags.length +
