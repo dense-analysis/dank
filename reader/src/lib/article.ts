@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+import { highlightMatches } from "./highlightMatches";
 
 function sanitizeArticle(html: string) {
   return DOMPurify.sanitize(html, {
@@ -16,6 +17,16 @@ export function hasArticleContent(html: string): boolean {
     content.textContent?.trim() ||
       content.querySelector("img[src], video[src], audio[src], source[src]"),
   );
+}
+
+export function articleText(html: string): string {
+  const content = sanitizeArticle(html);
+
+  for (const block of content.querySelectorAll("p, div, li, br")) {
+    block.append(document.createTextNode("\n"));
+  }
+
+  return content.textContent?.trim() ?? "";
 }
 
 export interface ArticleCodeBlock {
@@ -70,9 +81,33 @@ function codeLanguage(code: Element, pre: Element): string | null {
 export function renderArticle(
   element: HTMLElement,
   html: string,
+  query = "",
 ): ArticleContent {
   // Source markup is sanitized before adding any reader-owned elements.
   element.replaceChildren(sanitizeArticle(html));
+
+  if (query.trim()) {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const nodes: Text[] = [];
+
+    while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+
+    for (const node of nodes) {
+      const parts = highlightMatches(node.data, query);
+      if (!parts.some((part) => part.highlighted)) continue;
+
+      node.replaceWith(
+        ...parts.map((part) => {
+          if (!part.highlighted) return document.createTextNode(part.text);
+
+          const mark = document.createElement("mark");
+          mark.textContent = part.text;
+
+          return mark;
+        }),
+      );
+    }
+  }
 
   for (const link of element.querySelectorAll("a")) {
     link.target = "_blank";

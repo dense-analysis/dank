@@ -41,15 +41,68 @@ describe("reader API", () => {
     expect(isPost(post)).toBe(true);
     expect(isPost({ ...post, x: null })).toBe(true);
     expect(isPost({ ...post, x: profile })).toBe(true);
+    expect(isPost({ ...post, x: { ...profile, handle: "", name: "" } })).toBe(
+      true,
+    );
 
     for (const bad of [
       { handle: "../wrong" },
-      { handle: "" },
       { handle: "x".repeat(16) },
       { name: null },
       { icon_url: 42 },
     ]) {
       expect(isPost({ ...post, x: { ...profile, ...bad } })).toBe(false);
+    }
+  });
+
+  it("validates X attachment and reply snapshots without claiming saved replies", () => {
+    const post = {
+      id: "1",
+      domain: "x.com",
+      url: "https://x.com/reporter/status/1",
+      author: "Reporter",
+      title: "Post",
+      excerpt: "Post",
+      html: "<p>Post</p>",
+      created_at: "2026-10-17T12:00:00Z",
+      source: "x",
+      thumbnail: null,
+      media: [],
+    };
+    const x = {
+      handle: "reporter",
+      name: "Reporter",
+      links: [
+        {
+          url: "https://example.com",
+          title: "Research",
+          description: "Details",
+          image_url: null,
+        },
+      ],
+      media: [
+        {
+          type: "image",
+          url: "/assets/photo.png",
+          poster_url: null,
+          alt: "A diagram",
+          remote: false,
+        },
+      ],
+      reply_count: 0,
+      replies_status: "not_collected",
+      captured_at: null,
+    };
+    expect(isPost({ ...post, x })).toBe(true);
+
+    for (const bad of [
+      { reply_count: -1 },
+      { replies_status: "captured" },
+      { links: [{ ...x.links[0], image_url: 7 }] },
+      { media: [{ ...x.media[0], remote: "false" }] },
+      { media: [{ ...x.media[0], type: "iframe" }] },
+    ]) {
+      expect(isPost({ ...post, x: { ...x, ...bad } })).toBe(false);
     }
   });
 

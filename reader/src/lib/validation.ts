@@ -135,7 +135,7 @@ export function isPost(value: unknown): value is Post {
     (value.reddit === undefined ||
       value.reddit === null ||
       isRedditPost(value.reddit)) &&
-    (value.x === undefined || value.x === null || isXProfile(value.x)) &&
+    (value.x === undefined || value.x === null || isXPost(value.x)) &&
     (value.collection_incomplete === undefined ||
       typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
@@ -146,6 +146,43 @@ export function isPost(value: unknown): value is Post {
         typeof item.url === "string" &&
         typeof item.content_type === "string",
     )
+  );
+}
+
+function isXPost(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (isXProfile(value) ||
+      (value.handle === "" &&
+        typeof value.name === "string" &&
+        isOptionalIcon(value.icon_url))) &&
+    (value.links === undefined ||
+      (Array.isArray(value.links) &&
+        value.links.every(
+          (link) =>
+            isRecord(link) &&
+            typeof link.url === "string" &&
+            typeof link.title === "string" &&
+            typeof link.description === "string" &&
+            (link.image_url === null || typeof link.image_url === "string"),
+        ))) &&
+    (value.media === undefined ||
+      (Array.isArray(value.media) &&
+        value.media.every(
+          (media) =>
+            isRecord(media) &&
+            ["image", "video", "gif"].includes(String(media.type)) &&
+            typeof media.url === "string" &&
+            typeof media.alt === "string" &&
+            typeof media.remote === "boolean" &&
+            (media.poster_url === null || typeof media.poster_url === "string"),
+        ))) &&
+    (value.reply_count === undefined ||
+      value.reply_count === null ||
+      isCount(value.reply_count)) &&
+    (value.replies_status === undefined ||
+      value.replies_status === "not_collected") &&
+    isOptionalIcon(value.captured_at)
   );
 }
 

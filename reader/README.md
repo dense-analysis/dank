@@ -93,9 +93,17 @@ host; Reddit icons use cached local assets. Account selection follows the post's
 handle, independently of the author filter, and stays in the URL through search
 and article navigation.
 
-X post cards show the account's avatar and handle in every feed, including
-All. Select either to open that account's collected posts. Missing or unavailable
-images fall back to the account's initial.
+X cards and opened posts show the account's avatar, display name and handle,
+with the post text once. Short posts are readable in the feed; **Show more**
+expands long notes. Identity links open the account's collected posts, with
+initials when an avatar is unavailable.
+
+Captured links retain their destinations and preview cards. Photos, native
+videos and GIFs appear as attachments, preferring local files when available.
+Remote media is labelled and video plays only on demand. **Open post** shows
+the full content and an explicit **Replies not collected** notice; reported
+reply counts are snapshots, not saved conversations. **View conversation on X**
+opens the original. Reply and thread collection are not implemented yet.
 
 ## Reddit
 

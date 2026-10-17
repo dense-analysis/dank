@@ -65,7 +65,7 @@ export interface Post {
   created_at: string;
   source: string;
   reddit?: RedditPost | null;
-  x?: XProfile | null;
+  x?: XPost | null;
   thumbnail: string | null;
   media: { url: string; content_type: string }[];
 }
@@ -89,6 +89,29 @@ export interface XProfile {
 
 export interface XAccount extends XProfile {
   count: number;
+}
+
+export interface XLink {
+  url: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+}
+
+export interface XMedia {
+  type: "image" | "video" | "gif";
+  url: string;
+  poster_url: string | null;
+  alt: string;
+  remote: boolean;
+}
+
+export interface XPost extends XProfile {
+  links?: XLink[];
+  media?: XMedia[];
+  reply_count?: number | null;
+  replies_status?: "not_collected";
+  captured_at?: string | null;
 }
 
 export type FeedKind = "all" | "stories" | "x" | "reddit";

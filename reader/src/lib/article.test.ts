@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { hasArticleContent, renderArticle } from "./article";
+import { articleText, hasArticleContent, renderArticle } from "./article";
 import { highlightCode } from "./highlightCode";
 
 describe("collected article content", () => {
+  it("keeps paragraph boundaries in compact X previews without including unsafe markup", () => {
+    expect(
+      articleText(
+        "<p>First &amp; second</p><p>Next line<br>Last line</p><script>bad()</script>",
+      ),
+    ).toBe("First & second\nNext line\nLast line");
+  });
+
+  it("highlights literal search text inside sanitized markup without changing link destinations", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      '<p>Read <a href="https://example.com/research">C++ research</a>.</p><script>bad()</script>',
+      "C++",
+    );
+    expect(body.querySelector("mark")?.textContent).toBe("C++");
+    expect(body.querySelector("a")?.href).toBe("https://example.com/research");
+    expect(body.querySelector("script")).toBeNull();
+    expect(body.textContent).toBe("Read C++ research.");
+  });
+
   it.each([
     "",
     "\n\n  ",

@@ -4,13 +4,19 @@ import { type ArticleContent, renderArticle } from "../lib/article";
 import { CodeCopyButton } from "./CodeCopyButton";
 import { ImageBackgroundToggle } from "./ImageBackgroundToggle";
 
-export function ArticleBody({ html }: { html: string }) {
+export function ArticleBody({
+  html,
+  query = "",
+}: {
+  html: string;
+  query?: string;
+}) {
   const [article, setArticle] = useState<ArticleContent | null>(null);
   const attach = useCallback(
     (element: HTMLDivElement | null) => {
       if (!element) return;
 
-      const content = renderArticle(element, html);
+      const content = renderArticle(element, html, query);
       setArticle(content);
       let active = true;
 
@@ -32,7 +38,7 @@ export function ArticleBody({ html }: { html: string }) {
         active = false;
       };
     },
-    [html],
+    [html, query],
   );
 
   // The adapter owns source markup; React owns only the controls in its portal hosts.

@@ -23,6 +23,7 @@ import { PostCard } from "./components/PostCard";
 import { ReaderSettings } from "./components/ReaderSettings";
 import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
+import { XPostCard } from "./components/XPostCard";
 import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
@@ -38,6 +39,7 @@ import { articleParams, filterParams, parseFilters } from "./lib/navigation";
 import { readingFonts } from "./lib/preferences";
 import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
+import { isXPost } from "./lib/x";
 
 export function App() {
   const { params, navigate, backTo, positionError } = useLocation();
@@ -275,6 +277,7 @@ export function App() {
             filters={filters}
             selectAuthor={selectAuthor}
             selectCommunity={selectCommunity}
+            selectAccount={selectAccount}
             selectFlair={selectFlair}
           />
         )}
@@ -364,22 +367,33 @@ export function App() {
                     />
                   ) : timeline.length ? (
                     <div className="post-list">
-                      {timeline.map((post) => (
-                        <PostCard
-                          key={postKey(post)}
-                          post={post}
-                          read={readKeys.has(postKey(post))}
-                          open={() => openPost(post)}
-                          href={`/reader/?${articleParams(params, post)}`}
-                          selectSource={selectSource}
-                          query={filters.q}
-                          filters={filters}
-                          selectAuthor={selectAuthor}
-                          selectCommunity={selectCommunity}
-                          selectAccount={selectAccount}
-                          selectFlair={selectFlair}
-                        />
-                      ))}
+                      {timeline.map((post) =>
+                        isXPost(post) ? (
+                          <XPostCard
+                            key={postKey(post)}
+                            post={post}
+                            read={readKeys.has(postKey(post))}
+                            open={() => openPost(post)}
+                            href={`/reader/?${articleParams(params, post)}`}
+                            selectAccount={selectAccount}
+                            query={filters.q}
+                          />
+                        ) : (
+                          <PostCard
+                            key={postKey(post)}
+                            post={post}
+                            read={readKeys.has(postKey(post))}
+                            open={() => openPost(post)}
+                            href={`/reader/?${articleParams(params, post)}`}
+                            selectSource={selectSource}
+                            query={filters.q}
+                            filters={filters}
+                            selectAuthor={selectAuthor}
+                            selectCommunity={selectCommunity}
+                            selectFlair={selectFlair}
+                          />
+                        ),
+                      )}
                     </div>
                   ) : (
                     <div className="empty-state">

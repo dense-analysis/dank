@@ -12,6 +12,7 @@ import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
 import type { Filters, Post } from "../lib/types";
+import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
@@ -25,6 +26,7 @@ import {
 } from "./RedditMetadata";
 import { RedditVideo } from "./RedditVideo";
 import { SourceLink } from "./SourceLink";
+import { XPostDetail } from "./XPostDetail";
 
 export function ArticleView({
   domain,
@@ -36,6 +38,7 @@ export function ArticleView({
   filters,
   selectAuthor,
   selectCommunity,
+  selectAccount,
   selectFlair,
 }: {
   domain: string;
@@ -47,6 +50,7 @@ export function ArticleView({
   filters: Filters;
   selectAuthor: (author: string) => void;
   selectCommunity: (community: string) => void;
+  selectAccount: (handle: string) => void;
   selectFlair: (community: string, flair: string) => void;
 }) {
   const { preferences, updatePreferences, preferencesError } =
@@ -76,7 +80,9 @@ export function ArticleView({
     : post?.reddit?.video
       ? [post.reddit.video]
       : [];
-  const hasReadableContent = hasContent || redditVideos.length > 0;
+  const xPost = isXPost(post ?? { domain, source: "" });
+  const hasReadableContent =
+    post && xPost ? hasXContent(post) : hasContent || redditVideos.length > 0;
   const attachedMedia =
     post?.media.filter(
       (asset) =>
@@ -89,7 +95,11 @@ export function ArticleView({
     if (post && hasReadableContent) markRead(post);
   }, [post, hasReadableContent, markRead]);
   return (
-    <main id="main" className="article-page" aria-label="Article reader">
+    <main
+      id="main"
+      className="article-page"
+      aria-label={xPost ? "X post reader" : "Article reader"}
+    >
       <div className="reader-toolbar">
         <button
           type="button"
@@ -104,7 +114,7 @@ export function ArticleView({
           <button
             type="button"
             className="icon-button"
-            aria-label="Smaller article text"
+            aria-label={xPost ? "Smaller post text" : "Smaller article text"}
             disabled={fontSize <= 16}
             onClick={() => setFontSize(fontSize - 1)}
           >
@@ -114,7 +124,7 @@ export function ArticleView({
           <button
             type="button"
             className="icon-button"
-            aria-label="Larger article text"
+            aria-label={xPost ? "Larger post text" : "Larger article text"}
             disabled={fontSize >= 26}
             onClick={() => setFontSize(fontSize + 1)}
           >
@@ -146,7 +156,10 @@ export function ArticleView({
           </button>
         </div>
       )}
-      {post && (
+      {post && xPost && (
+        <XPostDetail post={post} selectAccount={selectAccount} />
+      )}
+      {post && !xPost && (
         <div className="article-inner">
           <div className="post-meta">
             {post.reddit ? (
