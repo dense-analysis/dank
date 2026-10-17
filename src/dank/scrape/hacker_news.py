@@ -236,9 +236,18 @@ async def scrape_hacker_news(
 ) -> AsyncIterator[ScrapeBatch]:
     """Read the live two-day listing, then one archive per older UTC day."""
     mode = str(source.hacker_news.filter) if source.hacker_news else "top50"
-    days = _group_entries(_parse_homepage(await _fetch_text(
-        client, HCKRNEWS_URL,
-    )))
+    days: dict[dt.date, list[_Entry]] = {}
+
+    try:
+        days = _group_entries(_parse_homepage(await _fetch_text(
+            client, HCKRNEWS_URL,
+        )))
+    except (aiohttp.ClientError, TimeoutError, HostCooldownError) as error:
+        count("fetch_failures")
+        logger.warning("Hacker News live listing unavailable: %s", error)
+    except ValueError as error:
+        count("parse_failures")
+        logger.warning("Hacker News live listing invalid: %s", error)
     today = dt.datetime.now(dt.UTC).date()
 
     for offset in range(settings.days):
@@ -257,6 +266,9 @@ async def scrape_hacker_news(
                     raise ValueError("hckrnews archive must be an array")
 
                 entries = _group_entries(cast(list[Any], raw)).get(day, [])
+
+                if not entries:
+                    raise ValueError("Archive contains no entries for its day")
             except (
                 aiohttp.ClientError, TimeoutError, HostCooldownError,
             ) as err:
@@ -306,6 +318,21 @@ def _kids(item: dict[str, Any]) -> list[int]:
     ]
 
 
+def _validate_comment(comment: dict[str, Any], parent_id: int) -> None:
+    # Deleted API records may retain only an ID and the deleted flag.
+    deleted = comment.get("deleted") is True
+
+    if comment.get("type") != "comment" and not (
+        deleted and "type" not in comment
+    ):
+        raise ValueError("HN discussion child is not a comment")
+
+    if comment.get("parent") != parent_id and not (
+        deleted and "parent" not in comment
+    ):
+        raise ValueError("HN comment does not belong to the requested parent")
+
+
 async def _capture_details(
     settings: HackerNewsSettings, post: RawPost, client: aiohttp.ClientSession,
 ) -> RawPost:
@@ -315,25 +342,28 @@ async def _capture_details(
         "status": "captured", "limit": settings.comment_limit,
         "captured": 0, "requests": 0,
     }
-    pending: deque[int] = deque()
+    pending: deque[tuple[int, int]] = deque()
     seen: set[int] = {int(post.post_id)}
 
     try:
         async with asyncio.timeout(settings.detail_timeout_seconds):
             capture["requests"] += 1
             story = await _fetch_item(client, int(post.post_id))
+            payload["story"] = story
+
             if story.get("type") not in {"story", "job", "poll"}:
                 raise ValueError("HN item is not a story")
 
-            payload["story"] = story
             capture["total"] = story.get("descendants", 0)
-            pending.extend(_kids(story))
+            pending.extend(
+                (child, int(post.post_id)) for child in _kids(story)
+            )
 
             # The API supplies ranked children; breadth first keeps top-level
             # discussion represented within the user-configured request limit.
             # https://github.com/HackerNews/API#items
             while pending and capture["requests"] <= settings.comment_limit:
-                item_id = pending.popleft()
+                item_id, parent_id = pending.popleft()
 
                 if item_id in seen:
                     continue
@@ -342,14 +372,14 @@ async def _capture_details(
                 capture["requests"] += 1
                 comment = await _fetch_item(client, item_id)
 
-                if comment.get("type") != "comment":
-                    raise ValueError("HN discussion child is not a comment")
-
+                _validate_comment(comment, parent_id)
                 comments.append(comment)
-                pending.extend(child for child in _kids(comment)
-                               if child not in seen)
+                pending.extend(
+                    (child, item_id) for child in _kids(comment)
+                    if child not in seen
+                )
 
-            if any(item_id not in seen for item_id in pending):
+            if any(item_id not in seen for item_id, _ in pending):
                 capture.update(status="partial", reason="comment_limit")
     except (
         aiohttp.ClientError, TimeoutError, HostCooldownError, ValueError,

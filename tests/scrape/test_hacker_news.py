@@ -28,6 +28,7 @@ from dank.scrape.hacker_news import (
     scrape_hacker_news,
     scrape_hacker_news_details,
 )
+from dank.scrape.metrics import SourceMetrics, current_source
 
 DAY = dt.datetime(2026, 10, 15, tzinfo=dt.UTC)
 
@@ -214,7 +215,10 @@ async def test_details_preserve_native_items_and_bound_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     story = {'id': 1, 'type': 'story', 'kids': [2, 3], 'descendants': 3}
-    first = {'id': 2, 'type': 'comment', 'text': '<p>Hi</p>', 'kids': [4]}
+    first = {
+        'id': 2, 'type': 'comment', 'text': '<p>Hi</p>', 'kids': [4],
+        'parent': 1,
+    }
     second = {'id': 3, 'type': 'comment', 'text': 'Other', 'parent': 1}
     calls = mock_http(monkeypatch, {
         HN_API_URL + '1.json': story,
@@ -247,7 +251,7 @@ async def test_details_finish_small_tree_and_ignore_duplicate_ids(
             'id': 1, 'type': 'story', 'kids': [2, 2], 'descendants': 1,
         },
         HN_API_URL + '2.json': {
-            'id': 2, 'type': 'comment', 'deleted': True, 'kids': [1],
+            'id': 2, 'deleted': True, 'kids': [1],
         },
     })
     batch = await anext(scrape_hacker_news_details(
@@ -283,7 +287,9 @@ async def test_details_failure_after_first_comment_preserves_partial_capture(
         HN_API_URL + '1.json': {
             'id': 1, 'type': 'story', 'kids': [2, 3], 'descendants': 2,
         },
-        HN_API_URL + '2.json': {'id': 2, 'type': 'comment', 'text': 'Saved'},
+        HN_API_URL + '2.json': {
+            'id': 2, 'type': 'comment', 'text': 'Saved', 'parent': 1,
+        },
         HN_API_URL + '3.json': None,
     })
     batch = await anext(scrape_hacker_news_details(
@@ -340,3 +346,100 @@ async def test_details_respect_maximum_posts(
     assert json.loads(batches[0].posts[0].payload)[
         'comment_capture'
     ]['status'] == 'captured'
+
+
+@pytest.mark.parametrize('archive', [[], {}, [None], [entry(7, 20, 1)]])
+async def test_unrecognized_archive_day_records_failure(
+    monkeypatch: pytest.MonkeyPatch, archive: object,
+) -> None:
+    today = dt.datetime.now(dt.UTC).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+    missing = today - dt.timedelta(days=1)
+    source = SourceConfig('news.ycombinator.com', ())
+    stats = SourceMetrics(1, source)
+    mock_http(monkeypatch, {
+        HCKRNEWS_URL: homepage([entry(1, 5, 1, today)]),
+        f'{HCKRNEWS_URL}data/{missing:%Y%m%d}.js': archive,
+    })
+    token = current_source.set(stats)
+
+    try:
+        batches = [batch async for batch in scrape_hacker_news(
+            HackerNewsSettings(days=2), source, cast(Any, None),
+        )]
+    finally:
+        current_source.reset(token)
+
+    assert len(batches) == 1
+    assert stats.counts['parse_failures'] >= 1
+
+
+async def test_failed_homepage_still_collects_available_archives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = dt.datetime.now(dt.UTC).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+    mock_http(monkeypatch, {
+        HCKRNEWS_URL: aiohttp.ClientConnectionError('offline'),
+        f'{HCKRNEWS_URL}data/{today:%Y%m%d}.js': [entry(3, 4, 1, today)],
+    })
+    batch = await anext(scrape_hacker_news(
+        HackerNewsSettings(days=1), SourceConfig('news.ycombinator.com', ()),
+        cast(Any, None),
+    ))
+    assert batch.posts[0].post_id == '3'
+
+
+async def test_unrelated_comment_parent_is_not_captured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_http(monkeypatch, {
+        HN_API_URL + '1.json': {'id': 1, 'type': 'story', 'kids': [2]},
+        HN_API_URL + '2.json': {
+            'id': 2, 'type': 'comment', 'parent': 99, 'text': 'Unrelated',
+        },
+    })
+    batch = await anext(scrape_hacker_news_details(
+        HackerNewsSettings(), [raw_post()], cast(Any, None),
+    ))
+    body = json.loads(batch.posts[0].payload)
+    assert body['comments'] == []
+    assert body['comment_capture']['status'] == 'failed'
+    assert 'parent' in body['comment_capture']['reason']
+
+
+async def test_nested_replies_follow_their_actual_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_http(monkeypatch, {
+        HN_API_URL + '1.json': {'id': 1, 'type': 'story', 'kids': [2]},
+        HN_API_URL + '2.json': {
+            'id': 2, 'type': 'comment', 'parent': 1, 'kids': [3],
+            'text': 'Parent',
+        },
+        HN_API_URL + '3.json': {
+            'id': 3, 'type': 'comment', 'parent': 2, 'text': 'Child',
+        },
+    })
+    batch = await anext(scrape_hacker_news_details(
+        HackerNewsSettings(), [raw_post()], cast(Any, None),
+    ))
+    body = json.loads(batch.posts[0].payload)
+    assert [item['parent'] for item in body['comments']] == [1, 2]
+    assert body['comment_capture']['status'] == 'captured'
+
+
+async def test_deleted_story_tombstone_is_preserved_as_failed_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tombstone = {'id': 1, 'deleted': True}
+    mock_http(monkeypatch, {HN_API_URL + '1.json': tombstone})
+    batch = await anext(scrape_hacker_news_details(
+        HackerNewsSettings(), [raw_post()], cast(Any, None),
+    ))
+    body = json.loads(batch.posts[0].payload)
+    assert body['story'] == tombstone
+    assert body['comment_capture']['status'] == 'failed'
+    assert body['hckrnews'] == json.loads(raw_post().payload)['hckrnews']
