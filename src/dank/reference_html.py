@@ -200,6 +200,7 @@ class _ArticleContent(_Content):
         super().__init__(identity=identity, base=base)
         self.stack: list[str] = []
         self.scope = 0
+        self.blocked = 0
         self.finished = False
 
     def handle_starttag(
@@ -226,12 +227,21 @@ class _ArticleContent(_Content):
         )
         slot = tag == "template" and _content_slot(attr)
         eligible = (tag == "article" or body or slot) and not _noise(attr)
-        blocked = any(t in IGNORED_TAGS | {"aside"} for t in self.stack)
+        excluded = (
+            (tag in IGNORED_TAGS | {"aside"} and not slot)
+            or "hidden" in attr or attr.get("aria-hidden") == "true"
+            or _noise(attr)
+        )
+
+        if (not self.scope and not self.blocked and excluded
+                and tag not in VOID_TAGS):
+            self.blocked = len(self.stack) + 1
 
         if tag not in VOID_TAGS:
             self.stack.append(tag)
 
-        if not self.scope and not self.finished and eligible and not blocked:
+        if (not self.scope and not self.finished and eligible
+                and not self.blocked and not excluded):
             self.scope = len(self.stack)
 
         if self.scope:
@@ -244,6 +254,9 @@ class _ArticleContent(_Content):
         if tag in self.stack:
             index = len(self.stack) - 1 - self.stack[::-1].index(tag)
             del self.stack[index:]
+
+        if self.blocked and len(self.stack) < self.blocked:
+            self.blocked = 0
 
         if self.scope and len(self.stack) < self.scope:
             self.scope = 0

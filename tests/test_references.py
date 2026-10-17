@@ -225,3 +225,20 @@ def test_hidden_comment_root_is_not_evidence_and_unquoted_ids_are_supported():
     visible = raw("rss", {"page_html": '<div id=comment-42>'
                           '<a href="' + TARGET + '">Visible</a></div>'})
     assert reference_rows(visible, raw=True)[0]["reference_id"] == "comment-42"
+
+
+@pytest.mark.parametrize("container", [
+    '<div hidden>{}</div>', '<div class="related-posts">{}</div>',
+    '<div aria-hidden="true">{}</div>', '<aside>{}</aside>',
+])
+def test_raw_article_scope_skips_hidden_or_recommended_ancestors(
+    container: str,
+):
+    foreign = '<article><a href="https://foreign.test">Foreign</a></article>'
+    row = raw("rss", {"page_html": (
+        container.format(foreign)
+        + '<article><a href="' + TARGET + '">Owned</a></article>'
+    )})
+    assert [r["matched_url"] for r in reference_rows(row, raw=True)] == [
+        TARGET,
+    ]
