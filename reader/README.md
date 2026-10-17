@@ -30,7 +30,7 @@ automatically; open `/reader/` on the normal DANK server.
 ## Install on a phone
 
 Open `/reader/` using a trusted HTTPS address reachable from your phone. In
-Android Chrome, choose **Menu → Add to Home screen → Install** (or **Install app**).
+Android Chrome, choose **Menu → Install and create shortcut → Install**.
 DANK then opens from its icon in a standalone window, without browser controls.
 Plain HTTP on a LAN IP does not enable this installation; the phone must trust
 the HTTPS certificate.
