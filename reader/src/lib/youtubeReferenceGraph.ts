@@ -98,7 +98,7 @@ export function youtubeReferenceGraph(item: YouTubeItem): {
       tone: "blue",
       layer: 1,
     });
-    connect(sourceId, postId, "published", "published");
+    connect(sourceId, postId, "collected", "collected");
     attach(sourceId, reference);
     attach(postId, reference);
     attach(videoNodeId, reference);

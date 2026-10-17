@@ -101,7 +101,7 @@ export function postConnectionsGraph(
       tone: "neutral",
       layer: 0,
     });
-    connect(id, postId, "published", "published");
+    connect(id, postId, "collected", "collected");
     attach(id, connection);
   }
 

@@ -78,7 +78,7 @@ it("keeps comments distinct within a post while merging duplicate captures and s
     references: [reference, second, reference, post],
   });
   expect(graph.nodes).toHaveLength(5);
-  expect(graph.edges.filter((edge) => edge.kind === "published")).toHaveLength(
+  expect(graph.edges.filter((edge) => edge.kind === "collected")).toHaveLength(
     1,
   );
   expect(
@@ -141,4 +141,23 @@ it("keeps layout topology stable when metadata supplies a new video title", () =
   ).toBeGreaterThan(0);
   expect(compactGraphLabel(" A  long\nlabel ")).toBe("A long label");
   expect(compactGraphLabel("x".repeat(100))).toHaveLength(72);
+});
+
+it("keeps an aggregator's discovery provenance distinct from publication", () => {
+  const aggregator = {
+    ...reference,
+    domain: "feeds.example",
+    source: "rss",
+    url: "https://publisher.example/article",
+  };
+  const { graph } = youtubeReferenceGraph({
+    ...item,
+    references: [aggregator],
+  });
+  const sourceId = referenceGraphNodeId("source", aggregator.domain);
+  expect(graph.edges.find((edge) => edge.source === sourceId)).toMatchObject({
+    kind: "collected",
+    label: "collected",
+  });
+  expect(graph.edges.some((edge) => edge.label === "published")).toBe(false);
 });

@@ -134,3 +134,31 @@ it("changes labels without changing topology and collapses duplicate structural 
     base.edges.length,
   );
 });
+
+it("describes an aggregator source as collection provenance without claiming authorship", () => {
+  const origin = {
+    ...incomingConnection.origin,
+    domain: "feeds.example",
+    source: "rss",
+    url: "https://publisher.example/article",
+  };
+  const { graph } = postConnectionsGraph({
+    ...connectionsFixture,
+    incoming: [
+      {
+        ...incomingConnection,
+        origin,
+        evidence: { ...incomingConnection.evidence, domain: origin.domain },
+      },
+    ],
+    outgoing: [],
+  });
+  const sourceId = connectionNodeId("source", origin.domain);
+  const sourceEdges = graph.edges.filter((edge) => edge.source === sourceId);
+  expect(sourceEdges).toHaveLength(1);
+  expect(sourceEdges[0]).toMatchObject({
+    kind: "collected",
+    label: "collected",
+  });
+  expect(graph.edges.some((edge) => edge.label === "published")).toBe(false);
+});
