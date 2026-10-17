@@ -104,7 +104,9 @@ Portrait videos keep their natural proportions within the available space.
 The raw video reference is hidden while its player is shown and returns if
 playback fails. Raw URLs represented by clickable preview cards, including
 YouTube cards, are also hidden. Descriptive links and links without previews
-remain available.
+remain available. YouTube previews play inline when selected, with a separate
+**Watch on YouTube** link for videos that cannot be embedded. Closing the video
+or navigating to another view stops playback.
 
 Remote media is labelled and video plays only on demand. Select the post text
 or timestamp to open it; inline links and media controls work independently.

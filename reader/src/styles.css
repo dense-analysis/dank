@@ -2314,6 +2314,53 @@ input[type="checkbox"] {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.x-youtube-trigger {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+.x-youtube-trigger .x-link-domain {
+  color: var(--green);
+}
+.x-youtube-player {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #000;
+}
+.x-youtube-player iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  /* YouTube's minimum embedded player viewport is 200 by 200 pixels.
+     https://developers.google.com/youtube/player_parameters */
+  min-height: 200px;
+  border: 0;
+}
+.x-youtube-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.x-youtube-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.x-youtube-actions a:hover {
+  color: var(--green);
+}
+.x-youtube-actions .text-button {
+  font-size: inherit;
+}
 .x-replies-notice {
   border-top: 1px solid var(--line);
   margin-top: 28px;

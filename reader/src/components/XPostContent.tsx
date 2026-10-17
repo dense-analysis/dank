@@ -1,7 +1,7 @@
 import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { articleText } from "../lib/article";
-import type { Post, XLink, XMedia } from "../lib/types";
+import type { Post, XMedia } from "../lib/types";
 import { xMedia, xMediaUrl } from "../lib/x";
 import {
   previewReferenceKey,
@@ -12,6 +12,7 @@ import { ArticleBody } from "./ArticleBody";
 import { HighlightedText } from "./HighlightedText";
 import { safeUrl } from "./PostCard";
 import { ReaderLink } from "./ReaderLink";
+import { XLinkPreview } from "./XLinkPreview";
 import { XPostText } from "./XPostText";
 
 // Short posts stay fully readable; long notes expand without duplicating their text.
@@ -217,43 +218,5 @@ function XAttachment({
         </figcaption>
       )}
     </figure>
-  );
-}
-
-function XLinkPreview({ link }: { link: XLink }) {
-  const [imageFailed, setImageFailed] = useState(false);
-  const url = previewReferenceKey(link.url);
-  if (!url) return null;
-
-  const domain = new URL(url).hostname.replace(/^www\./, "");
-  const image = xMediaUrl(link.image_url);
-
-  return (
-    <a
-      className="x-link-preview"
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Open link: ${link.title || domain}`}
-    >
-      {image && !imageFailed && (
-        <img
-          src={image}
-          alt=""
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={() => setImageFailed(true)}
-        />
-      )}
-      <span className="x-link-copy">
-        <span className="x-link-domain">
-          {domain} <ExternalLink size={12} aria-hidden="true" />
-        </span>
-        <strong>{link.title || link.url}</strong>
-        {link.description && (
-          <span className="x-link-description">{link.description}</span>
-        )}
-      </span>
-    </a>
   );
 }
