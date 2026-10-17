@@ -100,7 +100,11 @@ const sources: Source[] = [
   },
 ];
 
-async function mockCollections(page: Page, xEnabled = true) {
+async function mockCollections(
+  page: Page,
+  xEnabled = true,
+  availableSources = sources,
+) {
   const state = { requests: [] as URL[], pageSize: posts.length };
   const icon = {
     contentType: "image/svg+xml",
@@ -121,7 +125,9 @@ async function mockCollections(page: Page, xEnabled = true) {
     if (url.pathname.endsWith("/sources")) {
       await route.fulfill({
         json: {
-          sources: sources.filter((source) => xEnabled || source.kind !== "x"),
+          sources: availableSources.filter(
+            (source) => xEnabled || source.kind !== "x",
+          ),
           total_posts: posts.length,
         },
       });
@@ -253,15 +259,21 @@ test("X accounts have accessible disclosure, safe icons and initial fallbacks", 
   await page.goto("/reader/");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   const reporter = nav.getByRole("button", {
-    name: "@reporter, 4 collected posts",
+    name: /City Reporter.*@reporter.*4 collected posts/,
     exact: true,
   });
   await expect(reporter).toBeVisible();
   await expect(reporter).toHaveAttribute("title", "City Reporter (@reporter)");
+  await expect(reporter.locator(".collection-name")).toHaveText(
+    "City Reporter",
+  );
+  await expect(reporter).not.toHaveText(/@reporter/);
   await expect(reporter.locator("img")).toHaveJSProperty("naturalWidth", 32);
   await expect(reporter.locator("img")).toHaveAttribute("alt", "");
   await expect(
-    nav.getByRole("button", { name: /@observer,/ }).locator("img"),
+    nav
+      .getByRole("button", { name: /@observer.*collected posts/ })
+      .locator("img"),
   ).toHaveJSProperty("naturalWidth", 32);
 
   for (const [handle, initial] of [
@@ -270,7 +282,7 @@ test("X accounts have accessible disclosure, safe icons and initial fallbacks", 
     ["untrusted", "U"],
   ]) {
     const account = nav.getByRole("button", {
-      name: `@${handle}, 0 collected posts`,
+      name: new RegExp(`@${handle}.*0 collected posts`),
       exact: true,
     });
     await expect(account.locator(".identity-avatar")).toHaveText(initial);
@@ -376,7 +388,7 @@ test("account search, author, loaded pages and history survive article navigatio
   await expect(page.locator(".post-card")).toHaveCount(2);
   await page
     .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("button", { name: /@observer,/ })
+    .getByRole("button", { name: /@observer.*collected posts/ })
     .click();
   await expect(story(page, observer)).toBeVisible();
   await expect(page.locator(".post-card")).toHaveCount(1);
@@ -397,7 +409,7 @@ test("configured accounts without posts remain selectable and X can be absent", 
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav
     .getByRole("button", {
-      name: "@quiet_account, 0 collected posts",
+      name: /No posts yet.*@quiet_account.*0 collected posts/,
       exact: true,
     })
     .click();
@@ -436,13 +448,15 @@ for (const width of [1440, 390, 320]) {
 
     const nav = page.getByRole("navigation", { name: "Main navigation" });
     await expect(
-      nav.getByRole("button", { name: /@quiet_account,/ }),
+      nav.getByRole("button", { name: /@quiet_account.*collected posts/ }),
     ).toBeVisible();
     await noOverflow(page);
     await page.screenshot({
       path: testInfo.outputPath(`collections-navigation-${width}.png`),
     });
-    await nav.getByRole("button", { name: /@reporter,/ }).click();
+    await nav
+      .getByRole("button", { name: /@reporter.*collected posts/ })
+      .click();
     await expect(
       page.getByRole("dialog", { name: "Navigation", exact: true }),
     ).toHaveCount(0);
@@ -521,3 +535,80 @@ test("source links and source rows select their collection", async ({
     await expect(story(page, post)).toBeVisible();
   }
 });
+
+for (const width of [1440, 390, 320]) {
+  test(`expanded collection lists allow about fifteen rows and remain reachable at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1100 });
+    const manySources = sources.map((source) => {
+      if (source.kind === "x") {
+        return {
+          ...source,
+          accounts: Array.from({ length: 20 }, (_, index) => ({
+            handle: `account_${index + 1}`,
+            name: index === 0 ? "Grant Sanderson" : `Reporter ${index + 1}`,
+            icon_url: null,
+            count: index,
+          })),
+        };
+      }
+
+      if (source.kind === "reddit") {
+        return {
+          ...source,
+          communities: Array.from({ length: 20 }, (_, index) => ({
+            name: `community_${index + 1}`,
+            count: index,
+          })),
+        };
+      }
+
+      return source;
+    });
+    await mockCollections(page, true, manySources);
+    await page.goto("/reader/");
+
+    if (width < 600)
+      await page
+        .getByRole("button", { name: "Open navigation", exact: true })
+        .click();
+
+    const nav = page.getByRole("navigation", { name: "Main navigation" });
+    const grant = nav.getByRole("button", {
+      name: /Grant Sanderson.*@account_1.*0 collected posts/,
+    });
+    await expect(grant.locator(".collection-name")).toHaveText(
+      "Grant Sanderson",
+    );
+
+    for (const id of ["x-accounts", "reddit-communities"]) {
+      const list = page.locator(`[id="${id}"]`);
+      const capacity = await list.evaluate((element) => {
+        const row = element.querySelector("li");
+
+        return {
+          rows:
+            element.clientHeight / (row?.getBoundingClientRect().height ?? 1),
+          scrolls: element.scrollHeight > element.clientHeight,
+        };
+      });
+      expect(capacity.rows).toBeGreaterThanOrEqual(14);
+      expect(capacity.rows).toBeLessThanOrEqual(17);
+      expect(capacity.scrolls).toBe(true);
+      const lastItem = list.getByRole("button").last();
+      await lastItem.scrollIntoViewIfNeeded();
+      await expect(lastItem).toBeInViewport();
+    }
+
+    const sourceLink = nav.getByRole("button", {
+      name: "Sources",
+      exact: true,
+    });
+    await sourceLink.scrollIntoViewIfNeeded();
+    await expect(sourceLink).toBeInViewport();
+    await noOverflow(page);
+    await sourceLink.click();
+    await expect(page).toHaveURL(/view=sources/);
+  });
+}

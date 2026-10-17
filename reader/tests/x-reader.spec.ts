@@ -26,6 +26,9 @@ const profile = {
   ],
   media: [],
   reply_count: 24,
+  repost_count: 136,
+  like_count: 931,
+  view_count: 54000,
   replies_status: "not_collected" as const,
   captured_at: "2026-10-17T00:00:00Z",
 };
@@ -48,7 +51,14 @@ const paragraphs = Array.from(
   (_, index) =>
     `Paragraph ${index + 1}: A longer note keeps its full explanation, with enough context to understand the idea without losing the end of the post.`,
 );
-const longProfile = { ...profile, links: [], reply_count: null };
+const longProfile = {
+  ...profile,
+  links: [],
+  reply_count: null,
+  repost_count: null,
+  like_count: null,
+  view_count: null,
+};
 const longNote: Post = {
   ...grant,
   id: "long-note",
@@ -63,6 +73,9 @@ const attachments = {
   ...profile,
   links: [],
   reply_count: 0,
+  repost_count: 0,
+  like_count: 0,
+  view_count: 0,
   media: [
     {
       type: "image" as const,
@@ -197,6 +210,36 @@ for (const width of [1440, 390, 320]) {
       await expectIdentity(card);
       await expect(card.getByText(postText, { exact: true })).toHaveCount(1);
       await expect(card.locator("h2")).toHaveCount(0);
+      await expect(card.getByText("Open post", { exact: true })).toHaveCount(0);
+      const engagement = card.getByRole("group", {
+        name: "Engagement when collected",
+      });
+      await expect(
+        engagement.getByRole("link", {
+          name: "24 comments reported when collected",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(engagement).toContainText("136");
+      await expect(engagement).toContainText("931");
+      await expect(engagement).toContainText(/54K/i);
+      expect(
+        await card
+          .locator(".article-body")
+          .evaluate((element) => Number(getComputedStyle(element).fontWeight)),
+      ).toBeGreaterThan(400);
+
+      if (width === 1440) {
+        const name = await card.locator(".account-name").boundingBox();
+        const timestamp = await card
+          .locator(".x-post-header time")
+          .boundingBox();
+        expect(name).not.toBeNull();
+        expect(timestamp).not.toBeNull();
+        expect(
+          Math.abs((name?.y ?? 0) - (timestamp?.y ?? 0)),
+        ).toBeLessThanOrEqual(3);
+      }
       const preview = card.getByRole("link", {
         name: `Open link: ${videoTitle}`,
       });
@@ -206,7 +249,7 @@ for (const width of [1440, 390, 320]) {
         320,
       );
       await expect(preview).toHaveAttribute("target", "_blank");
-      await openPost(card).click();
+      await card.getByText(postText, { exact: true }).click();
       const reader = page.getByRole("main", { name: "X post reader" });
       await expectIdentity(reader);
       await expect(reader.getByText(postText, { exact: true })).toHaveCount(1);
@@ -441,4 +484,245 @@ test("post links retain search context in a new tab and Back restores the card a
   await expect(page).toHaveURL(originalUrl);
   await expect(target).toBeFocused();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scroll);
+});
+
+const shortParagraphs = [
+  "A first observation from the collected post opens the full discussion.",
+  "A second paragraph stays independently clickable without repeating a headline.",
+];
+const textPost: Post = {
+  ...grant,
+  id: "text-interactions",
+  title: "Collected post with separate paragraphs and links",
+  html:
+    shortParagraphs.map((paragraph) => `<p>${paragraph}</p>`).join("") +
+    '<p>Read <a href="https://example.com/research">the complete research</a> with <a href="https://x.com/colleague">@colleague</a>.</p>',
+  x: { ...profile, links: [] },
+};
+
+for (const width of [1440, 390, 320]) {
+  test(`ordinary post paragraphs open the reader and Back restores focus at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockX(context, [textPost]);
+    await page.goto("/reader/?view=x&account=3blue1brown&q=collected");
+    const originalUrl = page.url();
+
+    for (const paragraph of shortParagraphs) {
+      const card = page.locator(".post-card");
+      await card.getByText(paragraph, { exact: true }).click();
+      await expect(
+        page.getByRole("main", { name: "X post reader" }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Back to stories", exact: true })
+        .click();
+      await expect(page).toHaveURL(originalUrl);
+      await expect(openPost(card, textPost)).toBeFocused();
+    }
+
+    await page
+      .locator(".post-card")
+      .getByRole("link", {
+        name: "24 comments reported when collected",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole("region", { name: "Reply collection" }),
+    ).toContainText("24 replies reported when collected.");
+  });
+}
+
+test("selecting post text leaves the feed open and preserves the selected words", async ({
+  page,
+  context,
+}) => {
+  await mockX(context, [textPost]);
+  await page.goto("/reader/?view=x");
+  const originalUrl = page.url();
+  const paragraph = page
+    .locator(".post-card")
+    .getByText(shortParagraphs[0], { exact: true });
+  const points = await paragraph.evaluate((element) => {
+    const node = element.firstChild;
+
+    if (!node || node.nodeType !== Node.TEXT_NODE)
+      throw new Error("Expected a text run");
+
+    const range = document.createRange();
+    const point = (offset: number) => {
+      range.setStart(node, offset);
+      range.setEnd(node, offset + 1);
+      const rect = range.getBoundingClientRect();
+
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    };
+
+    return { start: point(2), end: point(38) };
+  });
+  await page.mouse.move(points.start.x, points.start.y);
+  await page.mouse.down();
+  await page.mouse.move(points.end.x, points.end.y, { steps: 12 });
+  await page.mouse.up();
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.getSelection()?.toString().length ?? 0),
+    )
+    .toBeGreaterThan(20);
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.getByRole("main", { name: "X post reader" })).toHaveCount(
+    0,
+  );
+});
+
+for (const gesture of ["middle", "modifier"] as const) {
+  test(`${gesture} clicking post text opens a new tab with the current feed context`, async ({
+    page,
+    context,
+  }) => {
+    await mockX(context, [textPost]);
+    await page.goto(
+      "/reader/?view=x&account=3blue1brown&q=collected&sort=oldest",
+    );
+    const originalUrl = page.url();
+    const text = page
+      .locator(".post-card")
+      .getByText(shortParagraphs[1], { exact: true });
+    const [tab] = await Promise.all([
+      context.waitForEvent("page"),
+      text.click(
+        gesture === "middle"
+          ? { button: "middle" }
+          : { modifiers: ["ControlOrMeta"] },
+      ),
+    ]);
+    await expect(
+      tab.getByRole("main", { name: "X post reader" }),
+    ).toBeVisible();
+    expect(Object.fromEntries(new URL(tab.url()).searchParams)).toMatchObject({
+      view: "x",
+      account: "3blue1brown",
+      q: "collected",
+      sort: "oldest",
+      article: textPost.id,
+      article_source: "x.com",
+    });
+    await tab.close();
+    await expect(page).toHaveURL(originalUrl);
+  });
+}
+
+test("inline destinations and mentions remain independent from opening the card", async ({
+  page,
+  context,
+}) => {
+  await mockX(context, [textPost]);
+  await context.route("https://example.com/**", (route) =>
+    route.fulfill({ body: "Research destination" }),
+  );
+  await context.route("https://x.com/colleague", (route) =>
+    route.fulfill({ body: "Colleague destination" }),
+  );
+  await page.goto("/reader/?view=x");
+  const originalUrl = page.url();
+  const card = page.locator(".post-card");
+  await expect(card.locator("a a")).toHaveCount(0);
+
+  for (const [name, url] of [
+    ["the complete research", "https://example.com/research"],
+    ["@colleague", "https://x.com/colleague"],
+  ]) {
+    const [tab] = await Promise.all([
+      context.waitForEvent("page"),
+      card.getByRole("link", { name, exact: true }).click(),
+    ]);
+    await tab.waitForURL(url);
+    expect(await tab.evaluate(() => window.opener === null)).toBe(true);
+    await tab.close();
+    await expect(page).toHaveURL(originalUrl);
+    await expect(page.getByRole("main", { name: "X post reader" })).toHaveCount(
+      0,
+    );
+  }
+});
+
+test("playing a feed video does not open the post", async ({
+  page,
+  context,
+}) => {
+  await mockX(context, [mediaPost]);
+  await page.goto("/reader/?view=x");
+  const originalUrl = page.url();
+  const video = page.locator(".post-card video").first();
+  await video.scrollIntoViewIfNeeded();
+  await video.evaluate((element) => {
+    (element as HTMLVideoElement).muted = true;
+  });
+  const box = await video.boundingBox();
+  expect(box).not.toBeNull();
+  await video.click({ position: { x: 22, y: (box?.height ?? 0) - 25 } });
+  await expect
+    .poll(() =>
+      video.evaluate((element) => (element as HTMLVideoElement).currentTime),
+    )
+    .toBeGreaterThan(0);
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.getByRole("main", { name: "X post reader" })).toHaveCount(
+    0,
+  );
+});
+
+test("engagement distinguishes uncaptured counts from captured zeroes", async ({
+  page,
+  context,
+}) => {
+  await mockX(context, [longNote, mediaPost]);
+  await page.goto("/reader/?view=x");
+  const unknownCard = page
+    .locator(".post-card")
+    .filter({
+      has: page.getByRole("link", {
+        name: `Read ${longNote.title}`,
+        exact: true,
+      }),
+    });
+  const unknown = unknownCard.getByRole("group", {
+    name: "Engagement when collected",
+  });
+  await expect(
+    unknown.getByRole("link", { name: "Comments not captured", exact: true }),
+  ).toBeVisible();
+
+  for (const metric of ["Reposts", "Likes", "Views"]) {
+    await expect(
+      unknown.getByTitle(`${metric} not captured`, { exact: true }),
+    ).toBeVisible();
+  }
+
+  const zeroCard = page
+    .locator(".post-card")
+    .filter({
+      has: page.getByRole("link", {
+        name: `Read ${mediaPost.title}`,
+        exact: true,
+      }),
+    });
+  const zero = zeroCard.getByRole("group", {
+    name: "Engagement when collected",
+  });
+  await expect(
+    zero.getByRole("link", {
+      name: "0 comments reported when collected",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  for (const metric of ["reposts", "likes", "views"]) {
+    await expect(
+      zero.getByTitle(`0 ${metric} reported when collected`, { exact: true }),
+    ).toBeVisible();
+  }
 });
