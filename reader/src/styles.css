@@ -2276,6 +2276,11 @@ input[type="checkbox"] {
 .x-post-content .article-body > :last-child {
   margin-bottom: 0;
 }
+/* A moving focused toggle must not become the browser's reading anchor.
+   https://drafts.csswg.org/css-scroll-anchoring/#anchor-node-selection */
+html:has(.x-text-expanding:not([hidden] *)) {
+  overflow-anchor: none;
+}
 .x-text-actions {
   display: flex;
   align-items: baseline;

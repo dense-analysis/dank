@@ -8,11 +8,13 @@ export function useDisclosureHeight(expanded: boolean) {
   const before = useRef<number | undefined>(undefined);
   const active = useRef<Animation | null>(null);
   const [retainExpanded, setRetainExpanded] = useState(false);
+  const [expanding, setExpanding] = useState(false);
 
   function prepare() {
     // Capture the interpolated height too, so a quick reversal starts where it is.
     before.current = viewport.current?.getBoundingClientRect().height;
     setRetainExpanded(false);
+    setExpanding(!expanded);
   }
 
   useLayoutEffect(() => {
@@ -20,16 +22,19 @@ export function useDisclosureHeight(expanded: boolean) {
     const from = before.current;
     before.current = undefined;
 
-    if (
-      !element ||
-      from === undefined ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-      typeof element.animate !== "function"
-    )
-      return;
+    if (!element || from === undefined) return;
 
+    // Flush the new layout while scroll anchoring is disabled, even without motion.
     const to = element.getBoundingClientRect().height;
-    if (Math.abs(from - to) < 1) return;
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      typeof element.animate !== "function" ||
+      Math.abs(from - to) < 1
+    ) {
+      const frame = requestAnimationFrame(() => setExpanding(false));
+
+      return () => cancelAnimationFrame(frame);
+    }
 
     // Measure the new content first, then retain the expanded text during shrink.
     // React flushes this layout update before paint; media lives outside this box.
@@ -47,6 +52,7 @@ export function useDisclosureHeight(expanded: boolean) {
       if (expanded) {
         animation.cancel();
         active.current = null;
+        setExpanding(false);
       } else {
         setRetainExpanded(false);
       }
@@ -67,5 +73,10 @@ export function useDisclosureHeight(expanded: boolean) {
     }
   }, [retainExpanded]);
 
-  return { viewport, displayExpanded: expanded || retainExpanded, prepare };
+  return {
+    viewport,
+    displayExpanded: expanded || retainExpanded,
+    expanding,
+    prepare,
+  };
 }

@@ -25,12 +25,21 @@ export function XPostPreview({
   const {
     viewport: text,
     displayExpanded,
+    expanding,
     prepare,
   } = useDisclosureHeight(expanded);
   const returnToPost = useRef(false);
+  const expansionScroll = useRef<number | undefined>(undefined);
 
   useLayoutEffect(() => {
-    if (expanded || !returnToPost.current) return;
+    if (expanded) {
+      const top = expansionScroll.current;
+      expansionScroll.current = undefined;
+      if (top !== undefined) window.scrollTo({ top, behavior: "instant" });
+
+      return;
+    }
+    if (!returnToPost.current) return;
 
     returnToPost.current = false;
     const post = text.current?.closest("article");
@@ -73,7 +82,11 @@ export function XPostPreview({
 
   return (
     <>
-      <div id={textId} ref={text}>
+      <div
+        id={textId}
+        ref={text}
+        className={expanding ? "x-text-expanding" : undefined}
+      >
         {displayExpanded && !navigation ? (
           <ArticleBody html={html} query={query} />
         ) : (
@@ -92,6 +105,7 @@ export function XPostPreview({
             aria-expanded={expanded}
             aria-controls={textId}
             onClick={() => {
+              if (!expanded) expansionScroll.current = window.scrollY;
               prepare();
               returnToPost.current = expanded;
               setExpanded(!expanded);

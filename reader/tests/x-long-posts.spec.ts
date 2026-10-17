@@ -691,3 +691,117 @@ test("rapid disclosure reversals settle to the latest state without pinning the 
     .toBe(0);
   expect((await viewport.innerText()).length).toBeLessThanOrEqual(303);
 });
+
+for (const [width, query, reducedMotion, input] of [
+  [1440, "", "no-preference", "pointer"],
+  [1440, "view=x&account=researcher", "no-preference", "keyboard"],
+  [390, "view=x&account=researcher", "no-preference", "pointer"],
+  [390, "view=x&account=researcher", "reduce", "keyboard"],
+] as const) {
+  test(`Show more preserves the viewport at ${width}px in ${query || "All"} with ${reducedMotion} motion using ${input}`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ reducedMotion });
+    const filler = (id: string) =>
+      makePost(id, `<p>${"Surrounding post text. ".repeat(6)}</p>`);
+    await mockPosts(context, [
+      ...Array.from({ length: 4 }, (_, index) => filler(`before-${index}`)),
+      article,
+      ...Array.from({ length: 5 }, (_, index) => filler(`after-${index}`)),
+    ]);
+    await page.goto(`/reader/?${query}`);
+    const card = page.locator(".post-card").filter({
+      has: page.getByRole("link", {
+        name: `Read ${article.title}`,
+        exact: true,
+      }),
+    });
+    const viewport = card.locator(".x-post-content > div[id]");
+    const toggle = card.getByRole("button", { name: "Show more", exact: true });
+    await toggle.scrollIntoViewIfNeeded();
+    await toggle.evaluate((button) =>
+      scrollBy(0, button.getBoundingClientRect().top - 680),
+    );
+    if (input === "keyboard") await toggle.focus();
+    const before = await page.evaluate(() => scrollY);
+    const textTop = (await viewport.boundingBox())?.y ?? 0;
+    const recording = await viewport.evaluateHandle((element) => {
+      const positions: number[] = [];
+      const observer = new ResizeObserver(() => positions.push(scrollY));
+      observer.observe(element);
+
+      return { positions, stop: () => observer.disconnect() };
+    });
+    if (input === "keyboard") await toggle.press("Enter");
+    else await toggle.click();
+    await expect(
+      card.getByRole("button", { name: "Show less", exact: true }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect
+      .poll(() =>
+        viewport.evaluate((element) => element.getAnimations().length),
+      )
+      .toBe(0);
+    await expect(page.locator(".x-text-expanding")).toHaveCount(0);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const positions = await recording.evaluate((record) => {
+      record.stop();
+      return record.positions;
+    });
+    await recording.dispose();
+    expect(
+      Math.abs((await page.evaluate(() => scrollY)) - before),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(((await viewport.boundingBox())?.y ?? 0) - textTop),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      positions.every((position) => Math.abs(position - before) <= 1),
+    ).toBe(true);
+    await expect(
+      card.getByRole("button", { name: "Show less", exact: true }),
+    ).toBeFocused();
+  });
+}
+
+test("expanding does not fight manual scrolling and releases its temporary anchoring override", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await mockPosts(context, [
+    article,
+    ...Array.from({ length: 6 }, (_, index) =>
+      makePost(
+        `after-${index}`,
+        "<p>Following post with enough content to keep scrolling.</p>",
+      ),
+    ),
+  ]);
+  await page.goto("/reader/?view=x&account=researcher");
+  const card = page.locator(".post-card").first();
+  const toggle = card.getByRole("button", { name: "Show more", exact: true });
+  await toggle.scrollIntoViewIfNeeded();
+  await toggle.click();
+  await expect(card.locator(".x-text-expanding")).toHaveCount(1);
+  const before = await page.evaluate(() => scrollY);
+  await page.mouse.wheel(0, 180);
+  await expect
+    .poll(() => page.evaluate(() => scrollY))
+    .toBeGreaterThan(before + 50);
+  await expect(page.locator(".x-text-expanding")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).overflowAnchor,
+    ),
+  ).toBe("auto");
+  expect(await page.evaluate(() => scrollY)).toBeGreaterThan(before + 50);
+});
