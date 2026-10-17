@@ -49,6 +49,7 @@ from dank.web.reader_reddit import (
 )
 from dank.web.reader_reddit_history import preserve_reddit_archives
 from dank.web.reader_x import post_x_content
+from dank.web.reader_youtube import add_youtube_routes
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -56,6 +57,7 @@ READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
 
 def add_reader_routes(app: web.Application) -> None:
     app.middlewares.append(reader_errors)
+    add_youtube_routes(app)
     app.router.add_get("/api/reader/sources", handle_sources)
     app.router.add_get("/api/reader/posts", handle_posts)
     app.router.add_get("/api/reader/post", handle_post)

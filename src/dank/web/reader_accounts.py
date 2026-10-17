@@ -34,6 +34,9 @@ def source_kind(domain: str) -> str:
     if domain in X_DOMAINS:
         return "x"
 
+    if domain == "youtube.com":
+        return "youtube"
+
     return "reddit" if domain == "reddit.com" else "rss"
 
 

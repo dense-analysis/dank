@@ -192,6 +192,9 @@ async def _clickhouse_context(app: web.Application):
         for statement in schema.read_text().split(";"):
             if statement.strip():
                 await client.execute(statement)
+        from dank.web.reader_youtube import ensure_youtube_storage
+
+        await ensure_youtube_storage(client)
         yield
     finally:
         await client.__aexit__(None, None, None)

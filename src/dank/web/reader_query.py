@@ -163,8 +163,8 @@ def _validate(filters: ReaderFilters) -> None:
 
 
 def _validate_collection_filters(filters: ReaderFilters) -> None:
-    if filters.kind not in {"", "all", "stories", "reddit", "x"}:
-        raise ValueError("kind must be all, stories, reddit or x")
+    if filters.kind not in {"", "all", "stories", "reddit", "x", "youtube"}:
+        raise ValueError("kind must be all, stories, reddit, x or youtube")
 
     if filters.account and (
         filters.kind != "x"
@@ -331,9 +331,12 @@ def _collection_conditions(
 
     if filters.kind == "reddit":
         conditions.append("domain = 'reddit.com'")
+    elif filters.kind == "youtube":
+        conditions.append("domain = 'youtube.com'")
     elif filters.kind == "stories":
         conditions.append(
-            "domain != 'reddit.com' AND domain NOT IN %(x_domains)s",
+            "domain != 'reddit.com' AND domain NOT IN %(x_domains)s "
+            "AND domain != 'youtube.com'",
         )
         params["x_domains"] = list(X_DOMAINS)
     elif filters.kind == "x":

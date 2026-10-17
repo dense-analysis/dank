@@ -22,6 +22,7 @@ from dank.process.rss import (
     recover_post_from_page,
 )
 from dank.process.x import convert_raw_x_post
+from dank.process.youtube import convert_raw_youtube_post
 from dank.progress import Progress
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
@@ -458,6 +459,7 @@ async def run_process(
             converter = {
                 "x.com": convert_raw_x_post,
                 "reddit.com": convert_raw_reddit_post,
+                "youtube.com": convert_raw_youtube_post,
             }.get(source.domain, convert_raw_rss_post)
             logger.info("Processing source domain=%s", source.domain)
 

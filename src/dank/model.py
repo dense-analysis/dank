@@ -106,3 +106,21 @@ class RedditCommunityTotal(NamedTuple):
     scraped_at: datetime.datetime
     request_url: str
     payload: str
+
+
+class YouTubeDiscovery(NamedTuple):
+    """A feed appearance, independent of its canonical video or post."""
+
+    run_id: str
+    item_id: str
+    kind: str
+    observed_at: datetime.datetime
+    feed_url: str
+    feed_name: str
+    feed_kind: str
+    tab: str
+    shelf: str
+    rank: int
+    region: str
+    playlist_id: str
+    payload: str
