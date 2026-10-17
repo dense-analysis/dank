@@ -50,8 +50,8 @@ make process MODE=native ARGS='--age 24h --domains "^news\.ycombinator\.com$"'
 ```
 
 Omit `MODE=native` for Docker. Normal collection saves titles, outbound links,
-authors, points, comment counts and original source records. It does not fetch
-comments or archive the external articles. Open the original article from the
+available authors, points, comment counts and original source records. It does
+not fetch comments or archive the external articles. Open the original article from the
 reader, or open its saved Hacker News discussion view.
 
 ## Detailed scrape
@@ -65,8 +65,9 @@ This separate pass uses the [official Hacker News API](https://github.com/Hacker
 to capture story text and comments for up to `detail_max_posts` pending saved
 stories. It considers snapshots collected within the configured `days` window,
 newest stories first. It does not visit external article pages or recollect the
-listing. Completed and bounded partial discussions are skipped on subsequent
-passes; failed captures remain eligible.
+listing. Completed discussions and partial captures that reached the comment
+limit are skipped on subsequent passes. Failed captures and partial captures interrupted
+by a network error or timeout remain eligible.
 
 Each discussion is bounded by `comment_limit` and `detail_timeout_seconds`.
 Replies retain their parents and API order. Deleted or dead comments are not

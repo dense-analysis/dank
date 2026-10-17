@@ -92,12 +92,10 @@ async def run_scrape(
     x_details: bool = False,
     hacker_news_details: bool = False,
 ) -> None:
-    if reddit_details or x_details or hacker_news_details:
-        pattern = (
-            r"^news\.ycombinator\.com$" if hacker_news_details
-            else r"^reddit\.com$" if reddit_details else r"^x\.com$"
-        )
-        settings = filter_settings_sources(settings, re.compile(pattern))
+    settings = _detail_source_settings(
+        settings, reddit_details=reddit_details, x_details=x_details,
+        hacker_news_details=hacker_news_details,
+    )
 
     if not settings.sources:
         logger.warning("No sources selected; check sources and --domains.")
@@ -209,6 +207,28 @@ async def run_scrape(
         counts["files_cached"], counts["files_failed"],
         counts["media_skipped"], history.run_id,
     )
+
+
+def _detail_source_settings(
+    settings: Settings, *, reddit_details: bool, x_details: bool,
+    hacker_news_details: bool,
+) -> Settings:
+    for enabled, domain in (
+        (hacker_news_details, "news.ycombinator.com"),
+        (reddit_details, "reddit.com"), (x_details, "x.com"),
+    ):
+        if enabled:
+            selected = filter_settings_sources(
+                settings, re.compile("^" + re.escape(domain) + "$"),
+            )
+
+            if hacker_news_details:
+                # HN listings share one saved-story queue and detail limit.
+                selected = selected._replace(sources=selected.sources[:1])
+
+            return selected
+
+    return settings
 
 
 async def _run_source_sessions(
@@ -744,12 +764,13 @@ async def _load_pending_hacker_news_posts(
         "WHERE source = 'hacker_news' AND domain = 'news.ycombinator.com' "
         "AND scraped_at >= %(cutoff)s "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
-        "WHERE JSONExtractString(payload, 'comment_capture', 'status') "
-        "NOT IN ('captured', 'partial') "
-        "AND post_id NOT IN (SELECT post_id FROM raw_posts "
-        "WHERE domain = 'news.ycombinator.com' "
-        "AND JSONExtractString(payload, 'comment_capture', 'status') "
-        "IN ('captured', 'partial')) "
+        "WHERE post_id NOT IN (SELECT post_id FROM raw_posts "
+        "WHERE domain = 'news.ycombinator.com' AND source = 'hacker_news' "
+        "AND (JSONExtractString(payload, 'comment_capture', 'status') "
+        "= 'captured' OR (JSONExtractString(payload, "
+        "'comment_capture', 'status') = 'partial' AND "
+        "JSONExtractString(payload, 'comment_capture', 'reason') "
+        "= 'comment_limit'))) "
         "ORDER BY post_created_at DESC, post_id DESC LIMIT %(limit)s",
         {"limit": settings.detail_max_posts,
          "cutoff": datetime.datetime.now(datetime.UTC)

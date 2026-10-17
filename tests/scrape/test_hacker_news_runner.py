@@ -107,6 +107,7 @@ async def test_details_select_only_saved_hacker_news_and_persist_each_batch(
     settings, client = setup(monkeypatch, tmp_path)
     settings = settings._replace(sources=(
         *settings.sources, SourceConfig("example.test", ()),
+        SourceConfig(DOMAIN, (), tags=("duplicate",)),
     ))
     item = post()
     load = AsyncMock(return_value=[item])
@@ -125,6 +126,7 @@ async def test_details_select_only_saved_hacker_news_and_persist_each_batch(
     monkeypatch.setattr(runner, "scrape_hacker_news", listing)
     await runner.run_scrape(settings, headless=True, hacker_news_details=True)
     assert collected == [item]
+    load.assert_awaited_once()
     assert {row["domain"] for row in client.rows["scrape_source_runs"]} == {
         DOMAIN,
     }
