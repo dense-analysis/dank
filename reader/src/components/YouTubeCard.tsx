@@ -44,6 +44,10 @@ export function YouTubeCard({
   const discovery = itemDiscovery(item, feed);
   const ranked =
     !!feed && discovery?.feed_url === feed && discovery.feed_kind === "hype";
+  const views = item.views_text
+    .replace(/(\d)\s+thousand\b/gi, "$1K")
+    .replace(/(\d)\s+million\b/gi, "$1M")
+    .replace(/(\d)\s+billion\b/gi, "$1B");
   const text = item.text || item.title;
   const longPost = item.kind === "post" && text.length > 350;
   const title =
@@ -189,9 +193,8 @@ export function YouTubeCard({
             <p className="yt-channel">{item.channel.name}</p>
           )}
           <p className="yt-video-meta">
-            {[item.views_text, item.published_text]
-              .filter(Boolean)
-              .join(" · ") || "Discovered in your collected feeds"}
+            {[views, item.published_text].filter(Boolean).join(" · ") ||
+              "Discovered in your collected feeds"}
           </p>
         </>
       )}
