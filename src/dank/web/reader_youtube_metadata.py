@@ -14,10 +14,12 @@ from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.youtube import VIDEO_ID
 
 METADATA_LOCK = web.AppKey("youtube_metadata_lock", asyncio.Lock)
+METADATA_LIMITER = web.AppKey("youtube_metadata_limiter", RequestLimiter)
 
 
 def add_metadata_routes(app: web.Application) -> None:
     app[METADATA_LOCK] = asyncio.Lock()
+    app[METADATA_LIMITER] = RequestLimiter(app["state"].settings.scrape)
     app.router.add_post(
         "/api/reader/youtube/metadata/{video_id}", handle_video_metadata,
     )
@@ -59,8 +61,7 @@ async def handle_video_metadata(request: web.Request) -> web.Response:
     if not known.rows:
         return web.json_response({"error": "Video not found"}, status=404)
 
-    settings = request.app["state"].settings
-    token = current_limiter.set(RequestLimiter(settings.scrape))
+    token = current_limiter.set(request.app[METADATA_LIMITER])
 
     try:
         # The lock makes simultaneous readers reuse the first persisted result.

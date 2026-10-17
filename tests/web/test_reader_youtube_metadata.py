@@ -13,6 +13,7 @@ from aiohttp.test_utils import make_mocked_request
 
 from dank.config import load_settings
 from dank.scrape import runner
+from dank.scrape.http import current_limiter
 from dank.storage.clickhouse import QueryResult
 from dank.web import reader_youtube_metadata as metadata
 from dank.web.reader_youtube import (
@@ -174,3 +175,34 @@ def test_metadata_and_full_details_have_separate_honest_statuses():
     assert item["metadata_capture"]["available"] is True
     assert item["metadata_capture"]["status"] == "failed"
     assert item["detail_capture"]["status"] == "disabled"
+
+
+async def test_metadata_requests_share_cooldown_but_apps_are_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([{"video_id": VIDEO}])
+    now = dt.datetime.now(dt.UTC)
+    observed: list[object] = []
+
+    async def collect(*args: Any) -> dict[str, Any]:
+        observed.append(current_limiter.get())
+
+        return {
+            "status": "captured", "provider": "youtube_oembed",
+            "observed_at": now, "retry_after": now + dt.timedelta(days=7),
+            "cached": False,
+        }
+
+    monkeypatch.setattr(metadata, "collect_youtube_video_metadata", collect)
+    req = request(client)
+    other = request(client)
+    await metadata.handle_video_metadata(req)
+    await metadata.handle_video_metadata(req)
+    await metadata.handle_video_metadata(other)
+    assert observed[0] is observed[1] is req.app[metadata.METADATA_LIMITER]
+    assert observed[2] is other.app[metadata.METADATA_LIMITER]
+    assert observed[0] is not observed[2]
+    other_lock = other.app[metadata.METADATA_LOCK]
+    assert req.app[metadata.METADATA_LOCK] is not other_lock
+    assert current_limiter.get() is None

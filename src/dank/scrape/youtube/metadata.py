@@ -94,7 +94,7 @@ def _metadata(raw: dict[str, Any]) -> dict[str, str]:
     )
     channel_path = urlsplit(channel_url).path
 
-    return {
+    fields = {
         "title": title.strip(),
         "channel_name": str(raw.get("author_name") or ""),
         "channel_url": channel_url,
@@ -107,6 +107,9 @@ def _metadata(raw: dict[str, Any]) -> dict[str, str]:
             "i2.ytimg.com", "i3.ytimg.com", "i4.ytimg.com",
         }),
     }
+    # Missing optional fields must not erase richer feed metadata.
+
+    return {key: value for key, value in fields.items() if value}
 
 
 def _provider_url(value: object, hosts: set[str]) -> str:

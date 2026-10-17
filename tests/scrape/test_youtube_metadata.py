@@ -71,6 +71,7 @@ async def test_preview_preserves_provider_and_canonical_identity():
     assert row["retry_after"] - row["observed_at"] == METADATA_TTL
     assert payload["title"] == PREVIEW["title"]
     assert payload["channel_name"] == "Kernel Recipes"
+    assert "channel_id" not in payload
     assert payload["thumbnail_url"] == PREVIEW["thumbnail_url"]
     assert payload["metadata_capture"]["available"] is True
     assert payload["metadata_capture"]["captured_at"]
@@ -111,8 +112,8 @@ async def test_untrusted_preview_urls_are_never_projected():
                        "thumbnail_url": "https://unrelated.example/image"})
     row = await fetch_video_metadata(cast(Any, HTTP(body.encode())), VIDEO)
     payload = json.loads(row["payload"])
-    assert payload["channel_url"] == ""
-    assert payload["thumbnail_url"] == ""
+    assert "channel_url" not in payload
+    assert "thumbnail_url" not in payload
 
 
 async def test_invalid_video_identity_never_sends_request():
