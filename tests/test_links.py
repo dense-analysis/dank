@@ -154,3 +154,15 @@ def test_content_evidence_changes_when_reprocessed_at_same_timestamp() -> None:
     assert not any(
         link["target_url"] == previous["target_url"] for link in current_links
     )
+
+
+@pytest.mark.parametrize("href", ["https://[broken", "//[bad", "http://bad:port"])
+def test_malformed_anchors_do_not_abort_indexing(href: str) -> None:
+    _, links = post_index_rows(_post(
+        f'<a href="{href}">Bad</a>'
+        '<a href="https://publisher.test/good">Valid</a>',
+    ))
+
+    assert [link["target_url"] for link in links] == [
+        "https://publisher.test/good",
+    ]

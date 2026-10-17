@@ -100,7 +100,15 @@ class _Links(HTMLParser):
 
         href = dict(attrs).get("href")
 
-        if href and (url := normalized_url(urljoin(self.base, href))):
+        if not href:
+            return
+
+        try:
+            url = normalized_url(urljoin(self.base, href))
+        except ValueError:
+            return
+
+        if url:
             self.urls.append(url)
 
             if dict(attrs).get("data-dank-hn-destination") == "1":

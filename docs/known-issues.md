@@ -34,7 +34,8 @@ with incoming Links. Ask/Tell HN citations do not replace their containing post.
 Known platform post IDs and observed redirects resolve aliases; ambiguous URLs
 are kept separate. Links are tied to processed versions and content hashes, so
 unprocessed captures and reprocessing cannot expose stale link relationships.
-Incoming lists show up to 50 references with the full count when more exist;
+Malformed legacy anchor URLs are skipped without preventing startup or indexing
+other links in the same post. Incoming lists show up to 50 references with the full count when more exist;
 this display limit does not apply to comments.
 
 See [configuration and collection](features/hacker-news.md),
