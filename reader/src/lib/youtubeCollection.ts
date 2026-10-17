@@ -22,6 +22,16 @@ export interface YouTubeReference {
   source: string;
   reader_url: string;
 }
+export interface YouTubeThumbnailVariant {
+  url: string;
+  first_seen: string;
+  last_seen: string;
+}
+export interface YouTubeTitleVersion {
+  title: string;
+  first_seen: string;
+  last_seen: string;
+}
 export interface YouTubeItem {
   id: string;
   kind: YouTubeKind;
@@ -31,6 +41,8 @@ export interface YouTubeItem {
   text: string;
   channel: { id: string; name: string; url: string };
   thumbnail_url: string | null;
+  thumbnail_variants?: YouTubeThumbnailVariant[];
+  title_history?: YouTubeTitleVersion[];
   video_url?: string | null;
   duration_text: string;
   views_text: string;
@@ -102,6 +114,20 @@ export function isYouTubeItem(value: unknown): value is YouTubeItem {
     isRecord(value.channel) &&
     strings(value.channel, ["id", "name", "url"]) &&
     (value.thumbnail_url === null || typeof value.thumbnail_url === "string") &&
+    (value.thumbnail_variants === undefined ||
+      (Array.isArray(value.thumbnail_variants) &&
+        value.thumbnail_variants.every(
+          (version) =>
+            isRecord(version) &&
+            strings(version, ["url", "first_seen", "last_seen"]),
+        ))) &&
+    (value.title_history === undefined ||
+      (Array.isArray(value.title_history) &&
+        value.title_history.every(
+          (version) =>
+            isRecord(version) &&
+            strings(version, ["title", "first_seen", "last_seen"]),
+        ))) &&
     (value.video_url === undefined ||
       value.video_url === null ||
       typeof value.video_url === "string") &&
@@ -331,4 +357,17 @@ export function youtubePostLinks(
   if (start < text.length) segments.push({ text: text.slice(start), start });
 
   return segments;
+}
+
+export function youtubeThumbnailSources(item: YouTubeItem): string[] {
+  return [
+    ...new Set(
+      [
+        item.thumbnail_url,
+        ...(item.thumbnail_variants ?? []).map((version) => version.url),
+      ]
+        .map(youtubeImageUrl)
+        .filter((url): url is string => !!url),
+    ),
+  ];
 }

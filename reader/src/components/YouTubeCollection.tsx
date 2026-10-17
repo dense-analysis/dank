@@ -27,6 +27,7 @@ import {
 import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
 import { CountryFlag } from "./CountryFlag";
 import { YouTubeCard } from "./YouTubeCard";
+import { YouTubeVersionHistory } from "./YouTubeVersionHistory";
 
 export function YouTubeCollection({
   params,
@@ -255,6 +256,7 @@ export function YouTubeCollection({
                 </p>
               </aside>
             </div>
+            <YouTubeVersionHistory item={selected} />
             {!!selected.references.length && (
               <section
                 className="yt-references"

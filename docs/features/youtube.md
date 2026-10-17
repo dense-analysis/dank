@@ -94,6 +94,37 @@ posts. Equivalent watch, short-link, embed and Shorts URLs share one video
 card, with links back to the collected posts that referenced it. A video does
 not need to be downloaded or directly collected from YouTube to appear here.
 
+## Thumbnail and title history
+
+Videos keep the same identity when their title or thumbnail changes. Raw
+captures preserve observed titles; discovery details show their first and last
+capture dates. A card retains the title from its selected feed snapshot.
+
+With image downloads enabled, thumbnails are checked again when a video is
+encountered. Changed bytes are saved separately, including changes at an unchanged
+URL. Identical images reuse storage, and visually similar resolutions or encodings
+are grouped for display. Original files and capture provenance remain available.
+Hovering or keyboard-focusing a preview crossfades its saved images without
+playing video; reduced-motion mode stays still. Details also show the images
+for touch and manual inspection.
+
+A 404 thumbnail triggers alternate thumbnail URLs for the same video. Recovery
+renditions are not additional discoveries. To retry saved missing thumbnails
+without crawling channels again:
+
+```sh
+make scrape ARGS='--retry-youtube-thumbnails'
+```
+
+Add `--youtube-thumbnail-id VIDEO_ID` for each video to limit repair and adopt
+its older cached images into the history. Add `MODE=native` for native execution.
+Other HTTP failures and configured media limits remain failures or skips.
+
+History represents what DANK observed, not every version YouTube might serve.
+[YouTube supports creator-run title and thumbnail tests](https://support.google.com/youtube/answer/16391400?hl=en),
+but a changed capture does not establish its cause. Incremental channel limits
+still apply: older videos gain new versions only when encountered again.
+
 ## Limits and downloads
 
 Limits apply per feed. Collection stops at the configured item/scroll budget,

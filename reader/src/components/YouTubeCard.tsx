@@ -8,9 +8,11 @@ import {
   youtubeImageUrl,
   youtubeLocalVideoUrl,
   youtubePostLinks,
+  youtubeThumbnailSources,
 } from "../lib/youtubeCollection";
 import { YouTubeLocalVideo } from "./YouTubeLocalVideo";
 import { YouTubePlayer } from "./YouTubePlayer";
+import { YouTubeThumbnail } from "./YouTubeThumbnail";
 
 export function YouTubeCard({
   item,
@@ -33,6 +35,10 @@ export function YouTubeCard({
   const [expanded, setExpanded] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const image = imageFailed ? undefined : youtubeImageUrl(item.thumbnail_url);
+  const thumbnails = youtubeThumbnailSources(item);
+  const thumbnailFallback = item.video_id
+    ? `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`
+    : undefined;
   const embed = youtubeEmbedUrl(item.url, window.location.origin);
   const original = safeUrl(item.url);
   const discovery = itemDiscovery(item, feed);
@@ -124,26 +130,14 @@ export function YouTubeCard({
                 positionKey={`youtube:${item.video_id}`}
               />
             ) : (
-              <button
-                type="button"
-                className="yt-play"
-                aria-label={`Play ${title}`}
+              <YouTubeThumbnail
+                key={`${item.id}:${thumbnails.join("|")}`}
+                sources={thumbnails}
+                fallback={thumbnailFallback}
+                title={title}
                 disabled={!embed && !localVideo}
-                onClick={() => setPlaying(true)}
+                play={() => setPlaying(true)}
               >
-                {image ? (
-                  <img
-                    src={image}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={() => setImageFailed(true)}
-                  />
-                ) : (
-                  <span className="yt-image-placeholder">
-                    <Play size={30} strokeWidth={1} />
-                  </span>
-                )}
                 <span className="yt-play-circle">
                   <Play size={23} fill="currentColor" />
                 </span>
@@ -153,7 +147,7 @@ export function YouTubeCard({
                 {item.duration_text && (
                   <span className="yt-duration">{item.duration_text}</span>
                 )}
-              </button>
+              </YouTubeThumbnail>
             )}
           </div>
           {playing && (

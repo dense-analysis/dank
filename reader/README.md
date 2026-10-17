@@ -208,6 +208,12 @@ channel total; rounded source totals are marked approximate. Unknown totals
 stay absent, and search or format filters do not change these channel-wide counts.
 Rank badges appear on Hype cards; channel cards have no ranking.
 
+When a video has multiple saved thumbnails, hover or keyboard-focus its preview
+to gently cycle through them. This does not start a video. Reduced-motion mode
+keeps the preview still. Discovery details show the saved images and distinct
+observed titles with their capture dates; title changes never create another
+video card. The card keeps the title from the selected feed snapshot.
+
 Landscape videos, portrait Shorts and community posts have distinct layouts.
 Select a title or its information button to inspect the captured shelf, rank,
 region, playlist and collection time. **Feed snapshot** means the feed entry is

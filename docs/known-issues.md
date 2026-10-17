@@ -78,6 +78,36 @@ News check on 2026-10-17 captured its avatar and displayed `26k videos` total.
 See [channel metadata tests](../tests/scrape/test_youtube_channels.py)
 and [source API tests](../tests/web/test_reader_youtube_sources.py).
 
+### Thumbnail recovery and observed versions
+
+Captured thumbnail URLs can expire or return 404 while another rendition for
+that video remains available. Collection now tries bounded same-video fallback
+URLs on 404, retaining the captured URL and the URL actually fetched. Failed
+candidates are not stored as images; a successful fallback counts as recovery.
+`--retry-youtube-thumbnails` repairs saved missing images without recrawling feeds;
+repeat `--youtube-thumbnail-id VIDEO_ID` to select videos. This also adopts their
+older cached files without changing the originals.
+
+Thumbnails are re-fetched on later observations, even if their URL is unchanged.
+Immutable files use content hashes; actual image formats determine extensions
+(including AVIF delivered at a `.jpg` URL). A conservative perceptual comparison
+groups near-identical renditions for display while retaining every original.
+Small edits can be grouped by this heuristic; it does not prove two captures
+came from the same experiment. The reader exposes the latest eight visual
+versions from the latest 64 distinct content hashes, and 20 distinct observed
+titles, with first/last capture dates. These are display limits, not deletion
+rules. Old unvisited videos and unobserved A/B-test versions cannot gain history
+without another capture. Known-overlap stopping still refreshes encountered
+videos before ending the channel pass.
+
+Regression coverage checks 404 recovery, same-URL changed bytes, immutable
+storage, resolution deduplication, dated title history and stable video identity.
+Browser coverage checks hover/focus crossfades, image failures, static reduced
+motion and desktop/mobile history views. See [YouTube guide](features/youtube.md),
+[reader tests](../reader/tests/youtube-variants.spec.ts) and
+[reader API tests](../tests/web/test_reader_youtube.py).
+
+
 ## Reddit community total estimates
 
 Community headings use Arctic Shift's archived post count as an estimate, marked

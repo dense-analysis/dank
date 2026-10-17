@@ -238,3 +238,37 @@ it("rejects malformed channel totals and avatars", async () => {
     );
   }
 });
+
+it("validates observed versions without making them separate video identities", () => {
+  const item = {
+    ...video,
+    thumbnail_variants: [
+      {
+        url: "/assets/saved.jpg",
+        first_seen: video.observed_at,
+        last_seen: video.observed_at,
+      },
+    ],
+    title_history: [
+      {
+        title: "Earlier title",
+        first_seen: video.observed_at,
+        last_seen: video.observed_at,
+      },
+    ],
+  };
+  expect(isYouTubeItem(item)).toBe(true);
+  expect(item.id).toBe(video.id);
+  expect(
+    isYouTubeItem({
+      ...item,
+      thumbnail_variants: [{ url: "/assets/missing-dates.jpg" }],
+    }),
+  ).toBe(false);
+  expect(
+    isYouTubeItem({
+      ...item,
+      title_history: [{ ...item.title_history[0], title: null }],
+    }),
+  ).toBe(false);
+});
