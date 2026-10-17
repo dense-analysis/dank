@@ -267,10 +267,72 @@ async def test_sources_include_empty_configured_and_collected_sources(
     assert data["total_posts"] == 10
     assert data["sources"][0] == {
         "domain": "empty.example", "name": "empty.example",
-        "tags": ["culture"], "count": 0,
+        "tags": ["culture"], "count": 0, "kind": "stories",
     }
     assert data["sources"][1]["tags"] == []
     assert data["sources"][2]["tags"] == ["politics"]
+
+
+async def test_x_sources_include_configured_accounts_and_exclude_other_authors(
+    app: web.Application,
+) -> None:
+    state = app["state"]
+    app["state"] = state._replace(settings=state.settings._replace(sources=(
+        SourceConfig("x.com", ("@WatcherGuru", "Empty_Account")),
+    )))
+    icon = "https://pbs.twimg.com/profile_images/123/profile_normal.png"
+    app["clickhouse"] = FakeClickHouse(
+        [{"domain": "x.com", "count": 9},
+         {"domain": "reddit.com", "count": 3}],
+        [{"handle": "watcherguru", "count": 7},
+         {"handle": "oldaccount", "count": 2}],
+        [{"handle": "watcherguru", "profile": json.dumps({
+            "core": {"screen_name": "WatcherGuru", "name": "Watcher.Guru"},
+            "avatar": {"image_url": icon},
+        })}],
+    )
+    response = await request(app, "/api/reader/sources")
+    data = json.loads(response.text or "")
+    assert response.status == 200
+    assert data["total_posts"] == 12
+    assert data["sources"][0]["kind"] == "reddit"
+    assert data["sources"][1]["kind"] == "x"
+    assert data["sources"][1]["accounts"] == [
+        {"handle": "empty_account", "name": "empty_account", "count": 0,
+         "icon_url": None},
+        {"handle": "watcherguru", "name": "Watcher.Guru", "count": 7,
+         "icon_url": icon},
+    ]
+
+
+async def test_x_account_api_keeps_search_and_returns_a_bound_cursor(
+    app: web.Application,
+) -> None:
+    first = row("x.com", "2")
+    first.update(url="https://x.com/Example/status/2", source="x")
+    second = row("x.com", "1")
+    second.update(url="https://x.com/Example/status/1", source="x")
+    fake = FakeClickHouse([first, second], [], [])
+    app["clickhouse"] = fake
+    path = "/api/reader/posts?kind=x&account=Example&q=article&limit=1"
+    response = await request(app, path)
+    data = json.loads(response.text or "")
+    assert response.status == 200
+    assert len(data["posts"]) == 1
+    assert data["posts"][0]["domain"] == "x.com"
+    assert fake.calls[0][1]["account"] == "example"
+    assert fake.calls[0][1]["term_0"] == "article"
+    filters = parse_filters(MultiDict({
+        "kind": "x", "account": "EXAMPLE", "q": "article", "limit": "1",
+        "cursor": data["next_cursor"],
+    }))
+    assert decode_cursor(filters)[1:] == ("x.com", "2")
+
+    response = await request(
+        app, path.replace("account=Example", "account=other")
+        + "&cursor=" + data["next_cursor"].replace("=", "%3D"),
+    )
+    assert response.status == 400
 
 
 async def test_reddit_sources_include_configured_empty_communities(

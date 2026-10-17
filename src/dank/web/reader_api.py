@@ -29,6 +29,7 @@ from dank.web.app import (
     _search_embedding,  # pyright: ignore[reportPrivateUsage]
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.web.reader_accounts import source_accounts, source_kind
 from dank.web.reader_communities import community_icons
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
@@ -97,7 +98,7 @@ async def handle_sources(request: web.Request) -> web.Response:
         tags.setdefault(source.domain, set()).update(source.tags)
 
     sources: list[dict[str, Any]] = [
-        {"domain": domain, "name": domain,
+        {"domain": domain, "name": domain, "kind": source_kind(domain),
          "tags": sorted(tags.get(domain, [])),
          "count": counts.get(domain, 0)}
         for domain in sorted(counts.keys() | tags.keys())
@@ -117,6 +118,17 @@ async def handle_sources(request: web.Request) -> web.Response:
         for source in sources:
             if source["domain"] == "reddit.com":
                 source.update(kind="reddit", **metadata)
+
+    for source in sources:
+        if source["kind"] == "x":
+            configured = tuple(
+                account for setting in state.settings.sources
+                if setting.domain == source["domain"]
+                for account in setting.accounts
+            )
+            source["accounts"] = await source_accounts(
+                client, source["domain"], configured,
+            )
 
     return web.json_response({
         "sources": sources,

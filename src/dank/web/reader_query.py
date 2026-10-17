@@ -12,6 +12,7 @@ from typing import Any, NamedTuple, cast
 from multidict import MultiMapping
 
 from dank.config import SourceConfig
+from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS
 from dank.web.reader_flairs import (
     FLAIR_WHITESPACE_PATTERN,
     LATEST_REDDIT_FLAIRS_SQL,
@@ -39,6 +40,7 @@ class ReaderFilters(NamedTuple):
     kind: str = ""
     community: str = ""
     flairs: tuple[str, ...] = ()
+    account: str = ""
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -55,6 +57,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
+        "account",
     }
 
     if unknown:
@@ -79,6 +82,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         kind=query.get("kind", ""),
         community=query.get("community", "").strip().lower(),
         flairs=_flair_choices(query.getall("flair", [])),
+        account=query.get("account", "").strip().removeprefix("@").lower(),
     )
     _validate(filters)
 
@@ -131,7 +135,7 @@ def _limit(value: str) -> int:
 
 
 def _validate(filters: ReaderFilters) -> None:
-    _validate_reddit_filters(filters)
+    _validate_collection_filters(filters)
 
     if filters.mode not in {"words", "meaning", "combined"}:
         raise ValueError("mode must be words, meaning or combined")
@@ -158,9 +162,15 @@ def _validate(filters: ReaderFilters) -> None:
         decode_cursor(filters)
 
 
-def _validate_reddit_filters(filters: ReaderFilters) -> None:
-    if filters.kind not in {"", "stories", "reddit"}:
-        raise ValueError("kind must be stories or reddit")
+def _validate_collection_filters(filters: ReaderFilters) -> None:
+    if filters.kind not in {"", "all", "stories", "reddit", "x"}:
+        raise ValueError("kind must be all, stories, reddit or x")
+
+    if filters.account and (
+        filters.kind != "x"
+        or not re.fullmatch(r"[a-z0-9_]{1,15}", filters.account)
+    ):
+        raise ValueError("account requires kind=x and an account handle")
 
     if filters.community and (
         filters.kind != "reddit"
@@ -313,15 +323,26 @@ def _guarded_distance(lengths: list[str]) -> str:
     return f"if({valid}, " + " + ".join(distances) + ", 2.0)"
 
 
-def _conditions(
-    filters: ReaderFilters, sources: tuple[SourceConfig, ...],
+def _collection_conditions(
+    filters: ReaderFilters,
 ) -> tuple[list[str], dict[str, Any]]:
     conditions: list[str] = []
     params: dict[str, Any] = {}
 
-    if filters.kind:
-        operator = "=" if filters.kind == "reddit" else "!="
-        conditions.append(f"domain {operator} 'reddit.com'")
+    if filters.kind == "reddit":
+        conditions.append("domain = 'reddit.com'")
+    elif filters.kind == "stories":
+        conditions.append(
+            "domain != 'reddit.com' AND domain NOT IN %(x_domains)s",
+        )
+        params["x_domains"] = list(X_DOMAINS)
+    elif filters.kind == "x":
+        conditions.append("domain IN %(x_domains)s")
+        params["x_domains"] = list(X_DOMAINS)
+
+    if filters.account:
+        conditions.append(f"{X_ACCOUNT_SQL} = %(account)s")
+        params["account"] = filters.account
 
     if filters.community:
         conditions.append(f"{REDDIT_COMMUNITY_SQL} = %(community)s")
@@ -334,6 +355,14 @@ def _conditions(
         )
         params["flairs"] = list(filters.flairs)
         params["flair_whitespace"] = FLAIR_WHITESPACE_PATTERN
+
+    return conditions, params
+
+
+def _conditions(
+    filters: ReaderFilters, sources: tuple[SourceConfig, ...],
+) -> tuple[list[str], dict[str, Any]]:
+    conditions, params = _collection_conditions(filters)
 
     if filters.domains:
         conditions.append("domain IN %(domains)s")
