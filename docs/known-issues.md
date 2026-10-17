@@ -8,6 +8,43 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Latest full-scrape check
+
+On **2026-10-17**, Docker run `8d54ed62-e308-49ec-9e3c-10c1e2dc8ff1`
+used `bec2f83` and the existing 55-source configuration. It exited normally after
+**6m00s**, with outcome **partial**: 42 sources completed, 12 were partial, and
+Niche Gamer failed. All **1,565 collected records were saved** (1,545 distinct
+source/post IDs). All 1,545 distinct posts and all 24 available YouTube files
+were processed and independently checked against the latest saved captures.
+The archived log is `logs/scrape/2026-10-17T13-19-46Z-27115.log`.
+
+| Source | Saved records | Distinct posts | Result |
+| --- | ---: | ---: | --- |
+| RSS | 826 | 826 | Some feeds, articles and media remained unavailable. |
+| X | 145 | 125 | Four account timelines collected; the fifth timed out; 31 accounts were not attempted. Twenty records are conversation snapshots of timeline posts. |
+| Reddit | 594 | 594 | All 15 communities finished, including 29 LLMDevs posts. DomainDrivenDesign and ExperiencedDevs were explicitly empty for Top/day. |
+
+Reddit took **3m03s** with no collection failures, media failures or 429s. X had
+four conversation timeouts on `claudeai`, then a navigation timeout on
+`White_Rabbit_OG`; the timeout stopped X while preserving saved rows. Of 20 X
+conversation attempts, eight captured, eight were partial under cursor/reply
+limits, and four failed. The logs do not establish the browser's underlying
+failure; they do establish that subsequent accounts cannot currently recover.
+
+YouTube produced **24 available MP4s from 52 references**; the other **28 were
+size-excluded**, with no unexplained missing files or YouTube download failures.
+Every available file was independently checked with FFprobe for video/audio
+streams and the unchanged 10 MiB cap; the largest was 10,229,642 bytes. The
+extractor logged two recoverable initial-data warnings and successfully used
+its API fallback. This run did not repeat playback of every video; the three
+Docker decode/playback checks below remain the playback evidence.
+
+Overall media: **141 new, 2,996 cached, 297 skipped, 11 failed**. Real media
+failures remain on Wikimedia, Microsoft, `shkspr.mobi` and Internet Archive.
+The four HTTP 429 responses were retries of one Order Order article, not Reddit
+or YouTube limits. Prioritize X recovery and posts-first collection, then scoped
+publisher/media retries. The checkboxes below track those remaining tasks.
+
 ## Full-scrape improvement tasks
 
 These follow-ups came from run `3024d25d-d50e-4cde-be87-4b8e70224e22`
@@ -64,13 +101,27 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   batches. This verifies persistence and continuation, not complete Reddit
   coverage. The empty-state recognizer is regression-tested against the message
   observed in the standalone listing check. Pagination remains open below.
-- [ ] **P1: Recover X collection after a browser timeout.** X saved 594 records
-  before its 21st account timed out; 15 accounts were never attempted. The
-  30-second timeout prevented an indefinite wait and Reddit continued.
-  Record per-account outcomes and add bounded browser recovery/checkpointing.
-  Done when a forced mid-run browser failure retains saved records, reports
-  the affected account, and allows remaining accounts to be attempted without
-  automatic sign-in retries. The underlying renderer failure remains unknown.
+- [ ] **P1: Collect X timelines before refreshing discussions.** The full check
+  `8d54ed62` saves timeline posts promptly, but then visits five discussions per
+  account before moving to the next account. The first account took about 65s,
+  including about 55s of discussion work. This is active work, not a browser hang,
+  but it postpones collection from the remaining accounts. Separate the fast
+  timeline pass from bounded discussion refreshes, preserve earlier archives,
+  and report account/thread progress. Done when every account's timeline can be
+  attempted before optional discussion visits begin.
+  [Collector](../src/dank/scrape/x/__init__.py).
+- [ ] **P1: Recover X collection after a browser timeout.** Reproduced in
+  `8d54ed62`: four discussion visits timed out on the fourth account, `claudeai`.
+  Navigation to the fifth, `White_Rabbit_OG`, also timed out, ending X with 125
+  distinct posts saved and 31 accounts unattempted. The original run had
+  stopped at account 21. The 30-second deadlines prevent indefinite waits but
+  do not recover the browser; queued discussion attempts repeat against the
+  unresponsive page. Record per-account outcomes and add bounded browser
+  recovery/checkpointing. Do not infer success from “Finished X scrape”: that
+  message currently runs during error cleanup too. Done when a forced mid-run
+  browser failure retains saved records, reports the affected account, and
+  permits remaining accounts to be attempted without automatic sign-in retries.
+  The underlying browser failure remains unknown.
   [Collector](../src/dank/scrape/x/__init__.py).
 - [x] **P1: Verify Reddit pagination beyond the initial cards.** A controlled
   Docker check reproduced three cards while the listing was hidden, then 27
@@ -212,9 +263,21 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   prefer a smaller eligible variant where available. Raw references retain only
   the URL/path, not a durable per-asset outcome reason.
   [Variant selection](../src/dank/scrape/x/payloads.py).
+- [ ] **P2: Classify failed publisher media and make retries selective.** Run
+  `8d54ed62` logged five Wikimedia image 403s, two Microsoft image 403s, three
+  `shkspr.mobi` favicon 401s and an Internet Archive connection failure. These
+  remain real download failures, distinct from the fixed Reddit signed-preview
+  URL and configured size skips. Retain per-asset reason/status and let a scoped
+  retry revisit unavailable media without recollecting every source; investigate
+  each host before assuming stale URLs or an authentication requirement.
+  [Media pipeline](../src/dank/scrape/assets/http.py).
 - [ ] **P2: Make blocked feed/article recovery actionable.** Niche Gamer's feeds
   returned 403; article fetches also failed across several publishers, and
-  Order Order exhausted its 429 retries. Retain host/status and retry eligibility
+  Order Order exhausted its 429 retries. The latest check also logged article
+  403s for Ars Technica (20 URLs), Etsy (20), Netflix Tech Blog (10), LWN (6)
+  and Microsoft (1), plus 15 Register verification pages and connection failures
+  after redirects from `postgr.es` to `stormatics.tech` and `dbadevops.com`.
+  Retain host/status and retry eligibility
   in a source summary, distinguish retained feed text from a fetched article,
   and review supported feed alternatives. Done when operators can identify
   affected sources and choose a scoped retry or configuration change without
