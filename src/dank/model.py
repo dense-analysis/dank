@@ -35,6 +35,21 @@ class AssetDiscovery(NamedTuple):
     referrer_url: str | None = None
 
 
+class YouTubeThumbnailObservation(NamedTuple):
+    """One successfully fetched image; raw evidence remains immutable."""
+
+    post_id: str
+    observed_at: datetime.datetime
+    captured_url: str
+    fetched_url: str
+    local_path: str
+    content_hash: str
+    visual_hash: str
+    visual_color: str
+    width: int
+    height: int
+
+
 class RawAsset(NamedTuple):
     """
     A raw asset to be stored in the database during scraping for later
@@ -49,6 +64,7 @@ class RawAsset(NamedTuple):
     scraped_at: datetime.datetime
     source: str
     local_path: str
+    thumbnail: YouTubeThumbnailObservation | None = None
 
 
 class Asset(NamedTuple):

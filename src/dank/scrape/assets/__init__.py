@@ -22,7 +22,7 @@ from dank.scrape.metrics import (
 )
 
 from .audio_video import download_audio_video_asset
-from .http import download_file_http, http_asset_path
+from .http import download_file_http, http_asset_path, youtube_thumbnail_urls
 from .limits import AssetSizeExceeded
 
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def _existing_files(
 ) -> set[pathlib.Path]:
     target = assets_dir / discovery.domain / discovery.post_id
 
-    if _uses_media_downloader(discovery):
+    if _uses_media_downloader(discovery) or youtube_thumbnail_urls(discovery):
         return {path.resolve() for path in target.rglob("*") if path.is_file()}
 
     path = http_asset_path(target, discovery.url)

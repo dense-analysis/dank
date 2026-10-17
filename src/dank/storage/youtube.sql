@@ -1,3 +1,19 @@
+CREATE TABLE IF NOT EXISTS youtube_thumbnail_observations (
+    post_id String,
+    observed_at DateTime64(3, 'UTC'),
+    captured_url String,
+    fetched_url String,
+    local_path String,
+    content_hash String,
+    visual_hash String,
+    visual_color String,
+    width UInt32,
+    height UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (post_id, observed_at, content_hash);
+
 CREATE TABLE IF NOT EXISTS youtube_channels (
     channel_id String,
     channel_name String,

@@ -6,6 +6,7 @@ import json
 import logging
 import pathlib
 import re
+import shutil
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
@@ -34,6 +35,10 @@ from dank.model import (
 from dank.progress import Progress
 from dank.runtime import runtime_info
 from dank.scrape.assets import download_assets
+from dank.scrape.assets.http import (
+    thumbnail_observation,
+    youtube_thumbnail_urls,
+)
 from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.metrics import (
     RSS_CONCURRENCY,
@@ -63,6 +68,7 @@ from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
+from dank.thumbnails import thumbnail_suffix
 from dank.youtube import discovery_from_post
 
 logger = logging.getLogger(__name__)
@@ -1155,6 +1161,10 @@ async def _flush_assets(
     if not discoveries:
         return ScrapeTotals()
 
+    await _preserve_legacy_youtube_thumbnails(clickhouse_client, sorted({
+        item.post_id for item in discoveries if youtube_thumbnail_urls(item)
+    }))
+
     downloaded = await download_assets(
         discoveries,
         assets_dir=assets_dir,
@@ -1171,8 +1181,19 @@ async def _flush_assets(
 
     await clickhouse_client.insert_rows(
         "raw_assets",
-        [asset._asdict() for asset in downloaded],
+        [{key: value for key, value in asset._asdict().items()
+          if key != "thumbnail"} for asset in downloaded],
     )
+    observations = [
+        asset.thumbnail._asdict() for asset in downloaded
+        if asset.thumbnail is not None
+    ]
+
+    if observations:
+        await clickhouse_client.insert_rows(
+            "youtube_thumbnail_observations", observations,
+        )
+
     by_identity = {
         (asset.domain, asset.post_id, asset.url): owner
         for asset, owner in (owners or {}).items()
@@ -1192,6 +1213,142 @@ async def _flush_assets(
     )
 
     return ScrapeTotals(0, available, unavailable)
+
+
+async def _preserve_legacy_youtube_thumbnails(
+    client: ClickHouseClient, identifiers: list[str],
+) -> None:
+    if not identifiers:
+        return
+
+    # The old URL cache never refreshed bytes. Its first saved timestamp is
+    # therefore the only observation time we can honestly attribute to it.
+    result = await client.fetch_json(
+        "SELECT post_id, url, local_path, min(scraped_at) AS observed_at "
+        "FROM raw_assets WHERE domain = 'youtube.com' AND source = 'youtube' "
+        "AND asset_type = 'image' AND post_id IN %(ids)s "
+        "AND local_path != '' AND position(local_path, '/thumbnails/') = 0 "
+        "AND (post_id, url) NOT IN (SELECT post_id, captured_url "
+        "FROM youtube_thumbnail_observations WHERE post_id IN %(ids)s) "
+        "GROUP BY post_id, url, local_path",
+        {"ids": identifiers},
+    )
+    observations: list[dict[str, object]] = []
+
+    for row in result.rows:
+        path = pathlib.Path(str(row["local_path"]))
+
+        try:
+            observed_at = parse_datetime(row["observed_at"])
+
+            if observed_at is None:
+                continue
+
+            capture = await asyncio.to_thread(
+                thumbnail_observation, path, str(row["post_id"]), observed_at,
+                str(row["url"]), str(row["url"]),
+            )
+            suffix = await asyncio.to_thread(thumbnail_suffix, path)
+            snapshot = path.parent / "thumbnails" / (
+                f"{capture.content_hash}{suffix}"
+            )
+            await asyncio.to_thread(_copy_thumbnail_snapshot, path, snapshot)
+            observations.append(capture._replace(
+                local_path=str(snapshot),
+            )._asdict())
+        except (OSError, ValueError):
+            # Invalid/missing old files must not block a fresh capture.
+            logger.info("Could not preserve old YouTube thumbnail: %s", path)
+
+    if observations:
+        await client.insert_rows(
+            "youtube_thumbnail_observations", observations,
+        )
+
+
+def _copy_thumbnail_snapshot(
+    original: pathlib.Path, snapshot: pathlib.Path,
+) -> None:
+    if snapshot.exists():
+        return
+
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.NamedTemporaryFile(
+        dir=snapshot.parent, delete=False,
+    ) as temporary:
+        pending = pathlib.Path(temporary.name)
+
+    try:
+        shutil.copyfile(original, pending)
+        pending.replace(snapshot)
+    finally:
+        pending.unlink(missing_ok=True)
+
+
+async def retry_youtube_thumbnails(
+    settings: Settings, *, post_ids: tuple[str, ...] = (),
+) -> ScrapeTotals:
+    """Adopt cached history and retry missing files without crawling feeds."""
+    if "image" not in settings.media_download_types:
+        logger.warning("YouTube thumbnail retry requires image downloads")
+
+        return ScrapeTotals()
+
+    if any(not re.fullmatch(r"video:[A-Za-z0-9_-]{11}", item)
+           for item in post_ids):
+        raise ValueError(
+            "YouTube thumbnail retry requires canonical video IDs",
+        )
+
+    limiter_token = current_limiter.set(RequestLimiter(settings.scrape))
+
+    try:
+        async with ClickHouseClient(settings.clickhouse) as client:
+            schema = pathlib.Path(__file__).parents[1] / "storage/youtube.sql"
+
+            for statement in schema.read_text().split(";"):
+                if statement.strip():
+                    await client.execute(statement)
+
+            if post_ids:
+                await _preserve_legacy_youtube_thumbnails(
+                    client, list(post_ids),
+                )
+
+            result = await client.fetch_json(
+                "SELECT post_id, url FROM (SELECT post_id, url, local_path "
+                "FROM raw_assets WHERE domain = 'youtube.com' "
+                "AND source = 'youtube' AND asset_type = 'image' "
+                "AND startsWith(post_id, 'video:') "
+                + ("AND post_id IN %(ids)s " if post_ids else "")
+                + "ORDER BY scraped_at DESC LIMIT 1 BY post_id, url) "
+                "WHERE local_path = ''",
+                {"ids": list(post_ids)} if post_ids else {},
+            )
+            discoveries = [AssetDiscovery(
+                "youtube", "youtube.com", str(row["post_id"]),
+                str(row["url"]), "image", None,
+            ) for row in result.rows]
+            discoveries = [item for item in discoveries
+                           if youtube_thumbnail_urls(item)]
+            logger.info(
+                "Retrying %d saved YouTube thumbnails", len(discoveries),
+            )
+
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as http_client:
+                return await _flush_assets(
+                    client, http_client, discoveries,
+                    assets_dir=pathlib.Path(settings.data_dir) / "assets",
+                    browser_profile_dir=(pathlib.Path(settings.data_dir)
+                                         / "youtube-browser-profile"),
+                    max_asset_bytes=settings.max_asset_bytes,
+                    download_types=("image",),
+                )
+    finally:
+        current_limiter.reset(limiter_token)
 
 
 async def _refresh_site_feeds(
@@ -1293,9 +1450,18 @@ def run_scrape_from_config(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    retry_youtube_thumbnails_only: bool = False,
+    youtube_thumbnail_ids: tuple[str, ...] = (),
 ) -> None:
     settings = load_settings(path)
     configure_logging(settings.logging, component="scrape")
+
+    if retry_youtube_thumbnails_only:
+        asyncio.run(retry_youtube_thumbnails(
+            settings, post_ids=youtube_thumbnail_ids,
+        ))
+
+        return
 
     if x_posts:
         x_posts = tuple(dict.fromkeys(
