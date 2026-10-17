@@ -191,8 +191,17 @@ and time window before scraping. Refreshing this view reloads collected posts.
 ## YouTube
 
 **YouTube** saves the context of discovery: Hype rankings, News topics, channel
-feeds, Shorts and community posts. Expand its sidebar list to choose a feed or
-channel. Search and the Videos / Shorts / Posts filters stay in the URL.
+feeds, Shorts and community posts. Its expandable sidebar groups **News** by
+Top stories, Business and World, **Hyped** by country, and **Channel Feeds** by
+channel. News opens Top stories; Hyped opens the UK feed when configured.
+Topic and country tabs, search, and Videos / Shorts / Posts filters stay in the URL.
+
+Channel headers share the frosted back-button and avatar layout used by X and
+Reddit. Cached icons fall back to initials. The count compares collected videos
+(including Shorts, excluding community posts) with YouTube's last reported
+channel total; rounded source totals are marked approximate. Unknown totals
+stay absent, and search or format filters do not change these channel-wide counts.
+Rank badges appear on Hype cards; channel cards have no ranking.
 
 Landscape videos, portrait Shorts and community posts have distinct layouts.
 Select a title or its information button to inspect the captured shelf, rank,

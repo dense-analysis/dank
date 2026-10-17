@@ -24,6 +24,8 @@ import {
   youtubeFilters,
   youtubeShelves,
 } from "../lib/youtubeCollection";
+import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
+import { CountryFlag } from "./CountryFlag";
 import { YouTubeCard } from "./YouTubeCard";
 
 export function YouTubeCollection({
@@ -55,6 +57,11 @@ export function YouTubeCollection({
     (channel) => channel.id === filters.channel,
   );
   const linked = filters.feed === "linked";
+  const groupKind =
+    activeFeed?.kind === "news" || activeFeed?.kind === "hype"
+      ? activeFeed.kind
+      : undefined;
+  const groupFeeds = groupKind ? youtubeGroupFeeds(sources, groupKind) : [];
   const scoped = !!filters.feed || !!filters.channel;
   const title = linked
     ? "From your feeds"
@@ -301,41 +308,52 @@ export function YouTubeCollection({
 
   return (
     <div className="yt-collection">
-      <div className="yt-intro">
-        <div>
-          <p className="eyebrow">
-            {linked
-              ? "Connected discoveries"
-              : activeFeed?.region
-                ? `${activeFeed.region} · Your collection`
-                : "Your collection"}
-          </p>
-          <h2>{title}</h2>
-          <p>
-            {linked
-              ? "YouTube videos shared across your collected X posts, Reddit discussions and articles. One video, every connection."
-              : "The recommendations, topics and moments worth keeping. Saved from your feeds, ready when you are."}
-          </p>
+      {!scoped && (
+        <div className="yt-intro">
+          <div>
+            <p className="eyebrow">
+              {linked
+                ? "Connected discoveries"
+                : activeFeed?.region
+                  ? `${activeFeed.region} · Your collection`
+                  : "Your collection"}
+            </p>
+            <h2>{title}</h2>
+            <p>
+              {linked
+                ? "YouTube videos shared across your collected X posts, Reddit discussions and articles. One video, every connection."
+                : "The recommendations, topics and moments worth keeping. Saved from your feeds, ready when you are."}
+            </p>
+          </div>
+          <span className="yt-total">
+            <strong>
+              {(
+                query.data?.pages[0]?.total ??
+                sources?.total ??
+                0
+              ).toLocaleString()}
+            </strong>
+            <span>{linked ? "linked videos" : "discoveries"}</span>
+          </span>
         </div>
-        <span className="yt-total">
-          <strong>
-            {(
-              query.data?.pages[0]?.total ??
-              sources?.total ??
-              0
-            ).toLocaleString()}
-          </strong>
-          <span>{linked ? "linked videos" : "discoveries"}</span>
-        </span>
-      </div>
-      {scoped && (
-        <button
-          type="button"
-          className="text-button yt-back"
-          onClick={() => navigate(new URLSearchParams({ view: "youtube" }))}
+      )}
+      {!!groupFeeds.length && (
+        <fieldset
+          className="yt-feed-tabs"
+          aria-label={groupKind === "news" ? "News topics" : "Hyped countries"}
         >
-          <ArrowLeft size={14} /> All YouTube discoveries
-        </button>
+          {groupFeeds.map((feed) => (
+            <button
+              key={feed.id}
+              type="button"
+              aria-pressed={feed.id === filters.feed}
+              onClick={() => change("feed", feed.id)}
+            >
+              {groupKind === "hype" && <CountryFlag region={feed.region} />}
+              {youtubeFeedLabel(feed)}
+            </button>
+          ))}
+        </fieldset>
       )}
       <div className="yt-tools">
         <form
@@ -426,55 +444,57 @@ export function YouTubeCollection({
           retry={() => void query.refetch()}
         />
       ) : items.length ? (
-        youtubeShelves(items, filters.feed).map(([key, shelf]) => (
-          <section
-            className={`yt-shelf yt-shelf-${shelf.kind}`}
-            key={key}
-            aria-label={shelf.title}
-          >
-            <div className="yt-shelf-heading">
-              <div>
-                <p className="eyebrow">
-                  {shelf.context ||
-                    (shelf.kind === "short"
-                      ? "Short-form videos"
-                      : shelf.kind === "post"
-                        ? "From the community"
-                        : "Saved discoveries")}
-                </p>
-                <h2>
-                  {shelf.kind === "short" ? (
-                    <Sparkles size={19} />
-                  ) : shelf.kind === "post" ? (
-                    <MessageSquare size={19} />
-                  ) : null}
-                  {shelf.title}
-                </h2>
+        youtubeShelves(items, filters.feed, !!filters.channel).map(
+          ([key, shelf]) => (
+            <section
+              className={`yt-shelf yt-shelf-${shelf.kind}`}
+              key={key}
+              aria-label={shelf.title}
+            >
+              <div className="yt-shelf-heading">
+                <div>
+                  <p className="eyebrow">
+                    {shelf.context ||
+                      (shelf.kind === "short"
+                        ? "Short-form videos"
+                        : shelf.kind === "post"
+                          ? "From the community"
+                          : "Saved discoveries")}
+                  </p>
+                  <h2>
+                    {shelf.kind === "short" ? (
+                      <Sparkles size={19} />
+                    ) : shelf.kind === "post" ? (
+                      <MessageSquare size={19} />
+                    ) : null}
+                    {shelf.title}
+                  </h2>
+                </div>
+                <span>
+                  {shelf.items.length}{" "}
+                  {shelf.kind === "post"
+                    ? shelf.items.length === 1
+                      ? "post"
+                      : "posts"
+                    : shelf.items.length === 1
+                      ? "video"
+                      : "videos"}
+                </span>
               </div>
-              <span>
-                {shelf.items.length}{" "}
-                {shelf.kind === "post"
-                  ? shelf.items.length === 1
-                    ? "post"
-                    : "posts"
-                  : shelf.items.length === 1
-                    ? "video"
-                    : "videos"}
-              </span>
-            </div>
-            <div className={`yt-grid yt-grid-${shelf.kind}`}>
-              {shelf.items.map((item) => (
-                <YouTubeCard
-                  key={item.id}
-                  item={item}
-                  feed={filters.feed}
-                  open={() => open(item)}
-                  href={href(item)}
-                />
-              ))}
-            </div>
-          </section>
-        ))
+              <div className={`yt-grid yt-grid-${shelf.kind}`}>
+                {shelf.items.map((item) => (
+                  <YouTubeCard
+                    key={item.id}
+                    item={item}
+                    feed={filters.feed}
+                    open={() => open(item)}
+                    href={href(item)}
+                  />
+                ))}
+              </div>
+            </section>
+          ),
+        )
       ) : (
         <div className="empty-state yt-empty">
           <Film size={36} strokeWidth={1.2} />
