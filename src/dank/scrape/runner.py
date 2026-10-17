@@ -25,7 +25,12 @@ from dank.config import (
 )
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.logging_setup import configure_logging
-from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
+from dank.model import (
+    AssetDiscovery,
+    RawPost,
+    RedditCommunityDiscovery,
+    YouTubeChannelDiscovery,
+)
 from dank.progress import Progress
 from dank.runtime import runtime_info
 from dank.scrape.assets import download_assets
@@ -53,6 +58,7 @@ from dank.scrape.types import ScrapeBatch, ScrapeTotals
 from dank.scrape.x import scrape_x_accounts, scrape_x_posts
 from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.youtube import scrape_youtube_feeds
+from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.youtube import discovery_from_post
@@ -354,7 +360,9 @@ async def _collect_source(
                         batch.post_count, len(batch.assets),
                         references=batch.reference_count,
                     )
-                    stats.pending += len(batch.communities)
+                    stats.pending += (
+                        len(batch.communities) + len(batch.youtube_channels)
+                    )
                     # Persist this batch before moving on to the next one.
                     saved = await _flush_posts(client, list(batch.posts))
                     await _persist_youtube_discoveries(
@@ -858,11 +866,111 @@ async def _process_batches(
 
             _records_persisted([owner] * len(batch.communities))
 
+        if batch is not None and batch.youtube_channels:
+            owner = (
+                history.sources.get(batch.source_index) if history else None
+            )
+            await _persist_youtube_channels(
+                clickhouse_client, http_client, batch.youtube_channels,
+                assets_dir=assets_dir, max_asset_bytes=max_asset_bytes,
+                download_types=download_types, owner=owner,
+            )
+            _records_persisted([owner] * len(batch.youtube_channels))
+
         if batch is None:
             # Break when there's nothing left.
             break
 
     return ScrapeTotals(0, available_assets, unavailable_assets)
+
+
+async def _persist_youtube_channels(
+    client: ClickHouseClient,
+    http_client: aiohttp.ClientSession,
+    channels: tuple[YouTubeChannelDiscovery, ...],
+    *,
+    assets_dir: pathlib.Path,
+    max_asset_bytes: int | None,
+    download_types: tuple[str, ...],
+    owner: SourceMetrics | None,
+) -> None:
+    for channel in channels:
+        if not CHANNEL_ID.fullmatch(channel.channel_id):
+            continue
+
+        icon = await _youtube_channel_icon(
+            channel, http_client, assets_dir=assets_dir,
+            max_asset_bytes=max_asset_bytes, download_types=download_types,
+            owner=owner,
+        )
+
+        if icon is None:
+            # Metadata can refresh even when an icon download fails or is off.
+            previous = await client.fetch_json(
+                "SELECT icon_url, local_path, content_type "
+                "FROM youtube_channels FINAL WHERE channel_id = %(id)s "
+                "AND local_path != '' LIMIT 1",
+                {"id": channel.channel_id},
+            )
+            icon = (
+                tuple(str(previous.rows[0][key]) for key in (
+                    "icon_url", "local_path", "content_type",
+                )) if previous.rows else ("", "", "")
+            )
+
+        await client.insert_rows("youtube_channels", [{
+            **channel._asdict(), "icon_url": icon[0],
+            "local_path": icon[1], "content_type": icon[2],
+        }])
+
+
+async def _youtube_channel_icon(
+    channel: YouTubeChannelDiscovery,
+    http_client: aiohttp.ClientSession,
+    *,
+    assets_dir: pathlib.Path,
+    max_asset_bytes: int | None,
+    download_types: tuple[str, ...],
+    owner: SourceMetrics | None,
+) -> tuple[str, str, str] | None:
+    if "image" not in download_types or not channel_icon_url(channel.icon_url):
+        return None
+
+    discovery = AssetDiscovery(
+        "youtube-channel", "youtube.com", f"channels/{channel.channel_id}",
+        channel.icon_url, "image", None,
+    )
+
+    if owner is not None:
+        owner.counts["media_references"] += 1
+
+    downloaded = await download_assets(
+        [discovery], assets_dir=assets_dir, http_client=http_client,
+        max_asset_bytes=min(max_asset_bytes or MAX_COMMUNITY_ICON_BYTES,
+                            MAX_COMMUNITY_ICON_BYTES),
+        download_types=download_types,
+        owners={discovery: owner} if owner is not None else None,
+    )
+
+    if not downloaded or not downloaded[0].local_path:
+        return None
+
+    path = pathlib.Path(downloaded[0].local_path)
+    content_type = await asyncio.to_thread(_icon_content_type, path)
+
+    if not content_type:
+        await asyncio.to_thread(path.unlink, missing_ok=True)
+        logger.warning("YouTube channel icon is not a supported image")
+
+        if owner is not None:
+            owner.counts["parse_failures"] += 1
+
+        return None
+
+    if owner is not None:
+        owner.counts["asset_records_saved"] += 1
+
+    return channel.icon_url, str(path), content_type
 
 
 async def _persist_community_icons(

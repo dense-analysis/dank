@@ -18,6 +18,7 @@ from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import BrowserSession, NetworkCapture
 
 from .browser import EXPAND_SCRIPT, SCROLL_SCRIPT, navigate, snapshot
+from .channels import discover_channel
 from .feeds import configured_feeds
 from .payloads import (
     ORIGIN,
@@ -27,12 +28,14 @@ from .payloads import (
     discover_assets,
     hype_playlist,
     normalize_renderer,
-    objects,
     playlist_title,
     renderers,
 )
 
 logger = logging.getLogger(__name__)
+# Consent can trigger a second navigation before the channel header arrives.
+CHANNEL_INITIAL_ATTEMPTS = 10
+CHANNEL_INITIAL_PAUSE_SECONDS = 0.5
 
 
 class YouTubeFeedError(RuntimeError):
@@ -193,6 +196,20 @@ async def _resolve_feed(
     return playlist, await snapshot(page)
 
 
+async def _channel_state(
+    page: zendriver.Tab, feed: YouTubeFeed, state: dict[str, object],
+) -> dict[str, object]:
+    if feed.kind == "channel":
+        for _ in range(CHANNEL_INITIAL_ATTEMPTS):
+            if state.get("initial"):
+                break
+
+            await asyncio.sleep(CHANNEL_INITIAL_PAUSE_SECONDS)
+            state = await snapshot(page)
+
+    return state
+
+
 async def _scrape_feed(
     page: zendriver.Tab,
     feed: YouTubeFeed,
@@ -207,20 +224,23 @@ async def _scrape_feed(
 
     try:
         request_url, state = await _resolve_feed(page, feed, settings)
+
+        state = await _channel_state(page, feed, state)
         collected.playlist_name = playlist_title(state.get("initial"))
 
-        for node in objects(state.get("initial")):
-            metadata = as_dict(node.get("channelMetadataRenderer"))
+        if feed.kind == "channel":
+            channel = discover_channel(
+                state.get("initial"), feed_url=feed.url,
+                request_url=request_url, observed_at=collected.observed_at,
+            )
 
-            if metadata:
-                collected.channel = tuple(
-                    str(metadata.get(key, ""))
-                    for key in (
-                        "externalId",
-                        "title",
-                        "channelUrl",
-                    )
+            if channel is not None:
+                collected.channel = (
+                    channel.channel_id, channel.channel_name,
+                    channel.channel_url,
                 )
+                yield ScrapeBatch([], [], youtube_channels=(channel,))
+
         # Discard Hype landing responses before reading its playlist.
         await capture.drain(timeout_seconds=0.05)
 

@@ -64,6 +64,20 @@ without scrolling and at five known channel videos, completing in 20.2 seconds.
 Reader checks reconciled all 100 Hype ranks across pages and channel-wide counts
 across feeds. The existing collection supplied 430 distinct linked videos.
 
+### YouTube channel identity and totals
+
+Channel identity comes from the channel page metadata/header, never from
+recommended videos. Avatar caching uses the same bounded image download and
+signature checks as Reddit icons; a failed or disabled refresh preserves an
+existing cached icon. Displayed channel totals can be rounded by YouTube;
+missing totals remain unknown. Collected channel counts include unique videos
+and Shorts across feeds, excluding community posts. Existing channels gain
+this metadata on their next collection. After first-visit consent, collection
+waits up to five seconds for delayed channel initial data. A public Channel 4
+News check on 2026-10-17 captured its avatar and displayed `26k videos` total.
+See [channel metadata tests](../tests/scrape/test_youtube_channels.py)
+and [source API tests](../tests/web/test_reader_youtube_sources.py).
+
 ## Reddit community total estimates
 
 Community headings use Arctic Shift's archived post count as an estimate, marked

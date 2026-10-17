@@ -11,6 +11,7 @@ from aiohttp import web
 
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.web.app import (
+    AssetRow,
     _asset_view,  # pyright: ignore[reportPrivateUsage]
     _parse_asset_row,  # pyright: ignore[reportPrivateUsage]
 )
@@ -268,8 +269,10 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
         "FROM youtube_discoveries GROUP BY feed_url) "
         "GROUP BY feed_url ORDER BY name",
     )
+    state = request.app["state"]
+    metadata = await _channel_metadata(client, state.assets_dir)
     feeds, channels = configured_sources(
-        request.app["state"].settings, result.rows,
+        state.settings, result.rows, metadata,
     )
     await _channel_counts(client, channels)
     total = await client.fetch_json(
@@ -286,6 +289,32 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
     })
 
 
+async def _channel_metadata(
+    client: ClickHouseClient, assets_dir: pathlib.Path,
+) -> list[dict[str, Any]]:
+    result = await client.fetch_json(
+        "SELECT channel_id, channel_name, channel_url, feed_url, "
+        "icon_url, local_path, content_type, reported_video_count, "
+        "reported_video_count_text FROM youtube_channels FINAL",
+    )
+
+    for row in result.rows:
+        if row["reported_video_count"] is not None:
+            row["reported_video_count"] = int(row["reported_video_count"])
+
+        asset = AssetRow(
+            post_id="", url=str(row["icon_url"]),
+            local_path=str(row["local_path"]),
+            content_type=str(row["content_type"]), size_bytes=0,
+        )
+        view = _asset_view(asset, assets_dir=assets_dir)
+        row["avatar_url"] = (
+            view["url"] if view and view["kind"] == "image" else None
+        )
+
+    return result.rows
+
+
 async def _channel_counts(
     client: ClickHouseClient, channels: list[dict[str, Any]],
 ) -> None:
@@ -297,7 +326,8 @@ async def _channel_counts(
         "SELECT item_id, arrayJoin(arrayIntersect(["
         "JSONExtractString(payload, 'channel_id'), "
         "JSONExtractString(payload, 'channel_url')], %(ids)s)) AS id "
-        "FROM youtube_discoveries) GROUP BY id",
+        "FROM youtube_discoveries WHERE startsWith(item_id, 'video:')) "
+        "GROUP BY id",
         {"ids": [str(channel["id"]) for channel in channels]},
     )
     counts = {str(row["id"]): int(row["count"]) for row in result.rows}

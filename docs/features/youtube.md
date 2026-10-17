@@ -78,6 +78,12 @@ order. Pagination stays on that snapshot if another collection finishes while
 you read. Channel views retain earlier items as their collection advances;
 opening an item exposes its saved discovery history.
 
+Channel collection also saves the channel icon and YouTube's displayed video
+total. Icons are cached locally when image downloads are enabled. Channel
+counts include distinct collected videos and Shorts, excluding community
+posts. YouTube may round the available total (for example, `26K videos`); the
+reader preserves that display, and an unavailable total remains unknown.
+
 Videos use landscape cards, Shorts have a separate portrait section, and
 community posts retain their text and images. Opening an item shows its saved
 discovery context. Playback starts only when selected. Feed-only captures do

@@ -124,3 +124,18 @@ class YouTubeDiscovery(NamedTuple):
     region: str
     playlist_id: str
     payload: str
+
+
+class YouTubeChannelDiscovery(NamedTuple):
+    """Channel identity, including the source's possibly rounded total."""
+
+    channel_id: str
+    channel_name: str
+    channel_url: str
+    feed_url: str
+    icon_url: str
+    reported_video_count: int | None
+    reported_video_count_text: str
+    observed_at: datetime.datetime
+    request_url: str
+    payload: str

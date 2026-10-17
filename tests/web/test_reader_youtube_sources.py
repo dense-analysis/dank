@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from dank.config import SourceConfig, load_settings
 from dank.web.reader_youtube_sources import configured_sources
 
@@ -17,6 +19,8 @@ def test_configured_feeds_and_channels_exist_before_first_collection() -> None:
         "id": "https://www.youtube.com/@Channel4News",
         "name": "@Channel4News",
         "url": "https://www.youtube.com/@Channel4News", "count": 0,
+        "avatar_url": None, "reported_video_count": None,
+        "reported_video_count_text": None,
     }]
 
 
@@ -83,12 +87,15 @@ async def test_channel_counts_match_unique_items_across_all_feed_discoveries():
              "channel_url": "https://www.youtube.com/@Channel4News"}
             for tab, count in (("videos", 5), ("shorts", 3))
         ]),
+        QueryResult([]),
         # One overlap between the two feeds, plus two unique News discoveries.
         QueryResult([{"id": "UC4News", "count": 9}]),
         QueryResult([{"total": 9}]), QueryResult([{"total": 0}]),
     ]
     request = make_mocked_request("GET", "/api/reader/youtube/sources", app={
-        "clickhouse": client, "state": SimpleNamespace(settings=settings),
+        "clickhouse": client, "state": SimpleNamespace(
+            settings=settings, assets_dir=Path("/tmp"),
+        ),
     })
     response = await handle_youtube_sources(request)
     import json
@@ -96,9 +103,10 @@ async def test_channel_counts_match_unique_items_across_all_feed_discoveries():
     payload = json.loads(response.text or "{}")
     assert len(payload["channels"]) == 1
     assert payload["channels"][0]["count"] == 9
-    query, params = client.fetch_json.call_args_list[1].args
+    query, params = client.fetch_json.call_args_list[2].args
     assert "uniqExact(item_id)" in query
     assert "arrayIntersect" in query
+    assert "startsWith(item_id, 'video:')" in query
     assert params == {"ids": ["UC4News"]}
 
 
@@ -124,3 +132,41 @@ def test_configured_hype_regions_are_distinct_before_collection() -> None:
     assert [feed["url"] for feed in feeds if feed["kind"] == "hype"] == [
         playlist,
     ]
+
+
+async def test_channel_metadata_is_local_and_preserves_rounded_source_count(
+    tmp_path: Path,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from dank.storage.clickhouse import QueryResult
+    from dank.web.reader_youtube import (
+        _channel_metadata,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    icon = tmp_path / "youtube.com" / "channel.png"
+    icon.parent.mkdir()
+    icon.write_bytes(b"image")
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([{
+        "channel_id": "UCexample", "channel_name": "Example channel",
+        "channel_url": "https://www.youtube.com/channel/UCexample",
+        "feed_url": "https://www.youtube.com/@Example/shorts",
+        "icon_url": "https://yt3.ggpht.com/icon", "local_path": str(icon),
+        "content_type": "image/png", "reported_video_count": "26000",
+        "reported_video_count_text": "26K videos",
+    }])
+    metadata = await _channel_metadata(client, tmp_path)
+    settings = load_settings("config.example.toml")._replace(sources=(
+        SourceConfig("youtube.com", ("Example",)),
+    ))
+    _, channels = configured_sources(settings, [], metadata)
+    assert channels[0]["id"] == "UCexample"
+    assert channels[0]["name"] == "Example channel"
+    assert channels[0]["avatar_url"] == "/assets/youtube.com/channel.png"
+    assert channels[0]["reported_video_count"] == 26000
+    assert channels[0]["reported_video_count_text"] == "26K videos"
+
+    icon.unlink()
+    metadata = await _channel_metadata(client, tmp_path)
+    assert metadata[0]["avatar_url"] is None
