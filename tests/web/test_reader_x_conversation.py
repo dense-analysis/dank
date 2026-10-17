@@ -433,3 +433,42 @@ def test_noncanonical_posts_cannot_project_archives(url: str) -> None:
     )
     assert capture["status"] == "failed"
     assert capture["replies"] == []
+
+
+@pytest.mark.parametrize("order", [
+    ["101", "102", "103", "104", "105"],
+    ["103", "101", "102", "105", "104"],
+])
+def test_reply_branches_stay_together_across_interleaved_pages(
+    order: list[str],
+) -> None:
+    nodes = {
+        "101": tweet("101", "100"), "102": tweet("102", "100"),
+        "103": tweet("103", "101"), "104": tweet("104", "103"),
+        "105": tweet("105", "102"),
+    }
+    focal = tweet("100", replies=2)
+    focal["conversation_capture"] = archive(
+        [nodes[node_id] for node_id in order],
+    )
+    capture = project(focal)
+    assert [(node["id"], node["depth"]) for node in capture["replies"]] == [
+        ("101", 0), ("103", 1), ("104", 2), ("102", 0), ("105", 1),
+    ]
+
+
+def test_feed_conversation_summary_does_not_render_reply_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_render(_: dict[str, Any]) -> str:
+        pytest.fail("Feed summaries must not serialize entire conversations")
+
+    monkeypatch.setattr(
+        "dank.web.reader_x_conversation.post_html", unexpected_render,
+    )
+    focal = tweet("100", replies=1)
+    focal["conversation_capture"] = archive([tweet("101", "100")])
+    summary = conversation_capture(selected(), focal, {}, include_posts=False)
+    assert summary["status"] == "captured"
+    assert summary["captured_count"] == 1
+    assert "replies" not in summary and "context" not in summary

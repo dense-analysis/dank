@@ -68,7 +68,7 @@ def conversation_capture(
             "reply_count",
         )),
         "limit": min(count(capture.get("limit")) or 0, MAX_CONVERSATION_POSTS),
-        "context": [], "replies": [],
+        "context": [], "replies": [], "captured_count": 0,
     }
 
     if capture.get("latest_attempt_status") in (
@@ -80,9 +80,10 @@ def conversation_capture(
         )
 
     if status in {"captured", "partial"}:
-        _add_posts(result, post, target, capture, local_urls)
-
-    result["captured_count"] = len(result["replies"])
+        _add_posts(
+            result, post, target, capture, local_urls,
+            include_posts=include_posts,
+        )
 
     if not include_posts:
         result.pop("context")
@@ -129,6 +130,7 @@ def _partial(result: dict[str, Any], reason: str) -> None:
 def _add_posts(
     result: dict[str, Any], post: PostRow, payload: dict[str, Any],
     capture: dict[str, Any], local_urls: dict[str, str],
+    *, include_posts: bool,
 ) -> None:
     if not valid_capture(post, payload, capture):
         result.update(
@@ -161,17 +163,21 @@ def _add_posts(
     ancestors = _ancestors(post.post_id, payload, nodes, result)
     replies = _replies(post.post_id, str(capture["conversation_id"]), nodes,
                        ancestors, result)
-    root_handle = _handle(payload)
-    result["context"] = [
-        _post(node, post, root_handle, local_urls, depth=0,
-              missing_parent=False)
-        for node in reversed(ancestors)
-    ]
-    result["replies"] = [
-        _post(node, post, root_handle, local_urls, depth=depth,
-              missing_parent=missing)
-        for node, depth, missing in replies
-    ]
+    result["captured_count"] = len(replies)
+
+    if include_posts:
+        root_handle = _handle(payload)
+        result["context"] = [
+            _post(node, post, root_handle, local_urls, depth=0,
+                  missing_parent=False)
+            for node in reversed(ancestors)
+        ]
+        result["replies"] = [
+            _post(node, post, root_handle, local_urls, depth=depth,
+                  missing_parent=missing)
+            for node, depth, missing in replies
+        ]
+
     direct = sum(_parent(node) == post.post_id for node, _, _ in replies)
 
     if result["reported_replies"] is None:
@@ -287,7 +293,30 @@ def _replies(
                 state == "missing" and depth == 0,
             ))
 
-    return list(replies.values())
+    return _ordered_replies(replies)
+
+
+def _ordered_replies(
+    replies: dict[str, tuple[dict[str, Any], int, bool]],
+) -> list[tuple[dict[str, Any], int, bool]]:
+    children: dict[str | None, list[str]] = {}
+
+    for node_id, (node, _, _) in replies.items():
+        parent = _parent(node)
+        children.setdefault(parent if parent in replies else None, []).append(
+            node_id,
+        )
+
+    # Keep each branch contiguous even when a later page supplies its children.
+    pending = list(reversed(children.get(None, [])))
+    ordered: list[tuple[dict[str, Any], int, bool]] = []
+
+    while pending:
+        node_id = pending.pop()
+        ordered.append(replies[node_id])
+        pending.extend(reversed(children.get(node_id, [])))
+
+    return ordered
 
 
 def _handle(payload: dict[str, Any]) -> str:
