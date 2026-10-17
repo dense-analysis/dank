@@ -75,3 +75,89 @@ async def test_new_capture_indexes_evidence_and_keeps_failed_batch_retryable():
     assert table == "youtube_reference_evidence"
     assert evidence[0]["video_id"] == "NnV_cWeoo5Q"
     assert evidence[0]["kind"] == "post"
+
+
+async def test_scoped_backfill_uses_raw_and_processed_batches():
+    client = AsyncMock()
+    timestamp = dt.datetime(2026, 10, 16, tzinfo=dt.UTC)
+    common = {
+        "domain": "publisher.example", "post_id": "article",
+        "source": "linked_article", "url": "https://publisher.example/article",
+        "stamp": 123, "fingerprint": 456,
+    }
+    client.fetch_json.side_effect = [
+        QueryResult([{**common, "scraped_at": timestamp,
+            "payload": json.dumps({
+                "feed_xml": "<item><title>Publisher</title></item>",
+                "page_html": '<article><a href="https://youtu.be/NnV_cWeoo5Q">'
+                             'The talk</a></article>',
+            }),
+        }]), QueryResult([]),
+        QueryResult([{**common, "updated_at": timestamp, "author": "Author",
+            "title": "Publisher", "html":
+            '<p><a href="https://youtu.be/abcdefghijk">Another talk</a></p>',
+        }]), QueryResult([]),
+    ]
+    await backfill_evidence(
+        cast(ClickHouseClient, client), sources=("linked_article",),
+    )
+    evidence = [row for call in client.insert_rows.call_args_list
+                for row in call.args[1]]
+    assert {row["video_id"] for row in evidence} == {
+        "NnV_cWeoo5Q", "abcdefghijk",
+    }
+    assert {row["source"] for row in evidence} == {"linked_article"}
+
+    for call in client.fetch_json.call_args_list:
+        query, params = call.args
+        assert "source IN %(sources)s" in query
+        assert "linked_article" not in query
+        assert params["sources"] == ("linked_article",)
+
+
+@pytest.mark.parametrize("versions,scoped", [
+    ([], False), ([{"version": 1}], False), ([{"version": 2}], True),
+])
+async def test_index_upgrade_only_scans_newly_supported_sources(
+    versions: list[dict[str, int]], *, scoped: bool,
+):
+    client = AsyncMock()
+    client.fetch_json.side_effect = [
+        QueryResult(versions), QueryResult([]), QueryResult([]),
+    ]
+    await ensure_youtube_storage(cast(ClickHouseClient, client))
+    assert len(client.fetch_json.call_args_list) == 3
+
+    for call in client.fetch_json.call_args_list[1:]:
+        query, params = call.args
+        assert ("source IN %(sources)s" in query) is scoped
+        expected_sources = ("linked_article",) if scoped else ()
+        assert params.get("sources", ()) == expected_sources
+
+    table, rows = client.insert_rows.call_args.args
+    assert table == "youtube_index_versions"
+    assert rows[0]["version"] == 3
+
+
+async def test_completed_upgrade_does_not_scan_even_when_old_marker_remains():
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([
+        {"version": 2}, {"version": 3},
+    ])
+    await ensure_youtube_storage(cast(ClickHouseClient, client))
+    assert client.fetch_json.call_count == 1
+    client.insert_rows.assert_not_called()
+
+
+async def test_failed_scoped_upgrade_does_not_mark_it_complete():
+    client = AsyncMock()
+    client.fetch_json.side_effect = [
+        QueryResult([{"version": 2}]), RuntimeError("interrupted"),
+    ]
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        await ensure_youtube_storage(cast(ClickHouseClient, client))
+
+    client.insert_rows.assert_not_called()
+    params = client.fetch_json.call_args.args[1]
+    assert params["sources"] == ("linked_article",)

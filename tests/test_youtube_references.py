@@ -147,9 +147,10 @@ def test_x_uses_owned_text_entities_not_quote_or_profile_urls():
     assert reference_rows(row, raw=True) == []
 
 
-def test_rss_uses_article_scope_and_ignores_comments_and_other_articles():
+@pytest.mark.parametrize("source", ["rss", "linked_article"])
+def test_articles_use_owned_scope_and_ignore_other_articles(source: str):
     row = raw(
-        "rss",
+        source,
         {
             "feed_xml": "<item><title>Actual article</title></item>",
             "page_html": (
@@ -198,10 +199,13 @@ def test_reddit_raw_page_and_crosspost_metadata_are_not_the_posts_link():
     assert reference_rows(row, raw=True) == []
 
 
-def test_feed_html_and_plain_text_links_preserve_case_and_timestamp():
+@pytest.mark.parametrize("source", ["rss", "linked_article"])
+def test_feed_html_and_plain_text_links_preserve_case_and_timestamp(
+    source: str,
+):
     body = f'<p>Watch <a href="{URL}&amp;t=33">this</a></p>'
     row = raw(
-        "rss",
+        source,
         {
             "feed_xml": "<item><description>"
             + html.escape(body)
@@ -212,8 +216,9 @@ def test_feed_html_and_plain_text_links_preserve_case_and_timestamp():
     assert content_links(f"See ({URL}).", markup=False)[0].video_id == VIDEO
 
 
-def test_blog_comments_keep_permalink_and_do_not_attribute_replies_to_parent():
-    row = raw("rss", {"page_html": (
+@pytest.mark.parametrize("source", ["rss", "linked_article"])
+def test_article_comments_keep_permalink_and_owned_reply(source: str):
+    row = raw(source, {"page_html": (
         '<article><p>No video in the article</p></article>'
         '<li id="comment-1"><div class="comment">Parent without a video</div>'
         '<ul><li id="comment-2"><div class="comment">'
@@ -240,3 +245,24 @@ def test_primary_article_slots_and_authored_asides_remain_attributable():
     ):
         links = reference_rows(raw("rss", {"page_html": page}), raw=True)
         assert [link["video_id"] for link in links] == [VIDEO]
+
+
+@pytest.mark.parametrize("source", ["rss", "linked_article"])
+def test_processed_articles_keep_publisher_identity_and_video_evidence(
+    source: str,
+):
+    row = {
+        "source": source, "domain": "publisher.example", "post_id": "article",
+        "url": "https://publisher.example/article", "updated_at": STAMP,
+        "title": "Publisher title", "author": "Article author",
+        "html": f'<p>Watch <a href="{URL}">the talk</a>.</p>',
+    }
+    evidence = reference_rows(row, raw=False)
+    assert len(evidence) == 1
+    assert evidence[0]["source"] == source
+    assert evidence[0]["domain"] == "publisher.example"
+    assert evidence[0]["title"] == "Publisher title"
+    assert evidence[0]["kind"] == "post"
+    assert evidence[0]["reference_url"] == row["url"]
+    assert evidence[0]["matched_url"] == URL
+    assert "Watch the talk" in evidence[0]["excerpt"]

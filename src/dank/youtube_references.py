@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 from dank.youtube import canonical_video_id, payload_object
 from dank.youtube_reference_html import Link, comment_links, content_links
 
+ARTICLE_SOURCES = {"rss", "linked_article"}
+
 
 def _objects(value: object) -> list[dict[str, Any]]:
     return (
@@ -70,7 +72,7 @@ def _raw_content(row: dict[str, Any]) -> _PostContent:
             )
         case "x":
             return _x_content(payload)
-        case "rss":
+        case "rss" | "linked_article":
             content = _rss_content(
                 _text(payload.get("feed_xml")) or _text(row.get("payload")),
             )
@@ -157,7 +159,7 @@ def reference_rows(row: dict[str, Any], *, raw: bool) -> list[dict[str, Any]]:
 
     if raw:
         content = _raw_content(row)
-    elif source == "rss":
+    elif source in ARTICLE_SOURCES:
         content = _PostContent(
             _text(row.get("title")),
             _text(row.get("author")),
@@ -182,7 +184,7 @@ def reference_rows(row: dict[str, Any], *, raw: bool) -> list[dict[str, Any]]:
     ]
     results += _comment_evidence(common, content.comments)
 
-    if raw and source == "rss":
+    if raw and source in ARTICLE_SOURCES:
         payload = payload_object(row.get("payload"))
         origin = urlsplit(str(row["url"]))
 

@@ -20,7 +20,7 @@ BACKFILL_BATCH = 64  # Bound memory for full-page source captures.
 
 
 async def evidence_batches(
-    client: ClickHouseClient,
+    client: ClickHouseClient, *, sources: tuple[str, ...] = (),
 ) -> AsyncIterator[tuple[list[dict[str, Any]], list[dict[str, Any]]]]:
     for table, raw in (("raw_posts", True), ("posts FINAL", False)):
         content = "payload" if raw else "html"
@@ -34,6 +34,7 @@ async def evidence_batches(
                 if after
                 else ""
             )
+            scope = " AND source IN %(sources)s" if sources else ""
             result = await client.fetch_json(
                 f"SELECT domain, post_id, url, source, {fields}, {timestamp}, "
                 f"toUnixTimestamp64Milli({timestamp}) AS stamp, "
@@ -41,11 +42,12 @@ async def evidence_batches(
                 "WHERE source != 'youtube' AND domain != 'youtube.com' AND "
                 f"(positionCaseInsensitive({content}, 'youtu') > 0 "
                 "OR positionCaseInsensitive(url, 'youtu') > 0)"
-                + boundary
+                + scope + boundary
                 + " ORDER BY domain, post_id, stamp, fingerprint "
                 "LIMIT %(limit)s",
                 {
                     "limit": BACKFILL_BATCH,
+                    **({"sources": sources} if sources else {}),
                     **({"after": after} if after else {}),
                 },
             )
@@ -66,10 +68,12 @@ async def evidence_batches(
             )
 
 
-async def backfill_evidence(client: ClickHouseClient) -> None:
+async def backfill_evidence(
+    client: ClickHouseClient, *, sources: tuple[str, ...] = (),
+) -> None:
     observations = 0
 
-    async for _, evidence in evidence_batches(client):
+    async for _, evidence in evidence_batches(client, sources=sources):
         if evidence:
             await client.insert_rows("youtube_reference_evidence", evidence)
             observations += len(evidence)

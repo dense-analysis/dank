@@ -121,8 +121,11 @@ not whether an external link is still available or a comment is still public.
 
 Startup backfills the evidence index in bounded batches before serving the
 reader; an interrupted backfill can retry without duplicating references. New
-captures and processed articles add evidence when persisted. The old index and
-original source archive are retained for comparison. A read-only audit is
+captures and processed articles add evidence when persisted. Publisher pages
+collected from aggregator links (`linked_article`) use the same article/comment
+attribution rules as RSS captures. Existing version-2 indexes backfill only those
+publisher records on upgrade; fresh indexes still scan all supported sources.
+The old index and original source archive are retained for comparison. A read-only audit is
 available with `uv run python -m dank.web.reader_youtube_index --output audit.json`
 (add `--config` when needed). It reports verified/excluded legacy associations,
 their source excerpts, and the accepted evidence.

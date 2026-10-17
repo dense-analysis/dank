@@ -121,7 +121,7 @@ async def test_item_keeps_provenance_and_multiple_source_references():
 
 async def test_existing_link_index_is_not_backfilled_on_every_start() -> None:
     client = AsyncMock()
-    client.fetch_json.return_value = QueryResult([{"version": 2}])
+    client.fetch_json.return_value = QueryResult([{"version": 3}])
     await ensure_youtube_storage(cast(ClickHouseClient, client))
     assert all(
         not call.args[0].startswith("INSERT INTO youtube_links")

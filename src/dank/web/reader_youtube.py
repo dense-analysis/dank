@@ -36,7 +36,7 @@ MAX_ITEM_REFERENCES = 100
 MAX_ITEM_TITLE_HISTORY = 20
 MAX_THUMBNAIL_CANDIDATES = 64
 MAX_THUMBNAIL_VARIANTS = 8
-INDEX_VERSION = 2
+INDEX_VERSION = 3
 
 
 async def ensure_youtube_storage(client: ClickHouseClient) -> None:
@@ -49,17 +49,20 @@ async def ensure_youtube_storage(client: ClickHouseClient) -> None:
         await client.execute(statement)
 
     complete = await client.fetch_json(
-        "SELECT version FROM youtube_index_versions "
-        "WHERE version = %(version)s "
-        "LIMIT 1", {"version": INDEX_VERSION},
+        "SELECT DISTINCT version FROM youtube_index_versions "
+        "WHERE version IN (2, %(version)s)", {"version": INDEX_VERSION},
     )
 
-    if complete.rows:
+    versions = {int(row["version"]) for row in complete.rows}
+
+    if INDEX_VERSION in versions:
         return
 
-    # Retain the legacy index for audits; rebuild from source fields.
-    # New observations are indexed when scraping/processing persists them.
-    await backfill_evidence(client)
+    # Version 2 already verified all sources it supported. Only newly supported
+    # publisher captures need scanning on upgrade; fresh databases scan all.
+    await backfill_evidence(
+        client, sources=("linked_article",) if 2 in versions else (),
+    )
 
     await client.insert_rows("youtube_index_versions", [{
         "version": INDEX_VERSION, "completed_at": dt.datetime.now(dt.UTC),
