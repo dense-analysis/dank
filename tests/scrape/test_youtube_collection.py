@@ -4,7 +4,7 @@ import datetime
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -323,3 +323,32 @@ def test_sorted_channel_feeds_do_not_use_chronological_overlap() -> None:
     ], feed.url)
     assert len(batch.posts) == 2
     assert not capture.reached_overlap
+
+
+
+async def test_hype_stops_after_top_100_without_extra_scrolls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dank.scrape.youtube import (
+        _scrape_feed,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    feed = YouTubeFeed("https://www.youtube.com/feed/hype", "Hype", "hype")
+    data = [{"videoRenderer": {"videoId": f"{index:011d}"}}
+            for index in range(100)]
+    monkeypatch.setattr("dank.scrape.youtube._resolve_feed", AsyncMock(
+        return_value=("https://www.youtube.com/playlist?list=test", {
+            "initial": data, "at_bottom": False,
+        }),
+    ))
+    capture = AsyncMock()
+    capture.drain.return_value = []
+    monkeypatch.setattr("dank.scrape.youtube.NetworkCapture",
+                        Mock(return_value=capture))
+    page = AsyncMock()
+    batches = [batch async for batch in _scrape_feed(
+        page, feed, YouTubeSettings(), set(),
+    )]
+    assert sum(len(batch.posts) for batch in batches) == 100
+    page.evaluate.assert_not_awaited()
+    capture.stop.assert_awaited_once()

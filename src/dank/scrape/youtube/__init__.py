@@ -56,6 +56,10 @@ class FeedCapture:
     ) -> None:
         self.feed = feed
         self.settings = settings
+        self.item_limit = (
+            min(settings.scrape.max_posts, 100)
+            if feed.kind == "hype" else settings.scrape.max_posts
+        )
         self.known_ids = known_ids
         self.observed_at = datetime.datetime.now(datetime.UTC)
         self.seen: set[tuple[str, str]] = set()
@@ -117,7 +121,7 @@ class FeedCapture:
 
         if (
             post.post_id not in self.item_ids
-            and len(self.item_ids) >= self.settings.scrape.max_posts
+            and len(self.item_ids) >= self.item_limit
         ):
             return False
 
@@ -284,7 +288,7 @@ def _stop_reason(capture: FeedCapture, idle: int) -> str | None:
     if capture.reached_overlap:
         return "known channel overlap"
 
-    if len(capture.item_ids) >= capture.settings.scrape.max_posts:
+    if len(capture.item_ids) >= capture.item_limit:
         return "item limit"
 
     if idle >= capture.settings.stall_scrolls:
