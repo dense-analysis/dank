@@ -110,16 +110,25 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   was correctly partial, with no failed media downloads. Full Reddit coverage
   remains constrained by the site's quota; the collector does not bypass it.
 - [x] **P1: Pace Reddit requests and reuse unchanged details.** Reddit browser
-  actions now share a configurable interval (10 seconds by default). Successful
+  requests share a configurable interval (2 seconds by default), doubled after
+  a 429 up to 60 seconds for that run. Successful
   details can be reused for 24 hours when listing content, comment counts and
   comment capture options still match. Cache hits retain original capture dates
   and do not extend expiry; fresh scores and listing metadata are still saved.
   Each completed post is yielded for persistence before the next detail visit;
   comment scrolling stops when its load-more control disappears.
   Existing successful archives are eligible using their original listing payloads.
+  New details normally use browser fetches of public HTML and top-level comment
+  fragments instead of loading another live page per post. Inert templates are
+  parsed without executing captured scripts; rendered visits remain a fallback.
   A denied comments JSON endpoint is tried only once per run before falling back
   to rendered threads. Browser subrequests and upstream quotas remain outside
-  this pacing control; a full fresh archive can take considerably longer.
+  this pacing control. The initial 10-second-per-action test was stopped after
+  13m02s with 91 saved posts (44 reused details, zero 429s); its throughput was
+  too low, prompting the document path and adaptive pacing. Live document
+  checks captured the same 35- and 27-comment discussions in 2.3 and 4.0
+  seconds respectively, including pacing. Pagination retains the public cursor
+  and the fragment endpoint's POST/HTML response format.
   [Configuration and limitations](features/reddit.md#pacing-and-saved-details),
   [cache tests](../tests/scrape/test_reddit_cache.py),
   [pacing tests](../tests/scrape/test_reddit_pacing.py).

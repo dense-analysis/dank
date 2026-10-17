@@ -60,7 +60,7 @@ class RedditSettings(NamedTuple):
     comment_limit: int = 50
     comment_sort: RedditCommentSort = RedditCommentSort.BEST
     download_videos: bool = False
-    request_interval_seconds: float = 10.0
+    request_interval_seconds: float = 2.0
     detail_cache_hours: float = 24.0
 
 

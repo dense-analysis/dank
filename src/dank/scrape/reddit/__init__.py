@@ -32,7 +32,11 @@ from dank.scrape.zendriver import (
 from .access import RedditScrapeError, check_page_responses, pace_request
 from .cache import DetailSnapshot, reuse_detail
 from .communities import discover_community
-from .details import capture_post_detail, defer_post_detail
+from .details import (
+    capture_post_detail,
+    capture_post_document,
+    defer_post_detail,
+)
 from .html import extract_html_posts
 from .payloads import (
     as_dict,
@@ -211,7 +215,10 @@ async def _capture_batch_details(
         else:
             fetched += 1
             logger.info("Reddit detail: fetching %s", post.post_id)
-            enriched = await capture_post_detail(page, post, settings)
+            enriched = await capture_post_document(page, post, settings)
+
+            if enriched is None:
+                enriched = await capture_post_detail(page, post, settings)
 
         payload = as_dict(json.loads(enriched.payload))
         rate_limited = rate_limited or (

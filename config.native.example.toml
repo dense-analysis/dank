@@ -34,7 +34,7 @@ queue_batches = 2
 
 [reddit]
 # Minimum spacing between Reddit browser actions; reuse unchanged details.
-request_interval_seconds = 10.0
+request_interval_seconds = 2.0
 detail_cache_hours = 24.0
 # Post bodies and media links are always collected from individual post pages.
 capture_comments = true

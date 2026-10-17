@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Iterable
 from contextvars import ContextVar
@@ -12,6 +13,9 @@ from dank.scrape.zendriver import NetworkResponse
 
 # Avoid immediately repeating browser requests when Reddit omits Retry-After.
 DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 30.0
+# A run adapts upward after a real 429, rather than taxing every healthy visit.
+MAX_ADAPTIVE_INTERVAL_SECONDS = 60.0
+logger = logging.getLogger(__name__)
 
 
 class RedditRequests:
@@ -20,6 +24,7 @@ class RedditRequests:
     def __init__(self, interval: float) -> None:
         self.interval = interval
         self.json_available = True
+        self.documents_available = True
         self._next_request = 0.0
         self._lock = asyncio.Lock()
         self.requests = 0
@@ -61,6 +66,17 @@ def check_response_status(
 ) -> None:
     if status == 429:
         count("http_429")
+        requests = current_requests.get()
+
+        if requests is not None:
+            requests.interval = min(
+                MAX_ADAPTIVE_INTERVAL_SECONDS, requests.interval * 2,
+            )
+            logger.warning(
+                "Reddit pacing increased to %.1fs after HTTP 429",
+                requests.interval,
+            )
+
         delay = max(
             DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS,
             retry_after_seconds(retry_after),

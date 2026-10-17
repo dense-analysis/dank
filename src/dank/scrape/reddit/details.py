@@ -27,6 +27,11 @@ from .access import (
     pace_request,
 )
 from .cache import listing_signature
+from .documents import (
+    DETAIL_SNAPSHOT_SCRIPT,
+    fetch_document,
+    next_comments_url,
+)
 from .html import extract_html_posts
 from .payloads import (
     POST_PATH,
@@ -42,41 +47,6 @@ logger = logging.getLogger(__name__)
 DETAIL_TIMEOUT_SECONDS = 35
 JSON_TIMEOUT_SECONDS = 10
 MAX_COMMENT_SCROLLS = 5
-# One initial thread response; no unbounded morechildren expansion.
-DETAIL_SNAPSHOT_SCRIPT = """JSON.stringify((() => {
-    const post = document.querySelector('shreddit-post');
-    const comments = Array.from(document.querySelectorAll('shreddit-comment'));
-    return {
-        url: location.href,
-        html: post?.outerHTML || '',
-        comments: comments.map(node => {
-            const body = Array.from(node.querySelectorAll('[slot="comment"]'))
-                .find(body => body.closest('shreddit-comment') === node);
-            const parent = node.parentElement?.closest('shreddit-comment');
-            return {
-                id: node.getAttribute('thingid') || node.id,
-                parent_id: parent?.getAttribute('thingid')
-                    || node.getAttribute('parentid') || post?.id,
-                author: node.getAttribute('author') || '',
-                body_html: body?.innerHTML || '',
-                body: body?.innerText || '',
-                score: node.getAttribute('score'),
-                created_utc: node.getAttribute('created'),
-                permalink: node.getAttribute('permalink'),
-                is_op: node.getAttribute('is-op') === 'true',
-                depth: node.getAttribute('depth'),
-            };
-        }),
-        comments_html: comments.filter(node =>
-            !node.parentElement?.closest('shreddit-comment'))
-            .map(node => node.outerHTML).join('\\n'),
-        can_scroll: !!document.querySelector(
-            '#top-level-more-comments-partial'),
-        has_more: !!document.querySelector(
-            'shreddit-comment-tree [slot="more-comments"], '
-            + 'shreddit-comment-tree faceplate-partial[src*="comment"]'),
-    };
-})())"""
 
 
 def comment_capture(
@@ -446,7 +416,6 @@ async def _rendered_detail(
     settings: RedditSettings,
 ) -> dict[str, object] | None:
     snapshot = await _snapshot(page)
-    community = text(as_dict(json.loads(raw.payload)).get("subreddit"))
     previous_count = 0
     stalls = 0
 
@@ -477,6 +446,13 @@ async def _rendered_detail(
         stalls = stalls + 1 if count == previous_count else 0
         previous_count = count
 
+    return _snapshot_detail(snapshot, raw, settings)
+
+
+def _snapshot_detail(
+    snapshot: dict[str, object], raw: RawPost, settings: RedditSettings,
+) -> dict[str, object] | None:
+    community = text(as_dict(json.loads(raw.payload)).get("subreddit"))
     current = POST_PATH.match(urlsplit(text(snapshot.get("url"))).path)
 
     if current is None or f"t3_{current[2]}" != raw.post_id:
@@ -595,25 +571,7 @@ async def capture_post_detail(
                         settings, post, status="disabled",
                     )
     except Exception as error:
-        if isinstance(error, RedditRateLimitError | HostCooldownError):
-            post["detail_capture"] = {
-                "status": "failed", "reason": "rate_limited",
-            }
-
-        if isinstance(error, RedditScrapeError | HostCooldownError):
-            count("fetch_failures")
-            stats = current_source.get()
-
-            if stats is not None:
-                stats.error_type = type(error).__name__
-
-        # A detail failure must not discard an already discovered listing.
-        logger.warning(
-            "Reddit detail unavailable for %s (%s: %s)",
-            raw.post_id,
-            type(error).__name__,
-            error,
-        )
+        _record_detail_failure(post, raw, error)
     finally:
         await capture.stop()
 
@@ -633,3 +591,122 @@ def defer_post_detail(raw: RawPost, settings: RedditSettings) -> RawPost:
     )
 
     return raw._replace(payload=json.dumps(post, separators=(",", ":")))
+
+
+def _record_detail_failure(
+    post: dict[str, object], raw: RawPost, error: Exception,
+) -> None:
+    if isinstance(error, RedditRateLimitError | HostCooldownError):
+        post["detail_capture"] = {
+            "status": "failed", "reason": "rate_limited",
+        }
+
+    if isinstance(error, RedditScrapeError | HostCooldownError):
+        count("fetch_failures")
+        stats = current_source.get()
+
+        if stats is not None:
+            stats.error_type = type(error).__name__
+
+    # A detail failure must not discard an already discovered listing.
+    logger.warning(
+        "Reddit detail unavailable for %s (%s: %s)",
+        raw.post_id,
+        type(error).__name__,
+        error,
+    )
+
+
+async def capture_post_document(
+    page: zendriver.Tab | None, raw: RawPost, settings: RedditSettings,
+) -> RawPost | None:
+    requests = current_requests.get()
+
+    if page is None or (
+        requests is not None and not requests.documents_available
+    ):
+        return None
+
+    listing = as_dict(json.loads(raw.payload))
+    sort = (
+        "confidence"
+        if settings.comment_sort == "best" else settings.comment_sort
+    )
+    url = raw.url.rstrip("/") + "/?" + urlencode({"sort": sort})
+
+    try:
+        snapshot = await fetch_document(page, url, raw.post_id)
+
+        if snapshot is None or not text(snapshot.get("html")):
+            return None
+
+        snapshot = await _document_comments(page, snapshot, raw, settings)
+        detail = _snapshot_detail(snapshot, raw, settings)
+
+        if detail is None or (settings.capture_comments and as_dict(
+            detail.get("comment_capture"),
+        ).get("status") != "captured"):
+            return None
+
+        post = _captured_detail(listing, detail)
+        as_dict(post["detail_capture"])["method"] = "document"
+
+        if not settings.capture_comments:
+            post["comment_capture"] = comment_capture(
+                settings, post, status="disabled",
+            )
+    except (RedditScrapeError, HostCooldownError) as error:
+        post = as_dict(json.loads(defer_post_detail(raw, settings).payload))
+        post["detail_capture"] = {"status": "failed"}
+        _record_detail_failure(post, raw, error)
+    except Exception:
+        # A document without a usable archive can still render normally.
+        logger.debug(
+            "Reddit document fallback for %s", raw.post_id, exc_info=True,
+        )
+        return None
+
+    return raw._replace(
+        payload=json.dumps(post, separators=(",", ":")),
+        scraped_at=datetime.datetime.now(datetime.UTC),
+    )
+
+
+async def _document_comments(
+    page: zendriver.Tab, snapshot: dict[str, object],
+    raw: RawPost, settings: RedditSettings,
+) -> dict[str, object]:
+    community = text(as_dict(json.loads(raw.payload)).get("subreddit"))
+    comments = list(cast(list[object], snapshot.get("comments", [])))
+    latest = snapshot
+    visited: set[tuple[str, str]] = set()
+
+    for _ in range(MAX_COMMENT_SCROLLS if settings.capture_comments else 0):
+        url = next_comments_url(latest, community, raw.post_id)
+
+        unique = {text(as_dict(item).get("id")) for item in comments}
+        cursor = text(latest.get("next_cursor"))
+
+        if (
+            len(unique) >= settings.comment_limit or not url
+            or (url, cursor) in visited
+        ):
+            break
+
+        if not cursor:
+            raise ValueError("Reddit comment cursor unavailable")
+
+        visited.add((url, cursor))
+        more = await fetch_document(page, url, raw.post_id, cursor=cursor)
+
+        if more is None:
+            break
+
+        comments.extend(cast(list[object], more.get("comments", [])))
+        snapshot["comments_html"] = (
+            text(snapshot.get("comments_html")) + "\n"
+            + text(more.get("comments_html"))
+        )
+        latest = more
+
+    return {**snapshot, "comments": comments}

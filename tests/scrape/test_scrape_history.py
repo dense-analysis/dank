@@ -385,6 +385,10 @@ async def test_reddit_failures_preserve_posts_and_allow_later_communities(
     )
     monkeypatch.setattr("dank.scrape.reddit._scrape_community", collect)
     monkeypatch.setattr("dank.scrape.reddit.capture_post_detail", detail)
+    monkeypatch.setattr(
+        "dank.scrape.reddit.capture_post_document",
+        AsyncMock(return_value=None),
+    )
     communities = ("before", "empty", "blocked", "broken", "after")
     await run_scrape(harness.settings._replace(
         sources=(

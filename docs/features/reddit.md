@@ -2,10 +2,11 @@
 
 DANK collects posts from community listing pages with a Chromium browser.
 It reads the page's network responses and rendered posts while scrolling,
-then visits new or changed posts for their full body, media and discussion.
-Post details use the same browser session: captured network responses, a
-bounded comments JSON request where Reddit permits it, and rendered comments
-as a fallback. Access restrictions remain visible as capture failures.
+then reads new or changed post documents for their full body, media and
+discussion. Detail requests use the same browser session and parse the returned
+HTML without navigating or running another page. Embedded comment templates
+and bounded top-level comment pages are included. A normal rendered post visit
+remains available when the document cannot provide a usable capture. Access restrictions remain visible as capture failures.
 
 ## Configure
 
@@ -21,7 +22,7 @@ sources = [
 ]
 
 [reddit]
-request_interval_seconds = 10.0
+request_interval_seconds = 2.0
 detail_cache_hours = 24.0
 max_posts = 100
 max_scrolls = 20
@@ -88,13 +89,17 @@ an unrecognized blank page is still reported as a failure.
 
 ## Pacing and saved details
 
-DANK spaces Reddit navigation, pagination, comments JSON requests and comment
-scrolls by at least `request_interval_seconds` (default **10 seconds**, allowed
-1–60). This is a conservative DANK setting, not a published Reddit quota. The
+DANK spaces Reddit document requests, navigation and pagination by at least
+`request_interval_seconds` (default **2 seconds**, allowed 1–60). After a 429,
+the interval doubles for the rest of that run, up to 60 seconds, in addition to
+the host cooldown. This is a conservative DANK setting, not a published Reddit quota. The
 clock is shared across Reddit sources in a run. Browser subrequests still
 belong to Reddit's pages, so spacing cannot guarantee access or eliminate 429s.
-An uncached collection can take substantially longer; logs identify each detail
-visit and report reused, fetched and deferred counts for every batch.
+Most uncached posts use one document request, plus comment pages only when
+needed to approach the configured limit. The first post initializes the detail
+tab normally; later document requests avoid loading its scripts, styles and
+other page resources. Logs identify each detail and report reused, fetched
+and deferred counts for every listing batch.
 
 Successful details are reused for up to `detail_cache_hours` (default **24 hours**,
 allowed 0–168; zero forces refreshes). Reuse requires matching visible post
@@ -141,8 +146,9 @@ rate-limit reason in capture metadata, instead of issuing a request per post
 against the same restriction. Cooldown waiting has a separate budget from
 reading a detail page.
 
-Each detail visit has a 35-second page-read budget plus the intentional waits
-for at most one JSON request and five comment scrolls. A blocked or timed-out detail page keeps the listing post.
+Each document request has a 10-second fetch timeout and a 15-second browser
+command timeout. A rendered fallback has a 35-second page-read budget plus
+intentional pacing waits for at most one JSON request and five comment scrolls. A blocked or timed-out detail page keeps the listing post.
 Comments can be fewer than the configured limit when Reddit returns collapsed
 threads, unavailable replies, or stops loading; DANK makes at most five
 additional scroll attempts, stopping when the top-level load-more control is
