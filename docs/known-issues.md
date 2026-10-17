@@ -106,7 +106,8 @@ recoverable request and media failures:
   treated as an excerpt even inside `content:encoded`. When a page is available,
   the processor uses its article body; ordinary full feeds remain preferred and
   failed fetches retain their excerpt. This repairs Ars Technica's short previews
-  after a successful page recovery.
+  after a successful page recovery, including articles whose canonical URL
+  changed. All 68 saved Ars entries were reprocessed with this correction.
 - RSS media requests carry the source page's origin as their referrer. This
   restores the `shkspr.mobi` favicon images without sending article paths,
   query strings or credentials. HTTPS origins are not sent to HTTP media.

@@ -183,6 +183,27 @@ def test_excerpt_remains_readable_when_the_page_is_unavailable() -> None:
     assert post is not None and "Retained excerpt" in post.html
 
 
+def test_excerpt_link_to_original_url_survives_a_canonical_redirect() -> None:
+    payload = json.dumps({
+        "feed_xml": '<item xmlns:c="http://purl.org/rss/1.0/modules/content/">'
+                    '<title>Story</title><c:encoded><![CDATA['
+                    '<p>Excerpt.</p><a href="https://example.com/old-story">'
+                    'Read full article</a>]]></c:encoded></item>',
+        "page_html": '<article><p>Full article after its canonical '
+                     'address changed.</p></article>',
+        "page_final_url": "https://example.com/new-story",
+    })
+    raw = _raw_post(
+        payload=payload, url="https://example.com/old-story",
+        scraped_at=datetime.datetime(2026, 10, 17, tzinfo=datetime.UTC),
+    )
+    post = convert_raw_post(raw)
+
+    assert post is not None
+    assert "Full article after its canonical address changed" in post.html
+    assert post.url == raw.url and raw.payload == payload
+
+
 def test_convert_raw_post_atom_entry() -> None:
     scraped_at = datetime.datetime(2026, 2, 1, 2, 0, tzinfo=datetime.UTC)
     raw = _raw_post(

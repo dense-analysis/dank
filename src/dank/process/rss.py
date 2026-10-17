@@ -75,7 +75,9 @@ def convert_raw_post(row: RawPost) -> Post | None:
         author=parsed.author,
         published_at=row.post_created_at or parsed.created_at,
         content_html=parsed.text,
-        full_content=parsed.full_content,
+        full_content=(
+            parsed.full_content and not feed_is_excerpt(parsed.text, row.url)
+        ),
     )
     title = page_derived.title
     author = page_derived.author
