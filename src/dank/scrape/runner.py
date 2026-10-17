@@ -10,7 +10,7 @@ import shutil
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
-from typing import cast
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -71,15 +71,18 @@ from dank.scrape.x import scrape_x_accounts, scrape_x_posts
 from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
+from dank.scrape.youtube.metadata import fetch_video_metadata
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
-from dank.youtube import discovery_from_post
+from dank.youtube import VIDEO_ID, discovery_from_post
 from dank.youtube_references import reference_rows
 
 logger = logging.getLogger(__name__)
 # Community avatars should remain small even when post media is unlimited.
 MAX_COMMUNITY_ICON_BYTES = 1024 * 1024
+# Bound the extra work after a feed run; subsequent runs drain the backlog.
+MAX_LINKED_METADATA_PER_RUN = 100
 
 
 async def run_scrape(
@@ -345,6 +348,7 @@ async def _collect_with_history(
             asyncio.create_task(worker())
             for _ in range(history.source_concurrency)
         )
+        await collect_linked_youtube_metadata(client, http_client)
     finally:
         progress.cancel()
         await asyncio.gather(progress, return_exceptions=True)
@@ -1560,9 +1564,18 @@ def run_scrape_from_config(
     hacker_news_details: bool = False,
     retry_youtube_thumbnails_only: bool = False,
     youtube_thumbnail_ids: tuple[str, ...] = (),
+    youtube_metadata_only: bool = False,
+    youtube_video_ids: tuple[str, ...] = (),
 ) -> None:
     settings = load_settings(path)
     configure_logging(settings.logging, component="scrape")
+
+    if youtube_metadata_only:
+        asyncio.run(run_youtube_metadata(
+            settings, video_ids=youtube_video_ids,
+        ))
+
+        return
 
     if retry_youtube_thumbnails_only:
         asyncio.run(retry_youtube_thumbnails(
@@ -1604,3 +1617,110 @@ def filter_settings_sources(
     )
 
     return settings._replace(sources=filtered_sources)
+
+
+async def collect_youtube_video_metadata(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    video_id: str,
+) -> dict[str, Any]:
+    """Persist one provider observation, respecting success/failure caches."""
+    if not VIDEO_ID.fullmatch(video_id):
+        raise ValueError("Invalid YouTube video ID")
+
+    previous = await client.fetch_json(
+        "SELECT * FROM youtube_video_metadata WHERE video_id = %(id)s "
+        "ORDER BY observed_at DESC LIMIT 1", {"id": video_id},
+    )
+    now = datetime.datetime.now(datetime.UTC)
+
+    if previous.rows:
+        row = previous.rows[0]
+        retry_after = parse_datetime(row["retry_after"])
+
+        if retry_after and retry_after > now:
+            return {**row, "cached": True}
+
+    row = await fetch_video_metadata(http_client, video_id)
+    await client.insert_rows("youtube_video_metadata", [row])
+
+    return {**row, "cached": False}
+
+
+async def collect_linked_youtube_metadata(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    *, video_ids: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    """Enrich verified links or explicitly selected known video IDs."""
+    if any(not VIDEO_ID.fullmatch(item) for item in video_ids):
+        raise ValueError("Invalid YouTube video ID")
+
+    selected = " AND known.video_id IN %(ids)s" if video_ids else ""
+    known = (
+        "SELECT video_id FROM youtube_reference_evidence GROUP BY video_id"
+    )
+
+    if video_ids:
+        known += (
+            " UNION DISTINCT SELECT substring(item_id, 7) AS video_id "
+            "FROM youtube_discoveries WHERE startsWith(item_id, 'video:')"
+        )
+
+    pending = await client.fetch_json(
+        "SELECT known.video_id AS video_id FROM (" + known + ") AS known "
+        "LEFT JOIN (SELECT v.video_id AS video_id, "
+        "argMax(v.retry_after, v.observed_at) AS retry_after "
+        "FROM youtube_video_metadata AS v GROUP BY v.video_id) AS m "
+        "ON known.video_id = m.video_id "
+        "WHERE (m.video_id = '' OR m.retry_after <= now64(3))" + selected +
+        " ORDER BY m.retry_after ASC, known.video_id ASC LIMIT %(limit)s",
+        {"ids": list(dict.fromkeys(video_ids)),
+         "limit": MAX_LINKED_METADATA_PER_RUN},
+    )
+    queue = iter(str(row["video_id"]) for row in pending.rows)
+    outcomes: list[dict[str, Any]] = []
+
+    async def worker() -> None:
+        for video_id in queue:
+            outcome = await collect_youtube_video_metadata(
+                client, http_client, video_id,
+            )
+            outcomes.append(outcome)
+            logger.info(
+                "YouTube metadata %s: %s", video_id, outcome["status"],
+            )
+
+    # Remain polite even when the generic HTTP limits are configured higher.
+    await gather_tasks(asyncio.create_task(worker()) for _ in range(2))
+
+    if outcomes:
+        logger.info(
+            "YouTube metadata: %d captured; %d unavailable/failed",
+            sum(row["status"] == "captured" for row in outcomes),
+            sum(row["status"] != "captured" for row in outcomes),
+        )
+
+    return outcomes
+
+
+async def run_youtube_metadata(
+    settings: Settings, *, video_ids: tuple[str, ...] = (),
+) -> None:
+    """Lightweight CLI backfill without launching browsers or feed scrapes."""
+    async with (
+        ClickHouseClient(settings.clickhouse) as client,
+        aiohttp.ClientSession() as http_client,
+    ):
+        schema = pathlib.Path(__file__).parents[1] / "storage/youtube.sql"
+
+        for statement in schema.read_text().split(";"):
+            if statement.strip():
+                await client.execute(statement)
+
+        token = current_limiter.set(RequestLimiter(settings.scrape))
+
+        try:
+            await collect_linked_youtube_metadata(
+                client, http_client, video_ids=video_ids,
+            )
+        finally:
+            current_limiter.reset(token)

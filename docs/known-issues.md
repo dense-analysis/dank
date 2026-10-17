@@ -92,7 +92,8 @@ explicit article scopes, and identifiable comments. Each occurrence retains its
 excerpt, matched destination, capture time and post/comment permalink. Multiple
 captures collapse by video and occurrence identity; older mentions survive a
 later capture that omits comments. Counts, search and pagination use this same
-index. Missing YouTube titles use a neutral video-ID label.
+index. Missing YouTube titles use a neutral video-ID label until public YouTube
+preview metadata is collected; source headlines are never promoted to titles.
 
 The previous index searched entire payloads and attributed every match to the
 parent post. This included navigation, recommendations, quoted X posts, Reddit
@@ -121,6 +122,36 @@ Covered by [extraction tests](../tests/test_youtube_references.py),
 [migration tests](../tests/web/test_reader_youtube_index.py),
 [API tests](../tests/web/test_reader_youtube.py) and
 [reader browser tests](../reader/tests/youtube-collection.spec.ts).
+
+### Linked video preview metadata
+
+Linked videos now have a canonical metadata archive separate from recommendation
+feed appearances. Public YouTube oEmbed responses provide the real title, channel
+attribution and thumbnail; original responses and every attempt are saved in
+`youtube_video_metadata`. The collector does not download media or claim to have
+collected descriptions, transcripts or comments. Channel handles do not establish
+a channel ID when the provider does not return one.
+
+Normal collection enriches up to 100 due, verified linked videos with two workers
+under the shared HTTP limiter. `--youtube-metadata` runs that queue without other
+collection; repeat `--youtube-video-id VIDEO_ID` to limit it to known videos.
+Reader collection uses an explicit same-origin JSON POST, validates that the video
+already exists in saved evidence or feed discoveries, serializes concurrent
+requests, and limits request and response sizes. GET requests remain read-only.
+
+Successes are cached for seven days. Network, malformed-response and transient
+HTTP failures retry after one hour; unavailable/private responses (401, 403, 404,
+410) retry after one day. These are local retry policies, not guarantees that a
+video is deleted or private. The latest attempt is shown separately from last
+successful capture availability. Failed refreshes preserve prior title/thumbnail
+metadata; genuine selected-feed titles remain tied to their capture. The queue
+is intentionally bounded; large backlogs need subsequent runs. Preview thumbnails
+use the provider URL and can become unavailable independently of saved metadata.
+
+Tests cover provider-payload retention, malicious URLs, malformed/oversized and
+unavailable responses, retry caching, duplicate requests, provenance preservation
+and source-title isolation in [collector tests](../tests/scrape/test_youtube_metadata.py)
+and [API tests](../tests/web/test_reader_youtube_metadata.py).
 
 ### YouTube channel identity and totals
 

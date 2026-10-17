@@ -103,7 +103,12 @@ def build_youtube_query(
 ) -> tuple[str, dict[str, Any]]:
     params: dict[str, Any] = {"limit": filters.limit + 1}
     conditions: list[str] = []
-    table = _items_table(filters)
+    table = _metadata_items(
+        _items_table(filters), prefer_metadata=(
+            filters.feed == "linked"
+            or bool(filters.item_id and not filters.feed)
+        ),
+    )
 
     if filters.feed and filters.feed != "linked":
         params["feed"] = filters.feed
@@ -220,3 +225,29 @@ def _items_table(filters: YouTubeFilters) -> str:
         )
 
     return _feed_items(filters)
+
+
+def _metadata_items(items: str, *, prefer_metadata: bool = False) -> str:
+    # Feed captures own their title. Metadata fills gaps and carries its own
+    # capture state; a failed refresh never erases the last successful preview.
+    captured = "if(empty(i.payload), '{}', i.payload)"
+    metadata = "if(empty(m.payload), '{}', m.payload)"
+    combined = (
+        f"JSONMergePatch({captured}, {metadata})" if prefer_metadata else
+        "if(notEmpty(JSONExtractString(i.payload, 'title')), "
+        f"JSONMergePatch({metadata}, {captured}), "
+        f"JSONMergePatch({captured}, {metadata}))"
+    )
+
+    return (
+        "SELECT i.item_id AS item_id, i.kind AS kind, "
+        "i.observed_at AS observed_at, i.search_text AS search_text, "
+        f"i.position AS position, {combined} AS payload "
+        "FROM (" + items + ") AS i LEFT JOIN ("
+        "SELECT v.video_id AS video_id, JSONMergePatch("
+        "if(empty(argMaxIf(v.payload, v.observed_at, v.status = 'captured')), "
+        "'{}', argMaxIf(v.payload, v.observed_at, v.status = 'captured')), "
+        "argMax(v.payload, v.observed_at)) AS payload "
+        "FROM youtube_video_metadata AS v GROUP BY v.video_id"
+        ") AS m ON i.item_id = concat('video:', m.video_id)"
+    )

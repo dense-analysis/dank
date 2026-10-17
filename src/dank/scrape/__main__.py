@@ -58,7 +58,17 @@ def main() -> None:
         help="Limit thumbnail repair/history adoption to this 11-character "
              "video ID; repeat with --retry-youtube-thumbnails",
     )
+    parser.add_argument(
+        "--youtube-metadata", action="store_true",
+        help="Collect public previews for up to 100 due linked YouTube videos",
+    )
+    parser.add_argument(
+        "--youtube-video-id", action="append", default=[],
+        help="Limit --youtube-metadata to this saved video ID; repeatable",
+    )
     args = parser.parse_args()
+
+    _validate_metadata_options(parser, args)
 
     if args.youtube_thumbnail_id and not args.retry_youtube_thumbnails:
         parser.error(
@@ -76,7 +86,7 @@ def main() -> None:
 
     if sum((bool(args.x_post), args.x_details, args.reddit_details,
             args.hacker_news_details, args.retry_failed_pages,
-            args.retry_youtube_thumbnails)) > 1:
+            args.retry_youtube_thumbnails, args.youtube_metadata)) > 1:
         parser.error(
             "Discussion/detail refresh and retry modes cannot be combined",
         )
@@ -104,11 +114,27 @@ def main() -> None:
         reddit_details=args.reddit_details,
         x_details=args.x_details,
         hacker_news_details=args.hacker_news_details,
+        youtube_metadata_only=args.youtube_metadata,
+        youtube_video_ids=tuple(args.youtube_video_id),
         retry_youtube_thumbnails_only=args.retry_youtube_thumbnails,
         youtube_thumbnail_ids=tuple(
             f"video:{item}" for item in args.youtube_thumbnail_id
         ),
     )
+
+
+def _validate_metadata_options(
+    parser: argparse.ArgumentParser, args: argparse.Namespace,
+) -> None:
+    if args.youtube_video_id and not args.youtube_metadata:
+        parser.error("--youtube-video-id requires --youtube-metadata")
+
+    if args.youtube_metadata and args.domains:
+        parser.error("--youtube-metadata cannot be combined with --domains")
+
+    if any(not re.fullmatch(r"[A-Za-z0-9_-]{11}", item)
+           for item in args.youtube_video_id):
+        parser.error("--youtube-video-id must be an 11-character video ID")
 
 
 if __name__ == "__main__":

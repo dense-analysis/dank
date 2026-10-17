@@ -69,6 +69,9 @@ async def ensure_youtube_storage(client: ClickHouseClient) -> None:
 def add_youtube_routes(app: web.Application) -> None:
     app.router.add_get("/api/reader/youtube", handle_youtube)
     app.router.add_get("/api/reader/youtube/sources", handle_youtube_sources)
+    from dank.web.reader_youtube_metadata import add_metadata_routes
+
+    add_metadata_routes(app)
 
 
 async def handle_youtube(request: web.Request) -> web.Response:
@@ -149,6 +152,8 @@ def _item(row: dict[str, Any]) -> dict[str, Any]:
     video_id = item_id.removeprefix("video:") if is_video else None
     capture = payload_object(payload.get("detail_capture"))
     status = capture.get("status")
+    metadata = payload_object(payload.get("metadata_capture"))
+    metadata_status = metadata.get("status")
 
     return {
         "id": item_id, "kind": str(row.get("kind") or "video"),
@@ -174,6 +179,18 @@ def _item(row: dict[str, Any]) -> dict[str, Any]:
         "views_text": str(payload.get("views_text") or ""),
         "published_text": str(payload.get("published_text") or ""),
         "observed_at": _timestamp(row.get("observed_at")),
+        "metadata_capture": {
+            "status": (
+                metadata_status if metadata_status in {
+                    "captured", "failed", "unavailable",
+                } else "disabled"
+            ),
+            "provider": str(metadata.get("provider") or ""),
+            "observed_at": str(metadata.get("observed_at") or ""),
+            "retry_after": str(metadata.get("retry_after") or ""),
+            "available": metadata.get("available") is True,
+            "captured_at": str(metadata.get("captured_at") or ""),
+        },
         "detail_capture": {
             "status": (
                 status if status in {"captured", "failed"} else "disabled"

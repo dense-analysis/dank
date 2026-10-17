@@ -89,10 +89,30 @@ community posts retain their text and images. Opening an item shows its saved
 discovery context. Playback starts only when selected. Feed-only captures do
 not claim to contain transcripts, descriptions or comments.
 
-**From your feeds** gathers YouTube links from collected blog, X and Reddit
-posts. Equivalent watch, short-link, embed and Shorts URLs share one video
-card, with links back to the collected posts that referenced it. A video does
-not need to be downloaded or directly collected from YouTube to appear here.
+**From your feeds** gathers verified YouTube links from collected posts and
+comments. Equivalent watch, short-link, embed and Shorts URLs share one video
+identity, with excerpts and links back to the matching source.
+
+After collection, DANK retrieves public YouTube previews for up to 100 linked
+videos that need metadata. This saves the real video title, channel and thumbnail
+without downloading video, visiting watch pages, following channels, or inventing
+feed appearances. Opening a linked video can also collect its preview on demand.
+Preview metadata is separate from full details such as descriptions or transcripts.
+
+To backfill saved links without collecting feeds or starting browsers:
+
+```sh
+make scrape ARGS='--youtube-metadata'
+# Collect just one known video:
+make scrape ARGS='--youtube-metadata --youtube-video-id NnV_cWeoo5Q'
+```
+
+Add `MODE=native` for native execution. Repeat the backfill for more than 100
+pending videos. Successful previews are refreshed after seven days; failed
+requests wait one hour, and unavailable previews wait one day. Original provider
+responses and previous successful metadata are retained. A failed refresh leaves
+the last saved title available. Selected feed snapshots keep their captured titles;
+source post headlines are never used as video titles.
 
 ## Thumbnail and title history
 

@@ -1,3 +1,19 @@
+CREATE TABLE IF NOT EXISTS youtube_video_metadata (
+    video_id String,
+    observed_at DateTime64(3, 'UTC'),
+    retry_after DateTime64(3, 'UTC'),
+    status LowCardinality(String),
+    provider LowCardinality(String),
+    request_url String,
+    http_status UInt16,
+    error String,
+    provider_payload String CODEC(ZSTD(3)),
+    payload String CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (video_id, observed_at);
+
 CREATE TABLE IF NOT EXISTS youtube_thumbnail_observations (
     post_id String,
     observed_at DateTime64(3, 'UTC'),
