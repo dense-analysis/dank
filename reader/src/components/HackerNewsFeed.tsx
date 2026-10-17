@@ -1,10 +1,17 @@
 import { ArrowUp, Check, ExternalLink, MessageCircle } from "lucide-react";
 import { calendarDate } from "../lib/dateRanges";
 import { hackerNewsExcerpt, hackerNewsFilters } from "../lib/hackerNews";
-import type { HackerNewsFilter, HackerNewsPost, Post } from "../lib/types";
+import type {
+  Filters,
+  HackerNewsFilter,
+  HackerNewsPost,
+  Post,
+} from "../lib/types";
 import { safeUrl } from "../lib/urls";
+import { AuthorLink } from "./AuthorLink";
 import { HighlightedText } from "./HighlightedText";
 import { PlatformIcon } from "./PlatformIcon";
+import { dateLabel } from "./PostCard";
 import { ReaderLink } from "./ReaderLink";
 
 export function HackerNewsFilters({
@@ -39,10 +46,20 @@ export function HackerNewsFilters({
 
 export function HackerNewsDay({ day }: { day: string }) {
   return (
-    <h2 className="hn-day">
+    <h2 className="hn-day" title="Front-page day on hckr news (UTC)">
       <time dateTime={day}>{calendarDate(day)}</time>
       <span>UTC</span>
     </h2>
+  );
+}
+
+export function HackerNewsTimestamp({ story }: { story: HackerNewsPost }) {
+  return story.submitted_at ? (
+    <time dateTime={story.submitted_at} title="Submitted to Hacker News">
+      {dateLabel(story.submitted_at)}
+    </time>
+  ) : (
+    <span>Submission time unavailable</span>
   );
 }
 
@@ -80,12 +97,16 @@ export function HackerNewsCard({
   open,
   href,
   query,
+  filters,
+  selectAuthor,
 }: {
   post: Post;
   read: boolean;
   open: () => void;
   href: string;
   query: string;
+  filters: Filters;
+  selectAuthor: (author: string) => void;
 }) {
   const story = post.hacker_news;
   if (!story) return null;
@@ -108,6 +129,8 @@ export function HackerNewsCard({
             <span className="hn-host">{linkedHost(story.external_url)}</span>
           </>
         )}
+        <span className="meta-dot">·</span>
+        <HackerNewsTimestamp story={story} />
       </div>
       <ReaderLink
         href={href}
@@ -125,8 +148,13 @@ export function HackerNewsCard({
         )}
       </ReaderLink>
       <div className="post-bottom hn-card-footer">
+        <AuthorLink
+          author={post.author}
+          fallback="Hacker News"
+          filters={filters}
+          select={selectAuthor}
+        />
         <HackerNewsMetrics story={story} />
-        {post.author && <span className="hn-author">by {post.author}</span>}
         {read && (
           <span className="read-indicator">
             <Check size={12} /> Read

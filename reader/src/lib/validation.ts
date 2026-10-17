@@ -143,6 +143,9 @@ function isHackerNewsPost(value: unknown): boolean {
   const capture = value.comment_capture;
 
   return (
+    (value.submitted_at === undefined ||
+      value.submitted_at === null ||
+      isTimestamp(value.submitted_at)) &&
     (value.points === null || isCount(value.points)) &&
     (value.comments === null || isCount(value.comments)) &&
     typeof value.discussion_url === "string" &&

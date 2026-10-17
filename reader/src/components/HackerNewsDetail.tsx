@@ -1,10 +1,11 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
 import type { CSSProperties } from "react";
 import { hackerNewsCaptureReason, hasHackerNewsBody } from "../lib/hackerNews";
-import type { Post } from "../lib/types";
+import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ArticleBody } from "./ArticleBody";
-import { HackerNewsMetrics } from "./HackerNewsFeed";
+import { AuthorLink } from "./AuthorLink";
+import { HackerNewsMetrics, HackerNewsTimestamp } from "./HackerNewsFeed";
 import { PlatformIcon } from "./PlatformIcon";
 import { dateLabel } from "./PostCard";
 
@@ -12,10 +13,14 @@ export function HackerNewsDetail({
   post,
   pending,
   loadError,
+  filters,
+  selectAuthor,
 }: {
   post: Post;
   pending: boolean;
   loadError: boolean;
+  filters: Filters;
+  selectAuthor: (author: string) => void;
 }) {
   const story = post.hacker_news;
   if (!story) return null;
@@ -38,11 +43,16 @@ export function HackerNewsDetail({
       <div className="post-meta">
         <PlatformIcon platform="hacker_news" /> Hacker News{" "}
         <span className="meta-dot">·</span>
-        <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+        <HackerNewsTimestamp story={story} />
       </div>
       <h1>{post.title || "Untitled post"}</h1>
       <div className="article-byline">
-        {post.author && <span>by {post.author}</span>}
+        <AuthorLink
+          author={post.author}
+          fallback="Hacker News"
+          filters={filters}
+          select={selectAuthor}
+        />
         <HackerNewsMetrics story={story} />
       </div>
       <div className="hn-detail-links">

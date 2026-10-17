@@ -168,6 +168,7 @@ export interface XConversation {
 export type HackerNewsFilter = "top10" | "top20" | "top50" | "all";
 
 export interface HackerNewsPost {
+  submitted_at?: string | null;
   points: number | null;
   comments: number | null;
   discussion_url: string;

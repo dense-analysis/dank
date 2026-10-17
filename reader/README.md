@@ -209,9 +209,10 @@ additional stories. Chronological views separate front-page days in UTC and load
 older stories as you scroll. Search, dates, the daily selection and article Back
 navigation stay in the URL.
 
-Cards show captured points and comment counts, plus separate original-article and
-Hacker News discussion links. Opening a story shows any saved post text and comments
-from a detailed scrape, with replies indented. Normal collection skips comments;
+Cards show the submitter, captured points and comment counts, plus separate original-article and
+Hacker News discussion links. Timestamps show the original Hacker News submission time;
+the day headings continue to group front-page arrivals. Opening a story shows any saved post text and comments
+from a detailed scrape, with replies indented. Full saved discussions have no reader comment cap. Normal collection skips comments;
 not captured, partial and failed captures are explicit. Counts are saved snapshots.
 See [Hacker News collection settings](../docs/features/hacker-news.md).
 

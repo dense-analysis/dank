@@ -554,6 +554,8 @@ export function App() {
                               open={() => openPost(post)}
                               href={`/reader/?${articleParams(params, post)}`}
                               query={filters.q}
+                              filters={filters}
+                              selectAuthor={selectAuthor}
                             />
                           </Fragment>
                         ) : isXPost(post) ? (

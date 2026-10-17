@@ -12,6 +12,7 @@ import type { HackerNewsPost, Post } from "./types";
 import { isPost, isSource } from "./validation";
 
 const story: HackerNewsPost = {
+  submitted_at: "2026-10-16T12:00:00Z",
   points: 100,
   comments: 8,
   discussion_url: "https://news.ycombinator.com/item?id=123",
@@ -126,6 +127,8 @@ it("accepts summary metadata without comments and validates detailed capture dat
 
   for (const bad of [
     { points: -1 },
+    { submitted_at: "invalid" },
+    { submitted_at: 123 },
     { day: "2026-02-30" },
     { day: "" },
     { rank: 0 },

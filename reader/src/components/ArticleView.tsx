@@ -185,6 +185,8 @@ export function ArticleView({
       {post?.hacker_news && (
         <HackerNewsDetail
           post={post}
+          filters={filters}
+          selectAuthor={selectAuthor}
           pending={isPlaceholderData && !error}
           loadError={!!error}
         />

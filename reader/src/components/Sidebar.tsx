@@ -138,7 +138,7 @@ export function Sidebar({
             aria-current={section === "hacker_news" ? "page" : undefined}
             onClick={() => select("hacker_news")}
           >
-            <PlatformIcon platform="hacker_news" /> Hacker News
+            <PlatformIcon platform="hacker_news" monochrome /> Hacker News
           </button>
         )}
         <YouTubeNavigation
