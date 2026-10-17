@@ -217,7 +217,7 @@ def _existing_files(
     target = assets_dir / discovery.domain / discovery.post_id
 
     if _uses_media_downloader(discovery):
-        return {path.resolve() for path in target.glob("*")}
+        return {path.resolve() for path in target.rglob("*") if path.is_file()}
 
     path = http_asset_path(target, discovery.url)
 

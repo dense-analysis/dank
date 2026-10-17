@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import pathlib
 from typing import Any, NamedTuple, cast
 
 import pytest
@@ -39,11 +41,15 @@ async def test_video_sites_use_yt_dlp_and_preserve_url_identity(
     def _fake_parse_options(arguments: list[str]) -> _ParsedOptions:
         parsed_arguments.extend(arguments)
 
-        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={})
+        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={
+            "outtmpl": arguments[arguments.index("--output") + 1].replace(
+                "%(ext)s", "mp4",
+            ),
+        })
 
     class _DummyYoutubeDL:
         def __init__(self, _options: dict[str, object]) -> None:
-            pass
+            self.options = _options
 
         def __enter__(self) -> Any:
             return self
@@ -61,6 +67,8 @@ async def test_video_sites_use_yt_dlp_and_preserve_url_identity(
             *_args: Any,
             **_kwargs: Any,
         ) -> dict[str, object]:
+            nonlocal created_path
+            created_path = pathlib.Path(str(self.options["outtmpl"]))
             created_path.parent.mkdir(parents=True, exist_ok=True)
             created_path.write_bytes(b"video")
 
@@ -95,10 +103,12 @@ async def test_video_sites_use_yt_dlp_and_preserve_url_identity(
     assert assets
     assert assets[0].url == url
     assert assets[0].asset_type == asset_type
-    assert (
-        "bestvideo+bestaudio/best" in parsed_arguments
-    ) == (asset_source == "reddit")
-    assert assets[0].local_path == str(created_path.resolve())
+    assert "bestvideo+bestaudio/best" in parsed_arguments
+    assert await asyncio.to_thread(
+        pathlib.Path(assets[0].local_path).read_bytes,
+    ) == b"video"
+    assert pathlib.Path(assets[0].local_path).is_relative_to(assets_dir)
+    assert not created_path.exists()
     assert "--add-metadata" in parsed_arguments
     assert ("--write-thumbnail" in parsed_arguments) == (
         "image" in download_types
@@ -120,11 +130,15 @@ async def test_download_assets_deletes_oversized_youtube_file(
     created_path = assets_dir / "example.com" / "post-1" / "video-id.mp4"
 
     def _fake_parse_options(arguments: list[str]) -> _ParsedOptions:
-        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={})
+        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={
+            "outtmpl": arguments[arguments.index("--output") + 1].replace(
+                "%(ext)s", "mp4",
+            ),
+        })
 
     class _DummyYoutubeDL:
         def __init__(self, _options: dict[str, object]) -> None:
-            pass
+            self.options = _options
 
         def __enter__(self) -> Any:
             return self
@@ -142,6 +156,8 @@ async def test_download_assets_deletes_oversized_youtube_file(
             *_args: Any,
             **_kwargs: Any,
         ) -> dict[str, object]:
+            nonlocal created_path
+            created_path = pathlib.Path(str(self.options["outtmpl"]))
             created_path.parent.mkdir(parents=True, exist_ok=True)
             created_path.write_bytes(b"0123456789")
 
@@ -240,11 +256,15 @@ async def test_download_assets_passes_js_runtimes_to_yt_dlp(
     def _fake_parse_options(arguments: list[str]) -> _ParsedOptions:
         parsed_arguments.extend(arguments)
 
-        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={})
+        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={
+            "outtmpl": arguments[arguments.index("--output") + 1].replace(
+                "%(ext)s", "mp4",
+            ),
+        })
 
     class _DummyYoutubeDL:
         def __init__(self, _options: dict[str, object]) -> None:
-            pass
+            self.options = _options
 
         def __enter__(self) -> Any:
             return self
@@ -262,6 +282,8 @@ async def test_download_assets_passes_js_runtimes_to_yt_dlp(
             *_args: Any,
             **_kwargs: Any,
         ) -> dict[str, object]:
+            nonlocal created_path
+            created_path = pathlib.Path(str(self.options["outtmpl"]))
             created_path.parent.mkdir(parents=True, exist_ok=True)
             created_path.write_bytes(b"video")
 
@@ -319,7 +341,11 @@ async def test_download_assets_logs_yt_dlp_messages_with_prefix(
     created_path = assets_dir / "example.com" / "post-1" / "video-id.mp4"
 
     def _fake_parse_options(arguments: list[str]) -> _ParsedOptions:
-        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={})
+        return _ParsedOptions(urls=[arguments[-1]], ydl_opts={
+            "outtmpl": arguments[arguments.index("--output") + 1].replace(
+                "%(ext)s", "mp4",
+            ),
+        })
 
     class _DummyYoutubeDL:
         def __init__(self, options: dict[str, object]) -> None:
@@ -346,6 +372,8 @@ async def test_download_assets_logs_yt_dlp_messages_with_prefix(
             logger.debug("[debug] extractor details")
             logger.warning("WARNING: runtime warning")
             logger.error("ERROR: extract failed")
+            nonlocal created_path
+            created_path = pathlib.Path(str(self.options["outtmpl"]))
             created_path.parent.mkdir(parents=True, exist_ok=True)
             created_path.write_bytes(b"video")
 

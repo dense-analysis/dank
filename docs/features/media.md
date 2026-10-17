@@ -19,10 +19,17 @@ does not collect images found only inside embedded article data.
 | Recognised YouTube embeds | `video` | yt-dlp |
 | Other iframes and external links | — | References only |
 
-The YouTube downloader prefers an MP4 format and falls back to the best
-available combined format. It also requests metadata JSON and, when `image`
-is enabled, a thumbnail. When available, it uses the saved Chromium profile's
-cookies and detected Node or Deno runtimes.
+YouTube downloads use H.264 video and AAC audio, merged into MP4 with FFmpeg.
+The collector prefers the best complete format that fits the configured size
+budget, including smaller video/audio combinations. Missing compatible formats,
+unavailable videos and access restrictions remain failures; size exclusions are
+skips. Failed requests are not repeated automatically with browser cookies removed.
+
+The matching `yt-dlp-ejs` solver package is pinned alongside yt-dlp. Docker
+includes Node and FFmpeg. Native downloads need FFmpeg and Node 22+ or a supported
+Deno runtime on `PATH`; see the [official runtime guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
+When available, downloads use the saved Chromium profile's cookies. Metadata JSON
+and, when `image` is enabled, a thumbnail are retained beside successful media.
 
 Downloads share the run's media-job limit and direct HTTP limits with RSS
 collection. A direct media 429 also pauses new requests to that host; the
@@ -86,10 +93,21 @@ Reddit preview downloads preserve the original escaped signed URL, including
 through redirects; rewriting its query can invalidate the signature and return
 403. Other HTTP URLs retain the client's normal URL handling.
 
-The YouTube path passes the limit to yt-dlp and also checks the downloaded media
-file. An internal yt-dlp abort without a completed file still lacks a structured
-size-exclusion result and may count as a failure. Additional metadata and
-thumbnail files are not covered by a total storage budget.
+YouTube format selection reserves 2% of the limit for MP4 overhead. When sized
+formats exist, it chooses a fitting pair or skips; it does not switch to an
+unmeasured stream to avoid a known exclusion. If all available sizes are unknown,
+it attempts the download with an actual-byte guard across video and audio.
+The completed MP4 must also fit the limit. Size exclusions from selection,
+yt-dlp's header check, streaming or the final file check all count as skips.
+
+Media is downloaded in an isolated temporary directory and published only after
+completion. Failed or size-excluded attempts remove their temporary files.
+Successful videos are cached under a full-URL hash inside the post's asset folder;
+other files in that folder cannot be mistaken for the requested video. Legacy
+paths remain valid but may be downloaded once into the new cache layout.
+A lower cap skips an oversized cached video without deleting the older file.
+Metadata/thumbnail files and temporary muxing overhead are not covered by a total
+disk or network-transfer budget.
 
 ## Collect and view
 

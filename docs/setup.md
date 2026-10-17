@@ -24,7 +24,9 @@ configuration. Separate checkouts are simplest when using both modes.
 Install Python 3.13, uv and ClickHouse, and start your ClickHouse service.
 The Make shortcuts additionally require `make` and Bash.
 X collection needs an installed Chromium-based browser; media tools such as
-FFmpeg must also be installed on the host when needed.
+FFmpeg must also be installed on the host when needed. YouTube downloads need
+Node 22+ or a supported Deno runtime on `PATH`; `uv sync --frozen` installs the
+matching JavaScript solver package. See [media downloads](features/media.md).
 
 For a fresh checkout, create a private configuration without overwriting one:
 

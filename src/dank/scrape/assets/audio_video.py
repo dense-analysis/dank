@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import functools
+import hashlib
 import logging
 import optparse
 import pathlib
 import shutil
+import tempfile
 from typing import TYPE_CHECKING, NamedTuple, Self, cast
 from urllib.parse import urlsplit
 
@@ -13,7 +16,8 @@ from yt_dlp import ParsedOptions, YoutubeDL, parse_options  # type: ignore
 
 from dank.model import AssetDiscovery, RawAsset
 
-from .limits import AssetSizeExceeded
+from .limits import AssetSizeExceeded, VideoSizeLimit
+from .video_formats import youtube_format
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +54,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-AUDIO_VIDEO_FORMAT_SELECTOR = "best[ext=mp4]/best"
+AUDIO_VIDEO_FORMAT_SELECTOR = "bestvideo+bestaudio/best"
 COOKIES_BROWSER_NAME = "chromium"
 NON_MEDIA_SUFFIXES = {
     ".avif",
@@ -69,7 +73,16 @@ NON_MEDIA_SUFFIXES = {
 
 class _YtDlpLogger:
     """A yt-dlp logger for redirecting logs to our logger."""
+    def __init__(self) -> None:
+        self.size_excluded = False
+
     def debug(self, message: str) -> None:
+        # The pinned yt-dlp HTTP downloader reports header size skips here.
+        if message.lstrip().startswith(
+            "[download] File is larger than max-filesize (",
+        ):
+            self.size_excluded = True
+
         logger.debug("[yt-dlp] %s", message)
 
     def warning(self, message: str) -> None:
@@ -116,49 +129,55 @@ def _download_audio_video_asset_sync(
     max_asset_bytes: int | None,
     download_thumbnail: bool = True,
 ) -> str | None:
-    # Create the download directory if it doesn't already exist.
-    target_dir.mkdir(parents=True, exist_ok=True)
+    directory = target_dir / hashlib.sha256(url.encode()).hexdigest()
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / "media.mp4"
 
-    cookies_from_browser = _cookies_from_browser_argument(
-        browser_profile_dir,
-    )
-    arguments = _build_yt_dlp_arguments(
-        url,
-        target_dir=target_dir,
-        max_asset_bytes=max_asset_bytes,
-        cookies_from_browser=cookies_from_browser,
-        download_thumbnail=download_thumbnail,
-    )
-    info = _download_with_yt_dlp(arguments)
+    if destination.is_file():
+        _check_file_size(destination, max_asset_bytes)
 
-    if info is None and cookies_from_browser is not None:
-        fallback_arguments = _build_yt_dlp_arguments(
-            url,
-            target_dir=target_dir,
-            max_asset_bytes=max_asset_bytes,
-            cookies_from_browser=None,
+        return str(destination.resolve())
+
+    # A job owns its staging directory, so failures remove only its partials.
+    with tempfile.TemporaryDirectory(
+        prefix=".download-", dir=directory,
+    ) as work:
+        staging = pathlib.Path(work)
+        arguments = _build_yt_dlp_arguments(
+            url, target_dir=staging, max_asset_bytes=max_asset_bytes,
+            cookies_from_browser=_cookies_from_browser_argument(
+                browser_profile_dir,
+            ),
             download_thumbnail=download_thumbnail,
         )
-        info = _download_with_yt_dlp(fallback_arguments)
+        info = _download_with_yt_dlp(arguments)
 
-    if info is None:
-        return None
+        if info is None:
+            return None
 
-    local_path = _extract_download_path(info, target_dir)
+        local_path = _extract_download_path(info, staging)
 
-    if local_path is None:
-        logger.warning("No downloaded media file found for %s", url)
+        if local_path is None or local_path.suffix.lower() != ".mp4":
+            logger.warning("No completed MP4 media file found for %s", url)
 
-        return None
+            return None
 
-    if max_asset_bytes is not None and max_asset_bytes > 0:
-        if local_path.stat().st_size > max_asset_bytes:
-            local_path.unlink(missing_ok=True)
-            raise AssetSizeExceeded(
-                f"Downloaded media exceeds {max_asset_bytes}-byte limit",
-            )
+        _check_file_size(local_path, max_asset_bytes)
+        local_path.replace(destination)
 
-    return str(local_path)
+        for sidecar in staging.iterdir():
+            if sidecar.is_file() and _is_sidecar_file(sidecar):
+                if not sidecar.name.endswith((".part", ".ytdl")):
+                    sidecar.replace(directory / sidecar.name)
+
+    return str(destination.resolve())
+
+
+def _check_file_size(path: pathlib.Path, maximum: int | None) -> None:
+    if maximum and maximum > 0 and path.stat().st_size > maximum:
+        raise AssetSizeExceeded(
+            f"Downloaded media exceeds {maximum}-byte limit",
+        )
 
 
 def _build_yt_dlp_arguments(
@@ -169,7 +188,7 @@ def _build_yt_dlp_arguments(
     cookies_from_browser: str | None,
     download_thumbnail: bool = True,
 ) -> list[str]:
-    output_template = target_dir / "%(id)s.%(ext)s"
+    output_template = target_dir / "media.%(ext)s"
     arguments = [
         "--no-playlist",
         "--no-progress",
@@ -179,11 +198,13 @@ def _build_yt_dlp_arguments(
         *(["--write-thumbnail"] if download_thumbnail else []),
         "--write-info-json",
         "--format",
-        (
-            "bestvideo+bestaudio/best"
-            if urlsplit(url).hostname == "v.redd.it"
-            else AUDIO_VIDEO_FORMAT_SELECTOR
-        ),
+        AUDIO_VIDEO_FORMAT_SELECTOR,
+        "--merge-output-format", "mp4",
+        "--remux-video", "mp4",
+        "--socket-timeout", "15",
+        "--retries", "1",
+        "--fragment-retries", "1",
+        "--extractor-retries", "1",
         "--output",
         str(output_template),
     ]
@@ -242,14 +263,33 @@ def _download_with_yt_dlp(arguments: list[str]) -> dict[str, object] | None:
         # This should never happen.
         raise RuntimeError("No URLs for yt-dlp options!")
 
-    parsed_options.ydl_opts["logger"] = _YtDlpLogger()
+    download_logger = _YtDlpLogger()
+    parsed_options.ydl_opts["logger"] = download_logger
+    # CLI defaults swallow custom exceptions; the API must retain size skips.
+    parsed_options.ydl_opts["ignoreerrors"] = False
+    maximum = parsed_options.ydl_opts.get("max_filesize")
+    maximum = maximum if isinstance(maximum, int) and maximum > 0 else None
+    parsed_options.ydl_opts["progress_hooks"] = [VideoSizeLimit(maximum)]
+
+    if urlsplit(parsed_options.urls[0]).hostname != "v.redd.it":
+        parsed_options.ydl_opts["format"] = functools.partial(
+            youtube_format, maximum=maximum,
+        )
 
     try:
         with YoutubeDL(parsed_options.ydl_opts) as downloader:
-            return downloader.extract_info(
-                parsed_options.urls[0],
-                download=True,
+            info = downloader.extract_info(
+                parsed_options.urls[0], download=True,
             )
+
+        if download_logger.size_excluded:
+            raise AssetSizeExceeded(
+                f"yt-dlp excluded media above the {maximum}-byte limit",
+            )
+
+        return info
+    except AssetSizeExceeded:
+        raise
     except Exception as error:
         logger.warning(
             "Media not downloaded: %s (%s: %s)",
@@ -268,7 +308,7 @@ def _extract_download_path(
     for candidate in _download_path_candidates(info):
         resolved = candidate.expanduser().resolve()
 
-        if not resolved.is_file():
+        if not resolved.is_file() or resolved.name != "media.mp4":
             continue
 
         if _is_sidecar_file(resolved):
@@ -281,7 +321,7 @@ def _extract_download_path(
 
         return resolved
 
-    return _latest_downloaded_media_file(target_root)
+    return None
 
 
 def _download_path_candidates(info: dict[str, object]) -> list[pathlib.Path]:
@@ -305,26 +345,6 @@ def _download_path_candidates(info: dict[str, object]) -> list[pathlib.Path]:
                     pass
 
     return candidates
-
-
-def _latest_downloaded_media_file(
-    target_dir: pathlib.Path,
-) -> pathlib.Path | None:
-    try:
-        files = [
-            path.resolve()
-            for path in target_dir.iterdir()
-            if path.is_file() and not _is_sidecar_file(path)
-        ]
-    except FileNotFoundError:
-        return None
-
-    if not files:
-        return None
-
-    files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-
-    return files[0]
 
 
 def _is_sidecar_file(path: pathlib.Path) -> bool:

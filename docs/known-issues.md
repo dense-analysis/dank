@@ -168,17 +168,28 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   10 MiB cap. DomainDrivenDesign and ExperiencedDevs were explicitly empty for
   Top/day. A separate retry of the exact six earlier failures saved the 4,167-byte
   preview JPEG and retained five size-skipped GIF references, with zero failures.
-- [ ] **P1: Restore YouTube format discovery and downloads.** Logs reported
-  unavailable requested formats and missing challenge-solver scripts. The
-  container has Node and yt-dlp `2026.8.19`, but no `yt-dlp-ejs`. Pin compatible
-  solver support using the [official EJS setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS),
-  then inspect formats before changing the combined-MP4 selector. A separate
-  metadata-only check also hit HTTP 429 and a sign-in challenge; missing EJS
-  is not established as the sole cause. Report blocked access and honor cooldowns.
-  Done when representative available videos download with playable audio/video within
-  the size policy in Docker and native mode. Keep removed/unavailable videos
-  distinct, and avoid repeating deterministic format failures with cookies
-  and then without cookies. [Downloader](../src/dank/scrape/assets/audio_video.py).
+- [x] **P1: Restore YouTube format discovery and downloads.** The pinned
+  yt-dlp `2026.8.19` now includes its matching `yt-dlp-ejs 0.8.0` solver package.
+  Fresh public-video probes returned separate streams but no combined MP4,
+  explaining the old selector's failure even after solver installation.
+  The collector now chooses complete H.264/AAC formats within the combined size
+  budget and merges them into MP4. CLI exception swallowing is disabled so size
+  exclusions remain skips. Generic failures are no longer repeated without cookies.
+  Isolated staging removes incomplete downloads, and only the requested completed
+  file can populate its URL-specific cache. Private, removed or blocked videos
+  still fail visibly. [Downloader](../src/dank/scrape/assets/audio_video.py),
+  [selection tests](../tests/scrape/test_youtube_formats.py),
+  [download regressions](../tests/scrape/test_youtube_downloads.py).
+
+  **Docker verification, 2026-10-17:** three real videos (`jNQXAC9IVRw`,
+  `A0fECnj5sas`, `aqz-KE-bpKQ`) saved complete H.264/AAC MP4s of 745,939,
+  9,394,397 and 8,365,076 bytes under a 10 MiB cap. FFmpeg decoded both streams
+  fully without errors. Docker Chromium played each with decoded audio/video,
+  then sought near the end and reached `ended` without a media error. A 1 KiB
+  check and a fourth video with no fitting format both counted as skips, with
+  no published/partial files. A saved Register article's previously failed video
+  was also downloaded and persisted through the normal configured Docker path.
+  This establishes these samples, not universal YouTube availability.
 - [ ] **P2: Expose browser-stage progress.** Browser detail work is absent from
   HTTP-active counters, and source-history counters are finalized only at source
   end. Heartbeats stayed at zero active HTTP/media while Reddit worked on posts.
@@ -195,15 +206,12 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   downloads, missing/incorrect headers, cleanup and a completed source outcome.
   [Size-limit tests](../tests/scrape/test_media_limits.py),
   [outcome counters](../src/dank/scrape/assets/__init__.py).
-- [ ] **P2: Choose smaller video variants and classify yt-dlp aborts.** X still
-  selects the largest variant before the size policy is applied. Prefer an
-  eligible smaller variant where available. Internal yt-dlp size aborts without
-  a completed file still lack a structured result and can count as failures;
-  distinguish those from unavailable formats and network errors without assuming
-  every missing file was size-excluded. Raw references currently retain only the
-  URL/path, not a durable per-asset outcome reason.
-  [Variant selection](../src/dank/scrape/x/payloads.py),
-  [video downloader](../src/dank/scrape/assets/audio_video.py).
+- [ ] **P2: Choose smaller X video variants and retain per-asset outcomes.**
+  YouTube now selects fitting complete formats and classifies known size aborts
+  as skips. X still selects the largest variant before applying the size policy;
+  prefer a smaller eligible variant where available. Raw references retain only
+  the URL/path, not a durable per-asset outcome reason.
+  [Variant selection](../src/dank/scrape/x/payloads.py).
 - [ ] **P2: Make blocked feed/article recovery actionable.** Niche Gamer's feeds
   returned 403; article fetches also failed across several publishers, and
   Order Order exhausted its 429 retries. Retain host/status and retry eligibility
@@ -213,7 +221,9 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   searching the whole log. Existing access restrictions may remain.
 - [ ] **P2: Bound and cancel yt-dlp jobs.** Code inspection shows downloads run
   through `asyncio.to_thread` without a DANK-owned overall deadline; cancelling
-  an await does not stop the worker. This is a potential stall risk, not an
+  an await does not stop the worker. Network reads now have a 15-second timeout
+  and extraction/download/fragment retries are limited to one, but this does not
+  bound the entire job or a stuck FFmpeg process. This is a potential stall risk, not an
   observed yt-dlp hang in this run. Add a bounded, cancellable execution model.
   Done when an intentionally stalled downloader releases its media slot, cleans
   partial output and permits graceful shutdown within a tested deadline.
