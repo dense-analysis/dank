@@ -4,6 +4,7 @@ import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import type { ReferenceTarget } from "../lib/referenceFocus";
 import type { RedditPost } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
+import { Count } from "./Count";
 import { dateLabel, safeUrl } from "./PostCard";
 
 export function RedditComments({
@@ -70,9 +71,14 @@ export function RedditComments({
             </p>
           )}
           <p className="reddit-comments-summary">
-            {comments.length.toLocaleString()} saved
-            {total !== null ? ` of ${total.toLocaleString()}` : ""} · counts may
-            have changed on Reddit
+            <Count value={comments.length} /> saved
+            {total !== null && (
+              <>
+                {" "}
+                of <Count value={total} />
+              </>
+            )}{" "}
+            · counts may have changed on Reddit
           </p>
           {comments.length > 0 ? (
             <ol className="reddit-comment-list">
@@ -143,7 +149,7 @@ export function RedditComments({
                       <span>
                         <ArrowUp size={13} aria-hidden="true" />
                         <span className="visually-hidden">Score: </span>
-                        {comment.score.toLocaleString()}
+                        <Count value={comment.score} />
                       </span>
                     )}
                     {safeUrl(comment.permalink) && (
@@ -190,9 +196,13 @@ export function RedditComments({
                 : capture?.status === "failed"
                   ? "The conversation couldn’t be collected with this post."
                   : "This saved post doesn’t include its conversation."}
-            {total !== null && total > 0
-              ? ` Reddit reported ${total.toLocaleString()} ${total === 1 ? "comment" : "comments"} at collection.`
-              : ""}
+            {total !== null && total > 0 && (
+              <>
+                {" "}
+                Reddit reported <Count value={total} />{" "}
+                {total === 1 ? "comment" : "comments"} at collection.
+              </>
+            )}
           </p>
           <a href={safeUrl(originalUrl)} target="_blank" rel="noreferrer">
             Read comments on Reddit{" "}

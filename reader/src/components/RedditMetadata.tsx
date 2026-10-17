@@ -2,6 +2,7 @@ import { ArrowUp, MessageCircle } from "lucide-react";
 import { filterParams } from "../lib/navigation";
 import { defaultFilters } from "../lib/storage";
 import type { RedditPost } from "../lib/types";
+import { Count } from "./Count";
 import { ReaderLink } from "./ReaderLink";
 
 export function RedditCommunityLink({
@@ -54,13 +55,15 @@ export function RedditMetadata({ reddit }: { reddit: RedditPost }) {
         <span className="reddit-score" title="Score when collected">
           <ArrowUp size={13} aria-hidden="true" />
           <span className="visually-hidden">Score: </span>
-          {reddit.score.toLocaleString()}
+          <Count value={reddit.score} />
         </span>
       )}
       {reddit.comments !== null && (
         <span title="Comment count when collected">
           <MessageCircle size={13} aria-hidden="true" />
-          {reddit.comments.toLocaleString()} comments
+          <span>
+            <Count value={reddit.comments} /> comments
+          </span>
         </span>
       )}
     </span>

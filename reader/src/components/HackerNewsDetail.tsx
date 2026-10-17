@@ -7,6 +7,7 @@ import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
+import { Count } from "./Count";
 import { HackerNewsMetrics, HackerNewsTimestamp } from "./HackerNewsFeed";
 import { PlatformIcon } from "./PlatformIcon";
 import { dateLabel } from "./PostCard";
@@ -130,10 +131,13 @@ export function HackerNewsDetail({
               <div className="hn-comments-notice">
                 {partial && <h3>Partial discussion</h3>}
                 <p>
-                  {comments.length.toLocaleString()} saved
-                  {capture.total !== null
-                    ? ` of ${capture.total.toLocaleString()} reported`
-                    : ""}{" "}
+                  <Count value={comments.length} /> saved
+                  {capture.total !== null && (
+                    <>
+                      {" "}
+                      of <Count value={capture.total} /> reported
+                    </>
+                  )}{" "}
                   · counts may have changed on Hacker News.
                 </p>
                 {(partial || capture.reason) && (

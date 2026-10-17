@@ -1,8 +1,10 @@
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { formatCount } from "../lib/counts";
 import { calendarDate, recentDates } from "../lib/dateRanges";
 import { availableFlairs } from "../lib/reddit";
 import type { Filters, Source } from "../lib/types";
+import { Count } from "./Count";
 
 export function FeedToolbar({
   filters,
@@ -117,7 +119,8 @@ export function FeedToolbar({
           aria-expanded={expanded}
         >
           <SlidersHorizontal size={15} />
-          Filters{activeCount > 0 && <span>{activeCount}</span>}
+          Filters
+          {activeCount > 0 && <Count value={activeCount} />}
         </button>
         <select
           className="sort-select"
@@ -168,7 +171,7 @@ export function FeedToolbar({
             >
               <option value="">
                 {filters.domains.length > 1
-                  ? `${filters.domains.length} selected sources`
+                  ? `${formatCount(filters.domains.length)} selected sources`
                   : "All sources"}
               </option>
               {sources.map((source) => (
@@ -265,7 +268,7 @@ export function FeedToolbar({
                   >
                     {flair.name}{" "}
                     <span className="flair-count" aria-hidden="true">
-                      {flair.count.toLocaleString()}
+                      <Count value={flair.count} />
                     </span>
                   </button>
                 ))}

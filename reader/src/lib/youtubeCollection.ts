@@ -1,4 +1,5 @@
 import { request } from "./api";
+import { formatCount } from "./counts";
 import { isRecord } from "./validation";
 import {
   isYouTubeMetadataCapture,
@@ -404,4 +405,30 @@ export function youtubeThumbnailSources(item: YouTubeItem): string[] {
         .filter((url): url is string => !!url),
     ),
   ];
+}
+
+/** Recognize English counts only; preserve source labels we cannot interpret. */
+export function formatYouTubeViews(text: string): string {
+  const match = text
+    .trim()
+    .match(
+      /^((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*(thousand|million|billion|[KMB])?\s+(views?|watching(?: now)?)$/i,
+    );
+  if (!match) return text;
+  const units: Record<string, number> = {
+    k: 1_000,
+    thousand: 1_000,
+    m: 1_000_000,
+    million: 1_000_000,
+    b: 1_000_000_000,
+    billion: 1_000_000_000,
+  };
+  const number = Number(match[1].replaceAll(",", ""));
+  const unit = units[match[2]?.toLowerCase()] ?? 1;
+  // Source decimals represent rounded whole counts; remove multiplication noise.
+  const value = unit === 1 ? number : Math.round(number * unit);
+
+  return Number.isSafeInteger(value)
+    ? `${formatCount(value)} ${match[3]}`
+    : text;
 }

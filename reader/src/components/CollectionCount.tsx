@@ -1,10 +1,5 @@
+import { formatCount } from "../lib/counts";
 import type { CommunityPostTotal } from "../lib/types";
-
-const compactCount = new Intl.NumberFormat("en", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-  roundingMode: "trunc",
-});
 
 const provenanceDate = new Intl.DateTimeFormat("en-GB", {
   dateStyle: "medium",
@@ -39,13 +34,13 @@ export function CollectionCount({
     <span className="collection-count-pill" title={description}>
       <span className="visually-hidden">{description}</span>
       <span className="collection-count-values" aria-hidden="true">
-        <strong>{compactCount.format(count)}</strong>
+        <strong>{formatCount(count)}</strong>
         {reportedTotal != null && (
           <>
             <span className="collection-count-divider">/</span>
             <span>
               {approximate && "≈"}
-              {compactCount.format(reportedTotal)}
+              {formatCount(reportedTotal)}
             </span>
           </>
         )}

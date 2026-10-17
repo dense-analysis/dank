@@ -1,5 +1,6 @@
 import { Images, Play } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Count } from "./Count";
 
 // Leave time to recognise each saved image; only an engaged card animates.
 const THUMBNAIL_HOLD_MS = 2400;
@@ -132,10 +133,12 @@ export function YouTubeThumbnail({
         {available.length > 1 && (
           <span
             className="yt-thumbnail-count"
-            title={`${available.length} saved thumbnails. Hover or focus to preview; open discovery details to inspect them.`}
+            title={`${available.length.toLocaleString()} saved thumbnails. Hover or focus to preview; open discovery details to inspect them.`}
           >
             <Images size={12} aria-hidden="true" />
-            <span>{available.length} thumbnails</span>
+            <span>
+              <Count value={available.length} /> thumbnails
+            </span>
           </span>
         )}
       </span>

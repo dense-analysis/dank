@@ -18,6 +18,7 @@ import { ArticleView } from "./components/ArticleView";
 import { CollectionCount } from "./components/CollectionCount";
 import { CollectionHeader } from "./components/CollectionHeader";
 import { CommunityAvatar } from "./components/CommunityAvatar";
+import { Count } from "./components/Count";
 import { FeedToolbar } from "./components/FeedToolbar";
 import {
   HackerNewsCard,
@@ -773,8 +774,9 @@ export function App() {
                   )}
                   {posts.data?.pages.some((page) => page.limited) && (
                     <p className="result-note">
-                      Showing the top {timeline.length} matches. Narrow your
-                      search, or choose a chronological order to browse further.
+                      Showing the top <Count value={timeline.length} /> matches.
+                      Narrow your search, or choose a chronological order to
+                      browse further.
                     </p>
                   )}
                 </>

@@ -4,6 +4,7 @@ import { isSource } from "./validation";
 import {
   fetchYouTubeItems,
   fetchYouTubeSources,
+  formatYouTubeViews,
   isYouTubeItem,
   type YouTubeItem,
   youtubeFilters,
@@ -307,4 +308,27 @@ it("validates the title combinations nested under thumbnails", () => {
       ],
     }),
   ).toBe(false);
+});
+
+it.each([
+  ["251 thousand views", "251K views"],
+  ["4.8 million views", "4.8M views"],
+  ["1.2 billion views", "1.2B views"],
+  ["4.1 thousand views", "4.1K views"],
+  ["12,345 views", "12.3K views"],
+  ["1,866,004 views", "1.8M views"],
+  ["1.25k views", "1.2K views"],
+  ["1.2m views", "1.2M views"],
+  ["2.5 THOUSAND views", "2.5K views"],
+  ["4.8\u00a0million views", "4.8M views"],
+  ["1,200 watching now", "1.2K watching now"],
+  ["0 views", "0 views"],
+  ["1 view", "1 view"],
+  ["No views", "No views"],
+  ["", ""],
+  ["4,8 million views", "4,8 million views"],
+  ["4,8 Mio. Aufrufe", "4,8 Mio. Aufrufe"],
+  ["123.4 views", "123.4 views"],
+])("formats captured count %s as %s", (source, expected) => {
+  expect(formatYouTubeViews(source)).toBe(expected);
 });

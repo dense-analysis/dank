@@ -1,6 +1,7 @@
 import { ArrowUpRight, Search } from "lucide-react";
 import { useState } from "react";
 import type { Source } from "../lib/types";
+import { Count } from "./Count";
 import { SourceMark } from "./PostCard";
 
 export function SourcesView({
@@ -46,7 +47,9 @@ export function SourcesView({
             </span>
           </span>
           <span className="source-total">
-            {source.count} stories
+            <span>
+              <Count value={source.count} /> stories
+            </span>
             <ArrowUpRight size={16} />
           </span>
         </button>

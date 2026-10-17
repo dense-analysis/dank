@@ -5,6 +5,7 @@ import type {
   Post,
   XConversationNode,
 } from "../lib/types";
+import { Count } from "./Count";
 import { dateLabel, safeUrl } from "./PostCard";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
@@ -118,13 +119,13 @@ export function XConversation({
             )}
             {archived && (
               <p className="x-captured-total">
-                {replies.length.toLocaleString()}{" "}
+                <Count value={replies.length} />{" "}
                 {replies.length === 1 ? "reply" : "replies"} saved.
               </p>
             )}
             {reported != null && (
               <p>
-                {reported.toLocaleString()}{" "}
+                <Count value={reported} />{" "}
                 {reported === 1 ? "reply" : "replies"} reported when collected.
               </p>
             )}

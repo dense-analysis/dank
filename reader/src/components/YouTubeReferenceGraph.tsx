@@ -4,6 +4,7 @@ import { readGraphState } from "../lib/relationshipGraphState";
 import { safeUrl } from "../lib/urls";
 import type { YouTubeItem, YouTubeReference } from "../lib/youtubeCollection";
 import { youtubeReferenceGraph } from "../lib/youtubeReferenceGraph";
+import { Count } from "./Count";
 import { RelationshipGraph } from "./RelationshipGraph";
 
 export default function YouTubeReferenceGraph({
@@ -42,9 +43,12 @@ export default function YouTubeReferenceGraph({
     <div className="yt-reference-graph">
       <p className="yt-graph-summary">
         <Network size={16} aria-hidden="true" />
-        {postCount} {postCount === 1 ? "discussion" : "discussions"} across{" "}
-        {sourceCount} {sourceCount === 1 ? "source" : "sources"} link to this
-        video.
+        <span>
+          <Count value={postCount} />{" "}
+          {postCount === 1 ? "discussion" : "discussions"} across{" "}
+          <Count value={sourceCount} />{" "}
+          {sourceCount === 1 ? "source" : "sources"} link to this video.
+        </span>
       </p>
       <RelationshipGraph
         graph={graph}
@@ -64,7 +68,7 @@ export default function YouTubeReferenceGraph({
               <h3>{selected.label}</h3>
               {selected.kind === "video" ? (
                 <p>
-                  {references.length} saved{" "}
+                  <Count value={references.length} /> saved{" "}
                   {references.length === 1
                     ? "reference points"
                     : "references point"}{" "}
