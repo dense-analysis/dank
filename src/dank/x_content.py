@@ -359,7 +359,7 @@ def _attachment(
                 "remote": url not in local_urls,
             }
             aspect_ratio = _video_aspect_ratio(item)
-            source_url = _video_source_url(item.get("expanded_url"))
+            source_url = _media_source_url(item.get("expanded_url"), "video")
 
             if aspect_ratio is not None:
                 attachment["aspect_ratio"] = aspect_ratio
@@ -370,13 +370,19 @@ def _attachment(
             return attachment
 
     if image:
-        return {
+        attachment = {
             "type": "image",
             "url": local_urls.get(image, image),
             "poster_url": None,
             "alt": alt,
             "remote": image not in local_urls,
         }
+        source_url = _media_source_url(item.get("expanded_url"), "photo")
+
+        if kind == "photo" and source_url:
+            attachment["source_url"] = source_url
+
+        return attachment
 
     return None
 
@@ -421,7 +427,9 @@ def _video_aspect_ratio(item: dict[str, Any]) -> float | None:
     return None
 
 
-def _video_source_url(value: object) -> str | None:
+def _media_source_url(
+    value: object, kind: Literal["photo", "video"],
+) -> str | None:
     source_url = http_url(value)
 
     if not source_url:
@@ -436,7 +444,7 @@ def _video_source_url(value: object) -> str | None:
         }
         and parsed.port in {None, 80 if parsed.scheme == "http" else 443}
         and re.fullmatch(
-            r"/[A-Za-z0-9_]{1,15}/status/[0-9]+/video/[1-9][0-9]*",
+            rf"/[A-Za-z0-9_]{{1,15}}/status/[0-9]+/{kind}/[1-9][0-9]*",
             parsed.path,
         )
     ):

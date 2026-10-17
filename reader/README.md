@@ -117,8 +117,8 @@ links open the account's collected posts, with initials when an avatar is unavai
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
 Portrait videos keep their natural proportions within the available space.
-The raw video reference is hidden while its player is shown and returns if
-playback fails. Raw URLs represented by clickable preview cards, including
+Raw photo and video references are hidden while their attachments are shown
+and return if the image or player fails. Raw URLs represented by clickable preview cards, including
 YouTube cards, are also hidden. Descriptive links and links without previews
 remain available. YouTube previews play inline when selected, with a separate
 **Watch on YouTube** link for videos that cannot be embedded. Closing the video

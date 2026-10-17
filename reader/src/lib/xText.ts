@@ -68,11 +68,24 @@ export function xTextParagraphs(html: string): XTextSegment[][] {
   return paragraphs;
 }
 
-// Match only native X video references or the exact playable media address.
 export function videoReferenceKey(value: string): string | undefined {
+  return mediaReferenceKey(value, "video");
+}
+
+export function imageReferenceKey(value: string): string | undefined {
+  return mediaReferenceKey(value, "photo");
+}
+
+// Match native X media references or the exact attachment address.
+function mediaReferenceKey(
+  value: string,
+  kind: "photo" | "video",
+): string | undefined {
+  const mediaHost = kind === "photo" ? "pbs.twimg.com" : "video.twimg.com";
+
   try {
     const label =
-      /^(?:(?:www\.)?(?:x|twitter)\.com|mobile\.twitter\.com|video\.twimg\.com)\//i.test(
+      /^(?:(?:www\.)?(?:x|twitter)\.com|mobile\.twitter\.com|(?:video|pbs)\.twimg\.com)\//i.test(
         value,
       )
         ? `https://${value}`
@@ -84,7 +97,7 @@ export function videoReferenceKey(value: string): string | undefined {
       url.password
     )
       return undefined;
-    const path = /^\/[^/]+\/status\/(\d+)\/video\/(\d+)\/?$/i.exec(
+    const path = /^\/[^/]+\/status\/(\d+)\/(photo|video)\/(\d+)\/?$/i.exec(
       url.pathname,
     );
 
@@ -92,13 +105,14 @@ export function videoReferenceKey(value: string): string | undefined {
       /^(?:(?:www\.)?(?:x|twitter)\.com|mobile\.twitter\.com)$/i.test(
         url.hostname,
       ) &&
-      path
+      path &&
+      path[2].toLowerCase() === kind
     )
-      return `x-video:${path[1]}:${path[2]}`;
+      return `x-${kind}:${path[1]}:${path[3]}`;
     if (
       (url.origin === window.location.origin &&
         url.pathname.startsWith("/assets/")) ||
-      (url.protocol === "https:" && url.hostname === "video.twimg.com")
+      (url.protocol === "https:" && url.hostname === mediaHost)
     )
       return url.href;
   } catch {
@@ -128,22 +142,22 @@ export function previewReferenceKey(value: string): string | undefined {
 
 export function withoutDisplayedLinks(
   html: string,
-  displayedVideos: Set<string>,
+  displayedMedia: Set<string>,
   displayedPreviews: Set<string> = new Set(),
 ): string {
-  if (!displayedVideos.size && !displayedPreviews.size) return html;
+  if (!displayedMedia.size && !displayedPreviews.size) return html;
 
   const content = sanitizeArticle(html);
 
   for (const anchor of content.querySelectorAll("a[href]")) {
     const href = anchor.getAttribute("href") ?? "";
     const label = anchor.textContent?.trim() ?? "";
-    const videoKey = videoReferenceKey(href);
+    const mediaKey = videoReferenceKey(href) ?? imageReferenceKey(href);
     const previewKey = previewReferenceKey(href);
-    const representedVideo =
-      videoKey &&
-      displayedVideos.has(videoKey) &&
-      videoReferenceKey(label) === videoKey;
+    const representedMedia =
+      mediaKey &&
+      displayedMedia.has(mediaKey) &&
+      (videoReferenceKey(label) ?? imageReferenceKey(label)) === mediaKey;
     const representedPreview =
       previewKey &&
       displayedPreviews.has(previewKey) &&
@@ -154,7 +168,7 @@ export function withoutDisplayedLinks(
         previewKey.replace(/^https?:\/\//i, ""),
       ].includes(label);
 
-    if (!representedVideo && !representedPreview) continue;
+    if (!representedMedia && !representedPreview) continue;
 
     const parent = anchor.parentElement;
     anchor.remove();
