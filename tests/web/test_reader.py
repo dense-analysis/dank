@@ -541,13 +541,14 @@ async def test_social_post_does_not_need_rss_page_capture(
     app: web.Application,
 ) -> None:
     article = {**row("x.com"), "source": "x"}
-    fake = FakeClickHouse([article], [])
+    fake = FakeClickHouse([article], [], [])
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/post?domain=x.com&id=same")
 
     assert response.status == 200
     assert json.loads(response.text or "")["collection_incomplete"] is False
-    assert len(fake.calls) == 2
+    assert len(fake.calls) == 3
+    assert all("page_fetch_status" not in query for query, _ in fake.calls)
 
 
 async def test_invalid_requests_are_json_errors(app: web.Application) -> None:

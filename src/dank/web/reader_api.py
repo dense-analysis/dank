@@ -30,7 +30,6 @@ from dank.web.app import (
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.web.reader_accounts import (
-    post_accounts,
     source_accounts,
     source_kind,
 )
@@ -49,6 +48,7 @@ from dank.web.reader_reddit import (
     without_video_posters,
 )
 from dank.web.reader_reddit_history import preserve_reddit_archives
+from dank.web.reader_x import post_x_content
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -260,13 +260,13 @@ async def _post_payloads(
         )
         for post in posts
     ]
-    accounts = await post_accounts(client, posts)
+    x_content = await post_x_content(client, posts, assets, assets_dir)
 
     for post in payloads:
-        account = accounts.get((post["domain"], post["id"]))
+        content = x_content.get((post["domain"], post["id"]))
 
-        if account:
-            post["x"] = account
+        if content:
+            post["x"] = content
 
     await _add_reddit_metadata(
         client, payloads, assets_dir, posts, assets,

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import datetime
-import html
 import json
-import re
 from typing import Any, cast
 
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
 from dank.model import Post, RawPost
+from dank.x_content import post_html, post_links, post_media, post_text
 
 
 def convert_raw_x_post(row: RawPost) -> Post | None:
@@ -21,17 +20,18 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
 
     payload = cast(dict[str, Any], payload)
 
-    text = _strip_trailing_tco(_extract_text(payload))
+    text = post_text(payload)
     author = _extract_author(payload).strip()
 
-    if not _has_substantive_content(text, author):
+    if not (text.strip() or author or post_media(payload, {})
+            or post_links(payload, {})):
         return None
 
-    title = html.unescape(text.splitlines()[0] if text else "")
+    title = text.splitlines()[0] if text else ""
     created_at = (
         row.post_created_at
         or _extract_created_at(payload)
-        or datetime.datetime.now(datetime.UTC)
+        or row.scraped_at
     )
     updated_at = row.scraped_at or created_at
 
@@ -44,14 +44,10 @@ def convert_raw_x_post(row: RawPost) -> Post | None:
         author=author,
         title=title,
         title_embedding=EMPTY_STRING_VECTOR,
-        html=text,
+        html=post_html(payload),
         html_embedding=EMPTY_STRING_VECTOR,
         source=row.source,
     )
-
-
-def _has_substantive_content(text: str, author: str) -> bool:
-    return bool(text.strip()) or bool(author.strip())
 
 
 def _as_dict(value: object) -> dict[str, object] | None:
@@ -65,40 +61,6 @@ def _get_str(value: object) -> str | None:
     if isinstance(value, str):
         return value
     return None
-
-
-def _extract_text(payload: dict[str, object]) -> str:
-    legacy = _as_dict(payload.get("legacy"))
-
-    if legacy is not None:
-        full_text = _get_str(legacy.get("full_text"))
-
-        if full_text:
-            return full_text
-
-    note_tweet = _as_dict(payload.get("note_tweet"))
-
-    if note_tweet is not None:
-        note_results = _as_dict(note_tweet.get("note_tweet_results"))
-
-        if note_results is not None:
-            result = _as_dict(note_results.get("result"))
-
-            if result is not None:
-                text = _get_str(result.get("text"))
-
-                if text:
-                    return text
-    return ""
-
-
-def _strip_trailing_tco(text: str) -> str:
-    if not text:
-        return ""
-
-    cleaned = re.sub(r"(?:\s+https://t\.co/[A-Za-z0-9]+)+\s*$", "", text)
-
-    return cleaned.rstrip()
 
 
 def _extract_created_at(

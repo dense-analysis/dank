@@ -19,7 +19,7 @@ def _raw_post(payload: dict[str, Any]) -> RawPost:
     )
 
 
-def test_convert_raw_x_post_strips_trailing_tco() -> None:
+def test_convert_raw_x_post_preserves_unexpanded_trailing_link() -> None:
     raw = _raw_post({
         "legacy": {
             "full_text": "Hello world https://t.co/abc123",
@@ -33,13 +33,17 @@ def test_convert_raw_x_post_strips_trailing_tco() -> None:
     post = convert_raw_x_post(raw)
 
     assert post is not None
-    assert post.html == "Hello world"
-    assert post.title == "Hello world"
+    assert post.html == (
+        '<p>Hello world <a href="https://t.co/abc123">'
+        'https://t.co/abc123</a></p>'
+    )
+    assert post.title == "Hello world https://t.co/abc123"
     assert post.author == "alice"
 
 
 def test_convert_raw_x_post_uses_note_tweet_text() -> None:
     raw = _raw_post({
+        "legacy": {"full_text": "Short legacy preview..."},
         "note_tweet": {
             "note_tweet_results": {
                 "result": {"text": "Long note\nline 2 https://t.co/xyz987"},
@@ -64,7 +68,10 @@ def test_convert_raw_x_post_uses_note_tweet_text() -> None:
     post = convert_raw_x_post(raw)
 
     assert post is not None
-    assert post.html == "Long note\nline 2"
+    assert post.html == (
+        '<p>Long note<br>line 2 <a href="https://t.co/xyz987">'
+        'https://t.co/xyz987</a></p>'
+    )
     assert post.title == "Long note"
     assert post.created_at == raw.post_created_at
 
@@ -94,3 +101,35 @@ def test_convert_raw_x_post_unescapes_html() -> None:
 
     assert post is not None
     assert post.title == "<Sam & Max>"
+
+
+def test_x_text_escapes_literal_markup_and_keeps_paragraphs() -> None:
+    raw = _raw_post({"legacy": {"full_text": (
+        '&lt;script&gt;bad()&lt;/script&gt; &amp; <img src=x onerror=bad()>\n'
+        'still same paragraph\n\nAnother paragraph'
+    )}})
+    post = convert_raw_x_post(raw)
+    assert post is not None
+    assert post.html == (
+        '<p>&lt;script&gt;bad()&lt;/script&gt; &amp; '
+        '&lt;img src=x onerror=bad()&gt;<br>still same paragraph</p>'
+        '<p>Another paragraph</p>'
+    )
+
+
+def test_convert_raw_x_post_preserves_media_only_without_author() -> None:
+    post = convert_raw_x_post(_raw_post({"legacy": {
+        "full_text": "", "extended_entities": {"media": [{
+            "type": "photo", "media_url_https": "https://pbs.twimg.com/media/a.jpg",
+        }]},
+    }}))
+    assert post is not None
+    assert post.html == ""
+
+
+def test_undated_x_posts_keep_capture_date_when_reprocessed() -> None:
+    raw = _raw_post({"legacy": {"full_text": "No published date"}})
+    first = convert_raw_x_post(raw)
+    replayed = convert_raw_x_post(raw)
+    assert first is not None and replayed is not None
+    assert first.created_at == replayed.created_at == raw.scraped_at

@@ -161,4 +161,29 @@ recorded as references.
 embeddings for the [web viewer](search.md). Check `dank.log`, or your configured
 log file, for account progress and login failures.
 
+## Reading saved posts
+
+X cards and opened posts show the account identity and one post body. Processing
+prefers full long-form text, preserves paragraphs and expands captured links.
+Photos, playable video/GIF files and external link cards use saved metadata;
+available local files are preferred, with captured X media URLs as a fallback.
+Remote media may expire or become unavailable. A link card remains a usable
+external link when its image cannot load; previews never embed third-party pages.
+
+The post's reply count is a snapshot from the same capture as its body.
+**Replies not collected** means the conversation has not been archived, even
+when X reported zero replies at capture time. Open the conversation on X to see
+current replies. Capturing conversations is not implemented yet.
+
+Previously saved X posts can be rebuilt without collecting them again:
+
+```sh
+uv run process --domains '^x\.com$' --age all --reprocess
+```
+
+For Docker, use `docker compose run --rm dank process` with the same options.
+Reprocessing rebuilds text and embeddings from saved captures; it does not
+fetch missing media, replies or newer content. Unknown source dates retain the
+capture date so replaying a post does not move it to the top of the timeline.
+
 See the [README](../../README.md) for shared configuration.

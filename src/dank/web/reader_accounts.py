@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import Any, TypedDict, cast
 from urllib.parse import urlsplit
 
 from dank.storage.clickhouse import ClickHouseClient
-
-if TYPE_CHECKING:
-    from dank.web.app import PostRow
 
 X_DOMAINS = ("x.com", "twitter.com")
 # Keep counts and account filtering tied to the same post owner, independent
@@ -70,25 +67,6 @@ async def source_accounts(
     ]
 
 
-async def post_accounts(
-    client: ClickHouseClient, posts: list[PostRow],
-) -> dict[tuple[str, str], AccountIdentity]:
-    accounts: dict[tuple[str, str], tuple[str, str]] = {}
-
-    for post in posts:
-        if post.domain not in X_DOMAINS:
-            continue
-
-        match = re.match(X_ACCOUNT_PATTERN, post.url.lower())
-
-        if match:
-            accounts[post.domain, post.post_id] = (post.domain, match[1])
-
-    profiles = await _account_profiles(client, set(accounts.values()))
-
-    return {key: profiles[account] for key, account in accounts.items()}
-
-
 async def _account_profiles(
     client: ClickHouseClient, accounts: set[tuple[str, str]],
 ) -> dict[tuple[str, str], AccountIdentity]:
@@ -104,7 +82,7 @@ async def _account_profiles(
     )
     profiles = {
         (str(row["domain"]), str(row["handle"])):
-        _profile(row.get("profile"), str(row["handle"]))
+        profile_identity(row.get("profile"), str(row["handle"]))
         for row in result.rows
     }
 
@@ -118,10 +96,10 @@ async def _account_profiles(
     }
 
 
-def _profile(value: object, handle: str) -> tuple[str, str | None]:
+def profile_identity(value: object, handle: str) -> tuple[str, str | None]:
     try:
         profile = _object(
-            json.loads(value) if isinstance(value, str) else None,
+            json.loads(value) if isinstance(value, str) else value,
         )
     except ValueError:
         return handle, None
