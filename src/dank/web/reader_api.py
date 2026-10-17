@@ -34,6 +34,7 @@ from dank.web.reader_accounts import (
     source_kind,
 )
 from dank.web.reader_communities import community_icons, community_totals
+from dank.web.reader_connections import handle_connection, handle_connections
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
 from dank.web.reader_hacker_news import add_hacker_news_metadata
@@ -61,6 +62,8 @@ READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
 def add_reader_routes(app: web.Application) -> None:
     app.middlewares.append(reader_errors)
     add_youtube_routes(app)
+    app.router.add_get("/api/reader/connections", handle_connections)
+    app.router.add_get("/api/reader/connection", handle_connection)
     app.router.add_get("/api/reader/sources", handle_sources)
     app.router.add_get("/api/reader/posts", handle_posts)
     app.router.add_get("/api/reader/post", handle_post)

@@ -198,6 +198,9 @@ async def _clickhouse_context(app: web.Application):
         from dank.web.reader_links import ensure_link_storage
 
         await ensure_link_storage(client)
+        from dank.web.reader_reference_index import ensure_reference_storage
+
+        await ensure_reference_storage(client)
         yield
     finally:
         await client.__aexit__(None, None, None)

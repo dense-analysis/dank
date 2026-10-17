@@ -1,0 +1,365 @@
+"""Extract attributable links from source-owned post/comment fields."""
+
+from __future__ import annotations
+
+import re
+import xml.etree.ElementTree as ET
+from collections.abc import Sequence
+from functools import partial
+from typing import Any, NamedTuple, cast
+from urllib.parse import urlsplit
+
+from dank.html_utils import html_base_url
+from dank.links import is_original_source, normalized_url
+from dank.reference_html import Identity, Link, comment_links, content_links
+from dank.youtube import canonical_video_id, payload_object
+
+ARTICLE_SOURCES = {"rss", "linked_article"}
+
+
+def _objects(value: object) -> list[dict[str, Any]]:
+    return (
+        [payload_object(item) for item in cast(list[object], value)]
+        if isinstance(value, list)
+        else []
+    )
+
+
+def _text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+class _PostContent(NamedTuple):
+    title: str = ""
+    author: str = ""
+    links: Sequence[Link] = ()
+    comments: Sequence[dict[str, Any]] = ()
+
+
+def _raw_content(
+    row: dict[str, Any], identity: Identity,
+) -> _PostContent:
+    links_from = partial(
+        content_links, identity=identity, base=str(row["url"]),
+    )
+    direct = partial(_direct_link, identity=identity)
+    payload = payload_object(row.get("payload"))
+
+    match row["source"]:
+        case "reddit":
+            body = _text(payload.get("selftext_html"))
+            links = (
+                links_from(body)
+                if body
+                else links_from(
+                    _text(payload.get("selftext")),
+                    markup=False,
+                )
+            )
+            return _PostContent(
+                _text(payload.get("title")),
+                _text(payload.get("author")),
+                links + direct(payload.get("url")),
+                _objects(
+                    payload_object(payload.get("comment_capture")).get(
+                        "comments",
+                    ),
+                ),
+            )
+        case "hacker_news":
+            story = payload_object(payload.get("story"))
+            listing = payload_object(payload.get("hckrnews"))
+
+            return _PostContent(
+                _text(story.get("title") or listing.get("link_text")),
+                _text(story.get("by")),
+                links_from(_text(story.get("text")))
+                + direct(
+                    story.get("url") or listing.get("link"),
+                ),
+                _objects(payload.get("comments")),
+            )
+        case "x":
+            return _x_content(payload, identity)
+        case "youtube":
+            if payload.get("kind") != "post":
+                return _PostContent()
+
+            return _PostContent(
+                _text(payload.get("title")),
+                _text(payload.get("channel_name")),
+                content_links(
+                    _text(payload.get("text")), markup=False,
+                    identity=identity,
+                ),
+            )
+        case "rss" | "linked_article":
+            content = _rss_content(
+                _text(payload.get("feed_xml")) or _text(row.get("payload")),
+                identity, str(row["url"]),
+            )
+            # Comment feed items may archive their parent article's full page.
+            fragment = urlsplit(str(row["url"])).fragment
+            page_links = (
+                []
+                if fragment.startswith("comment")
+                else content_links(
+                    _text(payload.get("page_html")), article=True,
+                    identity=identity, base=_page_base(payload, row),
+                )
+            )
+
+            return content._replace(links=[*content.links, *page_links])
+        case _:
+            return _PostContent()
+
+
+def _page_base(payload: dict[str, Any], row: dict[str, Any]) -> str:
+    return html_base_url(
+        _text(payload.get("page_html")),
+        _text(payload.get("page_final_url")) or str(row["url"]),
+    )
+
+
+def _x_content(
+    payload: dict[str, Any], identity: Identity,
+) -> _PostContent:
+    legacy = payload_object(payload.get("legacy"))
+    note = payload_object(
+        payload_object(
+            payload_object(
+                payload.get("note_tweet"),
+            ).get("note_tweet_results"),
+        ).get("result"),
+    )
+    body = _text(note.get("text") or legacy.get("full_text"))
+    entities = payload_object(
+        note.get("entity_set") or legacy.get("entities"),
+    )
+
+    known_urls: list[str] = []
+
+    for entity in _objects(entities.get("urls")):
+        short = _text(entity.get("url"))
+
+        if short and short in body:
+            target = _text(entity.get("expanded_url")) or short
+            body = body.replace(short, target)
+            known_urls.append(target)
+
+    return _PostContent(
+        body.splitlines()[0] if body else "",
+        "",
+        content_links(
+            body, markup=False, identity=identity, known_urls=known_urls,
+        ),
+    )
+
+
+def _rss_content(xml: str, identity: Identity, base: str) -> _PostContent:
+    # Page HTML contains recommendations. Use the feed entry here; processed
+    # article content is indexed independently at the processing boundary.
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return _PostContent()
+
+    if root.tag.rsplit("}", 1)[-1] not in {"item", "entry"}:
+        return _PostContent()
+
+    title = ""
+    links: list[Link] = []
+
+    for child in root:
+        tag = child.tag.rsplit("}", 1)[-1]
+
+        if tag == "title":
+            title = "".join(child.itertext())
+        elif tag in {"encoded", "content", "description", "summary"}:
+            content = (child.text or "") + "".join(
+                ET.tostring(part, encoding="unicode") for part in child
+            )
+            links += content_links(content, identity=identity, base=base)
+
+    return _PostContent(title, "", links)
+
+
+def reference_rows(
+    row: dict[str, Any], *, raw: bool, video: bool = False,
+) -> list[dict[str, Any]]:
+    """One archived occurrence per destination and post/comment identity."""
+    identity = canonical_video_id if video else normalized_url
+    source = str(row["source"])
+
+    if video and (source == "youtube" or row["domain"] == "youtube.com"):
+        return []
+
+    if raw:
+        content = _raw_content(row, identity)
+    elif source in ARTICLE_SOURCES:
+        content = _PostContent(
+            _text(row.get("title")),
+            _text(row.get("author")),
+            content_links(
+                _text(row.get("html")), identity=identity,
+                base=str(row["url"]),
+            ),
+        )
+    else:
+        # Social projections can include other posts' quotations/cards.
+        # Their own structured raw fields are the reference authority.
+        return []
+
+    common = {
+        "domain": row["domain"],
+        "post_id": row["post_id"],
+        "url": row["url"],
+        "source": source,
+        "title": content.title[:300],
+        "observed_at": row["scraped_at" if raw else "updated_at"],
+    }
+    aggregated = source == "rss" and not is_original_source(
+        str(row["domain"]), str(row["url"]),
+    )
+    own_link = (
+        _direct_link(row.get("url"), identity=identity)
+        if video or aggregated else []
+    )
+    results = [
+        _evidence(common, link, "post", "", str(row["url"]), content.author)
+        for link in [
+            *content.links, *own_link,
+        ]
+    ]
+    results += _comment_evidence(common, content.comments, identity)
+
+    if raw and source in ARTICLE_SOURCES:
+        payload = payload_object(row.get("payload"))
+        origin = urlsplit(str(row["url"]))
+
+        for comment_id, link in comment_links(
+            _text(payload.get("page_html")),
+            identity=identity, base=_page_base(payload, row),
+        ):
+            if (origin.fragment.startswith("comment")
+                    and origin.fragment != comment_id):
+                continue
+
+            results.append(_evidence(
+                common, link, "comment", comment_id,
+                origin._replace(fragment=comment_id).geturl(), "",
+            ))
+
+    if not video and not aggregated:
+        own_url = normalized_url(str(row["url"]))
+        results = [r for r in results if r["target_url"] != own_url]
+
+    return list(
+        {
+            (r["target_url"], r["kind"], r["reference_id"]): r
+            for r in reversed(results)
+        }.values(),
+    )
+
+
+def _comment_evidence(
+    common: dict[str, Any],
+    comments: Sequence[dict[str, Any]],
+    identity: Identity,
+) -> list[dict[str, Any]]:
+    hn = common["source"] == "hacker_news"
+    parents = {
+        str(c.get("id")): str(c.get("parent" if hn else "parent_id"))
+        for c in comments
+    }
+    results: list[dict[str, Any]] = []
+
+    for comment in comments:
+        comment_id = str(comment.get("id") or "")
+
+        if comment.get("deleted") or comment.get("dead"):
+            continue
+
+        if not _belongs_to_thread(comment_id, parents, str(common["post_id"])):
+            continue
+
+        if hn:
+            if not comment_id.isdecimal():
+                continue
+
+            permalink = "https://news.ycombinator.com/item?id=" + comment_id
+            author = _text(comment.get("by"))
+            found = content_links(
+                _text(comment.get("text")), identity=identity,
+                base=common["url"],
+            )
+        else:
+            if not re.fullmatch(r"t1_[a-z0-9]+", comment_id):
+                continue
+
+            post_id = str(common["post_id"]).removeprefix("t3_")
+            permalink = (
+                f"https://www.reddit.com/comments/{post_id}"
+                f"/comment/{comment_id[3:]}/"
+            )
+            author = _text(comment.get("author"))
+            body = _text(comment.get("body_html"))
+            found = (
+                content_links(
+                    body, identity=identity, base=common["url"],
+                )
+                if body
+                else content_links(
+                    _text(comment.get("body")),
+                    markup=False, identity=identity,
+                )
+            )
+
+        results.extend(
+            _evidence(common, link, "comment", comment_id, permalink, author)
+            for link in found
+        )
+
+    return results
+
+
+def _belongs_to_thread(
+    comment_id: str,
+    parents: dict[str, str],
+    post_id: str,
+) -> bool:
+    parent = parents.get(comment_id, "")
+    visited = {comment_id}
+
+    while parent in parents and parent not in visited:
+        visited.add(parent)
+        parent = parents[parent]
+
+    return parent == post_id
+
+
+def _direct_link(value: object, *, identity: Identity) -> list[Link]:
+    target = _text(value)
+    key = identity(target)
+
+    return [Link(key, target, target)] if key else []
+
+
+def _evidence(
+    common: dict[str, Any],
+    link: Link,
+    kind: str,
+    reference_id: str,
+    reference_url: str,
+    author: str,
+) -> dict[str, Any]:
+    return {
+        **common,
+        "target_url": link.key,
+        "kind": kind,
+        "reference_id": reference_id,
+        "reference_url": reference_url,
+        "author": author,
+        "matched_url": link.url,
+        "excerpt": link.excerpt,
+    }

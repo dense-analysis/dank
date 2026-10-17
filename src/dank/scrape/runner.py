@@ -35,6 +35,7 @@ from dank.model import (
     YouTubeChannelDiscovery,
 )
 from dank.progress import Progress
+from dank.references import reference_rows as post_reference_rows
 from dank.runtime import runtime_info
 from dank.scrape.assets import download_assets
 from dank.scrape.assets.http import (
@@ -275,6 +276,14 @@ async def _ensure_history_tables(client: ClickHouseClient) -> None:
     links_schema = pathlib.Path(__file__).parents[1] / "storage/links.sql"
 
     for statement in links_schema.read_text().split(";"):
+        if statement.strip():
+            await client.execute(statement)
+
+    reference_schema = (
+        pathlib.Path(__file__).parents[1] / "storage/references.sql"
+    )
+
+    for statement in reference_schema.read_text().split(";"):
         if statement.strip():
             await client.execute(statement)
 
@@ -1375,6 +1384,14 @@ async def _flush_posts(
         [{key: value for key, value in post._asdict().items()
           if key != "is_reference"} for post in pending_posts],
     )
+    post_evidence = [link for post in pending_posts
+                     for link in post_reference_rows(post._asdict(), raw=True)]
+
+    if post_evidence:
+        await clickhouse_client.insert_rows(
+            "post_reference_evidence", post_evidence,
+        )
+
     evidence = [link for post in pending_posts
                 for link in reference_rows(post._asdict(), raw=True)]
 

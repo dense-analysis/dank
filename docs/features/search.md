@@ -61,6 +61,23 @@ Filters work for both browsing and search:
 The date slider covers up to 365 days. Displayed timestamps use UTC. The text
 preview on each card is an excerpt of the stored content.
 
+## Explore source connections
+
+Open **Connections** on a saved article or post to switch between the evidence
+list and graph. Incoming links show which saved posts or comments cited this
+item; outgoing links show the destinations it cites. Select an edge or comment
+to inspect the saved excerpt, author and capture date, then **Open evidence**
+to reveal the matching link in DANK. Collected neighbours can become the centre
+of the next graph; uncollected destinations retain their external URL.
+
+Connections come from explicit saved links, not inferred similarity. Each view
+shows up to 100 incoming and 100 outgoing occurrences, with the full totals.
+Repeated captures of the same post/comment link count once, using its latest
+saved evidence. A link from an older capture can remain useful after the current
+post changes: DANK labels that evidence with its capture date and can show the
+archived excerpt if the current reader content no longer contains the match.
+Missing comments, uncaptured pages and unsupported page layouts limit coverage.
+
 ## Search by meaning
 
 Enter a phrase to find posts with similar text embeddings. DANK compares the
