@@ -38,3 +38,21 @@ def test_sidebar_keeps_collected_channels_without_listing_every_news_creator():
     assert any(
         feed["name"] == "News" and feed["count"] == 20 for feed in feeds
     )
+
+
+def test_special_news_channel_and_legacy_channel_paths() -> None:
+    settings = load_settings("config.example.toml")._replace(sources=(
+        SourceConfig("youtube.com", (), (
+            "https://www.youtube.com/channel/UCYfdidRxbB8Qhf0Nx7ioOYw/videos",
+            "https://www.youtube.com/c/Example/community",
+            "https://www.youtube.com/user/Reporter/videos",
+        )),
+    ))
+    feeds, channels = configured_sources(settings, [])
+    news = [feed for feed in feeds if feed["tab"] == "top_stories"]
+    assert len(news) == 1
+    assert news[0]["url"] == "https://www.youtube.com/feed/news_destination"
+    assert {channel["url"] for channel in channels} == {
+        "https://www.youtube.com/c/Example",
+        "https://www.youtube.com/user/Reporter",
+    }

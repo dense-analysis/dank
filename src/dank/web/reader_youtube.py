@@ -172,7 +172,10 @@ async def _discoveries(
         "region, playlist_id, observed_at, run_id "
         "FROM youtube_discoveries FINAL "
         "WHERE item_id IN %(ids)s "
-        "ORDER BY (feed_url = %(feed)s) DESC, observed_at DESC, rank ASC "
+        "ORDER BY (feed_url = %(feed)s) DESC, observed_at DESC, "
+        "if(feed_kind != 'hype' AND "
+        "JSONExtractUInt(payload, 'discovery', 'position') > 0, "
+        "JSONExtractUInt(payload, 'discovery', 'position'), rank) ASC "
         "LIMIT %(limit)s BY item_id",
         {"ids": ids, "feed": filters.feed, "limit": MAX_ITEM_DISCOVERIES},
     )
@@ -202,12 +205,20 @@ async def _references(
         return {}, {}
 
     result = await client.fetch_json(
-        "SELECT video_id, domain, post_id, "
+        "SELECT l.video_id AS video_id, l.domain AS domain, "
+        "l.post_id AS post_id, "
         "argMax(l.url, l.observed_at) AS url, "
         "argMax(l.source, l.observed_at) AS source, "
-        "argMaxIf(l.title, l.observed_at, l.title != '') AS title, "
+        "argMaxIf(if(empty(p.title), l.title, p.title), l.observed_at, "
+        "notEmpty(p.title) OR notEmpty(l.title)) AS title, "
         "max(observed_at) AS latest_at, count() OVER (PARTITION BY video_id) "
-        "AS reference_count FROM youtube_links AS l WHERE video_id IN %(ids)s "
+        "AS reference_count FROM youtube_links AS l LEFT JOIN "
+        "(SELECT domain, post_id, title FROM posts FINAL "
+        "WHERE (domain, post_id) IN "
+        "(SELECT domain, post_id FROM youtube_links "
+        "WHERE video_id IN %(ids)s)) AS p "
+        "ON l.domain = p.domain AND l.post_id = p.post_id "
+        "WHERE l.video_id IN %(ids)s "
         "GROUP BY video_id, domain, post_id ORDER BY latest_at DESC "
         "LIMIT %(limit)s BY video_id",
         {"ids": video_ids, "limit": MAX_ITEM_REFERENCES},
@@ -299,6 +310,7 @@ async def _local_media(
     result = await client.fetch_json(
         "SELECT post_id, url, local_path, asset_type, scraped_at "
         "FROM raw_assets WHERE domain = 'youtube.com' AND post_id IN %(ids)s "
+        "AND local_path != '' "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id, asset_type",
         {"ids": ids},
     )

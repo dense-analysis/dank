@@ -154,11 +154,18 @@ def _feed_items(filters: YouTubeFilters) -> str:
         if filters.feed else ""
     )
 
+    position = (
+        "if(d.feed_kind != 'hype' AND "
+        "JSONExtractUInt(d.payload, 'discovery', 'position') > 0, "
+        "JSONExtractUInt(d.payload, 'discovery', 'position'), "
+        "if(d.rank = 0, 4294967295, d.rank))"
+    )
+
     return (
         "SELECT item_id, argMax(d.kind, d.observed_at) AS kind, "
         "max(d.observed_at) AS observed_at, "
         "argMax(d.payload, d.observed_at) AS payload, '' AS search_text, "
-        "argMax(if(d.rank = 0, 4294967295, d.rank), d.observed_at) "
+        f"argMax({position}, (d.observed_at, -toInt64({position}))) "
         "AS position "
         f"FROM youtube_discoveries AS d{where} GROUP BY item_id"
     )
@@ -168,10 +175,11 @@ def _linked_items() -> str:
     # The index keeps paging independent of source payload size.
     return (
         "SELECT concat('video:', links.video_id) AS item_id, "
-        "if(empty(discovered.kind), 'video', discovered.kind) AS kind, "
+        "if(empty(discovered.kind), links.kind, discovered.kind) AS kind, "
         "links.observed_at AS observed_at, discovered.payload AS payload, "
         "links.search_text AS search_text, toUInt32(0) AS position FROM ("
         "SELECT video_id, max(observed_at) AS observed_at, "
+        "if(countIf(format_hint = 'short') > 0, 'short', 'video') AS kind, "
         "arrayStringConcat(groupUniqArray(100)(title), ' ') AS search_text "
         "FROM youtube_links GROUP BY video_id) AS links LEFT JOIN ("
         "SELECT item_id, argMax(d.kind, d.observed_at) AS kind, "

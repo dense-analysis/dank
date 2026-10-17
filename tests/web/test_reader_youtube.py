@@ -140,6 +140,7 @@ def test_rank_is_part_of_cursor_and_snapshots_keep_channels_incremental():
     query, params = build_youtube_query(filters._replace(cursor=cursor))
     assert params["cursor_position"] == 7
     assert "position ASC" in query
+    assert "JSONExtractUInt(d.payload, 'discovery', 'position')" in query
     assert "feed_kind = 'channel' OR run_id =" in query
     assert "argMax(run_id, observed_at)" in query
 

@@ -18,6 +18,7 @@ ORDER BY (feed_url, run_id, shelf, item_id, rank);
 
 CREATE TABLE IF NOT EXISTS youtube_links (
     video_id String,
+    format_hint LowCardinality(String),
     domain String,
     post_id String,
     url String,
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS youtube_links (
     observed_at DateTime64(3, 'UTC')
 )
 ENGINE = ReplacingMergeTree(observed_at)
-ORDER BY (video_id, domain, post_id);
+ORDER BY (video_id, domain, post_id, format_hint);
 
 CREATE TABLE IF NOT EXISTS youtube_index_versions (
     version UInt32,
@@ -41,7 +42,10 @@ SELECT arrayJoin(arrayDistinct(extractAll(
         replaceAll(decodeHTMLComponent(concat(url, ' ', html)), '\\/', '/'),
         '(?i:https?://(?:(?:www|m|music)\\.)?(?:youtube\\.com|youtube-nocookie\\.com)/(?:watch\\?(?:[^\\s"\'<>#]*&)?v=|shorts/|embed/)|https?://(?:www\\.)?youtu\\.be/)([A-Za-z0-9_-]{11})(?:[^A-Za-z0-9_-]|$)'
     ))) AS video_id,
-    domain, post_id, url, source, title AS title,
+    if(match(replaceAll(decodeHTMLComponent(concat(url, ' ', html)), '\\/', '/'),
+        concat('(?i:https?://(?:(?:www|m|music)\\.)?(?:youtube\\.com|youtube-nocookie\\.com)/shorts/)', video_id, '(?:[^A-Za-z0-9_-]|$)')),
+        'short', 'video') AS format_hint,
+    domain, post_id, url, source, substringUTF8(title, 1, 300) AS title,
     updated_at AS observed_at
 FROM posts
 WHERE domain != 'youtube.com' AND source != 'youtube'
@@ -53,7 +57,10 @@ SELECT arrayJoin(arrayDistinct(extractAll(
         replaceAll(decodeHTMLComponent(concat(url, ' ', payload)), '\\/', '/'),
         '(?i:https?://(?:(?:www|m|music)\\.)?(?:youtube\\.com|youtube-nocookie\\.com)/(?:watch\\?(?:[^\\s"\'<>#]*&)?v=|shorts/|embed/)|https?://(?:www\\.)?youtu\\.be/)([A-Za-z0-9_-]{11})(?:[^A-Za-z0-9_-]|$)'
     ))) AS video_id,
-    domain, post_id, url, source, JSONExtractString(payload, 'title') AS title,
+    if(match(replaceAll(decodeHTMLComponent(concat(url, ' ', payload)), '\\/', '/'),
+        concat('(?i:https?://(?:(?:www|m|music)\\.)?(?:youtube\\.com|youtube-nocookie\\.com)/shorts/)', video_id, '(?:[^A-Za-z0-9_-]|$)')),
+        'short', 'video') AS format_hint,
+    domain, post_id, url, source, substringUTF8(coalesce(nullIf(JSONExtractString(payload, 'title'), ''), nullIf(JSONExtractString(payload, 'note_tweet', 'note_tweet_results', 'result', 'text'), ''), JSONExtractString(payload, 'legacy', 'full_text')), 1, 300) AS title,
     scraped_at AS observed_at
 FROM raw_posts
 WHERE domain != 'youtube.com' AND source != 'youtube'

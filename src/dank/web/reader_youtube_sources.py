@@ -79,11 +79,15 @@ def _configured_feeds(settings: Settings) -> dict[str, dict[str, Any]]:
             continue
 
         for account in source.accounts:
-            url = _channel_url(account) + "/videos"
-            feeds[url] = _configured_feed(url, region)
+            url = account if account.startswith(("https://", "http://")) else (
+                _channel_url(account) + "/videos"
+            )
+            feed = _configured_feed(url, region)
+            feeds[str(feed["url"])] = feed
 
         for url in source.feed_urls:
-            feeds[url] = _configured_feed(url, region)
+            feed = _configured_feed(url, region)
+            feeds[str(feed["url"])] = feed
 
     return feeds
 
@@ -97,7 +101,8 @@ def _channel_url(value: str) -> str:
         path = urlsplit(value).path.rstrip("/")
 
         for suffix in (
-            "/videos", "/shorts", "/posts", "/streams", "/featured",
+            "/videos", "/shorts", "/posts", "/streams",
+            "/featured", "/community",
         ):
             path = path.removesuffix(suffix)
 
@@ -107,7 +112,11 @@ def _channel_url(value: str) -> str:
 def _configured_feed(url: str, region: str) -> dict[str, Any]:
     path = urlsplit(url).path
 
-    if path.startswith(("/@", "/channel/")):
+    if path.startswith("/channel/UCYfdidRxbB8Qhf0Nx7ioOYw"):
+        return _feed(YOUTUBE_ORIGIN + NEWS_PATH, "News · Top stories",
+                     "news", region, "top_stories")
+
+    if path.startswith(("/@", "/channel/", "/c/", "/user/")):
         name = path.split("/")[1 if path.startswith("/@") else 2]
 
         return _feed(url, name, "channel", region)
@@ -117,6 +126,10 @@ def _configured_feed(url: str, region: str) -> dict[str, Any]:
 
         return _feed(url, "News · " + NEWS_LABELS.get(tab, tab),
                      "news", region, tab)
+
+    if not path.rstrip("/"):
+        return _feed(YOUTUBE_ORIGIN + "/", "Home recommendations",
+                     "home", region)
 
     kind = "hype" if path == "/feed/hype" else "playlist"
 
