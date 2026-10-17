@@ -17,7 +17,10 @@ addEventListener("message", event => {
   const data = JSON.parse(event.data);
   if (data.event === "listening") { id = data.id; ready(); }
   if (data.event !== "command") return;
-  if (data.func === "addEventListener") events.add(data.args[0]);
+  if (data.func === "addEventListener") {
+    events.add(data.args[0]);
+    if (data.args[0] === "onStateChange") document.body.dataset.subscribed = "true";
+  }
   if (data.func === "playVideo") state(1);
   if (data.func === "pauseVideo") state(2);
 });

@@ -2,8 +2,9 @@ import type Hls from "hls.js";
 import { ExternalLink, Globe2, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
+import { observeVideoPlayback } from "../lib/playback";
 import type { RedditVideo as Video } from "../lib/types";
-import { safeUrl } from "./PostCard";
+import { safeUrl } from "../lib/urls";
 
 export function RedditVideo({
   video,
@@ -29,11 +30,14 @@ export function RedditVideo({
 
     if (!started || !url || !media) return;
 
+    const playback = observeVideoPlayback(media);
+    // Reserve the user's click while HLS loads; a newer player or scroll can cancel it.
+    playback.playing();
     let active = true;
     let player: Hls | undefined;
     let usingFallback = false;
     const play = () => {
-      if (active)
+      if (active && playback.isActive())
         void media.play().catch(() => {
           // Browser playback policies may require another press of the native play control.
         });
@@ -44,12 +48,16 @@ export function RedditVideo({
 
       // The API exposes only MP4 fallbacks known to include audio.
       if (fallback && fallback !== url && !usingFallback) {
+        const resume = playback.isActive();
         usingFallback = true;
         player?.destroy();
         player = undefined;
         media.src = fallback;
+
+        if (resume) playback.playing();
         play();
       } else {
+        playback.pause();
         setFailed(true);
       }
     };
@@ -89,7 +97,7 @@ export function RedditVideo({
       active = false;
       media.removeEventListener("error", fail);
       player?.destroy();
-      media.pause();
+      playback.dispose();
       media.removeAttribute("src");
       media.load();
     };

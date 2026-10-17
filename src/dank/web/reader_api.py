@@ -364,12 +364,13 @@ def _add_reddit_archive(
     if not post["thumbnail"] and posters:
         post["thumbnail"] = next(iter(posters))
 
+    post["reddit"]["video"] = media[0] if media else None
+    post["reddit"]["videos"] = media
+
     if not include_discussion:
         return
 
     post["reddit"]["comment_capture"] = comment_capture(snapshot, post["url"])
-    post["reddit"]["video"] = media[0] if media else None
-    post["reddit"]["videos"] = media
     if media:
         posters.update(
             original for original, local in local_urls.items()

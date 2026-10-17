@@ -1,4 +1,4 @@
-import type { RedditFlair, Source } from "./types";
+import type { RedditFlair, RedditPost, Source } from "./types";
 
 export function availableFlairs(
   sources: Source[],
@@ -23,4 +23,12 @@ export function availableFlairs(
   return [...counts]
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function redditVideos(reddit?: RedditPost | null) {
+  return reddit?.videos?.length
+    ? reddit.videos
+    : reddit?.video
+      ? [reddit.video]
+      : [];
 }

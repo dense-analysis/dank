@@ -162,8 +162,9 @@ def test_video_rejects_unsafe_sources(url: str):
     assert videos({"media": [{"url": url, "asset_type": "video"}]}, {}) == []
 
 
-async def test_archive_metadata_only_on_detail_and_posters_not_repeated(
-    app: web.Application,
+@pytest.mark.parametrize("kind", ["all", "reddit"])
+async def test_feed_videos_match_detail_without_loading_comments(
+    app: web.Application, kind: str,
 ):
     post = row("reddit.com", "t3_abc")
     post.update(
@@ -204,10 +205,11 @@ async def test_archive_metadata_only_on_detail_and_posters_not_repeated(
     assert detail["thumbnail"] == POSTER
     assert "<img" not in detail["html"] and "Context." in detail["html"]
     app["clickhouse"] = FakeClickHouse(*results)
-    response = await request(app, "/api/reader/posts?kind=reddit")
+    response = await request(app, f"/api/reader/posts?kind={kind}")
     listing = json.loads(response.text or "")["posts"][0]
     assert "comment_capture" not in listing["reddit"]
-    assert "video" not in listing["reddit"]
+    assert listing["reddit"]["video"] == detail["reddit"]["video"]
+    assert listing["reddit"]["videos"] == detail["reddit"]["videos"]
     assert listing["thumbnail"] == POSTER
 
 

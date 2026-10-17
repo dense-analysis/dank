@@ -1,4 +1,5 @@
 interface Playback {
+  isActive: () => boolean;
   playing: () => void;
   paused: () => void;
   pause: () => void;
@@ -14,6 +15,7 @@ export function observePlayback(
 ): Playback {
   let disposed = false;
   const playback: Playback = {
+    isActive: () => active === playback,
     playing() {
       if (disposed) return;
 
@@ -69,4 +71,28 @@ export function observePlayback(
   window.addEventListener("popstate", pauseActive);
 
   return playback;
+}
+
+/** Bind native controls to the same owner used by embedded players. */
+export function observeVideoPlayback(video: HTMLVideoElement): Playback {
+  const playback = observePlayback(video, () => video.pause());
+  const onPlay = () => {
+    if (!video.paused) playback.playing();
+  };
+  const onPause = () => {
+    if (video.paused) playback.paused();
+  };
+  video.addEventListener("play", onPlay);
+  video.addEventListener("pause", onPause);
+  video.addEventListener("ended", onPause);
+
+  return {
+    ...playback,
+    dispose() {
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("ended", onPause);
+      playback.dispose();
+    },
+  };
 }

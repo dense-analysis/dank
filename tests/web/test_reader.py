@@ -416,6 +416,7 @@ async def test_reddit_metadata_uses_processed_snapshot_and_retains_safe_html(
     assert data["posts"][0]["reddit"] == {
         "community": "LocalLLaMA", "score": 123, "comments": 42,
         "flair": "Discussion", "icon_url": None,
+        "video": None, "videos": [],
     }
     assert "<script>" not in data["posts"][0]["html"]
     assert "ORDER BY scraped_at DESC LIMIT 1 BY post_id" in fake.calls[2][0]

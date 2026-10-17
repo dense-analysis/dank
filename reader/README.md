@@ -106,7 +106,7 @@ playback fails. Raw URLs represented by clickable preview cards, including
 YouTube cards, are also hidden. Descriptive links and links without previews
 remain available. YouTube previews play inline when selected, with a separate
 **Watch on YouTube** link for videos that cannot be embedded. Closing the video
-or navigating to another view stops playback. X videos and YouTube players pause
+or navigating to another view stops playback. X, YouTube and Reddit videos pause
 when scrolled fully out of view or when another video starts. Their position is
 preserved; scrolling back does not automatically resume them.
 
@@ -147,7 +147,9 @@ collected snapshots. Saved comments appear beneath a post in their collected
 order, with replies indented and a link to Reddit when more remain. Older posts
 and skipped or failed comment collections show an explicit notice.
 
-Reddit videos play on demand, including audio when provided by the source.
+Reddit videos play on demand in feed cards and opened posts, including audio
+when provided by the source. Only one video plays at a time across All; starting
+a Reddit, X or YouTube video pauses the previous player.
 Downloaded videos play locally; remote videos stream from Reddit and carry a
 small label. If a stream becomes unavailable, use **Watch on Reddit**.
 

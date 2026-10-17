@@ -90,6 +90,21 @@ async function mockYouTube(
       ),
     }),
   );
+  await context.route("https://video.reddit.test/**", (route) => {
+    const name = new URL(route.request().url()).pathname.slice(1);
+
+    return route.fulfill({
+      path: fileURLToPath(
+        new URL(`./fixtures/reddit-video/${name}`, import.meta.url),
+      ),
+      contentType: name.endsWith("m3u8")
+        ? "application/vnd.apple.mpegurl"
+        : name.endsWith("mp4")
+          ? "video/mp4"
+          : "video/mp2t",
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
+  });
   await context.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
 
@@ -101,10 +116,32 @@ async function mockYouTube(
               domain: "x.com",
               name: "X",
               kind: "x",
-              count: posts.length,
+              count: posts.filter((item) => item.domain === "x.com").length,
               tags: [],
-              accounts: [{ ...post.x, count: posts.length }],
+              accounts: [
+                {
+                  ...post.x,
+                  count: posts.filter((item) => item.domain === "x.com").length,
+                },
+              ],
             },
+            ...(posts.some((item) => item.reddit)
+              ? [
+                  {
+                    domain: "reddit.com",
+                    name: "Reddit",
+                    kind: "reddit",
+                    tags: [],
+                    count: posts.filter((item) => item.reddit).length,
+                    communities: [
+                      {
+                        name: "videos",
+                        count: posts.filter((item) => item.reddit).length,
+                      },
+                    ],
+                  },
+                ]
+              : []),
           ],
           total_posts: posts.length,
         },
@@ -406,6 +443,10 @@ test("a slow YouTube player cannot start over a newer video, but can be resumed 
     .locator("body")
     .evaluate(() => window.dispatchEvent(new Event("fixture-ready")));
   await expect(player.locator("body")).toHaveAttribute("data-ready", "true");
+  await expect(player.locator("body")).toHaveAttribute(
+    "data-subscribed",
+    "true",
+  );
   await expect(player.locator("body")).toHaveAttribute("data-state", "-1");
   await expect(video).toHaveJSProperty("paused", false);
   await player.getByRole("button", { name: "Play video", exact: true }).click();
@@ -434,3 +475,226 @@ test("native playback stops on navigation and stays paused in the restored feed"
   await expect(card).toBeVisible();
   await expect(video).toHaveJSProperty("paused", true);
 });
+
+function redditPost(remote = false, id = "reddit-video"): Post {
+  const video = {
+    url: remote
+      ? "https://video.reddit.test/playlist.m3u8"
+      : "/assets/playback-reddit.mp4",
+    hls_url: remote ? "https://video.reddit.test/playlist.m3u8" : null,
+    fallback_url: remote ? "https://video.reddit.test/archived.mp4" : null,
+    poster_url: "/assets/youtube-thumb.svg",
+    remote,
+  };
+
+  return {
+    ...post,
+    id,
+    domain: "reddit.com",
+    source: "reddit",
+    x: undefined,
+    url: `https://www.reddit.com/r/videos/comments/${id}/video/`,
+    title: `Reddit clip ${id}`,
+    html: "",
+    excerpt: "",
+    thumbnail: video.poster_url,
+    reddit: {
+      community: "videos",
+      score: 12,
+      comments: 3,
+      flair: null,
+      video,
+      videos: [video],
+    },
+  };
+}
+
+for (const remote of [false, true]) {
+  test(`All coordinates X, YouTube and ${remote ? "streamed" : "local"} Reddit videos in both directions`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 3000 });
+    await mockYouTube(context, {
+      posts: [mixed, redditPost(remote), redditPost(false, "second-reddit")],
+    });
+    await page.goto("/reader/");
+    const reddit = page.locator(".reddit-card");
+    await expect(reddit).toHaveCount(2);
+    await expect(reddit.first().locator(".thumbnail")).toHaveCount(0);
+    await expect(
+      reddit.first().getByText("Not collected", { exact: true }),
+    ).toHaveCount(0);
+    const videos = reddit.locator("video");
+    await expect(videos).toHaveCount(2);
+
+    for (const video of await videos.all()) {
+      await expect(video).not.toHaveAttribute("src");
+      await video.evaluate((v: HTMLVideoElement) => {
+        v.volume = 0;
+        v.loop = true;
+      });
+    }
+
+    const x = page.locator(".x-post-content video").first();
+    await x.evaluate(async (v: HTMLVideoElement) => {
+      v.muted = true;
+      v.loop = true;
+      await v.play();
+    });
+    await expect(x).toHaveJSProperty("paused", false);
+    await reddit
+      .first()
+      .getByRole("button", { name: "Play video", exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        videos.first().evaluate((v: HTMLVideoElement) => v.currentTime),
+      )
+      .toBeGreaterThan(0.1);
+    await expect(x).toHaveJSProperty("paused", true);
+    await page
+      .getByRole("button", { name: `Play video: ${videoTitle}` })
+      .click();
+    const youtube = page.locator("iframe").contentFrame();
+    await expect(youtube.locator("body")).toHaveAttribute("data-state", "1");
+    await expect(videos.first()).toHaveJSProperty("paused", true);
+    await videos.first().evaluate((v: HTMLVideoElement) => v.play());
+    await expect(youtube.locator("body")).toHaveAttribute("data-state", "2");
+    await reddit
+      .nth(1)
+      .getByRole("button", { name: "Play video", exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        videos.nth(1).evaluate((v: HTMLVideoElement) => v.currentTime),
+      )
+      .toBeGreaterThan(0.1);
+    await expect(videos.first()).toHaveJSProperty("paused", true);
+    await x.evaluate((v: HTMLVideoElement) => v.play());
+    await expect(videos.nth(1)).toHaveJSProperty("paused", true);
+    await expect(page).toHaveURL(/\/reader\/$/);
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`Reddit pauses offscreen and across reader navigation while keeping its feed position at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const posts = Array.from({ length: 5 }, (_, i) =>
+      redditPost(false, `clip-${i}`),
+    );
+    await mockYouTube(context, { posts });
+    await page.goto("/reader/");
+    const card = page.locator(".reddit-card").first();
+    const video = card.locator("video");
+    await video.evaluate((v: HTMLVideoElement) => {
+      v.volume = 0;
+      v.loop = true;
+    });
+    await card.getByRole("button", { name: "Play video", exact: true }).click();
+    await expect
+      .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime))
+      .toBeGreaterThan(0.1);
+    await video.evaluate((v) =>
+      window.scrollBy(0, v.getBoundingClientRect().bottom + 20),
+    );
+    await expect(video).toHaveJSProperty("paused", true);
+    const position = await video.evaluate(
+      (v: HTMLVideoElement) => v.currentTime,
+    );
+    await video.scrollIntoViewIfNeeded();
+    await expect(video).toHaveJSProperty("paused", true);
+    expect(await video.evaluate((v: HTMLVideoElement) => v.currentTime)).toBe(
+      position,
+    );
+    await video.evaluate((v: HTMLVideoElement) => v.play());
+    await card
+      .getByRole("link", { name: `Read ${posts[0].title}`, exact: true })
+      .click();
+    await expect(
+      page.getByRole("main", { name: "Article reader" }),
+    ).toBeVisible();
+    await expect(video).toHaveJSProperty("paused", true);
+    const opened = page.locator(".article-page .reddit-video video");
+    await opened.evaluate((v: HTMLVideoElement) => {
+      v.volume = 0;
+    });
+    await page
+      .locator(".article-page")
+      .getByRole("button", { name: "Play video", exact: true })
+      .click();
+    await expect
+      .poll(() => opened.evaluate((v: HTMLVideoElement) => v.currentTime))
+      .toBeGreaterThan(0.1);
+    await page.goBack();
+    await expect(opened).toHaveCount(0);
+    await expect(video).toHaveJSProperty("paused", true);
+  });
+}
+
+for (const result of ["manifest", "fallback"] as const) {
+  test(`a delayed Reddit ${result} cannot interrupt a newer video`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 2400 });
+    await mockYouTube(context, { posts: [mixed, redditPost(true)] });
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await context.route(
+      "https://video.reddit.test/playlist.m3u8",
+      async (route) => {
+        await gate;
+        if (result === "fallback")
+          await route.fulfill({
+            status: 404,
+            headers: { "Access-Control-Allow-Origin": "*" },
+          });
+        else await route.fallback();
+      },
+    );
+    await page.goto("/reader/");
+    const card = page.locator(".reddit-card");
+    const video = card.locator("video");
+    await video.evaluate((v: HTMLVideoElement) => {
+      v.volume = 0;
+      v.loop = true;
+    });
+    const request = page.waitForRequest(
+      "https://video.reddit.test/playlist.m3u8",
+    );
+    await card.getByRole("button", { name: "Play video", exact: true }).click();
+    await request;
+    const x = page.locator(".x-post-content video").first();
+    await x.evaluate(async (v: HTMLVideoElement) => {
+      v.muted = true;
+      v.loop = true;
+      await v.play();
+    });
+    release();
+    if (result === "fallback") {
+      // preload=none keeps a cancelled fallback unloaded until the user resumes.
+      await expect(video).toHaveAttribute(
+        "src",
+        "https://video.reddit.test/archived.mp4",
+        { timeout: 15000 },
+      );
+    } else {
+      await expect
+        .poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), {
+          timeout: 15000,
+        })
+        .toBeGreaterThanOrEqual(2);
+    }
+    await expect(video).toHaveJSProperty("paused", true);
+    await expect(x).toHaveJSProperty("paused", false);
+    await video.evaluate((v: HTMLVideoElement) => v.play());
+    await expect(video).toHaveJSProperty("paused", false);
+    await expect(x).toHaveJSProperty("paused", true);
+  });
+}

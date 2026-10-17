@@ -9,8 +9,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
+import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
+import { redditVideos as getRedditVideos } from "../lib/reddit";
 import type { Filters, Post } from "../lib/types";
 import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
@@ -55,6 +57,7 @@ export function ArticleView({
 }) {
   const { preferences, updatePreferences, preferencesError } =
     useReaderPreferences();
+  const videoRef = useVideoPlayback();
   const { fontSize } = preferences;
   function setFontSize(size: number) {
     updatePreferences({ ...preferences, fontSize: size });
@@ -68,18 +71,14 @@ export function ArticleView({
   } = useQuery({
     queryKey: ["post", domain, id],
     queryFn: ({ signal }) => fetchPost(domain, id, signal),
-    // Feed summaries omit archive details and must never count as a fresh detail response.
+    // Feed summaries omit discussion details and must never count as a fresh detail response.
     placeholderData: initial,
   });
   const hasContent = useMemo(
     () => hasArticleContent(post?.html ?? ""),
     [post?.html],
   );
-  const redditVideos = post?.reddit?.videos?.length
-    ? post.reddit.videos
-    : post?.reddit?.video
-      ? [post.reddit.video]
-      : [];
+  const redditVideos = getRedditVideos(post?.reddit);
   const xPost = isXPost(post ?? { domain, source: "" });
   const hasReadableContent =
     post && xPost ? hasXContent(post) : hasContent || redditVideos.length > 0;
@@ -281,6 +280,7 @@ export function ArticleView({
               {attachedMedia.map((asset) =>
                 asset.content_type.startsWith("video/") ? (
                   <video
+                    ref={videoRef}
                     key={asset.url}
                     controls
                     preload="none"

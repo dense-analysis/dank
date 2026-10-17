@@ -465,3 +465,35 @@ test("keeps archived comments when a refresh is deferred", async ({ page }) => {
   ).toBeVisible();
   await expect(page.locator(".reddit-comment")).toHaveCount(3);
 });
+
+test("older Reddit video attachments share playback with the Reddit stream player", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 2400 });
+  await mockArchive(page, {
+    ...post,
+    media: [{ url: "/assets/archived.mp4", content_type: "video/mp4" }],
+  });
+  await openPost(page);
+  const attachment = page.getByLabel("Article video", { exact: true });
+  const stream = page.getByLabel("Reddit video", { exact: true });
+  await attachment.evaluate(async (v: HTMLVideoElement) => {
+    v.volume = 0;
+    v.loop = true;
+    await v.play();
+  });
+  await expect
+    .poll(() => attachment.evaluate((v: HTMLVideoElement) => v.currentTime))
+    .toBeGreaterThan(0.1);
+  await stream.evaluate((v: HTMLVideoElement) => {
+    v.volume = 0;
+    v.loop = true;
+  });
+  await page.getByRole("button", { name: "Play video", exact: true }).click();
+  await expect
+    .poll(() => stream.evaluate((v: HTMLVideoElement) => v.currentTime))
+    .toBeGreaterThan(0.1);
+  await expect(attachment).toHaveJSProperty("paused", true);
+  await attachment.evaluate((v: HTMLVideoElement) => v.play());
+  await expect(stream).toHaveJSProperty("paused", true);
+});

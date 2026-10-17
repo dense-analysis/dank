@@ -1,7 +1,9 @@
 import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
 import { hasArticleContent } from "../lib/article";
+import { redditVideos } from "../lib/reddit";
 import type { Filters, Post } from "../lib/types";
+import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
@@ -12,7 +14,11 @@ import {
   RedditFlair,
   RedditMetadata,
 } from "./RedditMetadata";
+import { RedditVideo } from "./RedditVideo";
 import { SourceLink, sourceName } from "./SourceLink";
+
+export { safeUrl } from "../lib/urls";
+
 export function readingTime(post: Post) {
   return Math.max(
     1,
@@ -33,16 +39,6 @@ export function dateLabel(date: string) {
         minute: "2-digit",
         hourCycle: "h23",
       }).format(value);
-}
-export function safeUrl(url: string) {
-  try {
-    const parsed = new URL(url, window.location.origin);
-    return ["http:", "https:"].includes(parsed.protocol)
-      ? parsed.href
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }
 export function SourceMark({ domain }: { domain: string }) {
   return (
@@ -79,6 +75,8 @@ export function PostCard({
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const hasContent = useMemo(() => hasArticleContent(post.html), [post.html]);
+  const videos = redditVideos(post.reddit);
+  const hasReadableContent = hasContent || videos.length > 0;
   const thumbnail = post.thumbnail && safeUrl(post.thumbnail);
   const communityContext =
     filters.kind === "reddit" &&
@@ -115,7 +113,9 @@ export function PostCard({
           <RedditFlair reddit={post.reddit} selectFlair={selectFlair} />
         )}
         <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
-        {(!communityContext || !hasContent || post.collection_incomplete) && (
+        {(!communityContext ||
+          !hasReadableContent ||
+          post.collection_incomplete) && (
           <span className="post-labels">
             {!communityContext && (
               <span className="source-kind">
@@ -124,7 +124,7 @@ export function PostCard({
                   : "Article"}
               </span>
             )}
-            {(!hasContent || post.collection_incomplete) && (
+            {(!hasReadableContent || post.collection_incomplete) && (
               <CollectionBadge incomplete={hasContent} />
             )}
           </span>
@@ -152,7 +152,7 @@ export function PostCard({
             </p>
           )}
         </ReaderLink>
-        {thumbnail && (
+        {thumbnail && videos.length === 0 && (
           <ReaderLink
             href={href}
             className="thumbnail"
@@ -173,6 +173,9 @@ export function PostCard({
           </ReaderLink>
         )}
       </div>
+      {videos.map((video) => (
+        <RedditVideo key={video.url} video={video} originalUrl={post.url} />
+      ))}
       <div className="post-bottom">
         <AuthorLink
           author={post.author}
