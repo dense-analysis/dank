@@ -185,7 +185,7 @@ async def test_reddit_persists_while_x_waits_in_its_own_browser(
         await task
 
     assert used["first"] is used["second"]
-    assert len(sessions) == 2
+    assert len(sessions) == 3
     assert sessions[0][0].profile_dir == (
         harness.settings.data_dir / "browser-profile"
     )
@@ -218,7 +218,8 @@ async def test_history_tracks_source_completion_after_persistence(
     runs = harness.client.rows["scrape_runs"]
     sources = harness.client.rows["scrape_source_runs"]
     final = runs[-1]
-    assert len(harness.client.statements) == 11
+    assert any('CREATE TABLE IF NOT EXISTS youtube_discoveries' in sql
+               for sql in harness.client.statements)
     assert any('CREATE TABLE IF NOT EXISTS reddit_community_totals' in sql
                for sql in harness.client.statements)
     assert runs[0]["status"] == "running"

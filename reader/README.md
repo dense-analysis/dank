@@ -211,6 +211,19 @@ from the discovery details. Opening a source post and going Back preserves the
 YouTube search and selection. YouTube collection is not required to browse those
 existing links.
 
+## YouTube
+
+**YouTube** groups saved recommendations by their original headings, with
+landscape videos, a portrait Shorts section and community posts. Expand its
+sidebar entry to select Hype, a News tab or a collected/configured channel.
+Open an item's discovery details to inspect its feed, rank, region, playlist
+and capture times. **From your feeds** deduplicates YouTube links across saved
+X, Reddit and blog posts and links back to those sources.
+
+Playback is on demand, using a downloaded video when available. Feed collection
+does not capture transcripts or comments, and video downloads default to off.
+See [YouTube collection settings](../docs/features/youtube.md).
+
 ## Structure
 
 React + TypeScript + Vite, with native CSS, Lucide icons, TanStack Query for

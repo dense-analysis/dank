@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -eu
 
+login_command=x-login
+if [[ ${1:-} == --youtube ]]; then
+    login_command=youtube-login
+    shift
+fi
+
 children=()
 login_pid=
 desktop_log=$(mktemp)
@@ -45,7 +51,7 @@ children+=("$!")
 /usr/bin/websockify --web /usr/share/novnc 6080 localhost:5900 >>"$desktop_log" 2>&1 &
 children+=("$!")
 
-x-login --remote-desktop "$@" <&0 &
+"$login_command" --remote-desktop "$@" <&0 &
 login_pid=$!
 
 # Stop the whole temporary desktop if login or any display server exits.

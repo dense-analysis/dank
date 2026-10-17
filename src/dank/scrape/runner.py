@@ -6,6 +6,7 @@ import json
 import logging
 import pathlib
 import re
+import tempfile
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
 from typing import cast
@@ -51,8 +52,10 @@ from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
 from dank.scrape.x import scrape_x_accounts, scrape_x_posts
 from dank.scrape.x.conversations import canonical_post_url
+from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
+from dank.youtube import discovery_from_post
 
 logger = logging.getLogger(__name__)
 # Community avatars should remain small even when post media is unlimited.
@@ -130,19 +133,31 @@ async def run_scrape(
         for statement in schema.read_text().split(";"):
             if statement.strip():
                 await clickhouse_client.execute(statement)
+        youtube_schema = (
+            pathlib.Path(__file__).parents[1] / "storage/youtube.sql"
+        )
+        for statement in youtube_schema.read_text().split(";"):
+            if statement.strip():
+                await clickhouse_client.execute(statement)
         await clickhouse_client.insert_rows("scrape_runs", [history.row(1)])
 
         try:
-            async with (
-                aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as http_client,
-                BrowserSession(browser_config) as x_session,
-                BrowserSession(reddit_config) as reddit_session,
-            ):
-                await _collect_with_history(
-                    settings, clickhouse_client, http_client,
-                    x_session, reddit_session, history, assets_dir,
+            # Signed-out collection must never reuse an authenticated profile.
+            with tempfile.TemporaryDirectory(
+                prefix="dank-youtube-",
+            ) as temporary:
+                youtube_profile = (
+                    settings.youtube.profile_dir
+                    or data_dir / "youtube-browser-profile"
+                    if settings.youtube.authenticated
+                    else pathlib.Path(temporary)
+                )
+                youtube_config = browser_config._replace(
+                    profile_dir=youtube_profile,
+                )
+                await _run_source_sessions(
+                    settings, clickhouse_client, history, assets_dir,
+                    browser_config, reddit_config, youtube_config,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
                 )
@@ -170,6 +185,30 @@ async def run_scrape(
         counts["files_cached"], counts["files_failed"],
         counts["media_skipped"], history.run_id,
     )
+
+
+async def _run_source_sessions(
+    settings: Settings, client: ClickHouseClient, history: RunMetrics,
+    assets_dir: pathlib.Path, x_config: BrowserConfig,
+    reddit_config: BrowserConfig, youtube_config: BrowserConfig,
+    *, retry_failed_pages: bool, x_posts: tuple[str, ...],
+    reddit_details: bool, x_details: bool,
+) -> None:
+    async with (
+        aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as http_client,
+        BrowserSession(x_config) as x_session,
+        BrowserSession(reddit_config) as reddit_session,
+        BrowserSession(youtube_config) as youtube_session,
+    ):
+        await _collect_with_history(
+            settings, client, http_client, x_session, reddit_session,
+            youtube_session, history, assets_dir,
+            youtube_profile=youtube_config.profile_dir or assets_dir,
+            retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+            reddit_details=reddit_details, x_details=x_details,
+        )
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
@@ -202,9 +241,11 @@ async def _collect_with_history(
     http_client: aiohttp.ClientSession,
     x_session: BrowserSession,
     reddit_session: BrowserSession,
+    youtube_session: BrowserSession,
     history: RunMetrics,
     assets_dir: pathlib.Path,
     *,
+    youtube_profile: pathlib.Path,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
@@ -213,7 +254,8 @@ async def _collect_with_history(
     sources = iter(enumerate(settings.sources, 1))
     totals_seen: set[str] = set()
     browser_locks = {
-        domain: asyncio.Lock() for domain in ("x.com", "reddit.com")
+        domain: asyncio.Lock()
+        for domain in ("x.com", "reddit.com", "youtube.com")
     }
     token = current_limiter.set(RequestLimiter(settings.scrape))
     reddit_requests = RedditRequests(settings.reddit.request_interval_seconds)
@@ -223,11 +265,15 @@ async def _collect_with_history(
     async def worker() -> None:
         # No await while claiming the next source from the shared iterator.
         for index, source in sources:
-            is_reddit = source.domain == "reddit.com"
-            session = reddit_session if is_reddit else x_session
-            profile_dir = settings.data_dir / (
-                "reddit-browser-profile" if is_reddit else "browser-profile"
-            )
+            session, profile_dir = {
+                "reddit.com": (
+                    reddit_session,
+                    settings.data_dir / "reddit-browser-profile",
+                ),
+                "youtube.com": (youtube_session, youtube_profile),
+            }.get(source.domain, (
+                x_session, settings.data_dir / "browser-profile",
+            ))
             await _collect_source(
                 settings, source, index, client, http_client, session,
                 history, assets_dir, profile_dir,
@@ -311,6 +357,9 @@ async def _collect_source(
                     stats.pending += len(batch.communities)
                     # Persist this batch before moving on to the next one.
                     saved = await _flush_posts(client, list(batch.posts))
+                    await _persist_youtube_discoveries(
+                        client, batch.posts, str(history.run_id),
+                    )
                     stats.counts["posts_saved"] += batch.post_count
                     stats.counts["post_references_saved"] += (
                         batch.reference_count
@@ -342,8 +391,12 @@ async def _collect_source(
             batch_size=history.batch_size, history=history,
             download_types=tuple(
                 kind for kind in settings.media_download_types
-                if kind != "video" or source.domain != "reddit.com"
-                or settings.reddit.download_videos
+                if kind != "video" or (
+                    (source.domain != "reddit.com"
+                     or settings.reddit.download_videos)
+                    and (source.domain != "youtube.com"
+                         or settings.youtube.scrape_videos)
+                )
             ),
         )
 
@@ -383,6 +436,11 @@ async def _discover_source_batches(
         return
 
     match source.domain:
+        case "youtube.com":
+            known_ids = await _known_youtube_channel_ids(clickhouse_client)
+            batches_iter = scrape_youtube_feeds(
+                settings, source, session, known_ids=known_ids,
+            )
         case "reddit.com":
             logger.info(
                 "Collecting Reddit posts first; details are deferred. "
@@ -431,13 +489,9 @@ async def _discover_source_batches(
 
             if stats is not None:
                 stats.feed_urls = tuple(feed_urls)
+                stats.skipped = not feed_urls
 
             if not feed_urls:
-                stats = current_source.get()
-
-                if stats is not None:
-                    stats.skipped = True
-
                 logger.warning(
                     "%s: no usable feeds; source skipped", source.domain,
                 )
@@ -464,6 +518,36 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _persist_youtube_discoveries(
+    client: ClickHouseClient, posts: list[RawPost], run_id: str,
+) -> None:
+    discoveries = [
+        discovery_from_post(post, run_id)._asdict()
+        for post in posts if post.source == "youtube"
+    ]
+
+    if discoveries:
+        await client.insert_rows("youtube_discoveries", discoveries)
+
+
+async def _known_youtube_channel_ids(
+    client: ClickHouseClient,
+) -> dict[str, set[str]]:
+    # Only recent channel appearances are needed to detect the saved frontier.
+    # Recommendation feeds must refresh even when all their videos are known.
+    result = await client.fetch_json(
+        "SELECT feed_url, item_id FROM youtube_discoveries "
+        "WHERE feed_kind = 'channel' ORDER BY observed_at DESC "
+        "LIMIT 1000 BY feed_url",
+    )
+    known: dict[str, set[str]] = {}
+
+    for row in result.rows:
+        known.setdefault(str(row["feed_url"]), set()).add(str(row["item_id"]))
+
+    return known
 
 
 async def _refresh_reddit_totals(
@@ -502,7 +586,7 @@ async def _retry_saved_posts(
     elif x_posts:
         posts = await _load_x_posts(client, x_posts)
         batches = scrape_x_posts(settings.x, posts, session)
-    elif source.domain in {"x.com", "reddit.com"}:
+    elif source.domain in {"x.com", "reddit.com", "youtube.com"}:
         return
     else:
         posts = await _load_failed_rss_pages(client, source)

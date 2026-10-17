@@ -1,9 +1,10 @@
 # DANK - Dense Analysis Network Knowledge
 
 DANK is a locally hosted Dense Analysis tool for collecting and exploring
-public Internet content. It collects RSS/Atom articles, X posts and Reddit
-community posts, preserves raw source payloads, downloads media, and prepares
-posts for browsing and semantic search using local text embeddings.
+public Internet content. It collects RSS/Atom articles, X posts, Reddit
+community posts and YouTube feeds, preserves raw source payloads, downloads
+media, and prepares posts for browsing and semantic search using local text
+embeddings.
 
 The broader goal is to automate contextual understanding of trends, public
 perception and evolving narratives.
@@ -13,6 +14,7 @@ perception and evolving narratives.
 - [RSS and Atom feeds](docs/features/rss.md) — discover feeds and collect articles.
 - [X accounts](docs/features/x.md) — capture posts from configured accounts.
 - [Reddit communities](docs/features/reddit.md) — collect ranked community posts.
+- [YouTube feeds](docs/features/youtube.md) — save recommendations and their context.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
 - [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
@@ -110,6 +112,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | --- | --- |
 | `make up` or `make web` | Start the Docker stack; native mode runs the viewer in the foreground |
 | `make x-login` | Sign in to X and save the session for collection |
+| `make youtube-login` | Save an optional, separate YouTube session |
 | `make scrape` | Collect configured sources; Docker adds `--headless` |
 | `make process` | Process collected posts and assets |
 | `make query` | Run `clickhouse-query` with arguments from `ARGS` |

@@ -8,6 +8,43 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## YouTube feed discovery
+
+YouTube collection saves feed appearances and their original renderers, with
+video downloads off by default. Shelf headings, rank, region, playlist identity
+and capture time are observations from YouTube, not DANK-generated categories.
+Separate discovery records preserve repeated appearances across feeds and runs.
+Watch-page details, transcripts and comments are deferred; the reader labels
+these as feed snapshots. Live and upcoming broadcasts are excluded.
+
+The browser follows Hype's regional **Top 100 → View all** link, expands News
+sections and uses bounded scrolling. The UK playlist fallback is used only for
+the GB region. Source layouts, regional availability and recommendation order
+can change; a successful bounded run is not a complete archive of an infinite
+feed. Unrecognized/empty or failed feeds increment failure counters and allow
+later feeds to continue. Already persisted appearances remain available.
+Channel latest-video listings stop after consecutive known items; this heuristic
+does not apply to ranked or personalized feeds.
+
+Signed-out runs use a temporary profile; optional signed-in runs use YouTube's
+own saved profile and require a valid session. Neither shares X's or Reddit's
+browser. The reader's **From your feeds** index recognizes explicit YouTube
+links in saved source data. It does not resolve opaque shorteners such as `t.co`
+unless the original capture includes the expanded destination.
+
+See [YouTube settings](features/youtube.md),
+[runner regressions](../tests/scrape/test_youtube_runner.py) and
+[session regressions](../tests/scrape/test_youtube_login.py).
+
+**Live verification, 2026-10-17:** signed-out Docker run
+`08b7d6c0-c6a1-4dcb-af6b-5db8eff0716b` saved 715 appearances / 602 unique items
+from UK Hype, the three default News tabs, and Channel 4 News videos/Shorts.
+All thumbnail references were saved with zero failures; video downloads remained
+off. Repeat run `5d17dbdc-0617-4afc-ba00-356500ecf303` stopped at Hype's 100 items
+without scrolling and at five known channel videos, completing in 20.2 seconds.
+Reader checks reconciled all 100 Hype ranks across pages and channel-wide counts
+across feeds. The existing collection supplied 430 distinct linked videos.
+
 ## Reddit community total estimates
 
 Community headings use Arctic Shift's archived post count as an estimate, marked
