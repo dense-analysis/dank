@@ -22,6 +22,10 @@ from dank.scrape.reddit import (
     extract_posts_and_assets,
     scrape_reddit_communities,
 )
+from dank.scrape.reddit.access import (
+    RedditAccessBlockedError,
+    RedditListingUnavailableError,
+)
 from dank.scrape.reddit.html import extract_html_posts
 from dank.scrape.reddit.payloads import extract_json_posts
 from dank.scrape.zendriver import NetworkResponse
@@ -438,19 +442,23 @@ async def test_pagination_resumes_after_details_hide_the_listing(
 
 
 @pytest.mark.parametrize(
-    "body,expected",
+    "body,expected,error_type",
     [
         (
             "You've been blocked by network security.",
-            "access requires attention",
+            "access requires attention", RedditAccessBlockedError,
         ),
-        ("This community is private.", "access requires attention"),
-        ("", "No public posts found"),
+        (
+            "This community is private.", "access requires attention",
+            RedditScrapeError,
+        ),
+        ("", "No public posts found", RedditListingUnavailableError),
     ],
 )
 async def test_collection_reports_blocked_or_empty_and_cleans_up(
     body: str,
     expected: str,
+    error_type: type[RedditScrapeError],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     page = _Page([""], body=body)
@@ -478,7 +486,7 @@ async def test_collection_reports_blocked_or_empty_and_cleans_up(
     assert batches == []
     assert expected in caplog.text
     assert stats.counts["fetch_failures"] == 1
-    assert stats.error_type == RedditScrapeError.__name__
+    assert stats.error_type == error_type.__name__
     assert capture.stopped
     assert page.closed
 

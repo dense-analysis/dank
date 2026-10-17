@@ -135,9 +135,24 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   [Configuration](features/reddit.md#run),
   [cache tests](../tests/scrape/test_reddit_cache.py),
   [refresh tests](../tests/scrape/test_reddit_refresh.py).
-- [ ] **P2: Recheck LLMDevs access.** The posts-first pass completed the other
-  communities, but Reddit's network-security page blocked this one. Keep the
-  failure visible and verify access before claiming 15/15 successful collection.
+- [x] **P2: Recover unavailable Reddit listings and verify LLMDevs.** The earlier failed listing returned an
+  HTTP-200 community-not-found dialog; a later probe returned a network-security
+  block. Fresh checks with the same Docker profile and Top/day URL returned posts,
+  so neither a permanent ban nor a credential problem was established.
+  The collector now retries an unusable first page once (ten-second delay),
+  recognizes the matching unavailable-community response, and applies the shared
+  cooldown to network-security blocks before one retry. A header without posts
+  no longer masquerades as an empty successful listing. Already-saved posts are
+  never restarted by these retries; private/login restrictions and persistent
+  failures remain visible. The Docker run `ff77e843` completed all 15 communities
+  in 2m58s: 622 distinct posts saved, including 25 from LLMDevs across two pages;
+  DomainDrivenDesign was explicitly empty for Top/day. There were no collection
+  failures, parse failures, 429s or retries. Six media failures (five oversized
+  GIFs and one preview-image 403) kept the overall outcome partial. Reddit access
+  can still change; this successful pass does not establish the cause of its
+  earlier responses. A fresh-process repeat (`82188e64`) saved the same 25
+  LLMDevs posts in 11.9s without collection or media failures.
+  [Recovery tests](../tests/scrape/test_reddit_recovery.py).
 - [ ] **P2: Investigate Reddit preview-image 403 responses.** One external-preview
   image failed in the same run. Check URL freshness and signed-query handling;
   neither cause is established. Preserve the post and distinguish unavailable

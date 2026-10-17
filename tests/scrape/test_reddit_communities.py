@@ -206,7 +206,9 @@ class _Page:
     def __init__(
         self, *, posts: bool = True, header: bool = True, icon: bool = True,
         icon_after_scroll: int | None = None,
+        body: str = "A public community",
     ) -> None:
+        self.body = body
         self.posts = posts
         self.header = header
         self.icon = icon
@@ -239,7 +241,7 @@ class _Page:
             return json.dumps(
                 {
                     "url": self.url,
-                    "text": "A public community",
+                    "text": self.body,
                     "html": _post(self.community) if self.posts else "",
                     "community_html": (
                         _header(self.community)
@@ -333,7 +335,10 @@ async def test_next_community_is_activated_after_detail_visits(
 async def test_public_empty_community_still_emits_metadata(
     *, icon: bool,
 ) -> None:
-    batches = await _collect(_Page(posts=False, icon=icon), (COMMUNITY,))
+    batches = await _collect(_Page(
+        posts=False, icon=icon,
+        body="This community doesn't have any posts yet",
+    ), (COMMUNITY,))
 
     assert len(batches) == 1
     assert batches[0].posts == []
@@ -371,3 +376,16 @@ async def test_header_waits_for_icon_that_hydrates_after_scrolling() -> None:
     assert [post.post_id for batch in batches for post in batch.posts] == [
         "t3_abc",
     ]
+
+
+@pytest.mark.parametrize("icon", [True, False])
+async def test_header_alone_does_not_claim_empty_listing_success(
+    caplog: pytest.LogCaptureFixture, *, icon: bool,
+) -> None:
+    caplog.set_level("INFO", logger="dank.scrape.reddit")
+    page = _Page(posts=False, icon=icon)
+    batches = await _collect(page, (COMMUNITY,))
+    assert not any(batch.posts for batch in batches)
+    assert page.visited == [COMMUNITY, COMMUNITY]
+    assert "RedditListingUnavailableError" in caplog.text
+    assert "Finished Reddit" not in caplog.text

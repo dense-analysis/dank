@@ -157,10 +157,18 @@ slot. Longer cooldowns are deferred without early requests. An initially
 limited community is retried once after that cooldown; a community that already
 yielded posts is not restarted and duplicated. Saved posts remain
 available and failed/deferred captures make the outcome partial.
-If a detail visit is rate limited, the remaining details in that batch are
+A network-security block is recorded separately from a 429 and uses the same
+shared cooldown before one initial-page retry. Blank or unavailable first pages
+(including Reddit's HTTP-200 community-not-found dialog) get one retry after ten
+seconds. Private, banned, login and verification restrictions remain failures.
+A header or icon alone cannot prove an empty listing; only an explicit empty
+state is accepted. Persistent failures remain visible, and a failed community
+does not prevent collection from continuing.
+
+If a detail visit is rate limited or access-blocked, the remaining details are
 deferred to a later run. Their listing posts are still saved, with an explicit
-rate-limit reason in capture metadata, instead of issuing a request per post
-against the same restriction. Cooldown waiting has a separate budget from
+rate-limit or access-block reason in capture metadata, instead of issuing a
+request per post against the same restriction. Cooldown waiting has a separate budget from
 reading a detail page.
 
 Each document request has a 10-second fetch timeout and a 15-second browser

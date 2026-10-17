@@ -19,7 +19,7 @@ from dank.config import (
     RedditTimeFilter,
 )
 from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
-from dank.scrape.metrics import count, current_source
+from dank.scrape.metrics import count, current_source, retry_sleep
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
     BrowserSession,
@@ -28,8 +28,13 @@ from dank.scrape.zendriver import (
 )
 
 from .access import (
+    UNAVAILABLE_PAGE_RETRY_SECONDS,
+    RedditAccessBlockedError,
+    RedditListingUnavailableError,
     RedditRateLimitError,
     RedditScrapeError,
+    check_listing_dialogs,
+    check_network_block,
     check_page_responses,
     request_slot,
 )
@@ -190,7 +195,7 @@ async def _capture_batch_details(
     cached_details: dict[str, DetailSnapshot] | None = None,
     *, refresh_details: bool = True,
 ) -> AsyncIterator[ScrapeBatch]:
-    rate_limited = False
+    deferred_reason: str | None = None
     deferred = 0
     reused = 0
     fetched = 0
@@ -209,8 +214,10 @@ async def _capture_batch_details(
         elif not refresh_details:
             enriched = defer_post_refresh(post, settings)
             deferred += 1
-        elif rate_limited:
-            enriched = defer_post_detail(post, settings)
+        elif deferred_reason is not None:
+            enriched = defer_post_detail(
+                post, settings, reason=deferred_reason,
+            )
             deferred += 1
         else:
             fetched += 1
@@ -221,10 +228,10 @@ async def _capture_batch_details(
                 enriched = await capture_post_detail(page, post, settings)
 
         payload = as_dict(json.loads(enriched.payload))
-        rate_limited = rate_limited or (
-            as_dict(payload.get("detail_capture")).get("reason")
-            == "rate_limited"
-        )
+        reason = as_dict(payload.get("detail_capture")).get("reason")
+
+        if reason in ("rate_limited", "access_blocked"):
+            deferred_reason = text(reason)
         if cached_details is not None and as_dict(
             payload.get("detail_capture"),
         ).get("status") == "captured":
@@ -251,8 +258,9 @@ async def _capture_batch_details(
 
     if deferred and refresh_details:
         logger.warning(
-            "Reddit rate limited: kept %d listing posts and deferred their "
-            "detail visits to a later run", deferred,
+            "Reddit %s: kept %d listing posts and deferred their "
+            "detail visits to a later run",
+            (deferred_reason or "unavailable").replace("_", " "), deferred,
         )
 
 
@@ -271,15 +279,21 @@ async def _retry_community(
                 yield batch
 
             return
-        except RedditRateLimitError:
+        except (
+            RedditRateLimitError, RedditAccessBlockedError,
+            RedditListingUnavailableError,
+        ) as error:
             if attempt or collected:
                 raise
 
             count("retries")
             logger.warning(
-                "Reddit r/%s limited before its first post; retrying once "
-                "after the shared cooldown", community,
+                "Reddit r/%s unavailable before its first post (%s); "
+                "retrying once: %s", community, type(error).__name__, error,
             )
+
+            if isinstance(error, RedditListingUnavailableError):
+                await retry_sleep(UNAVAILABLE_PAGE_RETRY_SECONDS)
 
 
 async def _scrape_community(
@@ -349,6 +363,9 @@ async def _scrape_community(
                 dom_html=text(snapshot.get("html")),
                 request_url=text(snapshot.get("url")) or url,
             )
+            if not batch.posts and not text(snapshot.get("html")):
+                check_listing_dialogs(responses, url)
+
             _check_blocked(snapshot, community)
 
             if not community_discovered and (
@@ -391,31 +408,24 @@ async def _scrape_community(
                         await page.activate()
                         await page.evaluate(SCROLL_SCRIPT)
 
-        logger.info(
-            "Finished Reddit r/%s posts=%d scrolls=%d reason=%s "
-            "post_limit=%d scroll_limit=%d",
-            community,
-            len(seen_posts),
-            step,
-            stop_reason,
-            limits.max_posts,
-            limits.max_scrolls,
-        )
+        if not seen_posts and stop_reason != "empty listing":
+            raise RedditListingUnavailableError(
+                f"No public posts found for r/{community}. Reddit returned "
+                "no usable listing or explicit empty state. The page may be "
+                "unavailable or its markup may have changed.",
+            )
 
         if pending_community is not None and not community_discovered:
             # Keep a header-only result until scrolling has had a chance to
             # reveal an icon that Reddit renders after the initial document.
             yield ScrapeBatch([], [], communities=(pending_community,))
-        elif (
-            not seen_posts and not community_discovered
-            and stop_reason != "empty listing"
-        ):
-            raise RedditScrapeError(
-                f"No public posts found for r/{community}. Reddit may have "
-                "blocked access, the community may be empty, or its listing "
-                "markup may have changed. Open the listing in the configured "
-                "browser profile to check access.",
-            )
+
+        logger.info(
+            "Finished Reddit r/%s posts=%d scrolls=%d reason=%s "
+            "post_limit=%d scroll_limit=%d",
+            community, len(seen_posts), step, stop_reason,
+            limits.max_posts, limits.max_scrolls,
+        )
     except TimeoutError as exc:
         raise RedditScrapeError(
             f"Reddit browser timed out for r/{community}; check the listing "
@@ -450,6 +460,8 @@ def _check_blocked(snapshot: dict[str, object], community: str) -> None:
 
     body = text(snapshot.get("text")).casefold()
     location = text(snapshot.get("url"))
+
+    check_network_block(body, location or community_url(community))
 
     if any(message in body for message in BLOCKED_MESSAGES) or re.search(
         r"reddit\.com/(?:login|account/login|account/register)(?:/|\?|$)",

@@ -272,14 +272,17 @@ async def test_rate_limited_details_keep_post_and_apply_host_cooldown(
     assert page.evaluate.await_count == (0 if stage == "document" else 1)
 
 
+@pytest.mark.parametrize("reason", ["rate_limited", "access_blocked"])
 @pytest.mark.parametrize("comments", [False, True])
 async def test_rate_limit_defers_batch_details_without_losing_listings(
-    monkeypatch: pytest.MonkeyPatch, *, comments: bool,
+    monkeypatch: pytest.MonkeyPatch, reason: str, *, comments: bool,
 ) -> None:
     settings = RedditSettings(capture_comments=comments)
     posts = [_raw()._replace(post_id=f"t3_{i}") for i in range(4)]
     originals = [post.payload for post in posts]
-    visit = AsyncMock(return_value=defer_post_detail(posts[0], settings))
+    visit = AsyncMock(return_value=defer_post_detail(
+        posts[0], settings, reason=reason,
+    ))
     monkeypatch.setattr("dank.scrape.reddit.capture_post_detail", visit)
     batches = [batch async for batch in _capture_batch_details(
         ScrapeBatch(posts, []), AsyncMock(), settings,
@@ -295,7 +298,7 @@ async def test_rate_limit_defers_batch_details_without_losing_listings(
     for post in results:
         payload = json.loads(post.payload)
         assert payload["selftext"] == "short"
-        assert payload["detail_capture"]["reason"] == "rate_limited"
+        assert payload["detail_capture"]["reason"] == reason
         assert payload["comment_capture"]["status"] == (
             "failed" if comments else "disabled"
         )
@@ -564,3 +567,27 @@ async def test_missing_detail_tab_preserves_listing() -> None:
     assert result["selftext"] == "short"
     assert result["detail_capture"]["status"] == "failed"
     assert result["comment_capture"]["status"] == "failed"
+
+
+async def test_detail_security_block_keeps_the_listing() -> None:
+    page = AsyncMock()
+    capture = AsyncMock()
+    capture.drain.return_value = [NetworkResponse(
+        URL, 403, "text/html", "You've been blocked by network security.",
+        "blocked", "Document",
+    )]
+
+    with (
+        patch(
+            "dank.scrape.reddit.details.NetworkCapture", return_value=capture,
+        ),
+        patch("dank.scrape.reddit.details.asyncio.sleep"),
+    ):
+        result = json.loads((await capture_post_detail(
+            page, _raw(), RedditSettings(),
+        )).payload)
+
+    assert result["selftext"] == "short"
+    assert result["detail_capture"]["reason"] == "access_blocked"
+    assert result["comment_capture"]["status"] == "failed"
+    capture.stop.assert_awaited_once()

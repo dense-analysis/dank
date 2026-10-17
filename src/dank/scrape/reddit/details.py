@@ -18,6 +18,7 @@ from dank.scrape.metrics import count, current_source
 from dank.scrape.zendriver import NetworkCapture, NetworkResponse
 
 from .access import (
+    RedditAccessBlockedError,
     RedditRateLimitError,
     RedditScrapeError,
     check_page_responses,
@@ -578,10 +579,12 @@ async def capture_post_detail(
     )
 
 
-def defer_post_detail(raw: RawPost, settings: RedditSettings) -> RawPost:
+def defer_post_detail(
+    raw: RawPost, settings: RedditSettings, *, reason: str = "rate_limited",
+) -> RawPost:
     """Keep a listing when detail visits must wait for a later run."""
     post = as_dict(json.loads(raw.payload))
-    post["detail_capture"] = {"status": "failed", "reason": "rate_limited"}
+    post["detail_capture"] = {"status": "failed", "reason": reason}
     post["comment_capture"] = comment_capture(
         settings, post,
         status="failed" if settings.capture_comments else "disabled",
@@ -593,9 +596,14 @@ def defer_post_detail(raw: RawPost, settings: RedditSettings) -> RawPost:
 def _record_detail_failure(
     post: dict[str, object], raw: RawPost, error: Exception,
 ) -> None:
-    if isinstance(error, RedditRateLimitError | HostCooldownError):
+    if isinstance(
+        error,
+        RedditRateLimitError | RedditAccessBlockedError | HostCooldownError,
+    ):
         post["detail_capture"] = {
-            "status": "failed", "reason": "rate_limited",
+            "status": "failed",
+            "reason": "access_blocked"
+            if isinstance(error, RedditAccessBlockedError) else "rate_limited",
         }
 
     if isinstance(error, RedditScrapeError | HostCooldownError):
