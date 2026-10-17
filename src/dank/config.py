@@ -119,9 +119,9 @@ class HackerNewsSourceConfig(NamedTuple):
 
 class HackerNewsSettings(NamedTuple):
     days: int = 7
-    comment_limit: int = 50
+    comment_limit: int | None = None
     detail_max_posts: int = 20
-    detail_timeout_seconds: float = 60.0
+    detail_timeout_seconds: float | None = None
 
 
 class ClickHouseSettings(NamedTuple):
@@ -476,7 +476,7 @@ def _parse_hacker_news_settings(value: object) -> HackerNewsSettings:
     limits: dict[str, int] = {}
 
     for key, maximum in (
-        ("days", 90), ("comment_limit", 500), ("detail_max_posts", 100),
+        ("days", 90), ("detail_max_posts", 100),
     ):
         setting = data.get(key, getattr(defaults, key))
 
@@ -488,17 +488,30 @@ def _parse_hacker_news_settings(value: object) -> HackerNewsSettings:
 
         limits[key] = setting
 
-    timeout = data.get(
-        "detail_timeout_seconds", defaults.detail_timeout_seconds,
-    )
+    comment_limit = data.get("comment_limit", "all")
 
-    if (not isinstance(timeout, int | float) or isinstance(timeout, bool)
-            or not math.isfinite(timeout) or not 1 <= timeout <= 300):
+    if comment_limit == "all":
+        comment_limit = None
+    elif (type(comment_limit) is not int or comment_limit < 1):
         raise ConfigError(
-            "hacker_news.detail_timeout_seconds must be 1 to 300",
+            'hacker_news.comment_limit must be "all" or a positive integer',
         )
 
-    return HackerNewsSettings(**limits, detail_timeout_seconds=float(timeout))
+    timeout = data.get("detail_timeout_seconds", "all")
+
+    if timeout == "all":
+        timeout = None
+    elif (not isinstance(timeout, int | float) or isinstance(timeout, bool)
+            or not math.isfinite(timeout) or timeout < 1):
+        raise ConfigError(
+            'hacker_news.detail_timeout_seconds must be "all" '
+            'or a finite number of at least 1',
+        )
+
+    return HackerNewsSettings(
+        **limits, comment_limit=comment_limit,
+        detail_timeout_seconds=float(timeout) if timeout is not None else None,
+    )
 
 
 def _source_strings(value: object, field: str) -> tuple[str, ...]:

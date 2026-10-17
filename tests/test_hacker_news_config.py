@@ -61,9 +61,12 @@ def test_hacker_news_rejects_inappropriate_source_options(
 
 @pytest.mark.parametrize("field,value", [
     ("days", "0"), ("days", "91"), ("days", "true"),
-    ("comment_limit", "501"), ("comment_limit", "-1"),
+    ("comment_limit", "0"), ("comment_limit", "-1"),
+    ("comment_limit", "true"), ("comment_limit", "1.5"),
+    ("comment_limit", '"unknown"'),
     ("detail_max_posts", "101"), ("detail_max_posts", "1.5"),
-    ("detail_timeout_seconds", "0"), ("detail_timeout_seconds", "301"),
+    ("detail_timeout_seconds", "0"),
+    ("detail_timeout_seconds", '"unknown"'),
     ("detail_timeout_seconds", "nan"), ("detail_timeout_seconds", "true"),
 ])
 def test_hacker_news_limits_are_bounded(
@@ -85,3 +88,21 @@ def test_hacker_news_limits_configurable(tmp_path: pathlib.Path):
     assert load_settings(path).hacker_news == HackerNewsSettings(
         14, 100, 10, 30,
     )
+
+
+def test_hacker_news_comments_default_to_all(tmp_path: pathlib.Path):
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text('[hacker_news]\ncomment_limit = "all"\n'
+                    'detail_timeout_seconds = "all"')
+    assert load_settings(path).hacker_news == HackerNewsSettings()
+    assert HackerNewsSettings().comment_limit is None
+    assert HackerNewsSettings().detail_timeout_seconds is None
+
+
+def test_hacker_news_explicit_large_capture_budget(tmp_path: pathlib.Path):
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text('[hacker_news]\ncomment_limit = 2000\n'
+                    'detail_timeout_seconds = 3600')
+    settings = load_settings(path).hacker_news
+    assert settings.comment_limit == 2000
+    assert settings.detail_timeout_seconds == 3600
