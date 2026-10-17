@@ -10,9 +10,10 @@ import time
 from collections.abc import Callable
 from typing import Any, cast
 
-from dank.config import Settings, load_settings
+from dank.config import Settings, SourceConfig, load_settings
 from dank.embeddings import EmbeddingModel, get_embedding_model
 from dank.html_utils import html_text
+from dank.links import LinkPost, normalized_url, post_index_rows
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
@@ -101,6 +102,7 @@ async def process_source_posts(
         query_seconds,
     )
 
+    await _persist_url_aliases(clickhouse_client, result.rows)
     converted = 0
     batch: list[Post] = []
     reddit_bodies = (
@@ -419,10 +421,21 @@ async def _insert_posts(
             row["html_embedding"] = list(post.html_embedding)
             rows.append(row)
 
-        await clickhouse_client.insert_rows(
-            "posts",
-            rows,
-        )
+        identities: list[dict[str, object]] = []
+        links: list[dict[str, object]] = []
+
+        for post in posts:
+            own, outgoing = post_index_rows(LinkPost(
+                post.domain, post.post_id, post.url, post.html, post.source,
+                post.updated_at,
+            ))
+            identities.extend(own)
+            links.extend(outgoing)
+
+        # Version-bound links become visible with their processed post.
+        await clickhouse_client.insert_rows("post_urls", identities)
+        await clickhouse_client.insert_rows("post_links", links)
+        await clickhouse_client.insert_rows("posts", rows)
         evidence = [
             link for row in rows for link in reference_rows(row, raw=False)
         ]
@@ -431,6 +444,39 @@ async def _insert_posts(
             await clickhouse_client.insert_rows(
                 "youtube_reference_evidence", evidence,
             )
+
+
+async def _persist_url_aliases(
+    client: ClickHouseClient, rows: list[dict[str, Any]],
+) -> None:
+    aliases: list[dict[str, object]] = []
+
+    for row in rows:
+        try:
+            payload = json.loads(str(row.get("payload") or "{}"))
+        except ValueError:
+            continue
+
+        if not isinstance(payload, dict):
+            continue
+
+        payload = cast(dict[str, Any], payload)
+        linked = payload.get("linked_article")
+        urls = [str(row.get("url") or ""), payload.get("page_final_url")]
+
+        if isinstance(linked, dict):
+            urls.append(cast(dict[str, Any], linked).get("requested_url"))
+
+        for value in urls:
+            if isinstance(value, str) and (url := normalized_url(value)):
+                aliases.append({
+                    "url": url, "domain": str(row["domain"]),
+                    "post_id": str(row["post_id"]),
+                    "observed_at": parse_datetime(row.get("scraped_at")),
+                })
+
+    if aliases:
+        await client.insert_rows("post_urls", aliases)
 
 
 async def _recover_saved_pages(
@@ -516,14 +562,16 @@ async def run_process(
             pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
         )
         await clickhouse_client.execute(raw_schema.read_text())
-        youtube_schema = (
-            pathlib.Path(__file__).parents[1] / "storage/youtube.sql"
+        for name in ("links.sql", "youtube.sql"):
+            schema = pathlib.Path(__file__).parents[1] / "storage" / name
+
+            for statement in schema.read_text().split(";"):
+                if statement.strip():
+                    await clickhouse_client.execute(statement)
+
+        sources = await _with_linked_article_sources(
+            clickhouse_client, sources, since, domain_regex,
         )
-
-        for statement in youtube_schema.read_text().split(";"):
-            if statement.strip():
-                await clickhouse_client.execute(statement)
-
         for source in sources:
             converter = {
                 "x.com": convert_raw_x_post,
@@ -557,6 +605,28 @@ async def run_process(
     )
 
     return total_posts + total_assets
+
+
+async def _with_linked_article_sources(
+    client: ClickHouseClient, sources: tuple[SourceConfig, ...],
+    since: datetime.datetime, domain_regex: re.Pattern[str] | None,
+) -> tuple[SourceConfig, ...]:
+    result = await client.fetch_json(
+        "SELECT DISTINCT domain FROM raw_posts "
+        "WHERE source = 'linked_article' AND scraped_at >= %(since)s",
+        {"since": since},
+    )
+    domains = {source.domain for source in sources}
+    include_linked = domain_regex is None or "news.ycombinator.com" in domains
+    additional = sorted({
+        str(row["domain"]) for row in result.rows
+        if str(row["domain"]) not in domains and (
+            include_linked or (domain_regex is not None
+            and domain_regex.search(str(row["domain"])))
+        )
+    })
+
+    return (*sources, *(SourceConfig(domain, ()) for domain in additional))
 
 
 def run_process_from_config(

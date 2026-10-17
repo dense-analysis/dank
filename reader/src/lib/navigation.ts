@@ -4,11 +4,22 @@ import { defaultFilters } from "./storage";
 import type { Filters, Post } from "./types";
 import { isDateFilter } from "./validation";
 
+export function clearReferenceParams(params: URLSearchParams) {
+  for (const key of [
+    "reference_kind",
+    "reference_id",
+    "reference_video",
+    "reference_saved",
+  ])
+    params.delete(key);
+}
+
 export function articleParams(
   params: URLSearchParams,
   post: Pick<Post, "id" | "domain">,
 ): URLSearchParams {
   const next = new URLSearchParams(params);
+  clearReferenceParams(next);
   next.set("article", post.id);
   next.set("article_source", post.domain);
   return next;

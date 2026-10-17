@@ -36,6 +36,9 @@ class FakeClickHouse:
     ) -> QueryResult:
         self.calls.append((query, params or {}))
 
+        if params and ({"link_post_keys", "hn_link_keys"} & params.keys()):
+            return QueryResult([])
+
         return QueryResult(self.results.pop(0))
 
 
@@ -550,7 +553,8 @@ async def test_social_post_does_not_need_rss_page_capture(
 
     assert response.status == 200
     assert json.loads(response.text or "")["collection_incomplete"] is False
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 4
+    assert "link_post_keys" in fake.calls[-1][1]
     assert all("page_fetch_status" not in query for query, _ in fake.calls)
 
 

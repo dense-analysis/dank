@@ -57,7 +57,10 @@ def convert_raw_hacker_news_post(row: RawPost) -> Post | None:
                     and not parsed.username and not parsed.password
                     and link != row.url):
                 escaped = html.escape(link, quote=True)
-                body += f'<p><a href="{escaped}">{escaped}</a></p>'
+                body += (
+                    f'<p><a href="{escaped}" data-dank-hn-destination="1">'
+                    f'{escaped}</a></p>'
+                )
         except ValueError:
             pass
 

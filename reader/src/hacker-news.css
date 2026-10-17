@@ -87,9 +87,6 @@
   align-items: center;
   gap: 4px;
 }
-.hn-metrics > span:first-child {
-  color: #ff944d;
-}
 .hn-card-links {
   display: flex;
   flex-wrap: wrap;
@@ -105,11 +102,6 @@
 }
 .hn-card-links a:hover {
   color: var(--text);
-}
-.hn-author {
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
 }
 .hn-detail-links {
   display: flex;

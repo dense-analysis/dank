@@ -21,9 +21,12 @@ from dank.web.reader_query import (
 
 
 @pytest.mark.parametrize("kind", ["", "all"])
-def test_all_collections_are_unrestricted(kind: str) -> None:
+def test_all_collections_keep_platforms_and_deduplicate_link_wrappers(
+    kind: str,
+) -> None:
     query, params = build_query(parse_filters(MultiDict({"kind": kind})), ())
-    assert " WHERE " not in query
+    assert "(domain, post_id) NOT IN" in query
+    assert "post_links" in query
     assert "x_domains" not in params
 
 

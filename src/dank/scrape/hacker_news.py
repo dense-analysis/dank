@@ -10,13 +10,14 @@ import math
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from html.parser import HTMLParser
+from itertools import batched
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import aiohttp
 
 from dank.model import RawPost
 from dank.scrape.http import HostCooldownError, http_response
-from dank.scrape.metrics import count
+from dank.scrape.metrics import count, retry_sleep
 from dank.scrape.types import ScrapeBatch
 
 if TYPE_CHECKING:
@@ -26,6 +27,11 @@ logger = logging.getLogger(__name__)
 HCKRNEWS_URL = "https://hckrnews.com/"
 HN_API_URL = "https://hacker-news.firebaseio.com/v0/item/"
 LISTING_TIMEOUT_SECONDS = 30
+ITEM_TIMEOUT_SECONDS = 30
+ITEM_FETCH_ATTEMPTS = 3
+# Queue a small batch; http_response also enforces the shared per-host limit.
+ITEM_BATCH_SIZE = 8
+ITEM_RETRY_SECONDS = 0.5
 FILTERS = ("top10", "top20", "top50", "all")
 
 
@@ -283,7 +289,7 @@ async def scrape_hacker_news(
         if entries:
             posts = _day_posts(entries, mode, request_url)
             logger.info("Hacker News %s: %d %s stories", day, len(posts), mode)
-            yield ScrapeBatch(posts, [])
+            yield ScrapeBatch(await _capture_stories(posts, client), [])
 
 
 async def _fetch_item(
@@ -291,19 +297,69 @@ async def _fetch_item(
 ) -> dict[str, Any]:
     url = f"{HN_API_URL}{item_id}.json"
 
-    async with http_response(client, url) as response:
-        response.raise_for_status()
-        raw: object = json.loads(await response.text())
+    for attempt in range(ITEM_FETCH_ATTEMPTS):
+        try:
+            async with asyncio.timeout(ITEM_TIMEOUT_SECONDS):
+                async with http_response(
+                    client, url, retry=attempt,
+                ) as response:
+                    response.raise_for_status()
+                    raw: object = json.loads(await response.text())
 
-    if not isinstance(raw, dict):
-        raise ValueError("HN item is missing or invalid")
+            if not isinstance(raw, dict):
+                raise ValueError("HN item is missing or invalid")
 
-    item = cast(dict[str, Any], raw)
+            item = cast(dict[str, Any], raw)
 
-    if item.get("id") != item_id:
-        raise ValueError("HN item identifier does not match request")
+            if item.get("id") != item_id:
+                raise ValueError("HN item identifier does not match request")
 
-    return item
+            return item
+        except (aiohttp.ClientError, TimeoutError) as error:
+            permanent = (
+                isinstance(error, aiohttp.ClientResponseError)
+                and error.status < 500 and error.status != 429
+            )
+
+            if permanent or attempt == ITEM_FETCH_ATTEMPTS - 1:
+                raise
+
+            await retry_sleep(ITEM_RETRY_SECONDS * 2 ** attempt)
+
+    raise AssertionError("HN item retry loop did not return")
+
+
+async def _capture_story(
+    post: RawPost, client: aiohttp.ClientSession,
+) -> RawPost:
+    payload: dict[str, Any] = json.loads(post.payload)
+
+    try:
+        payload["story"] = await _fetch_item(client, int(post.post_id))
+    except (
+        aiohttp.ClientError, TimeoutError, HostCooldownError, ValueError,
+    ) as error:
+        count("fetch_failures")
+        logger.warning(
+            "Hacker News %s metadata unavailable: %s", post.post_id, error,
+        )
+
+    # Preserve the hckrnews front-page time for day grouping. The native story
+    # time is the submission timestamp, even when it predates that day.
+    return post._replace(payload=json.dumps(payload, ensure_ascii=False))
+
+
+async def _capture_stories(
+    posts: list[RawPost], client: aiohttp.ClientSession,
+) -> list[RawPost]:
+    enriched: list[RawPost] = []
+
+    for batch in batched(posts, ITEM_BATCH_SIZE):
+        enriched.extend(await asyncio.gather(*(
+            _capture_story(post, client) for post in batch
+        )))
+
+    return enriched
 
 
 def _kids(item: dict[str, Any]) -> list[int]:
@@ -333,17 +389,125 @@ def _validate_comment(comment: dict[str, Any], parent_id: int) -> None:
         raise ValueError("HN comment does not belong to the requested parent")
 
 
+class _CommentResult(NamedTuple):
+    item_id: int
+    comment: dict[str, Any] | None
+    error: str | None
+
+
+async def _capture_comment(
+    client: aiohttp.ClientSession, item_id: int, parent_id: int,
+    cached: dict[int, dict[str, Any]],
+) -> _CommentResult:
+    try:
+        comment = await _fetch_item(client, item_id)
+        _validate_comment(comment, parent_id)
+
+        return _CommentResult(item_id, comment, None)
+    except (
+        aiohttp.ClientError, TimeoutError, HostCooldownError, ValueError,
+    ) as error:
+        count("fetch_failures")
+        reason = "timeout" if isinstance(error, TimeoutError) else str(error)
+        previous = cached.get(item_id)
+
+        if previous is not None:
+            try:
+                _validate_comment(previous, parent_id)
+            except ValueError:
+                previous = None
+
+        return _CommentResult(item_id, previous, reason)
+
+
+def _cached_comments(payload: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    raw: object = payload.get("comments")
+
+    if not isinstance(raw, list):
+        return {}
+
+    cached: dict[int, dict[str, Any]] = {}
+
+    for value in cast(list[object], raw):
+        if isinstance(value, dict):
+            item = cast(dict[str, Any], value)
+
+            if type(item.get("id")) is int and item["id"] > 0:
+                cached[item["id"]] = item
+
+    return cached
+
+
+def _next_comments(
+    pending: deque[tuple[int, int]], seen: set[int], remaining: int,
+) -> list[tuple[int, int]]:
+    batch: list[tuple[int, int]] = []
+
+    while pending and len(batch) < remaining:
+        item_id, parent_id = pending.popleft()
+
+        if item_id not in seen:
+            seen.add(item_id)
+            batch.append((item_id, parent_id))
+
+    return batch
+
+
+async def _capture_comment_tree(
+    settings: HackerNewsSettings, client: aiohttp.ClientSession,
+    story: dict[str, Any], cached: dict[int, dict[str, Any]],
+    comments: dict[int, dict[str, Any]], capture: dict[str, Any],
+) -> None:
+    pending = deque((child, int(story["id"])) for child in _kids(story))
+    seen = {int(story["id"])}
+
+    # Refresh every node: previously saved leaves can acquire replies.
+    # API child order is ranked; breadth first keeps limited captures useful.
+    # https://github.com/HackerNews/API#items
+    while pending:
+        remaining = ITEM_BATCH_SIZE
+
+        if settings.comment_limit is not None:
+            remaining = min(
+                remaining, settings.comment_limit - capture["requests"] + 1,
+            )
+
+        if remaining <= 0:
+            if any(item_id not in seen for item_id, _ in pending):
+                capture.setdefault("reason", "comment_limit")
+
+            break
+
+        batch = _next_comments(pending, seen, remaining)
+        capture["requests"] += len(batch)
+        results = await asyncio.gather(*(
+            _capture_comment(client, item_id, parent_id, cached)
+            for item_id, parent_id in batch
+        ))
+
+        for result in results:
+            if result.error is not None:
+                capture.setdefault("reason", result.error)
+                capture.setdefault("unresolved_ids", []).append(result.item_id)
+
+            if result.comment is not None:
+                comments[result.item_id] = result.comment
+                pending.extend(
+                    (child, result.item_id) for child in _kids(result.comment)
+                    if child not in seen
+                )
+
+
 async def _capture_details(
     settings: HackerNewsSettings, post: RawPost, client: aiohttp.ClientSession,
 ) -> RawPost:
     payload: dict[str, Any] = json.loads(post.payload)
-    comments: list[dict[str, Any]] = []
+    cached = _cached_comments(payload)
+    comments: dict[int, dict[str, Any]] = {}
     capture: dict[str, Any] = {
         "status": "captured", "limit": settings.comment_limit,
         "captured": 0, "requests": 0,
     }
-    pending: deque[tuple[int, int]] = deque()
-    seen: set[int] = {int(post.post_id)}
 
     try:
         async with asyncio.timeout(settings.detail_timeout_seconds):
@@ -355,46 +519,29 @@ async def _capture_details(
                 raise ValueError("HN item is not a story")
 
             capture["total"] = story.get("descendants", 0)
-            pending.extend(
-                (child, int(post.post_id)) for child in _kids(story)
+            await _capture_comment_tree(
+                settings, client, story, cached, comments, capture,
             )
-
-            # The API supplies ranked children; breadth first keeps top-level
-            # discussion represented within the user-configured request limit.
-            # https://github.com/HackerNews/API#items
-            while pending and capture["requests"] <= settings.comment_limit:
-                item_id, parent_id = pending.popleft()
-
-                if item_id in seen:
-                    continue
-
-                seen.add(item_id)
-                capture["requests"] += 1
-                comment = await _fetch_item(client, item_id)
-
-                _validate_comment(comment, parent_id)
-                comments.append(comment)
-                pending.extend(
-                    (child, item_id) for child in _kids(comment)
-                    if child not in seen
-                )
-
-            if any(item_id not in seen for item_id, _ in pending):
-                capture.update(status="partial", reason="comment_limit")
     except (
         aiohttp.ClientError, TimeoutError, HostCooldownError, ValueError,
-    ) as err:
-        capture.update(
-            status="partial" if comments else "failed",
-            reason="timeout" if isinstance(err, TimeoutError) else str(err),
+    ) as error:
+        capture["reason"] = (
+            "timeout" if isinstance(error, TimeoutError) else str(error)
         )
         count("fetch_failures")
+
+    if "reason" in capture:
+        # Retain saved records on an interrupted refresh, but never label the
+        # old child lists as complete. A later detail run refreshes them again.
+        comments = cached | comments
+        capture["status"] = "partial" if comments else "failed"
         logger.warning(
-            "Hacker News %s comments incomplete: %s", post.post_id, err,
+            "Hacker News %s comments incomplete: %s",
+            post.post_id, capture["reason"],
         )
 
     capture["captured"] = len(comments)
-    payload["comments"] = comments
+    payload["comments"] = list(comments.values())
     payload["comment_capture"] = capture
 
     return post._replace(
@@ -408,7 +555,7 @@ async def scrape_hacker_news_details(
     settings: HackerNewsSettings, posts: list[RawPost],
     client: aiohttp.ClientSession,
 ) -> AsyncIterator[ScrapeBatch]:
-    """Capture bounded comment trees only for an explicit detail request."""
+    """Capture full comment trees, or the explicitly configured item limit."""
     for post in posts[:settings.detail_max_posts]:
         detailed = await _capture_details(settings, post, client)
         yield ScrapeBatch([detailed], [])

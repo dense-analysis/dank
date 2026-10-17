@@ -14,6 +14,7 @@ import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
 import { hasHackerNewsBody } from "../lib/hackerNews";
+import { articleParams } from "../lib/navigation";
 import type { ReferenceTarget } from "../lib/referenceFocus";
 import { postKey } from "../lib/storage";
 import type { Filters, Post } from "../lib/types";
@@ -24,7 +25,9 @@ import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HackerNewsDetail } from "./HackerNewsDetail";
-import { dateLabel, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { PostTimestamp, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { PostLinks } from "./PostLinks";
+import { ReaderLink } from "./ReaderLink";
 import { RedditComments } from "./RedditComments";
 import {
   RedditCommunityLink,
@@ -40,6 +43,8 @@ export function ArticleView({
   domain,
   id,
   initial,
+  params,
+  openPost,
   close,
   selectSource,
   markRead,
@@ -54,6 +59,8 @@ export function ArticleView({
   id: string;
   initial?: Post;
   referenceTarget?: ReferenceTarget;
+  params: URLSearchParams;
+  openPost: (post: Pick<Post, "id" | "domain">) => void;
   close: () => void;
   selectSource: (domain: string) => void;
   markRead: (post: Post) => void;
@@ -127,6 +134,9 @@ export function ArticleView({
   }, [targetKey, post, isPlaceholderData]);
   const referenceReady =
     !!post && !isPlaceholderData && referenceResult.key === targetKey;
+  const postLinks = post && (
+    <PostLinks post={post} params={params} open={openPost} />
+  );
 
   useEffect(() => {
     if (post && hasReadableContent) markRead(post);
@@ -213,6 +223,7 @@ export function ArticleView({
       {post && xPost && (
         <XPostDetail
           post={post}
+          links={postLinks}
           selectAccount={selectAccount}
           referenceVideoId={
             referenceTarget?.kind === "post"
@@ -227,6 +238,22 @@ export function ArticleView({
         <HackerNewsDetail
           post={post}
           referenceTarget={referenceTarget}
+          links={postLinks}
+          linkedArticle={
+            post.linked_post && (
+              <ReaderLink
+                className="original-link"
+                href={`/reader/?${articleParams(params, post.linked_post)}`}
+                onNavigate={() =>
+                  post.linked_post && openPost(post.linked_post)
+                }
+              >
+                Read collected article
+              </ReaderLink>
+            )
+          }
+          filters={filters}
+          selectAuthor={selectAuthor}
           pending={isPlaceholderData && !error}
           loadError={!!error}
         />
@@ -251,7 +278,7 @@ export function ArticleView({
               <SourceLink domain={post.domain} select={selectSource} />
             )}
             <span className="meta-dot">·</span>
-            <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+            <PostTimestamp post={post} />
             {hasContent && post.collection_incomplete && (
               <CollectionBadge incomplete />
             )}
@@ -273,6 +300,7 @@ export function ArticleView({
               hasContent && <span> {readingTime(post)} min read</span>
             )}
           </div>
+          {postLinks}
           {hasReadableContent ? (
             <>
               <a

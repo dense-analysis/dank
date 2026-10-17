@@ -1,4 +1,5 @@
 import { Check, ExternalLink } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
 import { safeUrl } from "./PostCard";
 import { XEngagement } from "./XEngagement";
@@ -7,6 +8,7 @@ import { XPostHeader } from "./XPostHeader";
 
 export function XPostCard({
   post,
+  links,
   read,
   href,
   open,
@@ -14,6 +16,7 @@ export function XPostCard({
   query,
 }: {
   post: Post;
+  links?: ReactNode;
   read: boolean;
   href: string;
   open: () => void;
@@ -57,6 +60,7 @@ export function XPostCard({
           <ExternalLink size={16} />
         </a>
       </footer>
+      {links}
     </article>
   );
 }

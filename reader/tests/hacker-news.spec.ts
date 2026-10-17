@@ -17,6 +17,7 @@ function story(index: number): Post {
     thumbnail: null,
     media: [],
     hacker_news: {
+      submitted_at: "2026-10-15T11:25:00Z",
       points: 200 - index,
       comments: 20,
       day,
@@ -116,7 +117,11 @@ for (const width of [390, 1280]) {
       name: "Hacker News",
       exact: true,
     });
-    await expect(entry.locator("svg rect")).toHaveAttribute("fill", "#ff6600");
+    await expect(entry.locator("svg")).toHaveAttribute(
+      "stroke",
+      "currentColor",
+    );
+    await expect(entry.locator('[fill="#ff6600"]')).toHaveCount(0);
     await entry.click();
     await expect(page).toHaveURL(/view=hacker_news/);
     const selection = page.getByRole("group", {
@@ -163,6 +168,19 @@ for (const width of [390, 1280]) {
     await expect(page).toHaveURL(/hn_filter=all/);
     await expect(page.locator(".hn-card").first()).toBeVisible();
     await expect(page.locator(".hn-card .post-open p")).toHaveCount(0);
+    const firstCard = page.locator(".hn-card").first();
+    await expect(
+      firstCard.locator('time[datetime="2026-10-15T11:25:00Z"]'),
+    ).toBeVisible();
+    await expect(firstCard.locator(".post-bottom > :first-child")).toHaveText(
+      "builder",
+    );
+    const metricColors = await firstCard
+      .locator(".hn-metrics > span")
+      .evaluateAll((metrics) =>
+        metrics.map((metric) => getComputedStyle(metric).color),
+      );
+    expect(new Set(metricColors).size).toBe(1);
     await page.screenshot({
       path: testInfo.outputPath(`hacker-news-${width}.png`),
       fullPage: true,
@@ -288,5 +306,48 @@ test("failed capture is explicit and API failure never becomes an empty feed", a
   await expect(page.getByText("Hacker News data unavailable.")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "No collected posts found" }),
+  ).toHaveCount(0);
+});
+
+test("author filters preserve the Hacker News daily selection", async ({
+  page,
+}) => {
+  await fixtures(page);
+  await page.goto("/reader/?view=hacker_news&hn_filter=top20");
+  await page.getByRole("link", { name: "Stories by builder" }).first().click();
+  await expect(page).toHaveURL(/view=hacker_news/);
+  await expect(page).toHaveURL(/hn_filter=top20/);
+  await expect(page).toHaveURL(/author=builder/);
+});
+
+test("complete discussions show every captured comment beyond 500", async ({
+  page,
+}) => {
+  await fixtures(page, {
+    comment_capture: {
+      status: "captured",
+      captured: 650,
+      total: 650,
+      reason: null,
+    },
+    comments_items: Array.from({ length: 650 }, (_, index) => ({
+      id: String(1000 + index),
+      parent_id: index ? String(999 + index) : "1",
+      author: "reader",
+      html: `<p>Saved comment ${index + 1}</p>`,
+      depth: Math.min(index, 32),
+      created_at: null,
+    })),
+  });
+  await page.goto(
+    "/reader/?view=hacker_news&article=1&article_source=news.ycombinator.com",
+  );
+  await expect(page.locator(".hn-comment")).toHaveCount(650);
+  await expect(
+    page.getByText("Saved comment 650", { exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByText(/650 saved of 650 reported/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Partial discussion" }),
   ).toHaveCount(0);
 });

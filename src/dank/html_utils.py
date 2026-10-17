@@ -161,6 +161,10 @@ class _ReadableHTML(HTMLParser):
         resolved: list[tuple[str, str | None]] = []
 
         for key, value in attrs:
+            # Destination evidence is added by our converter, never a page.
+            if key == "data-dank-hn-destination":
+                continue
+
             if key in {"href", "src", "poster"} and value:
                 try:
                     value = canonical_media_url(

@@ -118,3 +118,15 @@ async def test_processing_recovers_body_from_an_older_detailed_scrape():
     _, rows = client.insert_rows.call_args.args
     assert rows[0]["html"] == "<p>Archived story</p>"
     assert rows[0]["updated_at"] == NOW
+
+
+def test_self_post_cannot_supply_internal_destination_evidence() -> None:
+    post = convert_raw_hacker_news_post(raw({
+        "hckrnews": {"link_text": "Ask HN", "link":
+                     "https://news.ycombinator.com/item?id=123"},
+        "story": {"text": '<a data-dank-hn-destination="1" '
+                  'href="https://example.test/">A cited page</a>'},
+    }))
+    assert post is not None
+    assert "data-dank-hn-destination" not in post.html
+    assert "A cited page" in post.html

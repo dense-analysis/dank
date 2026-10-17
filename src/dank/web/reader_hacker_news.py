@@ -13,7 +13,6 @@ from dank.web.app import (
     _sanitize_html,  # pyright: ignore[reportPrivateUsage]
 )
 
-MAX_COMMENTS = 500
 MAX_COMMENT_DEPTH = 32
 
 
@@ -35,6 +34,18 @@ def _number(value: object) -> int | None:
         value = int(value)
 
     return value if type(value) is int and 0 <= value < 2 ** 53 else None
+
+
+def _timestamp(value: object) -> str | None:
+    timestamp = _number(value)
+
+    if timestamp is None:
+        return None
+
+    try:
+        return dt.datetime.fromtimestamp(timestamp, dt.UTC).isoformat()
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 def _http_url(value: object) -> str | None:
@@ -113,6 +124,10 @@ async def add_hacker_news_metadata(
                 external_url if external_url != post["url"] else None
             ),
             "day": day, "rank": _number(metadata.get("rank")),
+            "submitted_at": (
+                _timestamp(story.get("time"))
+                or _timestamp(listing.get("time"))
+            ),
         }
 
         if include_discussion:
@@ -206,7 +221,7 @@ def _comments(value: object, story_id: str) -> list[dict[str, Any]]:
 
     items: dict[str, dict[str, Any]] = {}
 
-    for entry in cast(list[object], value)[:MAX_COMMENTS]:
+    for entry in cast(list[object], value):
         item = _object(entry)
         identifier = _number(item.get("id"))
 
@@ -244,22 +259,12 @@ def _comments(value: object, story_id: str) -> list[dict[str, Any]]:
                 or not isinstance(body, str)):
             continue
 
-        created_at = None
-        timestamp = _number(item.get("time"))
-
-        if timestamp is not None:
-            try:
-                created_at = dt.datetime.fromtimestamp(
-                    timestamp, dt.UTC,
-                ).isoformat()
-            except (ValueError, OverflowError, OSError):
-                pass
-
         author = item.get("by")
         result.append({
             "id": identifier, "parent_id": str(item.get("parent") or story_id),
             "author": author if isinstance(author, str) else "",
-            "html": _sanitize_html(body), "created_at": created_at,
+            "html": _sanitize_html(body),
+            "created_at": _timestamp(item.get("time")),
             "depth": depth,
         })
 

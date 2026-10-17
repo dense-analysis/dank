@@ -129,6 +129,7 @@ async def test_listing_metadata_uses_exact_version_and_no_comment_history():
     assert payloads[0]["hacker_news"] == {
         "points": 100, "comments": 22, "day": "2026-10-17", "rank": 3,
         "discussion_url": POST.url, "external_url": "https://example.test/article",
+        "submitted_at": None,
     }
     assert client.fetch_json.await_count == 1
     query, params = client.fetch_json.call_args.args
@@ -271,3 +272,54 @@ async def test_homepage_counts_allow_only_bounded_integer_text(
     )
     hn = payloads[0]["hacker_news"]
     assert (hn["points"], hn["comments"]) == expected
+
+
+@pytest.mark.parametrize("story_time,listing_time,expected", [
+    (10, 20, "1970-01-01T00:00:10+00:00"),
+    (None, "20", "1970-01-01T00:00:20+00:00"),
+    (2**52, 20, "1970-01-01T00:00:20+00:00"),
+    (True, None, None),
+    (None, None, None),
+])
+async def test_submission_timestamp_never_uses_front_page_arrival(
+    story_time: object, listing_time: object, expected: str | None,
+):
+    payload = snapshot()
+    payload["story"] = {"time": story_time}
+    payload["hckrnews"].update(time=listing_time, date=int(NOW.timestamp()))
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([stored(payload)])
+    payloads = [summary()]
+    await add_hacker_news_metadata(
+        client, payloads, [POST], include_discussion=False,
+    )
+    assert payloads[0]["hacker_news"]["submitted_at"] == expected
+    assert payloads[0]["hacker_news"]["day"] == "2026-10-17"
+
+
+async def test_full_discussions_preserve_over_500_comments_without_recursion():
+    payload = snapshot()
+    payload.update(
+        comment_capture={"status": "captured", "total": 750},
+        comments=[
+            {"id": 1000 + index, "parent": 999 + index if index else 123,
+             "text": f"Reply {index}"}
+            for index in range(750)
+        ] + [
+            {"id": 2000, "parent": 2001, "text": "Cycle"},
+            {"id": 2001, "parent": 2000, "text": "Cycle"},
+            {"id": 1000, "parent": 1001, "text": "Duplicate"},
+        ],
+    )
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([stored(payload)])
+    payloads = [summary()]
+    await add_hacker_news_metadata(
+        client, payloads, [POST], include_discussion=True,
+    )
+    hn = payloads[0]["hacker_news"]
+    assert len(hn["comments_items"]) == 750
+    assert hn["comments_items"][-1]["html"] == "Reply 749"
+    assert hn["comments_items"][-1]["depth"] == 32
+    assert hn["comment_capture"]["captured"] == 750
+    assert hn["comment_capture"]["status"] == "captured"

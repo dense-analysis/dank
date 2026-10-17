@@ -142,8 +142,9 @@ async def test_detail_orders_context_and_replies_and_reuses_saved_media(
     assert not first["x"]["media"][0]["remote"]
     assert "conversation" not in first["x"]
     assert first["created_at"] == "2026-10-07T10:00:00+00:00"
-    assert len(fake.calls) == 4
-    assert "x_related_keys" in fake.calls[-1][1]
+    assert len(fake.calls) == 5
+    assert "x_related_keys" in fake.calls[-2][1]
+    assert "link_post_keys" in fake.calls[-1][1]
 
 
 async def test_feed_has_validated_summary_without_conversation_posts(
@@ -160,7 +161,7 @@ async def test_feed_has_validated_summary_without_conversation_posts(
     assert post["x"]["replies_captured_count"] == 1
     assert "conversation" not in post["x"]
     assert "reply.jpg" not in (response.text or "")
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 4
 
 
 @pytest.mark.parametrize("latest", ["failed", "disabled", "not_collected"])
@@ -246,8 +247,9 @@ async def test_latest_partial_archive_is_not_replaced_by_older_capture(
     assert capture["captured_at"] == DATE
     assert [node["id"] for node in capture["replies"]] == ["102"]
     assert "latest_attempt_status" not in capture
-    assert len(fake.calls) == 4
-    assert "x_related_keys" in fake.calls[-1][1]
+    assert len(fake.calls) == 5
+    assert "x_related_keys" in fake.calls[-2][1]
+    assert "link_post_keys" in fake.calls[-1][1]
 
 
 def test_missing_parents_do_not_invent_nested_ancestry() -> None:
@@ -353,7 +355,7 @@ async def test_history_queries_are_batched_and_bound_to_each_displayed_version(
     first, second_post = json.loads(response.text or "")["posts"]
     assert first["x"]["replies_status"] == "captured"
     assert second_post["x"]["replies_status"] == "not_collected"
-    assert len(fake.calls) == 4
+    assert len(fake.calls) == 5
     assert fake.calls[2][1]["x_versions"] == [
         ("x.com", "100", 1791462645123), ("x.com", "200", 1791462645123),
     ]

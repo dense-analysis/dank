@@ -90,7 +90,8 @@ class _PageMetaParser(HTMLParser):
     ) -> None:
         if tag == "meta":
             attr_map = _attrs_to_map(attrs)
-            key = attr_map.get("property") or attr_map.get("name")
+            key = (attr_map.get("property") or attr_map.get("name")
+                   or attr_map.get("itemprop"))
             content = attr_map.get("content") or attr_map.get("value")
 
             if key and content:
@@ -259,13 +260,71 @@ def extract_page_metadata(page_html: str) -> PageMetadata:
         or parser.title.strip()
     )
     author = _select_author(meta, _extract_jsonld_author(page_html))
-    published_at = _parse_datetime(
-        meta.get("article:published_time")
-        or meta.get("og:published_time")
-        or meta.get("published_time"),
-    )
+    published_at = _published_at(meta, page_html)
 
     return PageMetadata(title=title, author=author, published_at=published_at)
+
+
+def _published_at(
+    meta: dict[str, str], page_html: str,
+) -> datetime.datetime | None:
+    for key in (
+        "article:published_time", "og:article:published_time",
+        "og:published_time", "published_time", "datepublished",
+        "dcterms.issued", "dc.date.issued",
+    ):
+        if published := _parse_datetime(meta.get(key)):
+            return published
+
+    parser = _JsonScriptParser("application/ld+json")
+    parser.feed(page_html)
+    dates: set[datetime.datetime] = set()
+
+    for block in parser.blocks:
+        try:
+            data = json.loads(block)
+            nodes = _article_jsonld_nodes(data)
+        except (ValueError, RecursionError):
+            continue
+
+        for node in nodes:
+            value = node.get("datePublished")
+
+            if (isinstance(value, str)
+                    and (published := _parse_datetime(value))):
+                dates.add(published)
+
+    # Multiple article nodes can describe recommendations, not this page.
+    return next(iter(dates)) if len(dates) == 1 else None
+
+
+def _article_jsonld_nodes(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [
+            node for item in cast(list[Any], value)
+            for node in _article_jsonld_nodes(item)
+        ]
+
+    if not isinstance(value, dict):
+        return []
+
+    value = cast(dict[str, Any], value)
+    kind = value.get("@type")
+    kinds = cast(list[Any], kind) if isinstance(kind, list) else [kind]
+    nodes = [value] if any(
+        isinstance(item, str)
+        and item.removeprefix("https://schema.org/").removeprefix(
+            "http://schema.org/",
+        ) in {"Article", "NewsArticle", "BlogPosting", "ScholarlyArticle"}
+        for item in kinds
+    ) else []
+
+    # Follow graph and page ownership only; publisher and related-item trees
+    # contain dates unrelated to this article's publication.
+    for key in ("@graph", "mainEntity"):
+        nodes.extend(_article_jsonld_nodes(value.get(key)))
+
+    return nodes
 
 
 def extract_article_html(page_html: str) -> str:

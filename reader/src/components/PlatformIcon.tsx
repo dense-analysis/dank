@@ -3,11 +3,13 @@
 export function PlatformIcon({
   platform,
   size = 19,
+  monochrome = false,
 }: {
   platform: "x" | "reddit" | "youtube" | "hacker_news";
   size?: number;
+  monochrome?: boolean;
 }) {
-  if (platform === "hacker_news") {
+  if (platform === "hacker_news" && !monochrome) {
     return (
       <svg
         width={size}
@@ -38,7 +40,12 @@ export function PlatformIcon({
       aria-hidden="true"
       focusable="false"
     >
-      {platform === "youtube" ? (
+      {platform === "hacker_news" ? (
+        <>
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="m8 7 4 6 4-6m-4 6v5" />
+        </>
+      ) : platform === "youtube" ? (
         <>
           <rect x="2" y="5" width="20" height="14" rx="4" />
           <path d="m10 9 5 3-5 3z" />

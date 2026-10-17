@@ -6,19 +6,28 @@ import pathlib
 import sys
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from dank.config import Settings, SourceConfig, load_settings
+from dank.config import (
+    HackerNewsSettings,
+    Settings,
+    SourceConfig,
+    load_settings,
+)
 from dank.model import RawPost
 from dank.scrape import (
     __main__ as cli,
     runner,
 )
+from dank.scrape.runner import (
+    _load_pending_hacker_news_posts,  # pyright: ignore[reportPrivateUsage]
+)
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import BrowserConfig
+from dank.storage.clickhouse import ClickHouseClient
 
 DOMAIN = "news.ycombinator.com"
 
@@ -161,3 +170,113 @@ def test_detail_cli_dispatches_explicitly(
     monkeypatch.setattr(sys, "argv", ["scrape", "--hacker-news-details"])
     cli.main()
     assert run.call_args.kwargs["hacker_news_details"] is True
+
+
+async def test_pending_details_restore_comments_without_reverting_latest_story(
+) -> None:
+    latest = post()
+    latest_payload = json.loads(latest.payload) | {
+        'story': {'id': 123, 'title': 'Updated story', 'time': 123456},
+        'article': {'url': 'https://example.test/current'},
+    }
+    comments = [{'id': 124, 'type': 'comment', 'parent': 123, 'text': 'Saved'}]
+    capture = {'status': 'partial', 'captured': 1, 'reason': 'comment_limit'}
+    history = {
+        'story': {'id': 123, 'title': 'Old story'},
+        'comments': comments, 'comment_capture': capture,
+    }
+    row = latest._asdict() | {
+        'payload': json.dumps(latest_payload),
+        'detail_payload': json.dumps(history),
+    }
+    client = SimpleNamespace(fetch_json=AsyncMock(
+        return_value=SimpleNamespace(rows=[row]),
+    ))
+    posts = await _load_pending_hacker_news_posts(
+        cast(ClickHouseClient, client), HackerNewsSettings(),
+    )
+    payload = json.loads(posts[0].payload)
+    assert payload['comments'] == comments
+    assert payload['comment_capture'] == capture
+    assert payload['story'] == latest_payload['story']
+    assert payload['article'] == latest_payload['article']
+    assert posts[0].post_created_at == latest.post_created_at
+    assert posts[0].scraped_at == latest.scraped_at
+
+
+@pytest.mark.parametrize('comment_limit', [None, 25, 50, 1000])
+async def test_pending_details_query_prioritizes_history_and_respects_budget(
+    comment_limit: int | None,
+) -> None:
+    client = SimpleNamespace(fetch_json=AsyncMock(
+        return_value=SimpleNamespace(rows=[]),
+    ))
+    settings = HackerNewsSettings(
+        comment_limit=comment_limit, detail_max_posts=7,
+    )
+    assert await _load_pending_hacker_news_posts(
+        cast(ClickHouseClient, client), settings,
+    ) == []
+    query, params = client.fetch_json.call_args.args
+    assert params['all_comments'] is (comment_limit is None)
+    assert params['comment_limit'] == (comment_limit or 0)
+    assert params['limit'] == 7
+    assert "argMaxIf(payload, scraped_at" in query
+    assert "history.complete = 0" in query
+    assert "'captured') < %(comment_limit)s" in query
+    assert "'status') = 'partial' DESC" in query
+    assert query.endswith('LIMIT %(limit)s')
+
+
+async def test_pending_details_preserve_never_detailed_listing() -> None:
+    latest = post()
+    client = SimpleNamespace(fetch_json=AsyncMock(
+        return_value=SimpleNamespace(rows=[
+            latest._asdict() | {'detail_payload': ''},
+        ]),
+    ))
+    selected = await _load_pending_hacker_news_posts(
+        cast(ClickHouseClient, client), HackerNewsSettings(),
+    )
+    assert selected == [latest]
+
+
+@pytest.mark.parametrize("saved_domain", ["lobste.rs", "publisher.test"])
+async def test_article_reuses_original_but_not_an_aggregators_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, saved_domain: str,
+) -> None:
+    settings, client = setup(monkeypatch, tmp_path)
+    url = "https://publisher.test/story"
+    item = post()._replace(payload=json.dumps({"hckrnews": {
+        "link": url, "link_text": "Story",
+    }}))
+
+    async def collect(*args: object) -> AsyncIterator[ScrapeBatch]:
+        yield ScrapeBatch([item], [])
+
+    monkeypatch.setattr(runner, "scrape_hacker_news", collect)
+    monkeypatch.setattr(runner, "_known_link_destinations", AsyncMock(
+        return_value={url: {"domain": saved_domain, "post_id": "saved",
+                           "url": url, "html": "<p>Saved article</p>",
+                           "source": "rss"}},
+    ))
+    requested: list[Any] = []
+
+    async def articles(
+        http: object, selected: list[Any], **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        requested.extend(selected)
+
+        if selected:
+            yield ScrapeBatch([item._replace(
+                domain="publisher.test", post_id="canonical", url=url,
+                source="linked_article",
+            )], [])
+
+    monkeypatch.setattr(runner, "scrape_linked_articles", articles)
+    await runner.run_scrape(settings, headless=True)
+    assert bool(requested) == (saved_domain == "lobste.rs")
+
+    if requested:
+        assert requested[0].identity is None
+        assert client.rows["raw_posts"][-1]["domain"] == "publisher.test"

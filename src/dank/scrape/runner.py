@@ -26,6 +26,7 @@ from dank.config import (
     load_settings,
 )
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
+from dank.links import is_original_source, is_platform_url, normalized_url
 from dank.logging_setup import configure_logging
 from dank.model import (
     AssetDiscovery,
@@ -45,6 +46,7 @@ from dank.scrape.hacker_news import (
     scrape_hacker_news_details,
 )
 from dank.scrape.http import RequestLimiter, current_limiter
+from dank.scrape.linked_articles import LinkedArticle, scrape_linked_articles
 from dank.scrape.metrics import (
     RSS_CONCURRENCY,
     RunMetrics,
@@ -75,7 +77,7 @@ from dank.scrape.youtube.metadata import fetch_video_metadata
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
-from dank.youtube import VIDEO_ID, discovery_from_post
+from dank.youtube import VIDEO_ID, discovery_from_post, payload_object
 from dank.youtube_references import reference_rows
 
 logger = logging.getLogger(__name__)
@@ -270,6 +272,12 @@ async def _run_source_sessions(
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
+    links_schema = pathlib.Path(__file__).parents[1] / "storage/links.sql"
+
+    for statement in links_schema.read_text().split(";"):
+        if statement.strip():
+            await client.execute(statement)
+
     raw_schema = pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
     await client.execute(raw_schema.read_text())
     schema = pathlib.Path(__file__).with_name("history.sql").read_text()
@@ -505,8 +513,8 @@ async def _discover_source_batches(
 
     match source.domain:
         case "news.ycombinator.com":
-            batches_iter = scrape_hacker_news(
-                settings.hacker_news, source, http_client,
+            batches_iter = _hacker_news_content_batches(
+                settings, source, clickhouse_client, http_client,
             )
         case "youtube.com":
             known_ids = await _known_youtube_channel_ids(clickhouse_client)
@@ -567,6 +575,106 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _hacker_news_content_batches(
+    settings: Settings, source: SourceConfig,
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+) -> AsyncIterator[ScrapeBatch]:
+    seen: set[str] = set()
+
+    async for batch in scrape_hacker_news(
+        settings.hacker_news, source, http_client,
+    ):
+        # Save listing/metadata first; a slow publisher cannot erase discovery.
+        yield batch
+        articles = _hacker_news_article_links(batch.posts, seen)
+
+        if not articles:
+            continue
+
+        known = await _known_link_destinations(client, list(articles))
+        originals = {
+            url: row for url, row in known.items()
+            if is_original_source(str(row["domain"]), str(row["url"]))
+        }
+        pending = [
+            LinkedArticle(url, title, (
+                str(originals[url]["domain"]), str(originals[url]["post_id"]),
+            ) if url in originals else None)
+            for url, title in articles.items()
+            if not is_platform_url(url) and not (
+                url in originals
+                and str(originals[url].get("html") or "").strip()
+            )
+        ]
+
+        async for linked_batch in scrape_linked_articles(
+            http_client, pending, batch_size=10,
+        ):
+            seen.update(
+                url for post in linked_batch.posts
+                if (url := normalized_url(post.url))
+            )
+            yield linked_batch
+
+
+def _hacker_news_article_links(
+    posts: list[RawPost], seen: set[str],
+) -> dict[str, str]:
+    links: dict[str, str] = {}
+
+    for post in posts:
+        payload = payload_object(post.payload)
+        listing = payload_object(payload.get("hckrnews"))
+        story = payload_object(payload.get("story"))
+        url = normalized_url(str(
+            listing.get("link") or story.get("url") or "",
+        ))
+
+        if url and url not in seen and url != normalized_url(post.url):
+            seen.add(url)
+            links[url] = str(
+                listing.get("link_text") or story.get("title") or "",
+            )
+
+    return links
+
+
+async def _known_link_destinations(
+    client: ClickHouseClient, urls: list[str],
+) -> dict[str, dict[str, Any]]:
+    result = await client.fetch_json(
+        "SELECT u.url AS lookup_url, p.domain, p.post_id, p.url, "
+        "p.html, p.source FROM post_urls AS u FINAL "
+        "INNER JOIN (SELECT domain, post_id, url, html, source, updated_at "
+        "FROM posts "
+        "FINAL) AS p ON p.domain = u.domain AND p.post_id = u.post_id "
+        "AND u.observed_at <= p.updated_at "
+        "WHERE u.url IN %(urls)s "
+        "ORDER BY (p.domain = domainWithoutWWW(p.url)) DESC, "
+        "(p.source != 'linked_article') DESC, p.domain, p.post_id "
+        "LIMIT 1 BY lookup_url", {"urls": urls},
+    )
+    known = {str(row["lookup_url"]): row for row in result.rows}
+    missing = [url for url in urls if url not in known]
+
+    if missing:
+        # Fall back before the web app indexes older URL aliases.
+        result = await client.fetch_json(
+            "SELECT domain, post_id, url, html, source FROM posts FINAL "
+            "WHERE url IN %(urls)s ORDER BY "
+            "(domain = domainWithoutWWW(url)) DESC, "
+            "(source != 'linked_article') DESC, domain, post_id "
+            "LIMIT 1 BY url",
+            {"urls": missing},
+        )
+
+        for row in result.rows:
+            if url := normalized_url(str(row["url"])):
+                known[url] = row
+
+    return known
 
 
 async def _reddit_listing_batches(
@@ -764,32 +872,58 @@ async def _load_pending_hacker_news_posts(
     client: ClickHouseClient, settings: HackerNewsSettings,
 ) -> list[RawPost]:
     result = await client.fetch_json(
-        "SELECT * FROM (SELECT domain, post_id, url, post_created_at, "
+        "WITH latest AS (SELECT domain, post_id, url, post_created_at, "
         "scraped_at, source, request_url, payload FROM raw_posts "
         "WHERE source = 'hacker_news' AND domain = 'news.ycombinator.com' "
         "AND scraped_at >= %(cutoff)s "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
-        "WHERE post_id NOT IN (SELECT post_id FROM raw_posts "
+        "SELECT latest.*, history.detail_payload FROM latest "
+        "LEFT JOIN (SELECT post_id, "
+        "argMaxIf(payload, scraped_at, "
+        "JSONHas(payload, 'comment_capture')) AS detail_payload, "
+        "countIf(JSONExtractString(payload, 'comment_capture', 'status') "
+        "= 'captured') AS complete FROM raw_posts "
         "WHERE domain = 'news.ycombinator.com' AND source = 'hacker_news' "
-        "AND (JSONExtractString(payload, 'comment_capture', 'status') "
-        "= 'captured' OR (JSONExtractString(payload, "
-        "'comment_capture', 'status') = 'partial' AND "
-        "JSONExtractString(payload, 'comment_capture', 'reason') "
-        "= 'comment_limit'))) "
-        "ORDER BY post_created_at DESC, post_id DESC LIMIT %(limit)s",
+        "AND post_id IN (SELECT post_id FROM latest) GROUP BY post_id) "
+        "AS history ON latest.post_id = history.post_id "
+        "WHERE history.complete = 0 AND (%(all_comments)s "
+        "OR JSONExtractString(detail_payload, 'comment_capture', 'status') "
+        "!= 'partial' OR JSONExtractString(detail_payload, "
+        "'comment_capture', 'reason') != 'comment_limit' "
+        "OR JSONExtractUInt(detail_payload, 'comment_capture', 'captured') "
+        "< %(comment_limit)s) "
+        "ORDER BY JSONExtractString(detail_payload, "
+        "'comment_capture', 'status') = 'partial' DESC, "
+        "latest.post_created_at DESC, latest.post_id DESC LIMIT %(limit)s",
         {"limit": settings.detail_max_posts,
+         "all_comments": settings.comment_limit is None,
+         "comment_limit": settings.comment_limit or 0,
          "cutoff": datetime.datetime.now(datetime.UTC)
          - datetime.timedelta(days=settings.days)},
     )
+    posts: list[RawPost] = []
 
-    return [RawPost(
-        domain=str(row["domain"]), post_id=str(row["post_id"]),
-        url=str(row["url"]),
-        post_created_at=parse_datetime(row["post_created_at"]),
-        scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
-        source=str(row["source"]), request_url=str(row["request_url"]),
-        payload=str(row["payload"]),
-    ) for row in result.rows]
+    for row in result.rows:
+        payload = json.loads(str(row["payload"]))
+        detail_payload = str(row.get("detail_payload") or "")
+
+        if detail_payload:
+            previous = json.loads(detail_payload)
+
+            for key in ("comments", "comment_capture"):
+                if key in previous:
+                    payload[key] = previous[key]
+
+        posts.append(RawPost(
+            domain=str(row["domain"]), post_id=str(row["post_id"]),
+            url=str(row["url"]),
+            post_created_at=parse_datetime(row["post_created_at"]),
+            scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+            source=str(row["source"]), request_url=str(row["request_url"]),
+            payload=json.dumps(payload, ensure_ascii=False),
+        ))
+
+    return posts
 
 
 async def _load_pending_reddit_posts(

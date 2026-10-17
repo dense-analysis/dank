@@ -1,24 +1,33 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { hackerNewsCaptureReason, hasHackerNewsBody } from "../lib/hackerNews";
 import { type ReferenceTarget, videoReferenceId } from "../lib/referenceFocus";
-import type { Post } from "../lib/types";
+import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ArticleBody } from "./ArticleBody";
-import { HackerNewsMetrics } from "./HackerNewsFeed";
+import { AuthorLink } from "./AuthorLink";
+import { HackerNewsMetrics, HackerNewsTimestamp } from "./HackerNewsFeed";
 import { PlatformIcon } from "./PlatformIcon";
 import { dateLabel } from "./PostCard";
 
 export function HackerNewsDetail({
   post,
+  links,
+  linkedArticle,
   pending,
   loadError,
   referenceTarget,
+  filters,
+  selectAuthor,
 }: {
   post: Post;
+  links?: ReactNode;
+  linkedArticle?: ReactNode;
   pending: boolean;
   loadError: boolean;
   referenceTarget?: ReferenceTarget;
+  filters: Filters;
+  selectAuthor: (author: string) => void;
 }) {
   const story = post.hacker_news;
   if (!story) return null;
@@ -45,14 +54,20 @@ export function HackerNewsDetail({
       <div className="post-meta">
         <PlatformIcon platform="hacker_news" /> Hacker News{" "}
         <span className="meta-dot">·</span>
-        <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+        <HackerNewsTimestamp story={story} />
       </div>
       <h1>{post.title || "Untitled post"}</h1>
       <div className="article-byline">
-        {post.author && <span>by {post.author}</span>}
+        <AuthorLink
+          author={post.author}
+          fallback="Hacker News"
+          filters={filters}
+          select={selectAuthor}
+        />
         <HackerNewsMetrics story={story} />
       </div>
       <div className="hn-detail-links">
+        {linkedArticle}
         {externalUrl && (
           <a
             className={`original-link${externalMatch ? " reference-match" : ""}`}
@@ -76,6 +91,7 @@ export function HackerNewsDetail({
           </a>
         )}
       </div>
+      {links}
       {hasText ? (
         <ArticleBody
           html={post.html}
@@ -90,7 +106,9 @@ export function HackerNewsDetail({
         <p className="hn-snapshot-note">
           Saved from the Hacker News front page.
           {externalUrl
-            ? " Open the original article to read the full story."
+            ? linkedArticle
+              ? " Read the collected article or open the original."
+              : " Open the original article to read the full story."
             : " This post has no saved body text."}
         </p>
       )}

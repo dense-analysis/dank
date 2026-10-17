@@ -195,6 +195,9 @@ async def _clickhouse_context(app: web.Application):
         from dank.web.reader_youtube import ensure_youtube_storage
 
         await ensure_youtube_storage(client)
+        from dank.web.reader_links import ensure_link_storage
+
+        await ensure_link_storage(client)
         yield
     finally:
         await client.__aexit__(None, None, None)

@@ -1,4 +1,7 @@
-import { articleParams } from "./navigation";
+import { articleParams, clearReferenceParams } from "./navigation";
+
+export { clearReferenceParams } from "./navigation";
+
 import { youtubeEmbedUrl } from "./youtube";
 import type { YouTubeReference } from "./youtubeCollection";
 
@@ -7,17 +10,6 @@ export interface ReferenceTarget {
   id: string;
   videoId: string;
   saved: string;
-}
-
-const referenceKeys = [
-  "reference_kind",
-  "reference_id",
-  "reference_video",
-  "reference_saved",
-];
-
-export function clearReferenceParams(params: URLSearchParams) {
-  for (const key of referenceKeys) params.delete(key);
 }
 
 export function videoReferenceId(value: string): string | undefined {
