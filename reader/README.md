@@ -100,6 +100,10 @@ initials when an avatar is unavailable.
 
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
+Portrait videos keep their natural proportions within the available space.
+The raw video reference is hidden while its player is shown and returns if
+playback fails. Other links remain available.
+
 Remote media is labelled and video plays only on demand. Select the post text
 or timestamp to open it; inline links and media controls work independently.
 The footer shows captured comments, reposts, likes and views, with a dash for

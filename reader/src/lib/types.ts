@@ -104,6 +104,8 @@ export interface XMedia {
   poster_url: string | null;
   alt: string;
   remote: boolean;
+  source_url?: string;
+  aspect_ratio?: number;
 }
 
 export interface XPost extends XProfile {

@@ -2176,6 +2176,7 @@ input[type="checkbox"] {
 }
 .x-content-compact .article-body {
   font-family: inherit;
+  font-weight: 550;
   font-size: 15px;
   line-height: 1.6;
 }
@@ -2206,7 +2207,9 @@ input[type="checkbox"] {
   color: var(--green);
 }
 .x-attachments {
+  --x-video-max-height: min(70vh, 640px);
   display: grid;
+  align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 10px;
   margin-top: 16px;
@@ -2221,16 +2224,27 @@ input[type="checkbox"] {
 .x-attachment img,
 .x-attachment video {
   display: block;
-  width: 100%;
-  max-height: 560px;
+  max-width: 100%;
   object-fit: contain;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #0c0e10;
 }
-.x-content-compact .x-attachment img,
-.x-content-compact .x-attachment video {
+.x-attachment img {
+  width: 100%;
+  max-height: 560px;
+}
+.x-content-compact .x-attachment img {
   max-height: 380px;
+}
+.x-attachment video {
+  width: auto;
+  height: auto;
+  max-height: var(--x-video-max-height);
+}
+.x-attachment video.x-video-sized {
+  width: min(100%, calc(var(--x-video-max-height) * var(--x-video-ratio)));
+  aspect-ratio: var(--x-video-ratio);
 }
 .x-attachment figcaption {
   margin-top: 5px;
@@ -2382,8 +2396,10 @@ input[type="checkbox"] {
 .x-conversation-entry .x-post-content {
   margin-top: 12px;
 }
-.x-conversation-entry .x-attachment img,
-.x-conversation-entry .x-attachment video {
+.x-conversation-entry .x-attachments {
+  --x-video-max-height: min(60vh, 480px);
+}
+.x-conversation-entry .x-attachment img {
   aspect-ratio: 16 / 9;
   max-height: 320px;
   object-fit: contain;

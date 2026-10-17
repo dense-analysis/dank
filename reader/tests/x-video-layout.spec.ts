@@ -255,7 +255,7 @@ test("video failures restore the paired raw reference and original-post fallback
     "view=x&article=123456&article_source=x.com",
   ]) {
     await page.goto(`/reader/?${query}`);
-    const content = page.locator(".x-post-content");
+    const content = page.locator(".x-post-content:visible");
     await expectLinks(content);
     await content.locator("video").evaluate((element) => {
       (element as HTMLVideoElement).load();

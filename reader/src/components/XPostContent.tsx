@@ -1,8 +1,9 @@
 import { ExternalLink, ImageOff } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { articleText } from "../lib/article";
 import type { Post, XLink, XMedia } from "../lib/types";
 import { xMedia, xMediaUrl } from "../lib/x";
+import { videoReferenceKey, withoutDisplayedVideoLinks } from "../lib/xText";
 import { ArticleBody } from "./ArticleBody";
 import { HighlightedText } from "./HighlightedText";
 import { safeUrl } from "./PostCard";
@@ -24,9 +25,33 @@ export function XPostContent({
   navigation?: { href: string; open: () => void };
 }) {
   const [expanded, setExpanded] = useState(false);
-  const text = useMemo(() => articleText(post.html), [post.html]);
+  const [failedMedia, setFailedMedia] = useState<Set<string>>(() => new Set());
+  const media = useMemo(() => xMedia(post), [post]);
+  const displayedVideos = useMemo(
+    () =>
+      new Set(
+        media.flatMap((asset) => {
+          if (
+            asset.type === "image" ||
+            failedMedia.has(asset.url) ||
+            !xMediaUrl(asset.url)
+          )
+            return [];
+
+          return [asset.source_url, asset.url].flatMap((value) => {
+            const key = value ? videoReferenceKey(value) : undefined;
+            return key ? [key] : [];
+          });
+        }),
+      ),
+    [media, failedMedia],
+  );
+  const html = useMemo(
+    () => withoutDisplayedVideoLinks(post.html, displayedVideos),
+    [post.html, displayedVideos],
+  );
+  const text = useMemo(() => articleText(html), [html]);
   const canExpand = compact && text.length > PREVIEW_CHARACTERS;
-  const media = xMedia(post);
 
   return (
     <div className={`x-post-content ${compact ? "x-content-compact" : ""}`}>
@@ -57,13 +82,13 @@ export function XPostContent({
         </div>
       ) : navigation ? (
         <XPostText
-          html={post.html}
+          html={html}
           href={navigation.href}
           open={navigation.open}
           query={query}
         />
       ) : (
-        <ArticleBody html={post.html} query={query} />
+        <ArticleBody html={html} query={query} />
       )}
       {canExpand && (
         <button
@@ -83,13 +108,20 @@ export function XPostContent({
               asset={asset}
               original={post.url}
               index={index}
+              onVideoFailure={() =>
+                setFailedMedia((previous) => new Set(previous).add(asset.url))
+              }
             />
           ))}
         </section>
       )}
-      {post.x?.links?.map((link) => (
-        <XLinkPreview key={link.url} link={link} />
-      ))}
+      {post.x?.links
+        ?.filter(
+          (link) => !displayedVideos.has(videoReferenceKey(link.url) ?? ""),
+        )
+        .map((link) => (
+          <XLinkPreview key={link.url} link={link} />
+        ))}
     </div>
   );
 }
@@ -98,12 +130,16 @@ function XAttachment({
   asset,
   original,
   index,
+  onVideoFailure,
 }: {
   asset: XMedia;
   original: string;
   index: number;
+  onVideoFailure: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [loadedRatio, setLoadedRatio] = useState<number>();
+  const ratio = loadedRatio ?? asset.aspect_ratio;
   const url = xMediaUrl(asset.url);
   const poster = xMediaUrl(asset.poster_url);
 
@@ -137,6 +173,10 @@ function XAttachment({
         </a>
       ) : (
         <video
+          className={ratio ? "x-video-sized" : undefined}
+          style={
+            ratio ? ({ "--x-video-ratio": ratio } as CSSProperties) : undefined
+          }
           src={url}
           poster={poster}
           controls
@@ -145,7 +185,15 @@ function XAttachment({
           loop={asset.type === "gif"}
           muted={asset.type === "gif"}
           aria-label="X post video"
-          onError={() => setFailed(true)}
+          onLoadedMetadata={(event) => {
+            const video = event.currentTarget;
+            if (video.videoWidth > 0 && video.videoHeight > 0)
+              setLoadedRatio(video.videoWidth / video.videoHeight);
+          }}
+          onError={() => {
+            setFailed(true);
+            onVideoFailure();
+          }}
         >
           <track kind="captions" />
         </video>

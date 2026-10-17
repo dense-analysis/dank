@@ -104,6 +104,10 @@ describe("reader API", () => {
       { links: [{ ...x.links[0], image_url: 7 }] },
       { media: [{ ...x.media[0], remote: "false" }] },
       { media: [{ ...x.media[0], type: "iframe" }] },
+      { media: [{ ...x.media[0], aspect_ratio: 0 }] },
+      { media: [{ ...x.media[0], aspect_ratio: -1 }] },
+      { media: [{ ...x.media[0], aspect_ratio: "9/16" }] },
+      { media: [{ ...x.media[0], source_url: 42 }] },
     ]) {
       expect(isPost({ ...post, x: { ...x, ...bad } })).toBe(false);
     }

@@ -225,6 +225,12 @@ function isXPost(value: unknown, allowConversation: boolean): boolean {
             typeof media.url === "string" &&
             typeof media.alt === "string" &&
             typeof media.remote === "boolean" &&
+            (media.source_url === undefined ||
+              typeof media.source_url === "string") &&
+            (media.aspect_ratio === undefined ||
+              (typeof media.aspect_ratio === "number" &&
+                Number.isFinite(media.aspect_ratio) &&
+                media.aspect_ratio > 0)) &&
             (media.poster_url === null || typeof media.poster_url === "string"),
         ))) &&
     ["reply_count", "repost_count", "like_count", "view_count"].every(
