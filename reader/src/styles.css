@@ -180,6 +180,7 @@ input[type="checkbox"] {
   z-index: 10;
 }
 .collection-context .timeline {
+  padding-top: 24px;
   scroll-margin-top: var(--sticky-header-height);
 }
 .topbar .identity-avatar {

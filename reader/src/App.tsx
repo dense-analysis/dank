@@ -327,29 +327,26 @@ export function App() {
               tabIndex={-1}
               data-page-focus
             >
-              <div className="page-heading">
-                {feedSection && <p className="eyebrow">{date}</p>}
-                {section === "reddit" && (
-                  <p className="collection-description">
-                    Collected posts from{" "}
-                    {filters.community
-                      ? `r/${communityName}`
-                      : "your communities"}
-                    .
-                  </p>
-                )}
-                {section === "x" && (
-                  <p className="collection-description">
-                    Collected posts from{" "}
-                    {accountContext ? `@${accountHandle}` : "your X accounts"}.
-                  </p>
-                )}
-                {!feedSection && (
-                  <div className="title-row">
-                    <h1>{title}</h1>
-                  </div>
-                )}
-              </div>
+              {!accountContext && !communityContext && (
+                <div className="page-heading">
+                  {feedSection && <p className="eyebrow">{date}</p>}
+                  {section === "reddit" && (
+                    <p className="collection-description">
+                      Collected posts from your communities.
+                    </p>
+                  )}
+                  {section === "x" && (
+                    <p className="collection-description">
+                      Collected posts from your X accounts.
+                    </p>
+                  )}
+                  {!feedSection && (
+                    <div className="title-row">
+                      <h1>{title}</h1>
+                    </div>
+                  )}
+                </div>
+              )}
               {section === "settings" ? (
                 <ReaderSettings />
               ) : section === "sources" ? (
