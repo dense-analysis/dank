@@ -501,6 +501,13 @@ for (const [width, query, reducedMotion] of [
         name: "Show less",
         exact: true,
       });
+      await expect
+        .poll(() =>
+          card
+            .locator(".x-post-content > div[id]")
+            .evaluate((element) => element.getAnimations().length),
+        )
+        .toBe(0);
       await collapse.evaluate((button) =>
         window.scrollBy(0, button.getBoundingClientRect().top - 160),
       );
@@ -556,3 +563,131 @@ for (const [width, query, reducedMotion] of [
     }
   });
 }
+
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`text height transitions in both directions with ${reducedMotion} motion`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.emulateMedia({ reducedMotion });
+    await mockPosts(context, [
+      article,
+      makePost("after-animation", "<p>Following post.</p>"),
+    ]);
+    await page.goto("/reader/?view=x&account=researcher");
+    const card = page.locator(".post-card").first();
+    const viewport = card.locator(".x-post-content > div[id]");
+    await expect(viewport).toBeVisible();
+    const collapsed = (await viewport.boundingBox())?.height ?? 0;
+
+    for (const expanded of [true, false]) {
+      const recording = await viewport.evaluateHandle((element) => {
+        const frames: { height: number; characters: number }[] = [];
+        const observer = new ResizeObserver(() =>
+          frames.push({
+            height: element.getBoundingClientRect().height,
+            characters: element.textContent?.length ?? 0,
+          }),
+        );
+        observer.observe(element);
+
+        return { frames, stop: () => observer.disconnect() };
+      });
+      await card
+        .getByRole("button", {
+          name: expanded ? "Show more" : "Show less",
+          exact: true,
+        })
+        .click();
+      await expect(
+        card.getByRole("button", {
+          name: expanded ? "Show less" : "Show more",
+          exact: true,
+        }),
+      ).toHaveAttribute("aria-expanded", String(expanded));
+      await expect
+        .poll(() =>
+          viewport.evaluate((element) => element.getAnimations().length),
+        )
+        .toBe(0);
+      const frames = await recording.evaluate((record) => {
+        record.stop();
+        return record.frames;
+      });
+      await recording.dispose();
+      const heights = new Set(frames.map((frame) => Math.round(frame.height)));
+
+      if (reducedMotion === "reduce") {
+        expect(heights.size).toBeLessThanOrEqual(2);
+      } else {
+        expect(heights.size).toBeGreaterThan(2);
+        if (!expanded)
+          expect(
+            frames
+              .filter((frame) => frame.height > collapsed + 2)
+              .every((frame) => frame.characters > 300),
+          ).toBe(true);
+      }
+
+      const height = (await viewport.boundingBox())?.height ?? 0;
+      const natural = await viewport.evaluate(
+        (element) =>
+          element.firstElementChild?.getBoundingClientRect().height ?? 0,
+      );
+      expect(Math.abs(height - natural)).toBeLessThan(1);
+      if (expanded) expect(height).toBeGreaterThan(collapsed + 50);
+      else expect(Math.abs(height - collapsed)).toBeLessThan(1);
+    }
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect
+      .poll(() =>
+        viewport.evaluate((element) =>
+          Math.abs(
+            element.getBoundingClientRect().height -
+              (element.firstElementChild?.getBoundingClientRect().height ?? 0),
+          ),
+        ),
+      )
+      .toBeLessThan(1);
+  });
+}
+
+test("rapid disclosure reversals settle to the latest state without pinning the text height", async ({
+  page,
+  context,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await mockPosts(context, [article]);
+  await page.goto("/reader/?view=x");
+  const card = page.locator(".post-card");
+  const viewport = card.locator(".x-post-content > div[id]");
+  const toggle = card.locator(".x-text-actions button");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect
+    .poll(() => viewport.evaluate((element) => element.getAnimations().length))
+    .toBe(1);
+  await toggle.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.evaluate((button: HTMLButtonElement) => button.click());
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect
+    .poll(() => viewport.evaluate((element) => element.getAnimations().length))
+    .toBe(0);
+  expect((await viewport.innerText()).length).toBeGreaterThan(300);
+  expect(
+    await viewport.evaluate((element) =>
+      Math.abs(
+        element.getBoundingClientRect().height -
+          (element.firstElementChild?.getBoundingClientRect().height ?? 0),
+      ),
+    ),
+  ).toBeLessThan(1);
+  await toggle.click();
+  await expect
+    .poll(() => viewport.evaluate((element) => element.getAnimations().length))
+    .toBe(0);
+  expect((await viewport.innerText()).length).toBeLessThanOrEqual(303);
+});

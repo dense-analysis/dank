@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useDisclosureHeight } from "../hooks/useDisclosureHeight";
 import {
   truncateXText,
   X_COLLAPSED_CHARACTERS,
@@ -21,7 +22,11 @@ export function XPostPreview({
 }) {
   const [expanded, setExpanded] = useState(false);
   const textId = useId();
-  const text = useRef<HTMLDivElement>(null);
+  const {
+    viewport: text,
+    displayExpanded,
+    prepare,
+  } = useDisclosureHeight(expanded);
   const returnToPost = useRef(false);
 
   useLayoutEffect(() => {
@@ -50,13 +55,13 @@ export function XPostPreview({
         ? "instant"
         : "smooth",
     });
-  }, [expanded]);
+  }, [expanded, text]);
   const paragraphs = useMemo(() => xTextParagraphs(html), [html]);
   const length = useMemo(() => xPostLength(paragraphs), [paragraphs]);
   const canExpand = length.characters > X_COLLAPSED_CHARACTERS;
   // Replies without an internal reader destination must remain fully expandable.
   const needsReader = length.articleLength && navigation;
-  const limit = !expanded
+  const limit = !displayExpanded
     ? X_COLLAPSED_CHARACTERS
     : needsReader
       ? X_EXPANDED_CHARACTERS
@@ -69,7 +74,7 @@ export function XPostPreview({
   return (
     <>
       <div id={textId} ref={text}>
-        {expanded && !navigation ? (
+        {displayExpanded && !navigation ? (
           <ArticleBody html={html} query={query} />
         ) : (
           <XPostText
@@ -87,6 +92,7 @@ export function XPostPreview({
             aria-expanded={expanded}
             aria-controls={textId}
             onClick={() => {
+              prepare();
               returnToPost.current = expanded;
               setExpanded(!expanded);
             }}
