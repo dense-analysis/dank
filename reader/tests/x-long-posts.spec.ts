@@ -355,10 +355,18 @@ test("expanding preserves attachment state and suppresses raw URLs represented b
     const player = element as HTMLVideoElement;
     player.muted = true;
     await player.play();
-    player.pause();
-    player.currentTime = 0.5;
   });
-  await expect(video).toHaveJSProperty("currentTime", 0.5);
+  await expect
+    .poll(() =>
+      video.evaluate((element) => (element as HTMLVideoElement).currentTime),
+    )
+    .toBeGreaterThan(0.1);
+  const savedTime = await video.evaluate((element) => {
+    const player = element as HTMLVideoElement;
+    player.pause();
+
+    return player.currentTime;
+  });
   const originalVideo = await video.elementHandle();
 
   for (const label of ["Show more", "Show less"]) {
@@ -374,8 +382,69 @@ test("expanding preserves attachment state and suppresses raw URLs represented b
         originalVideo,
       ),
     ).toBe(true);
-    await expect(video).toHaveJSProperty("currentTime", 0.5);
+    await expect(video).toHaveJSProperty("currentTime", savedTime);
   }
 
   await originalVideo?.dispose();
+});
+
+test("long conversation replies fully expand when no internal reader destination exists", async ({
+  page,
+  context,
+}) => {
+  const focused = makePost(
+    "conversation-parent",
+    "<p>A short parent post.</p>",
+  );
+  const post: Post = {
+    ...focused,
+    x: {
+      ...focused.x,
+      handle: "researcher",
+      name: "A Researcher",
+      replies_status: "captured",
+      replies_captured_count: 1,
+      conversation: {
+        status: "captured",
+        captured_at: "2026-10-17T00:00:00Z",
+        has_more: false,
+        reason: null,
+        reported_replies: 1,
+        limit: 50,
+        context: [],
+        replies: [
+          {
+            ...article,
+            parent_id: focused.id,
+            depth: 0,
+            is_author: true,
+            missing_parent: false,
+          },
+        ],
+      },
+    },
+  };
+  await mockPosts(context, [post]);
+  await page.goto(
+    "/reader/?view=x&article=conversation-parent&article_source=x.com",
+  );
+  const reader = page.getByRole("main", { name: "X post reader" });
+  const reply = reader.locator(".x-conversation-entry");
+  await expect(reply).toHaveCount(1);
+  await expect(reply.getByText(ending, { exact: true })).toHaveCount(0);
+  await expect(reply.getByRole("link", { name: /Read full post/ })).toHaveCount(
+    0,
+  );
+  const originalUrl = page.url();
+  await reply.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(page).toHaveURL(originalUrl);
+  await expect(reply.getByText(ending, { exact: true })).toBeVisible();
+  await expect(reply.locator(".article-body p")).toHaveCount(
+    articleParagraphs.length + 1,
+  );
+  await expect(reply.getByRole("link", { name: /Read full post/ })).toHaveCount(
+    0,
+  );
+  await reply.getByRole("button", { name: "Show less", exact: true }).click();
+  await expect(reply.getByText(ending, { exact: true })).toHaveCount(0);
 });
