@@ -2,7 +2,10 @@ import { filterParams } from "./navigation";
 import type { Filters, Post, PostPage, Source } from "./types";
 import { isPost, isRecord, isSource } from "./validation";
 
-async function request(path: string, signal?: AbortSignal): Promise<unknown> {
+export async function request(
+  path: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
   const response = await fetch(`/api/reader${path}`, {
     signal,
     headers: { Accept: "application/json" },

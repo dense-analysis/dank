@@ -8,6 +8,7 @@ import "@fontsource-variable/dm-sans/wght-italic.css";
 import "@fontsource-variable/newsreader/standard.css";
 import "@fontsource-variable/newsreader/standard-italic.css";
 import "./styles.css";
+import "./youtube.css";
 
 const client = new QueryClient({
   defaultOptions: {

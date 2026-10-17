@@ -5,6 +5,7 @@ export const feedLabels: Record<FeedKind, string> = {
   stories: "Blogs",
   x: "X",
   reddit: "Reddit",
+  youtube: "YouTube",
 };
 
 export function sectionFromView(view: string | null): Section {
@@ -12,6 +13,7 @@ export function sectionFromView(view: string | null): Section {
     case "stories":
     case "x":
     case "reddit":
+    case "youtube":
     case "sources":
     case "settings":
       return view;
@@ -22,6 +24,8 @@ export function sectionFromView(view: string | null): Section {
 
 export function sourceKind(domain: string): Exclude<FeedKind, "all"> {
   switch (domain.toLowerCase().replace(/^www\./, "")) {
+    case "youtube.com":
+      return "youtube";
     case "reddit.com":
       return "reddit";
     case "x.com":

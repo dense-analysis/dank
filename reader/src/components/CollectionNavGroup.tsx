@@ -20,6 +20,8 @@ export function CollectionNavGroup({
   items,
   select,
   selectItem,
+  countLabel = "collected posts",
+  caseSensitive = false,
 }: {
   id: string;
   label: string;
@@ -30,6 +32,8 @@ export function CollectionNavGroup({
   items: CollectionItem[];
   select: () => void;
   selectItem: (id: string) => void;
+  countLabel?: string;
+  caseSensitive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -64,7 +68,10 @@ export function CollectionNavGroup({
       >
         {items.map((item) => {
           const current =
-            active && selected.toLowerCase() === item.id.toLowerCase();
+            active &&
+            (caseSensitive
+              ? selected === item.id
+              : selected.toLowerCase() === item.id.toLowerCase());
 
           return (
             <li key={item.id}>
@@ -74,7 +81,7 @@ export function CollectionNavGroup({
                 aria-current={current ? "page" : undefined}
                 onClick={() => selectItem(item.id)}
                 title={item.title ?? item.label}
-                aria-label={`${item.accessibleLabel ?? item.label}, ${item.count} collected posts`}
+                aria-label={`${item.accessibleLabel ?? item.label}, ${item.count} ${countLabel}`}
               >
                 {item.avatar}
                 <span className="collection-name">{item.label}</span>

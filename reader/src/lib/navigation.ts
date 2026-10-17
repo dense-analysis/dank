@@ -31,7 +31,9 @@ export function parseFilters(params: URLSearchParams): Filters {
   const before = params.get("before") ?? "";
   const section = sectionFromView(params.get("view"));
   const kind =
-    section === "sources" || section === "settings" ? "all" : section;
+    section === "sources" || section === "settings" || section === "youtube"
+      ? "all"
+      : section;
 
   return {
     ...defaultFilters,

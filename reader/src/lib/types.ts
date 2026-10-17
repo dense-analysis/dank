@@ -80,7 +80,7 @@ export interface Post {
 }
 
 export interface Source {
-  kind?: "rss" | "x" | "reddit";
+  kind?: "rss" | "x" | "reddit" | "youtube";
   accounts?: XAccount[];
   communities?: RedditCommunity[];
   flairs?: RedditFlair[];
@@ -158,7 +158,7 @@ export interface XConversation {
   latest_attempt_at?: string | null;
 }
 
-export type FeedKind = "all" | "stories" | "x" | "reddit";
+export type FeedKind = "all" | "stories" | "x" | "reddit" | "youtube";
 export type Section = FeedKind | "sources" | "settings";
 
 export interface Filters {

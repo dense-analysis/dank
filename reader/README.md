@@ -188,6 +188,29 @@ The reader orders stored posts by date or search relevance. Reddit collection
 defaults to Top for the past day; source configuration can change the sort
 and time window before scraping. Refreshing this view reloads collected posts.
 
+## YouTube
+
+**YouTube** saves the context of discovery: Hype rankings, News topics, channel
+feeds, Shorts and community posts. Expand its sidebar list to choose a feed or
+channel. Search and the Videos / Shorts / Posts filters stay in the URL.
+
+Landscape videos, portrait Shorts and community posts have distinct layouts.
+Select a title or its information button to inspect the captured shelf, rank,
+region, playlist and collection time. **Feed snapshot** means the feed entry is
+saved; it does not claim transcripts or comments were collected. The collector
+configuration controls feed selection, Shorts and video downloads.
+
+Playback starts only when selected. Downloaded videos play locally; other videos
+connect to YouTube, with a separate link to the original. Playback pauses when
+scrolled away or another player starts, and its position survives navigation
+between the collection and discovery details in this reader tab.
+
+**From your feeds** combines YouTube links found in collected X posts, Reddit
+discussions and articles. Each video appears once, with its source posts linked
+from the discovery details. Opening a source post and going Back preserves the
+YouTube search and selection. YouTube collection is not required to browse those
+existing links.
+
 ## Structure
 
 React + TypeScript + Vite, with native CSS, Lucide icons, TanStack Query for

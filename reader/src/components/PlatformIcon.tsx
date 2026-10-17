@@ -4,7 +4,7 @@ export function PlatformIcon({
   platform,
   size = 19,
 }: {
-  platform: "x" | "reddit";
+  platform: "x" | "reddit" | "youtube";
   size?: number;
 }) {
   return (
@@ -22,7 +22,12 @@ export function PlatformIcon({
       aria-hidden="true"
       focusable="false"
     >
-      {platform === "x" ? (
+      {platform === "youtube" ? (
+        <>
+          <rect x="2" y="5" width="20" height="14" rx="4" />
+          <path d="m10 9 5 3-5 3z" />
+        </>
+      ) : platform === "x" ? (
         <>
           <path d="M4 4l11.733 16h4.267l-11.733 -16l-4.267 0" />
           <path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772" />

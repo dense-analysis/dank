@@ -278,7 +278,7 @@ export function isSource(value: unknown): value is Source {
     isCount(value.count) &&
     isOptionalFlairs(value.flairs) &&
     (value.kind === undefined ||
-      ["rss", "x", "reddit"].includes(String(value.kind))) &&
+      ["rss", "x", "reddit", "youtube"].includes(String(value.kind))) &&
     (value.accounts === undefined ||
       (Array.isArray(value.accounts) &&
         value.accounts.every(

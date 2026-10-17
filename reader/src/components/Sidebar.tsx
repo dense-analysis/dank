@@ -1,5 +1,15 @@
-import { Layers3, Newspaper, Rss, Settings2, X } from "lucide-react";
+import {
+  Layers3,
+  Link2,
+  Newspaper,
+  Play,
+  Rss,
+  Settings2,
+  TvMinimal,
+  X,
+} from "lucide-react";
 import type { RedditCommunity, Section, XAccount } from "../lib/types";
+import type { YouTubeSources } from "../lib/youtubeCollection";
 import { CollectionNavGroup } from "./CollectionNavGroup";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { IdentityAvatar } from "./IdentityAvatar";
@@ -16,6 +26,9 @@ export function Sidebar({
   accounts,
   account,
   selectAccount,
+  youtubeSources,
+  youtubeSelection,
+  selectYouTube,
   mobileOpen,
   close,
 }: {
@@ -29,6 +42,9 @@ export function Sidebar({
   accounts: XAccount[];
   account: string;
   selectAccount: (account: string) => void;
+  youtubeSources?: YouTubeSources;
+  youtubeSelection: string;
+  selectYouTube: (selection: string) => void;
   mobileOpen: boolean;
   close: () => void;
 }) {
@@ -121,6 +137,44 @@ export function Sidebar({
             }))}
           />
         )}
+        <CollectionNavGroup
+          id="youtube-feeds"
+          label="YouTube"
+          itemsLabel="YouTube feeds"
+          icon={<PlatformIcon platform="youtube" />}
+          active={section === "youtube"}
+          selected={youtubeSelection}
+          select={() => select("youtube")}
+          selectItem={selectYouTube}
+          countLabel="discoveries"
+          caseSensitive
+          items={
+            youtubeSources
+              ? [
+                  {
+                    id: "linked",
+                    label: "From your feeds",
+                    count: youtubeSources.linked_count,
+                    avatar: <Link2 size={15} />,
+                  },
+                  ...youtubeSources.feeds
+                    .filter((feed) => feed.kind !== "channel")
+                    .map((feed) => ({
+                      id: `feed:${feed.id}`,
+                      label: feed.name,
+                      count: feed.count,
+                      avatar: <Play size={15} />,
+                    })),
+                  ...youtubeSources.channels.map((channel) => ({
+                    id: `channel:${channel.id}`,
+                    label: channel.name,
+                    count: channel.count,
+                    avatar: <TvMinimal size={15} />,
+                  })),
+                ]
+              : []
+          }
+        />
         <button
           type="button"
           className={`nav-item ${section === "sources" ? "active" : ""}`}

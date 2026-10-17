@@ -27,6 +27,7 @@ import { ReaderSettings } from "./components/ReaderSettings";
 import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
 import { XPostCard } from "./components/XPostCard";
+import { YouTubeCollection } from "./components/YouTubeCollection";
 import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
@@ -43,6 +44,7 @@ import { readingFonts } from "./lib/preferences";
 import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
 import { isXPost } from "./lib/x";
+import { fetchYouTubeSources } from "./lib/youtubeCollection";
 
 export function App() {
   const { params, navigate, backTo, positionError } = useLocation();
@@ -50,7 +52,8 @@ export function App() {
   const { preferences } = useReaderPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
   const section = sectionFromView(params.get("view"));
-  const feedSection = section !== "sources" && section !== "settings";
+  const feedSection =
+    section !== "sources" && section !== "settings" && section !== "youtube";
   const filters = parseFilters(params);
   const articleId = params.get("article");
   const articleDomain = params.get("article_source");
@@ -58,6 +61,10 @@ export function App() {
   const sources = useQuery({
     queryKey: ["sources"],
     queryFn: ({ signal }) => fetchSources(signal),
+  });
+  const youtubeSources = useQuery({
+    queryKey: ["youtube-sources"],
+    queryFn: ({ signal }) => fetchYouTubeSources(signal),
   });
   const posts = useInfiniteQuery({
     queryKey: ["posts", filters],
@@ -134,31 +141,39 @@ export function App() {
   const communityName = activeCommunity?.name ?? filters.community;
   const visibleSources = sourcesForFeed(allSources, filters.kind);
   const title =
-    section === "settings"
-      ? "Settings"
-      : section === "sources"
-        ? "Sources"
-        : communityContext
-          ? `r/${communityName}`
-          : accountContext
-            ? accountHasName
-              ? accountName
-              : `@${accountHandle}`
-            : feedLabels[filters.kind];
+    section === "youtube"
+      ? "YouTube"
+      : section === "settings"
+        ? "Settings"
+        : section === "sources"
+          ? "Sources"
+          : communityContext
+            ? `r/${communityName}`
+            : accountContext
+              ? accountHasName
+                ? accountName
+                : `@${accountHandle}`
+              : feedLabels[filters.kind];
   const overviewPlatform =
     !accountContext &&
     !communityContext &&
     (section === "x" || section === "reddit")
       ? section
       : null;
-  const headerTitle = overviewPlatform ? (
-    <>
-      <PlatformIcon platform={overviewPlatform} size={24} />
-      <span className="visually-hidden">{title}</span>
-    </>
-  ) : (
-    title
-  );
+  const headerTitle =
+    section === "youtube" ? (
+      <>
+        <PlatformIcon platform="youtube" size={23} />
+        <span>YouTube</span>
+      </>
+    ) : overviewPlatform ? (
+      <>
+        <PlatformIcon platform={overviewPlatform} size={24} />
+        <span className="visually-hidden">{title}</span>
+      </>
+    ) : (
+      title
+    );
   const date = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
@@ -169,7 +184,11 @@ export function App() {
     const next = filterParams({
       ...nextFilters,
       kind:
-        nextView === "sources" || nextView === "settings" ? "all" : nextView,
+        nextView === "sources" ||
+        nextView === "settings" ||
+        nextView === "youtube"
+          ? "all"
+          : nextView,
     });
     if (nextView !== "all") next.set("view", nextView);
     navigate(next);
@@ -178,7 +197,7 @@ export function App() {
   function changeFilters(nextFilters: Filters) {
     navigate(filterParams(nextFilters), true);
   }
-  function openPost(post: Post) {
+  function openPost(post: Pick<Post, "id" | "domain">) {
     const next = articleParams(params, post);
     navigate(next, false, params.toString());
   }
@@ -207,6 +226,17 @@ export function App() {
     navigate(filterParams({ ...filters, author, authorExact: true }));
   }
 
+  function selectYouTube(selection: string) {
+    const next = new URLSearchParams({ view: "youtube" });
+    if (selection === "linked") next.set("feed", "linked");
+    else if (selection.startsWith("channel:"))
+      next.set("channel", selection.slice(8));
+    else if (selection.startsWith("feed:"))
+      next.set("feed", selection.slice(5));
+    navigate(next);
+    setMobileOpen(false);
+  }
+
   const sidebar = (
     <Sidebar
       section={section}
@@ -219,6 +249,17 @@ export function App() {
       accounts={accounts}
       account={filters.account}
       selectAccount={selectAccount}
+      youtubeSources={youtubeSources.data}
+      youtubeSelection={
+        params.get("channel")
+          ? `channel:${params.get("channel")}`
+          : params.get("feed") === "linked"
+            ? "linked"
+            : params.get("feed")
+              ? `feed:${params.get("feed")}`
+              : ""
+      }
+      selectYouTube={selectYouTube}
       mobileOpen={mobileOpen}
       close={() => setMobileOpen(false)}
     />
@@ -249,7 +290,7 @@ export function App() {
         sidebar
       )}
       <div
-        className={`main-shell ${communityContext || accountContext ? "collection-context" : ""}`}
+        className={`main-shell ${section === "youtube" ? "youtube-shell" : ""} ${communityContext || accountContext ? "collection-context" : ""}`}
       >
         <header className="topbar">
           <button
@@ -284,7 +325,7 @@ export function App() {
                 iconUrl={activeCommunity?.icon_url}
               />
             )}
-            {feedSection && !readingArticle ? (
+            {(feedSection || section === "youtube") && !readingArticle ? (
               <h1 className="collection-title" title={title}>
                 {headerTitle}
               </h1>
@@ -336,7 +377,7 @@ export function App() {
         )}
         <div hidden={readingArticle}>
           <div
-            className={`page-grid ${section === "settings" ? "settings-page" : ""}`}
+            className={`page-grid ${section === "youtube" ? "youtube-page" : ""} ${section === "settings" ? "settings-page" : ""}`}
           >
             <main
               id={readingArticle ? undefined : "main"}
@@ -345,27 +386,50 @@ export function App() {
               tabIndex={-1}
               data-page-focus
             >
-              {!accountContext && !communityContext && (
-                <div className="page-heading">
-                  {feedSection && <p className="eyebrow">{date}</p>}
-                  {section === "reddit" && (
-                    <p className="collection-description">
-                      Collected posts from your communities.
-                    </p>
-                  )}
-                  {section === "x" && (
-                    <p className="collection-description">
-                      Collected posts from your X accounts.
-                    </p>
-                  )}
-                  {!feedSection && (
-                    <div className="title-row">
-                      <h1>{title}</h1>
-                    </div>
-                  )}
-                </div>
-              )}
-              {section === "settings" ? (
+              {!accountContext &&
+                !communityContext &&
+                section !== "youtube" && (
+                  <div className="page-heading">
+                    {feedSection && <p className="eyebrow">{date}</p>}
+                    {section === "reddit" && (
+                      <p className="collection-description">
+                        Collected posts from your communities.
+                      </p>
+                    )}
+                    {section === "x" && (
+                      <p className="collection-description">
+                        Collected posts from your X accounts.
+                      </p>
+                    )}
+                    {!feedSection && (
+                      <div className="title-row">
+                        <h1>{title}</h1>
+                      </div>
+                    )}
+                  </div>
+                )}
+              {section === "youtube" ? (
+                !readingArticle && (
+                  <YouTubeCollection
+                    params={params}
+                    navigate={navigate}
+                    backTo={backTo}
+                    sources={youtubeSources.data}
+                    sourcesError={
+                      youtubeSources.isError
+                        ? youtubeSources.error.message
+                        : undefined
+                    }
+                    retrySources={() => void youtubeSources.refetch()}
+                    openReference={(reference) =>
+                      openPost({
+                        id: reference.post_id,
+                        domain: reference.domain,
+                      })
+                    }
+                  />
+                )
+              ) : section === "settings" ? (
                 <ReaderSettings />
               ) : section === "sources" ? (
                 sources.isError ? (
