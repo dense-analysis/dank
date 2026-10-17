@@ -280,3 +280,25 @@ async def test_article_reuses_original_but_not_an_aggregators_identity(
     if requested:
         assert requested[0].identity is None
         assert client.rows["raw_posts"][-1]["domain"] == "publisher.test"
+
+
+async def test_saved_destination_lookup_uses_stable_result_column_names(
+) -> None:
+    from dank.scrape.runner import (
+        _known_link_destinations,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    url = "https://publisher.test/story"
+    client = AsyncMock()
+    client.fetch_json.return_value = SimpleNamespace(rows=[{
+        "lookup_url": url, "domain": "publisher.test", "post_id": "saved",
+        "url": url, "html": "<p>Saved body</p>", "source": "rss",
+    }])
+    result = await _known_link_destinations(client, [url])
+    query = client.fetch_json.call_args.args[0]
+
+    for name in ("domain", "post_id", "url", "html", "source"):
+        assert f"p.{name} AS {name}" in query
+
+    assert result[url]["domain"] == "publisher.test"
+    client.fetch_json.assert_awaited_once()

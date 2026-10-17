@@ -645,8 +645,9 @@ async def _known_link_destinations(
     client: ClickHouseClient, urls: list[str],
 ) -> dict[str, dict[str, Any]]:
     result = await client.fetch_json(
-        "SELECT u.url AS lookup_url, p.domain, p.post_id, p.url, "
-        "p.html, p.source FROM post_urls AS u FINAL "
+        "SELECT u.url AS lookup_url, p.domain AS domain, "
+        "p.post_id AS post_id, p.url AS url, p.html AS html, "
+        "p.source AS source FROM post_urls AS u FINAL "
         "INNER JOIN (SELECT domain, post_id, url, html, source, updated_at "
         "FROM posts "
         "FINAL) AS p ON p.domain = u.domain AND p.post_id = u.post_id "
