@@ -347,7 +347,7 @@ async def test_reddit_sources_include_configured_empty_communities(
     )))
     fake = FakeClickHouse(
         [{"domain": "reddit.com", "count": 7}],
-        [{"community": "localllama", "count": 7}], [], [],
+        [{"community": "localllama", "count": 7}], [], [], [],
     )
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/sources")
@@ -355,8 +355,10 @@ async def test_reddit_sources_include_configured_empty_communities(
     assert response.status == 200
     assert data["sources"][0]["kind"] == "reddit"
     assert data["sources"][0]["communities"] == [
-        {"name": "accelerate", "count": 0, "icon_url": None, "flairs": []},
-        {"name": "LocalLLaMA", "count": 7, "icon_url": None, "flairs": []},
+        {"name": "accelerate", "count": 0, "icon_url": None,
+         "flairs": [], "post_total": None},
+        {"name": "LocalLLaMA", "count": 7, "icon_url": None,
+         "flairs": [], "post_total": None},
     ]
 
 
@@ -746,7 +748,7 @@ async def test_community_identity_and_flair_choices_are_shared_with_posts(
         [{"domain": "reddit.com", "count": 9}],
         [{"community": "localllama", "count": 7},
          {"community": "accelerate", "count": 2}],
-        [icon_row],
+        [icon_row], [],
         [{"community": "localllama", "name": "Discussion", "count": 4},
          {"community": "localllama", "name": "New Model", "count": 3},
          {"community": "accelerate", "name": "Discussion", "count": 2}],
@@ -773,3 +775,32 @@ async def test_community_identity_and_flair_choices_are_shared_with_posts(
     metadata = json.loads(response.text or "")["reddit"]
     assert metadata["icon_url"] == "/assets/community.png"
     assert metadata["flair"] == "New Model"
+
+
+async def test_community_totals_include_archive_provenance_and_both_dates(
+    app: web.Application,
+) -> None:
+    state = app['state']
+    app['state'] = state._replace(settings=state.settings._replace(sources=(
+        SourceConfig('reddit.com', (), feed_urls=(
+            'https://www.reddit.com/r/Conspiracy/',
+            'https://www.reddit.com/r/empty/',
+        )),
+    )))
+    app['clickhouse'] = FakeClickHouse(
+        [{'domain': 'reddit.com', 'count': 238}],
+        [{'community': 'conspiracy', 'count': 238}], [],
+        [{'community': 'conspiracy', 'total_posts': 1866004,
+          'source': 'arctic_shift', 'updated_at': '2026-10-11T09:26:38+00:00',
+          'scraped_at': '2026-10-17T15:00:00+00:00'}], [],
+    )
+    response = await request(app, '/api/reader/sources')
+    assert response.status == 200
+    communities = json.loads(response.text or '')['sources'][0]['communities']
+    assert communities[0]['count'] == 238
+    assert communities[0]['post_total'] == {
+        'count': 1866004, 'source': 'arctic_shift',
+        'updated_at': '2026-10-11T09:26:38+00:00',
+        'captured_at': '2026-10-17T15:00:00+00:00',
+    }
+    assert communities[1]['post_total'] is None

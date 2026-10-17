@@ -149,6 +149,12 @@ those with no collected posts yet.
 
 A community's name and cached icon stay visible in a compact sticky header.
 The same frosted header includes a back arrow to Reddit and its collected count.
+After collection, it also shows an approximate community post total from Arctic
+Shift's archive, marked **≈**. Hover the count for exact numbers, provenance,
+the archive count's update date and when DANK retrieved it. These totals count
+archived posts and may differ from Reddit's current public posts. A failed refresh
+keeps the last saved estimate and its dates; communities without an estimate show
+only the collected count. Search and filters do not change community-wide counts.
 Its cards omit the repeated community identity; the combined Reddit feed keeps
 community names and icons on each card. Search identifies its current scope,
 such as **Search r/LocalLLaMA**, **Search Reddit**, or the selected source.

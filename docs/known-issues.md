@@ -8,6 +8,21 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Reddit community total estimates
+
+Community headings use Arctic Shift's archived post count as an estimate, marked
+**≈**, rather than claiming a complete Reddit total. Hover text identifies Arctic
+Shift, its count update timestamp and DANK's retrieval time. Normal Reddit scrapes
+refresh the metadata once per configured community per run, independently of media
+settings; browsing and detail-only refreshes make no archive requests. Counts can
+lag or differ from currently visible Reddit posts. Failed, missing or invalid
+responses leave the previous estimate and dates intact and do not stop listing
+collection; fetch/parse failures remain visible in run history. An older archive
+update cannot replace a newer saved one. Communities without a saved estimate
+keep their collected-only heading. See [collection details](features/reddit.md#community-total-estimates),
+[enrichment tests](../tests/scrape/test_reddit_totals.py) and
+[reader acceptance tests](../reader/tests/collections.spec.ts).
+
 ## Latest full-scrape check
 
 On **2026-10-17**, Docker run `19bb2610-7163-4591-ba27-f409be8eaa69`

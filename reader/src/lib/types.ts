@@ -47,11 +47,19 @@ export interface RedditFlair {
   count: number;
 }
 
+export interface CommunityPostTotal {
+  count: number;
+  source: "arctic_shift";
+  updated_at: string;
+  captured_at: string;
+}
+
 export interface RedditCommunity {
   name: string;
   count: number;
   icon_url?: string | null;
   flairs?: RedditFlair[];
+  post_total?: CommunityPostTotal | null;
 }
 
 export interface Post {

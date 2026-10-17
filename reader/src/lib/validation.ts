@@ -25,6 +25,26 @@ function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+function isTimestamp(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+function isOptionalPostTotal(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (isRecord(value) &&
+      isCount(value.count) &&
+      value.source === "arctic_shift" &&
+      isTimestamp(value.updated_at) &&
+      isTimestamp(value.captured_at))
+  );
+}
+
 function isOptionalIcon(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string";
 }
@@ -278,7 +298,8 @@ export function isSource(value: unknown): value is Source {
             typeof community.name === "string" &&
             isCount(community.count) &&
             isOptionalIcon(community.icon_url) &&
-            isOptionalFlairs(community.flairs),
+            isOptionalFlairs(community.flairs) &&
+            isOptionalPostTotal(community.post_total),
         )))
   );
 }

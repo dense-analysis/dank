@@ -39,6 +39,7 @@ async def test_loaded_defaults_reach_the_collector_as_top_for_the_day(
         yield ScrapeBatch([], [])
 
     monkeypatch.setattr(runner, "scrape_reddit_communities", collect)
+    monkeypatch.setattr(runner, "_refresh_reddit_totals", AsyncMock())
     client = AsyncMock()
     client.fetch_json.return_value = QueryResult([])
     _ = [batch async for batch in _discover_source_batches(
@@ -65,9 +66,10 @@ async def test_reddit_dispatch_uses_community_sort_and_limits(
         yield ScrapeBatch([], [])
 
     monkeypatch.setattr(runner, "scrape_reddit_communities", collect)
+    monkeypatch.setattr(runner, "_refresh_reddit_totals", AsyncMock())
     client = AsyncMock()
     client.fetch_json.return_value = QueryResult([])
-    # Reddit reads the detail archive but does not use RSS HTTP discovery.
+    # Reddit reads saved details and enriches totals before browser collection.
     batches = [batch async for batch in _discover_source_batches(
         settings, source, client, cast(Any, None),
         cast(Any, session), feed_staleness=datetime.timedelta(days=1),

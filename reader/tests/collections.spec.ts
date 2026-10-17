@@ -688,3 +688,85 @@ for (const width of [1440, 390, 320]) {
     await expect(page).toHaveURL(/view=sources/);
   });
 }
+
+for (const width of [320, 390, 1280]) {
+  test(`community header shows the archive estimate and dated provenance at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 });
+    const enriched = sources.map((source) =>
+      source.kind !== "reddit"
+        ? source
+        : {
+            ...source,
+            communities: [
+              {
+                name: "LocalLLaMA",
+                count: 238,
+                post_total: {
+                  count: 1866004,
+                  source: "arctic_shift" as const,
+                  updated_at: "2026-10-11T09:26:38Z",
+                  captured_at: "2026-10-17T15:00:00Z",
+                },
+              },
+            ],
+          },
+    );
+    await mockCollections(page, true, enriched);
+    await page.goto(
+      "/reader/?view=reddit&community=LocalLLaMA&q=missing&after=2026-10-01",
+    );
+    const header = page.locator(".topbar");
+    const pill = header.locator(".collection-count-pill");
+    await expect(header.locator(".collection-count-values")).toHaveText(
+      "238/≈1.8Mposts",
+    );
+    await pill.hover();
+    await expect(pill).toHaveAttribute(
+      "title",
+      "238 posts collected / approximately 1,866,004 total posts, based on Arctic Shift's archive. Archive count updated 11 Oct 2026, 09:26 UTC; retrieved 17 Oct 2026, 15:00 UTC. Archive coverage may be incomplete.",
+    );
+    await expect(pill.locator(".visually-hidden")).toContainText(
+      "Arctic Shift",
+    );
+    await expect(pill).not.toHaveAttribute("title", /reported by X/);
+    await noOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`community-total-${width}.png`),
+    });
+    await header
+      .getByRole("button", { name: "Back to Reddit", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/reader\/\?view=reddit$/);
+  });
+}
+
+test("a successful zero archive count remains distinct from an unknown total", async ({
+  page,
+}) => {
+  const enriched = sources.map((source) =>
+    source.kind !== "reddit"
+      ? source
+      : {
+          ...source,
+          communities: [
+            {
+              name: "LocalLLaMA",
+              count: 0,
+              post_total: {
+                count: 0,
+                source: "arctic_shift" as const,
+                updated_at: "2026-10-11T09:26:38Z",
+                captured_at: "2026-10-17T15:00:00Z",
+              },
+            },
+          ],
+        },
+  );
+  await mockCollections(page, true, enriched);
+  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await expect(page.locator(".topbar .collection-count-values")).toHaveText(
+    "0/≈0posts",
+  );
+});

@@ -412,3 +412,55 @@ describe("reader API", () => {
     await expect(fetchSources()).rejects.toBe(error);
   });
 });
+
+it("validates archive estimates and provenance while accepting communities without them", async () => {
+  const estimate = {
+    count: 1866004,
+    source: "arctic_shift",
+    updated_at: "2026-10-11T09:26:38+00:00",
+    captured_at: "2026-10-17T15:00:00+00:00",
+  };
+  const source = {
+    domain: "reddit.com",
+    name: "Reddit",
+    count: 238,
+    tags: [],
+    communities: [{ name: "conspiracy", count: 238 }],
+  };
+
+  for (const post_total of [
+    undefined,
+    null,
+    estimate,
+    { ...estimate, count: 0 },
+  ]) {
+    const enriched = {
+      ...source,
+      communities: [{ ...source.communities[0], post_total }],
+    };
+    respond({ sources: [enriched], total_posts: 238 });
+    const result = await fetchSources();
+    expect(result.sources[0].communities?.[0].post_total).toEqual(post_total);
+  }
+
+  for (const post_total of [
+    123,
+    { ...estimate, count: -1 },
+    { ...estimate, count: true },
+    { ...estimate, count: "1866004" },
+    { ...estimate, count: Number.MAX_SAFE_INTEGER + 1 },
+    { ...estimate, source: "unknown" },
+    { ...estimate, updated_at: "not a date" },
+    { ...estimate, updated_at: "2026-10-11T09:26:38" },
+    { ...estimate, captured_at: null },
+    { count: 1866004 },
+  ]) {
+    respond({
+      sources: [
+        { ...source, communities: [{ ...source.communities[0], post_total }] },
+      ],
+      total_posts: 238,
+    });
+    await expect(fetchSources()).rejects.toThrow("unexpected response");
+  }
+});

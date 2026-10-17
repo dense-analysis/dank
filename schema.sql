@@ -237,6 +237,18 @@ CREATE TABLE IF NOT EXISTS dank.reddit_community_icons (
 ENGINE = ReplacingMergeTree(scraped_at)
 ORDER BY community;
 
+CREATE TABLE IF NOT EXISTS dank.reddit_community_totals (
+    community String,
+    total_posts UInt64,
+    source LowCardinality(String),
+    updated_at DateTime64(3, 'UTC'),
+    scraped_at DateTime64(3, 'UTC'),
+    request_url String,
+    payload String CODEC(ZSTD(3))
+)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY community;
+
 ALTER TABLE dank.raw_posts
     ADD COLUMN IF NOT EXISTS is_reference UInt8 ALIAS (
         source = 'x'

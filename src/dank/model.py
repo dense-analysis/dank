@@ -95,3 +95,14 @@ class RedditCommunityDiscovery(NamedTuple):
     scraped_at: datetime.datetime
     request_url: str
     payload: str
+
+
+class RedditCommunityTotal(NamedTuple):
+    """An archive's post-count estimate, with its original response."""
+
+    community: str
+    total_posts: int
+    updated_at: datetime.datetime
+    scraped_at: datetime.datetime
+    request_url: str
+    payload: str

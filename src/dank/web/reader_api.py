@@ -33,7 +33,7 @@ from dank.web.reader_accounts import (
     source_accounts,
     source_kind,
 )
-from dank.web.reader_communities import community_icons
+from dank.web.reader_communities import community_icons, community_totals
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
 from dank.web.reader_query import (
@@ -153,6 +153,7 @@ async def _reddit_source_metadata(
         str(row["community"]): int(row["count"]) for row in result.rows
     }
     icons = await community_icons(client, list(communities), assets_dir)
+    totals = await community_totals(client, list(communities))
     flairs = await reddit_flairs(client)
     global_flairs: Counter[str] = Counter()
 
@@ -163,7 +164,8 @@ async def _reddit_source_metadata(
     return {
         "communities": [
             {"name": name, "count": counts.get(key, 0),
-             "icon_url": icons.get(key), "flairs": flairs.get(key, [])}
+             "icon_url": icons.get(key), "flairs": flairs.get(key, []),
+             "post_total": totals.get(key)}
             for key, name in sorted(communities.items())
         ],
         "flairs": [

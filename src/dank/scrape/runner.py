@@ -39,6 +39,7 @@ from dank.scrape.metrics import (
 from dank.scrape.reddit import scrape_reddit_communities, scrape_reddit_details
 from dank.scrape.reddit.access import RedditRequests, current_requests
 from dank.scrape.reddit.cache import DetailSnapshot
+from dank.scrape.reddit.totals import scrape_community_totals
 from dank.scrape.rss import (
     FeedLink,
     FeedType,
@@ -126,7 +127,9 @@ async def run_scrape(
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
         await _ensure_history_tables(clickhouse_client)
         schema = pathlib.Path(__file__).parents[1] / "storage/reddit.sql"
-        await clickhouse_client.execute(schema.read_text())
+        for statement in schema.read_text().split(";"):
+            if statement.strip():
+                await clickhouse_client.execute(statement)
         await clickhouse_client.insert_rows("scrape_runs", [history.row(1)])
 
         try:
@@ -208,6 +211,7 @@ async def _collect_with_history(
     x_details: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
+    totals_seen: set[str] = set()
     browser_locks = {
         domain: asyncio.Lock() for domain in ("x.com", "reddit.com")
     }
@@ -230,6 +234,7 @@ async def _collect_with_history(
                 browser_locks.get(source.domain),
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 reddit_details=reddit_details, x_details=x_details,
+                totals_seen=totals_seen,
             )
 
     try:
@@ -266,6 +271,7 @@ async def _collect_source(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    totals_seen: set[str] | None = None,
 ) -> None:
     stats = SourceMetrics(index, source)
     history.sources[index] = stats
@@ -296,6 +302,7 @@ async def _collect_source(
                     batch_size=history.batch_size,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
+                    totals_seen=totals_seen,
                 ):
                     stats.discovered(
                         batch.post_count, len(batch.assets),
@@ -363,6 +370,7 @@ async def _discover_source_batches(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    totals_seen: set[str] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     if x_posts or retry_failed_pages or reddit_details or x_details:
         async for batch in _retry_saved_posts(
@@ -383,6 +391,17 @@ async def _discover_source_batches(
             options = source.reddit or RedditSourceConfig()
             communities = tuple(
                 urlsplit(url).path.split("/")[2] for url in source.feed_urls
+            )
+            new_communities = tuple(dict.fromkeys(
+                name.lower() for name in communities
+                if totals_seen is None or name.lower() not in totals_seen
+            ))
+
+            if totals_seen is not None:
+                totals_seen.update(new_communities)
+
+            await _refresh_reddit_totals(
+                clickhouse_client, http_client, new_communities,
             )
             cached_details = await _load_reddit_details(
                 clickhouse_client, communities, settings.reddit,
@@ -445,6 +464,17 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _refresh_reddit_totals(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    communities: tuple[str, ...],
+) -> None:
+    async for total in scrape_community_totals(http_client, communities):
+        # Persist before listing discovery can fail or be cancelled.
+        await client.insert_rows("reddit_community_totals", [{
+            **total._asdict(), "source": "arctic_shift",
+        }])
 
 
 async def _retry_saved_posts(

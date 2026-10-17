@@ -218,7 +218,9 @@ async def test_history_tracks_source_completion_after_persistence(
     runs = harness.client.rows["scrape_runs"]
     sources = harness.client.rows["scrape_source_runs"]
     final = runs[-1]
-    assert len(harness.client.statements) == 10
+    assert len(harness.client.statements) == 11
+    assert any('CREATE TABLE IF NOT EXISTS reddit_community_totals' in sql
+               for sql in harness.client.statements)
     assert runs[0]["status"] == "running"
     assert runs[0]["finished_at"] is None
     assert final["version"] == 2
@@ -384,6 +386,9 @@ async def test_reddit_failures_preserve_posts_and_allow_later_communities(
         "dank.scrape.runner.BrowserSession", Mock(return_value=_Session()),
     )
     monkeypatch.setattr("dank.scrape.reddit._scrape_community", collect)
+    monkeypatch.setattr(
+        "dank.scrape.runner._refresh_reddit_totals", AsyncMock(),
+    )
     monkeypatch.setattr("dank.scrape.reddit.capture_post_detail", detail)
     monkeypatch.setattr(
         "dank.scrape.reddit.capture_post_document",

@@ -102,6 +102,21 @@ Successful captures alongside failures produce a partial source/run outcome.
 A recognized empty listing is normal and does not count as a fetch failure;
 an unrecognized blank page is still reported as a failure.
 
+## Community total estimates
+
+Normal collection also looks up each configured community in [Arctic Shift](https://github.com/ArthurHeitmann/arctic_shift/tree/master/api#subreddits).
+DANK saves the archive's post count, its `num_posts_updated_at` timestamp, the
+retrieval time and original JSON response. The reader shows collected posts out
+of this approximate total; hover it for provenance and both dates. No lookup runs
+when browsing or during the separate detail pass. Media download settings do not
+affect this metadata.
+
+This is an archive count, not an authoritative total of posts currently visible
+on Reddit. Missing records, archive lag and deleted or removed posts can cause
+differences. An unavailable or invalid lookup is logged and counted in the run's
+fetch/parse failures; listing collection continues and the last good estimate
+stays available. Without a valid saved estimate, only the collected count appears.
+
 ## Pacing and saved details
 
 DANK spaces Reddit document requests, navigation and pagination by at least

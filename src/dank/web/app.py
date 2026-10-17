@@ -189,7 +189,9 @@ async def _clickhouse_context(app: web.Application):
 
     try:
         schema = pathlib.Path(__file__).parents[1] / "storage/reddit.sql"
-        await client.execute(schema.read_text())
+        for statement in schema.read_text().split(";"):
+            if statement.strip():
+                await client.execute(statement)
         yield
     finally:
         await client.__aexit__(None, None, None)

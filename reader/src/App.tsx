@@ -306,7 +306,10 @@ export function App() {
             />
           )}
           {communityContext && activeCommunity && (
-            <CollectionCount count={activeCommunity.count} />
+            <CollectionCount
+              count={activeCommunity.count}
+              estimate={activeCommunity.post_total}
+            />
           )}
         </header>
         {(storageError || positionError) && (

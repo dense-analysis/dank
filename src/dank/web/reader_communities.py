@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+from typing import TypedDict
 
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import (
@@ -39,3 +40,33 @@ async def community_icons(
             icons[str(row["community"]).lower()] = view["url"]
 
     return icons
+
+
+class CommunityPostTotal(TypedDict):
+    count: int
+    source: str
+    updated_at: str
+    captured_at: str
+
+
+async def community_totals(
+    client: ClickHouseClient, communities: list[str],
+) -> dict[str, CommunityPostTotal]:
+    if not communities:
+        return {}
+
+    result = await client.fetch_json(
+        "SELECT community, total_posts, source, updated_at, scraped_at "
+        "FROM reddit_community_totals FINAL "
+        "WHERE community IN %(communities)s AND source = 'arctic_shift'",
+        {"communities": sorted({name.lower() for name in communities})},
+    )
+
+    return {
+        str(row["community"]).lower(): {
+            "count": int(row["total_posts"]), "source": str(row["source"]),
+            "updated_at": str(row["updated_at"]),
+            "captured_at": str(row["scraped_at"]),
+        }
+        for row in result.rows
+    }
