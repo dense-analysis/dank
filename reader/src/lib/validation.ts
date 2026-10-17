@@ -190,6 +190,15 @@ export function isPost(value: unknown): value is Post {
   return validPost(value, true);
 }
 
+function isPostReference(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["id", "domain", "url", "title", "source"].every(
+      (key) => typeof value[key] === "string",
+    )
+  );
+}
+
 function validPost(value: unknown, allowConversation: boolean): value is Post {
   return (
     isRecord(value) &&
@@ -204,6 +213,12 @@ function validPost(value: unknown, allowConversation: boolean): value is Post {
       "created_at",
       "source",
     ].every((key) => typeof value[key] === "string") &&
+    (value.linked_post === undefined ||
+      value.linked_post === null ||
+      isPostReference(value.linked_post)) &&
+    (value.links === undefined ||
+      (Array.isArray(value.links) && value.links.every(isPostReference))) &&
+    (value.links_count === undefined || isCount(value.links_count)) &&
     (value.reddit === undefined ||
       value.reddit === null ||
       isRedditPost(value.reddit)) &&

@@ -68,6 +68,14 @@ export interface RedditCommunity {
   post_total?: CommunityPostTotal | null;
 }
 
+export interface PostReference {
+  id: string;
+  domain: string;
+  url: string;
+  title: string;
+  source: string;
+}
+
 export interface Post {
   id: string;
   domain: string;
@@ -77,6 +85,9 @@ export interface Post {
   excerpt: string;
   html: string;
   collection_incomplete?: boolean;
+  linked_post?: PostReference | null;
+  links?: PostReference[];
+  links_count?: number;
   created_at: string;
   source: string;
   reddit?: RedditPost | null;

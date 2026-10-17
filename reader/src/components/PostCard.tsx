@@ -1,4 +1,5 @@
 import { Check, ExternalLink, ImageOff } from "lucide-react";
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
@@ -59,6 +60,7 @@ export function SourceMark({ domain }: { domain: string }) {
 }
 export function PostCard({
   post,
+  links,
   read,
   open,
   href,
@@ -70,6 +72,7 @@ export function PostCard({
   selectFlair,
 }: {
   post: Post;
+  links?: ReactNode;
   read: boolean;
   open: () => void;
   href: string;
@@ -239,6 +242,7 @@ export function PostCard({
           </a>
         </div>
       </div>
+      {links}
     </article>
   );
 }

@@ -1,5 +1,5 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { hackerNewsCaptureReason, hasHackerNewsBody } from "../lib/hackerNews";
 import type { Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
@@ -11,12 +11,16 @@ import { dateLabel } from "./PostCard";
 
 export function HackerNewsDetail({
   post,
+  links,
+  linkedArticle,
   pending,
   loadError,
   filters,
   selectAuthor,
 }: {
   post: Post;
+  links?: ReactNode;
+  linkedArticle?: ReactNode;
   pending: boolean;
   loadError: boolean;
   filters: Filters;
@@ -56,6 +60,7 @@ export function HackerNewsDetail({
         <HackerNewsMetrics story={story} />
       </div>
       <div className="hn-detail-links">
+        {linkedArticle}
         {externalUrl && (
           <a
             className="original-link"
@@ -78,13 +83,16 @@ export function HackerNewsDetail({
           </a>
         )}
       </div>
+      {links}
       {hasText ? (
         <ArticleBody html={post.html} />
       ) : (
         <p className="hn-snapshot-note">
           Saved from the Hacker News front page.
           {externalUrl
-            ? " Open the original article to read the full story."
+            ? linkedArticle
+              ? " Read the collected article or open the original."
+              : " Open the original article to read the full story."
             : " This post has no saved body text."}
         </p>
       )}

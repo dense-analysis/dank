@@ -229,3 +229,29 @@ it("uses the full saved body to recognize a truncated URL excerpt", () => {
     "A useful project",
   );
 });
+
+it("validates collected destination identities and incoming references", () => {
+  const linked = {
+    id: "article",
+    domain: "example.com",
+    url: "https://example.com/article",
+    title: "Original article",
+    source: "rss",
+  };
+  expect(
+    isPost({ ...post, linked_post: linked, links: [linked], links_count: 1 }),
+  ).toBe(true);
+  expect(
+    isPost({ ...post, linked_post: null, links: [], links_count: 0 }),
+  ).toBe(true);
+  for (const invalid of [
+    { linked_post: { ...linked, id: 1 } },
+    { linked_post: "https://example.com/article" },
+    { links: [{ ...linked, domain: null }] },
+    { links: [null] },
+    { links: linked },
+    { links_count: -1 },
+  ]) {
+    expect(isPost({ ...post, ...invalid })).toBe(false);
+  }
+});

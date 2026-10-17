@@ -1,4 +1,5 @@
 import { ArrowUp, Check, ExternalLink, MessageCircle } from "lucide-react";
+import type { ReactNode } from "react";
 import { calendarDate } from "../lib/dateRanges";
 import { hackerNewsExcerpt, hackerNewsFilters } from "../lib/hackerNews";
 import type {
@@ -93,6 +94,9 @@ function linkedHost(url: string | null) {
 
 export function HackerNewsCard({
   post,
+  links,
+  discussionHref,
+  openDiscussion,
   read,
   open,
   href,
@@ -101,6 +105,9 @@ export function HackerNewsCard({
   selectAuthor,
 }: {
   post: Post;
+  links?: ReactNode;
+  discussionHref: string;
+  openDiscussion: () => void;
   read: boolean;
   open: () => void;
   href: string;
@@ -162,14 +169,13 @@ export function HackerNewsCard({
         )}
         <div className="hn-card-links">
           {discussionUrl && (
-            <a
-              href={discussionUrl}
-              target="_blank"
-              rel="noreferrer"
+            <ReaderLink
+              href={discussionHref}
+              onNavigate={openDiscussion}
               aria-label={`Discussion on Hacker News: ${post.title}`}
             >
               Discussion
-            </a>
+            </ReaderLink>
           )}
           {externalUrl && (
             <a
@@ -183,6 +189,7 @@ export function HackerNewsCard({
           )}
         </div>
       </div>
+      {links}
     </article>
   );
 }

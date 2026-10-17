@@ -28,6 +28,7 @@ import { IdentityAvatar } from "./components/IdentityAvatar";
 import { Modal } from "./components/Modal";
 import { PlatformIcon } from "./components/PlatformIcon";
 import { PostCard } from "./components/PostCard";
+import { PostLinks } from "./components/PostLinks";
 import { ReaderSettings } from "./components/ReaderSettings";
 import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
@@ -408,6 +409,8 @@ export function App() {
             domain={articleDomain}
             id={articleId}
             initial={selected}
+            params={params}
+            openPost={openPost}
             close={closeArticle}
             selectSource={selectSource}
             markRead={markRead}
@@ -550,9 +553,22 @@ export function App() {
                               )}
                             <HackerNewsCard
                               post={post}
-                              read={readKeys.has(postKey(post))}
-                              open={() => openPost(post)}
-                              href={`/reader/?${articleParams(params, post)}`}
+                              read={
+                                readKeys.has(
+                                  postKey(post.linked_post ?? post),
+                                ) || readKeys.has(postKey(post))
+                              }
+                              open={() => openPost(post.linked_post ?? post)}
+                              href={`/reader/?${articleParams(params, post.linked_post ?? post)}`}
+                              discussionHref={`/reader/?${articleParams(params, post)}`}
+                              openDiscussion={() => openPost(post)}
+                              links={
+                                <PostLinks
+                                  post={post}
+                                  params={params}
+                                  open={openPost}
+                                />
+                              }
                               query={filters.q}
                               filters={filters}
                               selectAuthor={selectAuthor}
@@ -562,6 +578,13 @@ export function App() {
                           <XPostCard
                             key={postKey(post)}
                             post={post}
+                            links={
+                              <PostLinks
+                                post={post}
+                                params={params}
+                                open={openPost}
+                              />
+                            }
                             read={readKeys.has(postKey(post))}
                             open={() => openPost(post)}
                             href={`/reader/?${articleParams(params, post)}`}
@@ -572,6 +595,13 @@ export function App() {
                           <PostCard
                             key={postKey(post)}
                             post={post}
+                            links={
+                              <PostLinks
+                                post={post}
+                                params={params}
+                                open={openPost}
+                              />
+                            }
                             read={readKeys.has(postKey(post))}
                             open={() => openPost(post)}
                             href={`/reader/?${articleParams(params, post)}`}

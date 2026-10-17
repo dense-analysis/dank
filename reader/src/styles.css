@@ -2711,3 +2711,50 @@ a.x-metric:hover {
     gap: 8px;
   }
 }
+
+.post-links {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.post-links summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.post-links summary svg {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+.post-links summary:hover,
+.post-links a:hover {
+  color: var(--text);
+}
+.post-links ul {
+  margin: 8px 0 0;
+  padding: 0 0 0 18px;
+  list-style: none;
+}
+.post-links li + li {
+  margin-top: 7px;
+}
+.post-links a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  width: fit-content;
+  max-width: 100%;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.post-link-source {
+  color: var(--text);
+  font-weight: 600;
+}
+.post-links p {
+  margin: 7px 0 0 18px;
+}
+.article-inner > .post-links {
+  margin: 0 0 24px;
+}

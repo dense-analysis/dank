@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
 import { hasXContent, xProfile } from "../lib/x";
 import { XConversation, XThreadContext } from "./XConversation";
@@ -7,11 +8,13 @@ import { XPostHeader } from "./XPostHeader";
 
 export function XPostDetail({
   post,
+  links,
   selectAccount,
   pending = false,
   loadError = false,
 }: {
   post: Post;
+  links?: ReactNode;
   selectAccount: (handle: string) => void;
   pending?: boolean;
   loadError?: boolean;
@@ -37,6 +40,7 @@ export function XPostDetail({
         </p>
       )}
       <XEngagement post={post.x} />
+      {links}
       <XConversation
         post={post}
         selectAccount={selectAccount}

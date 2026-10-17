@@ -89,7 +89,13 @@ browser channel. No live collection is needed for the fixture tests.
 
 ## Collections
 
-**All** combines collected blogs, X posts and Reddit discussions. **Blogs**
+**All** combines collected blogs, X posts, Reddit discussions and Hacker News.
+When a Hacker News story links to a collected article, All shows the original
+source once. **Links** on cards and articles lists collected posts referencing
+that item; each link opens its saved discussion or post while preserving the
+current view. Hacker News keeps its own daily listing and discussions.
+
+**Blogs**
 shows articles; **X** and **Reddit** each have their own feed and expandable
 sidebar list. Search, source filters and dates apply within the selected view.
 
@@ -210,7 +216,9 @@ older stories as you scroll. Search, dates, the daily selection and article Back
 navigation stay in the URL.
 
 Cards show the submitter, captured points and comment counts, plus separate original-article and
-Hacker News discussion links. Timestamps show the original Hacker News submission time;
+Hacker News discussion links. Story titles open the collected original article when
+available; **Discussion** opens saved Hacker News comments. The discussion also
+links back to the collected article. Timestamps show the original Hacker News submission time;
 the day headings continue to group front-page arrivals. Opening a story shows any saved post text and comments
 from a detailed scrape, with replies indented. Full saved discussions have no reader comment cap. Normal collection skips comments;
 not captured, partial and failed captures are explicit. Counts are saved snapshots.
