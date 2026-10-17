@@ -183,7 +183,7 @@ export function YouTubeCollection({
                 <p className="yt-detail-note">
                   {selected.discoveries.length
                     ? "Saved from the feed as it appeared at collection time."
-                    : "Connected through links in your collected posts."}
+                    : "Found in your collected posts and comments."}
                 </p>
                 {selected.discoveries.length ? (
                   selected.discoveries.map((discovery) => (
@@ -246,7 +246,7 @@ export function YouTubeCollection({
                   ))
                 ) : (
                   <p className="yt-detail-note">
-                    Found in links shared by your collected sources.
+                    The matching source excerpts and links are shown below.
                   </p>
                 )}
                 <p className="yt-capture-note">
@@ -255,7 +255,9 @@ export function YouTubeCollection({
                     ? "Video downloaded for local playback."
                     : selected.detail_capture.status === "captured"
                       ? "Additional video details have been collected. Playback connects to YouTube."
-                      : "Feed information is saved. Transcripts and comments have not been collected."}
+                      : selected.discoveries.length
+                        ? "Feed information is saved. YouTube transcripts and comments have not been collected."
+                        : "YouTube details have not been collected."}
                 </p>
               </aside>
             </div>
@@ -266,17 +268,19 @@ export function YouTubeCollection({
               >
                 <div className="yt-shelf-heading">
                   <h2>
-                    <Link2 size={18} /> Shared in your feeds
+                    <Link2 size={18} /> Links and mentions in your feeds
                   </h2>
                   <span>
-                    {selected.reference_count} source{" "}
-                    {selected.reference_count === 1 ? "post" : "posts"}
+                    {selected.reference_count}{" "}
+                    {selected.reference_count === 1
+                      ? "reference"
+                      : "references"}
                   </span>
                 </div>
                 <div className="yt-reference-list">
                   {selected.references.map((reference) => (
                     <YouTubeSourceReference
-                      key={`${reference.domain}:${reference.post_id}`}
+                      key={`${reference.domain}:${reference.post_id}:${reference.kind}:${reference.reference_id}`}
                       reference={reference}
                       params={params}
                       open={() => openReference(reference)}
@@ -286,7 +290,7 @@ export function YouTubeCollection({
                 {selected.reference_count > selected.references.length && (
                   <p className="result-note">
                     Showing {selected.references.length} of{" "}
-                    {selected.reference_count} source posts.
+                    {selected.reference_count} references.
                   </p>
                 )}
               </section>
@@ -618,7 +622,8 @@ function YouTubeSourceReference({
   params: URLSearchParams;
   open: () => void;
 }) {
-  const original = safeUrl(reference.url);
+  const original = safeUrl(reference.reference_url);
+  const matched = safeUrl(reference.matched_url);
   const reader = reference.reader_url
     ? `/reader/?${articleParams(params, { domain: reference.domain, id: reference.post_id })}`
     : undefined;
@@ -627,46 +632,75 @@ function YouTubeSourceReference({
       ? "X"
       : reference.source === "reddit"
         ? "Reddit"
-        : reference.domain;
+        : reference.source === "hacker_news"
+          ? "Hacker News"
+          : reference.domain;
 
   return (
     <div className="yt-reference-row">
-      <a
-        className="yt-reference-main"
-        href={reader || original}
-        target={reader ? undefined : "_blank"}
-        rel={reader ? undefined : "noopener noreferrer"}
-        onClick={
-          reader
-            ? (event) => {
-                if (
-                  event.button ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey
-                )
-                  return;
-                event.preventDefault();
-                open();
-              }
-            : undefined
-        }
-      >
-        <span className="yt-reference-source">{source}</span>
-        <strong>{reference.title || reference.url}</strong>
-      </a>
-      {original && (
+      <div className="yt-reference-content">
+        <p className="yt-reference-kind">
+          {reference.kind === "comment" ? "Comment mention" : "Post link"}
+          {reference.author && ` · ${reference.author}`}
+        </p>
         <a
-          className="yt-reference-original"
-          href={original}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Open original source: ${reference.title || reference.domain}`}
+          className="yt-reference-main"
+          href={reader || original}
+          target={reader ? undefined : "_blank"}
+          rel={reader ? undefined : "noopener noreferrer"}
+          onClick={
+            reader
+              ? (event) => {
+                  if (
+                    event.button ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey
+                  )
+                    return;
+                  event.preventDefault();
+                  open();
+                }
+              : undefined
+          }
         >
-          Open original <ArrowUpRight size={14} />
+          <span className="yt-reference-source">{source}</span>
+          <strong>{reference.title || reference.url}</strong>
         </a>
-      )}
+        <blockquote className="yt-reference-excerpt">
+          {reference.excerpt}
+        </blockquote>
+        <div className="yt-reference-evidence">
+          {original && (
+            <a
+              className="yt-reference-original"
+              href={original}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open ${reference.kind}: ${reference.author || reference.title || reference.domain}`}
+            >
+              {reference.kind === "comment" ? "Open comment" : "Open post"}{" "}
+              <ArrowUpRight size={14} />
+            </a>
+          )}
+          {matched && (
+            <a
+              className="yt-reference-original"
+              href={matched}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Matched video link <ArrowUpRight size={14} />
+            </a>
+          )}
+          {reference.observed_at && (
+            <span>
+              Saved <CaptureTime value={reference.observed_at} />
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

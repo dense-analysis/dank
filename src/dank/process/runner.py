@@ -29,6 +29,7 @@ from dank.process.x import convert_raw_x_post
 from dank.process.youtube import convert_raw_youtube_post
 from dank.progress import Progress
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
+from dank.youtube_references import reference_rows
 
 logger = logging.getLogger(__name__)
 
@@ -422,6 +423,14 @@ async def _insert_posts(
             "posts",
             rows,
         )
+        evidence = [
+            link for row in rows for link in reference_rows(row, raw=False)
+        ]
+
+        if evidence:
+            await clickhouse_client.insert_rows(
+                "youtube_reference_evidence", evidence,
+            )
 
 
 async def _recover_saved_pages(
@@ -507,6 +516,14 @@ async def run_process(
             pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
         )
         await clickhouse_client.execute(raw_schema.read_text())
+        youtube_schema = (
+            pathlib.Path(__file__).parents[1] / "storage/youtube.sql"
+        )
+
+        for statement in youtube_schema.read_text().split(";"):
+            if statement.strip():
+                await clickhouse_client.execute(statement)
+
         for source in sources:
             converter = {
                 "x.com": convert_raw_x_post,

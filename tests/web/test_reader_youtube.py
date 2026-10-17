@@ -42,7 +42,7 @@ def test_queries_filter_before_deduplicating_feed_appearances() -> None:
 
 def test_linked_queries_use_index_and_do_not_rescan_raw_payloads() -> None:
     query, _ = build_youtube_query(YouTubeFilters(feed="linked"))
-    assert "FROM youtube_links GROUP BY video_id" in query
+    assert "FROM youtube_reference_evidence FINAL GROUP BY video_id" in query
     assert "raw_posts" not in query
     assert "FROM posts" not in query
 
@@ -121,13 +121,41 @@ async def test_item_keeps_provenance_and_multiple_source_references():
 
 async def test_existing_link_index_is_not_backfilled_on_every_start() -> None:
     client = AsyncMock()
-    client.fetch_json.return_value = QueryResult([{"version": 1}])
+    client.fetch_json.return_value = QueryResult([{"version": 2}])
     await ensure_youtube_storage(cast(ClickHouseClient, client))
     assert all(
         not call.args[0].startswith("INSERT INTO youtube_links")
         for call in client.execute.call_args_list
     )
     client.insert_rows.assert_not_called()
+
+
+async def test_missing_video_title_never_uses_a_source_headline():
+    client = AsyncMock()
+    timestamp = dt.datetime(2026, 10, 17, tzinfo=dt.UTC)
+    client.fetch_json.side_effect = [
+        QueryResult([]), QueryResult([{
+            "video_id": "NnV_cWeoo5Q", "domain": "reddit.com",
+            "post_id": "t3_1x7ijzc", "title": "Unrelated game headline",
+            "url": "https://www.reddit.com/comments/1x7ijzc/",
+            "kind": "comment", "reference_id": "t1_ph4vac2",
+            "reference_url": "https://www.reddit.com/comments/1x7ijzc/comment/ph4vac2/",
+            "matched_url": "https://youtu.be/NnV_cWeoo5Q?t=1468",
+            "excerpt": "Seen it happen in real time", "author": "James20k",
+            "latest_at": timestamp, "reference_count": 1,
+        }]), QueryResult([]),
+    ]
+    items = await youtube_items(cast(ClickHouseClient, client), [{
+        "item_id": "video:NnV_cWeoo5Q", "kind": "video", "payload": "{}",
+        "observed_at": timestamp,
+    }], YouTubeFilters(feed="linked"))
+    assert items[0]["title"] == "YouTube video · NnV_cWeoo5Q"
+    mention = items[0]["references"][0]
+    assert mention["kind"] == "comment"
+    assert mention["author"] == "James20k"
+    assert mention["excerpt"] == "Seen it happen in real time"
+    assert mention["matched_url"].endswith("?t=1468")
+    assert mention["observed_at"] == timestamp.isoformat()
 
 
 def test_schema_copies_and_package_data_include_youtube() -> None:
@@ -162,7 +190,7 @@ def test_linked_only_item_can_be_deep_linked_without_feed():
         YouTubeFilters(item_id="video:AbCdEfGhIjK"),
     )
     assert "UNION ALL" in query
-    assert "youtube_links" in query
+    assert "youtube_reference_evidence" in query
     assert params["id"] == "video:AbCdEfGhIjK"
 
 

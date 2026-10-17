@@ -205,7 +205,7 @@ export function YouTubeCard({
                 ? "Additional video details were collected."
                 : item.discoveries.length
                   ? "Feed information is saved. Video details, transcripts and comments are not part of this snapshot."
-                  : "Found in collected source posts. A YouTube feed snapshot has not been captured."
+                  : "Found in collected posts or comments. Video title and channel details have not been collected."
           }
         >
           {localVideo ? (
@@ -227,7 +227,7 @@ export function YouTubeCard({
         {item.reference_count > 0 && (
           <span
             className="yt-reference-count"
-            title={`${item.reference_count} collected posts link to this video`}
+            title={`${item.reference_count} verified post links or comment mentions`}
           >
             <Link2 size={12} />
             {item.reference_count}

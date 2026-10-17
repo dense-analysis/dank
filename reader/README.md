@@ -249,11 +249,14 @@ connect to YouTube, with a separate link to the original. Playback pauses when
 scrolled away or another player starts, and its position survives navigation
 between the collection and discovery details in this reader tab.
 
-**From your feeds** combines YouTube links found in collected X posts, Reddit
-discussions and articles. Each video appears once, with its source posts linked
-from the discovery details. Opening a source post and going Back preserves the
-YouTube search and selection. YouTube collection is not required to browse those
-existing links.
+**From your feeds** combines verified YouTube links in collected posts and
+comments. Discovery details distinguish **Post link** from **Comment mention**,
+with a matching excerpt, capture date, exact video URL (including timestamps)
+and a direct link to the source post or comment. Opening the parent post and
+going Back preserves the YouTube search and selection. Counts describe distinct
+post/comment references, so multiple comments in one thread remain distinct.
+Videos without a collected YouTube title use their video ID; a source headline
+is never presented as the video's title. YouTube collection is not required.
 
 See [YouTube collection settings](../docs/features/youtube.md).
 

@@ -16,6 +16,7 @@ from dank.web.app import (
     _asset_view,  # pyright: ignore[reportPrivateUsage]
     _parse_asset_row,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.web.reader_youtube_index import backfill_evidence
 from dank.web.reader_youtube_pairs import (
     merge_title_pairs,
     thumbnail_title_pairs,
@@ -35,7 +36,7 @@ MAX_ITEM_REFERENCES = 100
 MAX_ITEM_TITLE_HISTORY = 20
 MAX_THUMBNAIL_CANDIDATES = 64
 MAX_THUMBNAIL_VARIANTS = 8
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 
 
 async def ensure_youtube_storage(client: ClickHouseClient) -> None:
@@ -56,12 +57,9 @@ async def ensure_youtube_storage(client: ClickHouseClient) -> None:
     if complete.rows:
         return
 
-    # Views cover concurrent/new inserts. This one-time backfill is idempotent:
-    # repeated source observations collapse to the same reference identity.
-    for statement in statements:
-        if statement.startswith("CREATE MATERIALIZED VIEW"):
-            select = statement.split("TO youtube_links AS", 1)[1]
-            await client.execute("INSERT INTO youtube_links " + select)
+    # Retain the legacy index for audits; rebuild from source fields.
+    # New observations are indexed when scraping/processing persists them.
+    await backfill_evidence(client)
 
     await client.insert_rows("youtube_index_versions", [{
         "version": INDEX_VERSION, "completed_at": dt.datetime.now(dt.UTC),
@@ -137,11 +135,7 @@ async def youtube_items(
         )
 
         if not item["title"]:
-            refs = references.get(item_id, [])
-            item["title"] = next(
-                (r["title"] for r in refs if r["title"]),
-                "Linked YouTube video",
-            )
+            item["title"] = "YouTube video · " + str(item["video_id"])
 
         items.append(item)
 
@@ -261,20 +255,27 @@ async def _references(
     result = await client.fetch_json(
         "SELECT l.video_id AS video_id, l.domain AS domain, "
         "l.post_id AS post_id, "
+        "l.kind AS kind, l.reference_id AS reference_id, "
+        "argMax(l.reference_url, l.observed_at) AS reference_url, "
+        "argMax(l.author, l.observed_at) AS author, "
+        "argMax(l.matched_url, l.observed_at) AS matched_url, "
+        "argMax(l.excerpt, l.observed_at) AS excerpt, "
         "argMax(l.url, l.observed_at) AS url, "
         "argMax(l.source, l.observed_at) AS source, "
         "argMaxIf(if(empty(p.title), l.title, p.title), l.observed_at, "
         "notEmpty(p.title) OR notEmpty(l.title)) AS title, "
         "max(notEmpty(p.domain)) AS processed, "
         "max(observed_at) AS latest_at, count() OVER (PARTITION BY video_id) "
-        "AS reference_count FROM youtube_links AS l LEFT JOIN "
+        "AS reference_count FROM youtube_reference_evidence AS l FINAL "
+        "LEFT JOIN "
         "(SELECT domain, post_id, title FROM posts FINAL "
         "WHERE (domain, post_id) IN "
-        "(SELECT domain, post_id FROM youtube_links "
+        "(SELECT domain, post_id FROM youtube_reference_evidence FINAL "
         "WHERE video_id IN %(ids)s)) AS p "
         "ON l.domain = p.domain AND l.post_id = p.post_id "
         "WHERE l.video_id IN %(ids)s "
-        "GROUP BY video_id, domain, post_id ORDER BY latest_at DESC "
+        "GROUP BY video_id, domain, post_id, kind, reference_id "
+        "ORDER BY latest_at DESC, domain, post_id, kind, reference_id "
         "LIMIT %(limit)s BY video_id",
         {"ids": video_ids, "limit": MAX_ITEM_REFERENCES},
     )
@@ -286,6 +287,13 @@ async def _references(
         domain, post_id = str(row["domain"]), str(row["post_id"])
         reference = {
             "domain": domain, "post_id": post_id,
+            "kind": str(row.get("kind") or "post"),
+            "reference_id": str(row.get("reference_id") or ""),
+            "reference_url": _http_url(row.get("reference_url")) or "",
+            "author": str(row.get("author") or ""),
+            "matched_url": _http_url(row.get("matched_url")) or "",
+            "excerpt": str(row.get("excerpt") or ""),
+            "observed_at": _timestamp(row.get("latest_at")),
             "url": _http_url(row.get("url")) or "",
             "title": str(row.get("title") or ""),
             "source": str(row.get("source") or ""),
@@ -329,7 +337,8 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
         "SELECT uniqExact(item_id) AS total FROM youtube_discoveries",
     )
     linked = await client.fetch_json(
-        "SELECT uniqExact(video_id) AS total FROM youtube_links",
+        "SELECT uniqExact(video_id) AS total "
+        "FROM youtube_reference_evidence FINAL",
     )
 
     return web.json_response({

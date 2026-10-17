@@ -522,6 +522,33 @@
   border: 1px solid var(--line);
   border-radius: 11px;
 }
+.yt-reference-content {
+  min-width: 0;
+  flex: 1;
+}
+.yt-reference-kind {
+  margin: 0 0 9px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 600;
+}
+.yt-reference-excerpt {
+  margin: 12px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--line);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.yt-reference-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  color: var(--muted);
+  font-size: 10px;
+}
 .yt-reference-row:hover {
   background: var(--surface-hover);
   border-color: #b1e2bd45;

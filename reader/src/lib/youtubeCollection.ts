@@ -21,6 +21,13 @@ export interface YouTubeReference {
   title: string;
   source: string;
   reader_url: string;
+  kind: "post" | "comment";
+  reference_id: string;
+  reference_url: string;
+  author: string;
+  matched_url: string;
+  excerpt: string;
+  observed_at: string;
 }
 export interface YouTubeTitlePair extends YouTubeTitleVersion {
   association: "captured" | "matched";
@@ -176,7 +183,14 @@ export function isYouTubeItem(value: unknown): value is YouTubeItem {
           "title",
           "source",
           "reader_url",
-        ]),
+          "reference_id",
+          "reference_url",
+          "author",
+          "matched_url",
+          "excerpt",
+          "observed_at",
+        ]) &&
+        (item.kind === "post" || item.kind === "comment"),
     ) &&
     count(value.reference_count)
   );
