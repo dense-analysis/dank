@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import pathlib
@@ -10,7 +11,11 @@ import pytest
 from multidict import MultiDict
 
 from dank.storage.clickhouse import ClickHouseClient, QueryResult
-from dank.web.reader_youtube import ensure_youtube_storage, youtube_items
+from dank.web.reader_youtube import (
+    _local_media,  # pyright: ignore[reportPrivateUsage]
+    ensure_youtube_storage,
+    youtube_items,
+)
 from dank.web.reader_youtube_query import (
     YouTubeFilters,
     build_youtube_query,
@@ -187,3 +192,35 @@ async def test_local_media_requires_an_existing_file_inside_assets(
     assert items[0]["thumbnail_url"] == (
         "https://i.ytimg.com/vi/AbCdEfGhIjK/hqdefault.jpg"
     )
+
+
+async def test_extensionless_cached_thumbnail_uses_type_and_keeps_containment(
+    tmp_path: pathlib.Path,
+) -> None:
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    image = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMCAO+a9O8AAAAASUVORK5CYII=",
+    )
+    inside = assets / "opaque-cache-hash"
+    outside = tmp_path / "outside-cache-hash"
+    inside.write_bytes(image)
+    outside.write_bytes(image)
+    timestamp = dt.datetime(2026, 10, 17, tzinfo=dt.UTC)
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([
+        {"post_id": post_id, "url": "https://yt3.ggpht.com/image=s800",
+         "asset_type": "image", "local_path": str(path),
+         "scraped_at": timestamp}
+        for post_id, path in (
+            ("post:inside", inside), ("post:outside", outside),
+        )
+    ])
+    media = await _local_media(
+        cast(ClickHouseClient, client),
+        ["post:inside", "post:outside"], assets,
+    )
+    assert media == {
+        "post:inside": {"thumbnail_url": "/assets/opaque-cache-hash"},
+    }

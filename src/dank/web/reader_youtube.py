@@ -352,8 +352,18 @@ async def _local_media(
         })
         view = _asset_view(asset, assets_dir=assets_dir)
 
-        if view and view["kind"] in {"image", "video"}:
-            key = "video_url" if view["kind"] == "video" else "thumbnail_url"
+        if view is None:
+            continue
+
+        # Raw downloads may have extensionless cache names. Their recorded
+        # discovery type identifies presentation without inventing a MIME type.
+        kind = {"image": "image", "photo": "image", "video": "video",
+                "youtube": "video", "animated_gif": "video"}.get(
+            str(row.get("asset_type")), view["kind"],
+        )
+
+        if kind in {"image", "video"}:
+            key = "video_url" if kind == "video" else "thumbnail_url"
             media.setdefault(str(row["post_id"]), {})[key] = view["url"]
 
     return media
