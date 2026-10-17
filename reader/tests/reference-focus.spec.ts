@@ -156,7 +156,7 @@ function reference(post: Post): YouTubeReference {
     observed_at: saved,
   };
 }
-async function fixtures(page: Page, post = article()) {
+async function fixtures(page: Page, post = article(), linkedPost?: Post) {
   const ref = reference(post);
   const video: YouTubeItem = {
     id: `video:${videoId}`,
@@ -188,7 +188,15 @@ async function fixtures(page: Page, post = article()) {
       });
     if (url.pathname.endsWith("/sources"))
       return route.fulfill({ json: { sources: [], total_posts: 1 } });
-    if (url.pathname.endsWith("/post")) return route.fulfill({ json: post });
+    if (url.pathname.endsWith("/post"))
+      return route.fulfill({
+        json:
+          linkedPost &&
+          url.searchParams.get("id") === linkedPost.id &&
+          url.searchParams.get("domain") === linkedPost.domain
+            ? linkedPost
+            : post,
+      });
     return route.fulfill({
       json: { posts: [], next_cursor: null, limited: false },
     });
@@ -196,6 +204,62 @@ async function fixtures(page: Page, post = article()) {
   return ref;
 }
 const detailUrl = `/reader/?view=youtube&feed=linked&q=security&youtube_item=video%3A${videoId}`;
+
+test("collected originals and incoming links clear the previous video target", async ({
+  page,
+}) => {
+  const original = {
+    ...article("rss"),
+    id: "collected-original",
+    title: "Collected original",
+    html: "<p>The original article remains independent of the discussion.</p>",
+  };
+  const story = article("hacker_news");
+  const { id, domain, url, title, source } = original;
+  story.linked_post = { id, domain, url, title, source };
+  story.links = [story.linked_post];
+  story.links_count = 1;
+  if (story.hacker_news) story.hacker_news.external_url = original.url;
+  await fixtures(page, story, original);
+  await page.goto(detailUrl);
+  await page
+    .getByRole("link", { name: "Open comment: reader", exact: true })
+    .click();
+  await expect(page.locator('[data-reference-match="true"]')).toHaveText(
+    "seen it happen in real time",
+  );
+  const collected = page.getByRole("link", {
+    name: "Read collected article",
+    exact: true,
+  });
+  const destinations = [
+    await collected.getAttribute("href"),
+    ...(await page
+      .locator(".post-links a")
+      .evaluateAll((links) =>
+        links.map((link) => (link as HTMLAnchorElement).href),
+      )),
+  ];
+  for (const destination of destinations) {
+    const params = new URL(destination ?? "", "http://localhost").searchParams;
+    expect([...params.keys()].some((key) => key.startsWith("reference_"))).toBe(
+      false,
+    );
+  }
+  await collected.click();
+  await expect(
+    page.getByRole("heading", { name: "Collected original", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("complementary", { name: "Video reference" }),
+  ).toHaveCount(0);
+  await expect(page.locator('[data-reference-match="true"]')).toHaveCount(0);
+  await page.goBack();
+  await expect(page.locator('[data-reference-match="true"]')).toHaveText(
+    "seen it happen in real time",
+  );
+  expect(new URL(page.url()).searchParams.get("reference_id")).toBe("50133642");
+});
 
 for (const width of [1210, 390]) {
   test(`graph view keeps position and opens exact DANK evidence at ${width}px`, async ({

@@ -272,7 +272,17 @@ saved post, DANK shows the archived excerpt and original link when available
 instead of highlighting another comment. Counts describe distinct
 post/comment references, so multiple comments in one thread remain distinct.
 Videos without a collected YouTube title use their video ID; a source headline
-is never presented as the video's title. YouTube collection is not required.
+is never presented as the video's title. Opening a linked video collects its
+public preview details when missing, with visible progress and cached retries.
+The title, channel and thumbnail are saved once per video and shared by all
+references. A configured YouTube feed or video download is not required.
+
+Switch between **List** and **Graph** to inspect the same verified evidence.
+The graph follows sources through posts and comments to the shared video;
+select a node for its evidence and reader links. Pan, zoom, Fit and Reset work
+with mouse, touch and keyboard. The view is part of the URL, and recent graph
+selection and viewport survive reader navigation within the tab. No semantic
+or topic relationships are inferred by this view.
 
 See [YouTube collection settings](../docs/features/youtube.md).
 
@@ -282,6 +292,10 @@ React + TypeScript + Vite, with native CSS, Lucide icons, TanStack Query for
 request caching, DOMPurify for the article boundary, and Biome for checks.
 Fonts are served locally. No separate frontend application server is required
 for production.
+
+`RelationshipGraph` renders domain-neutral nodes and edges using lazily loaded
+Cytoscape.js. `youtubeReferenceGraph` maps verified source evidence into that
+model; additional relationship views can supply their own adapters.
 
 `src/components` owns presentation; `src/lib` owns API contracts, validation,
 URL filters and persistence; `src/hooks` bridges browser state. The additive
