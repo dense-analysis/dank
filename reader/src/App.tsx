@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowRight,
   CircleAlert,
   Inbox,
@@ -15,6 +16,7 @@ import {
   useState,
 } from "react";
 import { ArticleView } from "./components/ArticleView";
+import { CollectionCount } from "./components/CollectionCount";
 import { CommunityAvatar } from "./components/CommunityAvatar";
 import { FeedToolbar } from "./components/FeedToolbar";
 import { IdentityAvatar } from "./components/IdentityAvatar";
@@ -115,7 +117,10 @@ export function App() {
   const activeAccount = accounts.find(
     (account) => account.handle.toLowerCase() === filters.account.toLowerCase(),
   );
-  const accountName = activeAccount?.handle ?? filters.account;
+  const accountHandle = activeAccount?.handle ?? filters.account;
+  const accountName = activeAccount?.name || accountHandle;
+  const accountHasName =
+    accountName.toLowerCase() !== accountHandle.toLowerCase();
   const accountContext = section === "x" && !!filters.account;
   const communities = redditSources.flatMap(
     (source) => source.communities ?? [],
@@ -135,7 +140,9 @@ export function App() {
         : communityContext
           ? `r/${communityName}`
           : accountContext
-            ? `@${accountName}`
+            ? accountHasName
+              ? accountName
+              : `@${accountHandle}`
             : feedLabels[filters.kind];
   const date = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
@@ -238,6 +245,16 @@ export function App() {
           >
             <Menu size={21} />
           </button>
+          {(accountContext || communityContext) && (
+            <button
+              type="button"
+              className="icon-button collection-back"
+              onClick={() => select(accountContext ? "x" : "reddit")}
+              aria-label={`Back to ${accountContext ? "X posts" : "Reddit"}`}
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
           <div className="breadcrumb">
             {accountContext && (
               <IdentityAvatar
@@ -253,11 +270,29 @@ export function App() {
               />
             )}
             {feedSection && !readingArticle ? (
-              <h1>{title}</h1>
+              <h1 className="collection-title" title={title}>
+                {title}
+              </h1>
             ) : (
-              <span>{title}</span>
+              <span className="collection-title" title={title}>
+                {title}
+              </span>
+            )}
+            {accountContext && accountHasName && (
+              <span className="collection-handle" title={`@${accountHandle}`}>
+                @{accountHandle}
+              </span>
             )}
           </div>
+          {accountContext && activeAccount && (
+            <CollectionCount
+              count={activeAccount.count}
+              total={activeAccount.total_posts}
+            />
+          )}
+          {communityContext && activeCommunity && (
+            <CollectionCount count={activeCommunity.count} />
+          )}
         </header>
         {(storageError || positionError) && (
           <div className="error-banner reading-storage-error" role="alert">

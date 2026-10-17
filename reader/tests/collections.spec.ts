@@ -62,6 +62,7 @@ const sources: Source[] = [
         handle: "reporter",
         name: "City Reporter",
         count: 4,
+        total_posts: 10161,
         icon_url: "https://pbs.twimg.com/profile_images/123/reporter.jpg",
       },
       {
@@ -99,6 +100,81 @@ const sources: Source[] = [
     communities: [{ name: "LocalLLaMA", count: 1 }],
   },
 ];
+
+for (const width of [320, 390, 1280]) {
+  test(`account header keeps identity, collection totals and overview navigation at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 });
+    await mockCollections(page);
+    await page.goto(
+      "/reader/?view=x&account=reporter&q=dispatch&author=Shared+display+name",
+    );
+    const header = page.locator(".topbar");
+    await expect(
+      header.getByRole("heading", { name: "City Reporter", exact: true }),
+    ).toBeVisible();
+    await expect(header.getByText("@reporter", { exact: true })).toBeVisible();
+    await expect(header.locator(".collection-count-values")).toHaveText(
+      "4/10.1Kposts",
+    );
+    await expect(header.locator(".collection-count-pill")).toHaveAttribute(
+      "title",
+      "4 posts collected / 10,161 total posts reported by X at last capture",
+    );
+    const name = await header.locator("h1").boundingBox();
+    const handle = await header.locator(".collection-handle").boundingBox();
+    const count = await header.locator(".collection-count-pill").boundingBox();
+    expect(name).not.toBeNull();
+    expect(handle).not.toBeNull();
+    expect(count).not.toBeNull();
+    expect(Math.abs((name?.y ?? 0) - (handle?.y ?? 0))).toBeLessThan(5);
+    expect((handle?.x ?? 0) + (handle?.width ?? 0)).toBeLessThan(count?.x ?? 0);
+    await noOverflow(page);
+    await page.evaluate(() => window.scrollTo(0, 300));
+    expect((await header.boundingBox())?.y).toBe(0);
+    await expect(header.locator(".collection-count-values")).toHaveText(
+      "4/10.1Kposts",
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`account-header-${width}.png`),
+    });
+    await header
+      .getByRole("button", { name: "Back to X posts", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/reader\/\?view=x$/);
+    await expect(page.locator(".post-card")).toHaveCount(5);
+    await expect(
+      page.getByRole("textbox", { name: "Search X", exact: true }),
+    ).toHaveValue("");
+  });
+}
+
+test("collection headers show honest missing totals and return to the Reddit overview", async ({
+  page,
+}) => {
+  await mockCollections(page);
+  await page.goto("/reader/?view=x&account=quiet_account");
+  const header = page.locator(".topbar");
+  await expect(header.locator(".collection-count-values")).toHaveText(
+    "0collected",
+  );
+  await expect(header.locator(".collection-count-pill")).toHaveAttribute(
+    "title",
+    "0 posts collected",
+  );
+  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await expect(header.locator(".collection-count-values")).toHaveText(
+    "1collected",
+  );
+  await header
+    .getByRole("button", { name: "Back to Reddit", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/reader\/\?view=reddit$/);
+  await expect(
+    page.getByRole("textbox", { name: "Search Reddit", exact: true }),
+  ).toBeVisible();
+});
 
 async function mockCollections(
   page: Page,
@@ -308,7 +384,7 @@ test("X accounts have accessible disclosure, safe icons and initial fallbacks", 
     nav.getByRole("button", { name: "X", exact: true }),
   ).not.toHaveAttribute("aria-current", "page");
   await expect(
-    page.getByRole("heading", { name: "@reporter", exact: true }),
+    page.getByRole("heading", { name: "City Reporter", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: "Search @reporter" }),
@@ -414,7 +490,7 @@ test("configured accounts without posts remain selectable and X can be absent", 
     })
     .click();
   await expect(
-    page.getByRole("heading", { name: "@quiet_account", exact: true }),
+    page.getByRole("heading", { name: "No posts yet", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "No collected posts found" }),
@@ -462,7 +538,7 @@ for (const width of [1440, 390, 320]) {
     ).toHaveCount(0);
     await expect(page.locator(".post-card")).toHaveCount(4);
     await expect(
-      page.getByRole("heading", { name: "@reporter", exact: true }),
+      page.getByRole("heading", { name: "City Reporter", exact: true }),
     ).toBeVisible();
     await noOverflow(page);
     await page.screenshot({
@@ -478,7 +554,7 @@ for (const width of [1440, 390, 320]) {
       .getByRole("button", { name: "Back to stories", exact: true })
       .click();
     await expect(
-      page.getByRole("heading", { name: "@reporter", exact: true }),
+      page.getByRole("heading", { name: "City Reporter", exact: true }),
     ).toBeVisible();
     await noOverflow(page);
   });

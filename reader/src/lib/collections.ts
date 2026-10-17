@@ -56,6 +56,11 @@ export function collectedAccounts(sources: Source[]): XAccount[] {
             ? existing.name
             : account.name,
         icon_url: existing?.icon_url ?? account.icon_url,
+        // The profile total belongs to the account, not each stored domain.
+        total_posts:
+          source.domain === "x.com"
+            ? (account.total_posts ?? existing?.total_posts)
+            : (existing?.total_posts ?? account.total_posts),
       });
     }
   }

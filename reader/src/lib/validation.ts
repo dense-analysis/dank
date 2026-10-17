@@ -263,7 +263,12 @@ export function isSource(value: unknown): value is Source {
       (Array.isArray(value.accounts) &&
         value.accounts.every(
           (account) =>
-            isXProfile(account) && isRecord(account) && isCount(account.count),
+            isXProfile(account) &&
+            isRecord(account) &&
+            isCount(account.count) &&
+            (account.total_posts === undefined ||
+              account.total_posts === null ||
+              isCount(account.total_posts)),
         ))) &&
     (value.communities === undefined ||
       (Array.isArray(value.communities) &&

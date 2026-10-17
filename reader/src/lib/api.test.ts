@@ -151,6 +151,11 @@ describe("reader API", () => {
 
     for (const bad of [
       { count: -1 },
+      { total_posts: -1 },
+      { total_posts: 1.5 },
+      { total_posts: "10161" },
+      { total_posts: true },
+      { total_posts: Number.MAX_SAFE_INTEGER + 1 },
       { handle: "../bad" },
       { name: null },
       { icon_url: 42 },
@@ -160,6 +165,15 @@ describe("reader API", () => {
         total_posts: 0,
       });
       await expect(fetchSources()).rejects.toThrow("unexpected response");
+    }
+
+    for (const total_posts of [null, 0, 10161]) {
+      const withTotal = { ...source, accounts: [{ ...account, total_posts }] };
+      respond({ sources: [withTotal], total_posts: 0 });
+      await expect(fetchSources()).resolves.toEqual({
+        sources: [withTotal],
+        total_posts: 0,
+      });
     }
   });
 

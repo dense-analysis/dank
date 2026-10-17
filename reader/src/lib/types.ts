@@ -90,6 +90,7 @@ export interface XProfile {
 
 export interface XAccount extends XProfile {
   count: number;
+  total_posts?: number | null;
 }
 
 export interface XLink {

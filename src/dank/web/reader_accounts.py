@@ -23,6 +23,7 @@ class AccountIdentity(TypedDict):
     handle: str
     name: str
     icon_url: str | None
+    total_posts: int | None
 
 
 class Account(AccountIdentity):
@@ -82,27 +83,36 @@ async def _account_profiles(
     )
     profiles = {
         (str(row["domain"]), str(row["handle"])):
-        profile_identity(row.get("profile"), str(row["handle"]))
+        _account_profile(row.get("profile"), str(row["handle"]))
         for row in result.rows
     }
 
     return {
-        (domain, handle): {
-            "handle": handle,
-            "name": profiles.get((domain, handle), (handle, None))[0],
-            "icon_url": profiles.get((domain, handle), (handle, None))[1],
-        }
+        (domain, handle): profiles.get(
+            (domain, handle), _account_profile(None, handle),
+        )
         for domain, handle in accounts
     }
 
 
 def profile_identity(value: object, handle: str) -> tuple[str, str | None]:
+    profile = _account_profile(value, handle)
+
+    return profile["name"], profile["icon_url"]
+
+
+def _account_profile(value: object, handle: str) -> AccountIdentity:
+    fallback: AccountIdentity = {
+        "handle": handle, "name": handle, "icon_url": None,
+        "total_posts": None,
+    }
+
     try:
         profile = _object(
             json.loads(value) if isinstance(value, str) else value,
         )
     except ValueError:
-        return handle, None
+        return fallback
 
     core = _object(profile.get("core"))
     legacy = _object(profile.get("legacy"))
@@ -113,16 +123,26 @@ def profile_identity(value: object, handle: str) -> tuple[str, str | None]:
         not isinstance(captured_handle, str)
         or captured_handle.lower() != handle
     ):
-        return handle, None
+        return fallback
 
     name = identity.get("name")
     avatar = _object(profile.get("avatar"))
     icon = avatar.get("image_url") or legacy.get("profile_image_url_https")
+    total = _object(profile.get("tweet_counts")).get("tweets")
 
-    return (
-        name.strip() if isinstance(name, str) and name.strip() else handle,
-        _profile_icon(icon),
-    )
+    if total is None:
+        total = legacy.get("statuses_count")
+
+    return {
+        "handle": handle,
+        "name": (
+            name.strip() if isinstance(name, str) and name.strip() else handle
+        ),
+        "icon_url": _profile_icon(icon),
+        "total_posts": total if (
+            type(total) is int and 0 <= total <= 2**53 - 1
+        ) else None,
+    }
 
 
 def _object(value: object) -> dict[str, Any]:

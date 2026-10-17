@@ -299,9 +299,9 @@ async def test_x_sources_include_configured_accounts_and_exclude_other_authors(
     assert data["sources"][1]["kind"] == "x"
     assert data["sources"][1]["accounts"] == [
         {"handle": "empty_account", "name": "empty_account", "count": 0,
-         "icon_url": None},
+         "icon_url": None, "total_posts": None},
         {"handle": "watcherguru", "name": "Watcher.Guru", "count": 7,
-         "icon_url": icon},
+         "icon_url": icon, "total_posts": None},
     ]
 
 

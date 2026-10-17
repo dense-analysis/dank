@@ -93,6 +93,12 @@ host; Reddit icons use cached local assets. Account selection follows the post's
 handle, independently of the author filter, and stays in the URL through search
 and article navigation.
 
+The frosted account header shows the display name and handle, a back arrow to
+all X posts, and a collected / total posts pill. The total is X's reported count
+from the saved profile, not a live count; hover the pill for exact numbers.
+When no total was captured, only the collected count appears. Search and filters
+do not change these account-wide counts.
+
 X cards and opened posts show the account's avatar, display name and handle,
 with the post text once. Feed previews show about 300 characters, preserving
 paragraphs and links. **Show more** expands ordinary posts completely. Posts of
@@ -138,6 +144,7 @@ Expand Reddit's community list to browse each configured subreddit, including
 those with no collected posts yet.
 
 A community's name and cached icon stay visible in a compact sticky header.
+The same frosted header includes a back arrow to Reddit and its collected count.
 Its cards omit the repeated community identity; the combined Reddit feed keeps
 community names and icons on each card. Search identifies its current scope,
 such as **Search r/LocalLLaMA**, **Search Reddit**, or the selected source.

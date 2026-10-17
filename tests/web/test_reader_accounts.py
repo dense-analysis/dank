@@ -111,6 +111,7 @@ async def test_account_identity_uses_committed_modern_x_profile() -> None:
     accounts = await source_accounts(client, "x.com", ("@WatcherGuru",))
     assert accounts == [{
         "handle": "watcherguru", "name": "Watcher.Guru", "count": 2,
+        "total_posts": 17848,
         "icon_url": "https://pbs.twimg.com/profile_images/1641221212578754562/DfiC0KW2_normal.png",
     }]
     assert X_ACCOUNT_SQL in client.fetch_json.call_args_list[0].args[0]
@@ -140,6 +141,7 @@ async def test_account_profiles_handle_legacy_mismatched_and_malformed_data(
     accounts = await source_accounts(client, "x.com", ("Example", "@EXAMPLE"))
     assert accounts == [{
         "handle": "example", "name": name, "count": 0, "icon_url": icon,
+        "total_posts": None,
     }]
 
 
@@ -176,5 +178,45 @@ async def test_unconfigured_x_source_keeps_historical_accounts() -> None:
     accounts = await source_accounts(client, "twitter.com", ())
     assert accounts == [{
         "handle": "archived", "name": "archived", "count": 3,
-        "icon_url": None,
+        "icon_url": None, "total_posts": None,
     }]
+
+
+@pytest.mark.parametrize("counts,expected", [
+    ({"tweet_counts": {"tweets": 10161}}, 10161),
+    ({"tweet_counts": {"tweets": 0}}, 0),
+    ({"legacy": {"statuses_count": 100}}, 100),
+    ({"tweet_counts": {"tweets": 10161},
+      "legacy": {"statuses_count": 100}}, 10161),
+    ({}, None),
+    ({"tweet_counts": []}, None),
+    ({"tweet_counts": {"tweets": -1}}, None),
+    ({"tweet_counts": {"tweets": True}}, None),
+    ({"tweet_counts": {"tweets": "10161"}}, None),
+    ({"tweet_counts": {"tweets": 1.5}}, None),
+    ({"tweet_counts": {"tweets": 2**53}}, None),
+])
+async def test_account_totals_use_captured_profile_counts(
+    counts: dict[str, Any], expected: int | None,
+) -> None:
+    client = AsyncMock()
+    client.fetch_json.side_effect = [QueryResult([]), QueryResult([{
+        "domain": "x.com", "handle": "example", "profile": json.dumps({
+            "core": {"screen_name": "example", "name": "Example"},
+            **counts,
+        }),
+    }])]
+    accounts = await source_accounts(client, "x.com", ("example",))
+    assert accounts[0]["total_posts"] == expected
+
+
+async def test_account_total_cannot_come_from_another_profile() -> None:
+    client = AsyncMock()
+    client.fetch_json.side_effect = [QueryResult([]), QueryResult([{
+        "domain": "x.com", "handle": "example", "profile": json.dumps({
+            "core": {"screen_name": "other", "name": "Other"},
+            "tweet_counts": {"tweets": 10161},
+        }),
+    }])]
+    accounts = await source_accounts(client, "x.com", ("example",))
+    assert accounts[0]["total_posts"] is None

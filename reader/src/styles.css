@@ -16,6 +16,8 @@
   --text: #f0f1f4;
   --muted: #adb4bf;
   --line: #2b3036;
+  --header-glass: #101113b3;
+  --header-blur: blur(24px) saturate(160%);
   --green: #b1e2bd;
   --selected: #24382e;
   --collection-text: #d5bf94;
@@ -192,6 +194,67 @@ input[type="checkbox"] {
   gap: 12px;
   padding: 0 48px;
   background: var(--canvas);
+}
+.collection-context > .topbar,
+.reader-toolbar {
+  background: var(--header-glass);
+  -webkit-backdrop-filter: var(--header-blur);
+  backdrop-filter: var(--header-blur);
+  border-bottom: 1px solid #ffffff12;
+}
+.collection-context .breadcrumb {
+  flex: 1;
+  gap: 10px;
+}
+.collection-context .breadcrumb > .collection-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+.breadcrumb > .collection-handle {
+  color: var(--muted);
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.collection-back.icon-button {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--text);
+}
+.collection-count-pill {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 7px 11px;
+  border: 1px solid #b1e2bd26;
+  border-radius: 999px;
+  background: #b1e2bd0a;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.collection-count-values {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.collection-count-pill strong {
+  color: var(--green);
+  font-weight: 650;
+}
+.collection-count-divider {
+  color: #79828f;
+}
+.collection-count-label {
+  font-size: 11px;
 }
 .breadcrumb {
   min-width: 0;
@@ -844,10 +907,7 @@ input[type="checkbox"] {
   padding: 12px 24px;
   position: sticky;
   top: var(--sticky-header-height, 0px);
-  background: #101113f5;
-  border-bottom: 1px solid var(--line);
   z-index: 1;
-  backdrop-filter: blur(12px);
   min-height: 66px;
 }
 .back-button {
@@ -1457,6 +1517,26 @@ input[type="checkbox"] {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .collection-context > .topbar {
+    padding: 0 12px;
+    gap: 6px;
+  }
+  .collection-context .breadcrumb {
+    gap: 6px;
+  }
+  .collection-context .breadcrumb > .collection-title {
+    font-size: 13px;
+  }
+  .collection-context .topbar .identity-avatar {
+    display: none;
+  }
+  .collection-count-pill {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  .collection-count-label {
+    display: none;
   }
 
   .page-grid {
