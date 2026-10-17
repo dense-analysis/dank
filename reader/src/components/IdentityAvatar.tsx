@@ -31,7 +31,7 @@ export function IdentityAvatar({
 }: {
   name: string;
   iconUrl?: string | null;
-  kind: "community" | "account";
+  kind: "community" | "account" | "channel";
 }) {
   const [failedUrl, setFailedUrl] = useState<string>();
   const src = imageUrl(iconUrl, kind === "account");

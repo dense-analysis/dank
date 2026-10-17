@@ -36,6 +36,8 @@ export function YouTubeCard({
   const embed = youtubeEmbedUrl(item.url, window.location.origin);
   const original = safeUrl(item.url);
   const discovery = itemDiscovery(item, feed);
+  const ranked =
+    !!feed && discovery?.feed_url === feed && discovery.feed_kind === "hype";
   const text = item.text || item.title;
   const longPost = item.kind === "post" && text.length > 350;
   const title =
@@ -145,7 +147,7 @@ export function YouTubeCard({
                 <span className="yt-play-circle">
                   <Play size={23} fill="currentColor" />
                 </span>
-                {discovery?.rank != null && (
+                {ranked && discovery.rank != null && (
                   <span className="yt-rank">#{discovery.rank}</span>
                 )}
                 {item.duration_text && (

@@ -1,11 +1,9 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
-  ArrowLeft,
   ArrowRight,
   CircleAlert,
   Inbox,
-  Menu,
   RefreshCw,
 } from "lucide-react";
 import {
@@ -17,6 +15,7 @@ import {
 } from "react";
 import { ArticleView } from "./components/ArticleView";
 import { CollectionCount } from "./components/CollectionCount";
+import { CollectionHeader } from "./components/CollectionHeader";
 import { CommunityAvatar } from "./components/CommunityAvatar";
 import { FeedToolbar } from "./components/FeedToolbar";
 import { IdentityAvatar } from "./components/IdentityAvatar";
@@ -139,10 +138,31 @@ export function App() {
       community.name.toLowerCase() === filters.community.toLowerCase(),
   );
   const communityName = activeCommunity?.name ?? filters.community;
+  const youtubeChannelId = params.get("channel");
+  const youtubeFeedId = params.get("feed");
+  const activeYouTubeChannel = youtubeSources.data?.channels.find(
+    (channel) => channel.id === youtubeChannelId,
+  );
+  const activeYouTubeFeed = youtubeSources.data?.feeds.find(
+    (feed) => feed.id === youtubeFeedId,
+  );
+  const youtubeContext =
+    section === "youtube" && !!(youtubeChannelId || youtubeFeedId);
+  const youtubeTitle = youtubeChannelId
+    ? activeYouTubeChannel?.name || "Channel feed"
+    : youtubeFeedId === "linked"
+      ? "From your feeds"
+      : activeYouTubeFeed?.kind === "news"
+        ? "News"
+        : activeYouTubeFeed?.kind === "hype"
+          ? "Hyped"
+          : activeYouTubeFeed?.name || "YouTube";
+  const collectionContext =
+    accountContext || communityContext || youtubeContext;
   const visibleSources = sourcesForFeed(allSources, filters.kind);
   const title =
     section === "youtube"
-      ? "YouTube"
+      ? youtubeTitle
       : section === "settings"
         ? "Settings"
         : section === "sources"
@@ -161,10 +181,10 @@ export function App() {
       ? section
       : null;
   const headerTitle =
-    section === "youtube" ? (
+    section === "youtube" && !youtubeContext ? (
       <>
         <PlatformIcon platform="youtube" size={23} />
-        <span>YouTube</span>
+        <span>{youtubeTitle}</span>
       </>
     ) : overviewPlatform ? (
       <>
@@ -290,69 +310,77 @@ export function App() {
         sidebar
       )}
       <div
-        className={`main-shell ${section === "youtube" ? "youtube-shell" : ""} ${communityContext || accountContext ? "collection-context" : ""}`}
+        className={`main-shell ${section === "youtube" ? "youtube-shell" : ""} ${collectionContext ? "collection-context" : ""}`}
       >
-        <header className="topbar">
-          <button
-            type="button"
-            className="icon-button menu-button"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open navigation"
-          >
-            <Menu size={21} />
-          </button>
-          {(accountContext || communityContext) && (
-            <button
-              type="button"
-              className="icon-button collection-back"
-              onClick={() => select(accountContext ? "x" : "reddit")}
-              aria-label={`Back to ${accountContext ? "X posts" : "Reddit"}`}
-            >
-              <ArrowLeft size={20} />
-            </button>
-          )}
-          <div className="breadcrumb">
-            {accountContext && (
+        <CollectionHeader
+          title={title}
+          titleContent={headerTitle}
+          pageHeading={
+            (feedSection || section === "youtube") && !readingArticle
+          }
+          openNavigation={() => setMobileOpen(true)}
+          back={
+            collectionContext
+              ? {
+                  label: `Back to ${accountContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
+                  onClick: () =>
+                    select(
+                      accountContext
+                        ? "x"
+                        : communityContext
+                          ? "reddit"
+                          : "youtube",
+                    ),
+                }
+              : undefined
+          }
+          avatar={
+            accountContext ? (
               <IdentityAvatar
                 name={accountName}
                 iconUrl={activeAccount?.icon_url}
                 kind="account"
               />
-            )}
-            {communityContext && (
+            ) : communityContext ? (
               <CommunityAvatar
                 community={communityName}
                 iconUrl={activeCommunity?.icon_url}
               />
-            )}
-            {(feedSection || section === "youtube") && !readingArticle ? (
-              <h1 className="collection-title" title={title}>
-                {headerTitle}
-              </h1>
-            ) : (
-              <span className="collection-title" title={title}>
-                {headerTitle}
-              </span>
-            )}
-            {accountContext && accountHasName && (
-              <span className="collection-handle" title={`@${accountHandle}`}>
-                @{accountHandle}
-              </span>
-            )}
-          </div>
-          {accountContext && activeAccount && (
-            <CollectionCount
-              count={activeAccount.count}
-              total={activeAccount.total_posts}
-            />
-          )}
-          {communityContext && activeCommunity && (
-            <CollectionCount
-              count={activeCommunity.count}
-              estimate={activeCommunity.post_total}
-            />
-          )}
-        </header>
+            ) : youtubeContext && youtubeChannelId ? (
+              <IdentityAvatar
+                name={youtubeTitle}
+                iconUrl={activeYouTubeChannel?.avatar_url}
+                kind="channel"
+              />
+            ) : youtubeContext ? (
+              <PlatformIcon platform="youtube" size={23} />
+            ) : undefined
+          }
+          handle={
+            accountContext && accountHasName ? `@${accountHandle}` : undefined
+          }
+          count={
+            accountContext && activeAccount ? (
+              <CollectionCount
+                count={activeAccount.count}
+                total={activeAccount.total_posts}
+              />
+            ) : communityContext && activeCommunity ? (
+              <CollectionCount
+                count={activeCommunity.count}
+                estimate={activeCommunity.post_total}
+              />
+            ) : youtubeContext && activeYouTubeChannel ? (
+              <CollectionCount
+                count={activeYouTubeChannel.count}
+                total={activeYouTubeChannel.reported_video_count}
+                reportedText={activeYouTubeChannel.reported_video_count_text}
+                unit="videos"
+                source="YouTube"
+              />
+            ) : undefined
+          }
+        />
         {(storageError || positionError) && (
           <div className="error-banner reading-storage-error" role="alert">
             <CircleAlert size={16} /> Reading progress could not be saved in
