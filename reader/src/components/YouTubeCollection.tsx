@@ -7,7 +7,9 @@ import {
   Clock3,
   Film,
   Link2,
+  List,
   MessageSquare,
+  Network,
   RefreshCw,
   Search,
   Sparkles,
@@ -27,6 +29,8 @@ import {
 import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
 import { CountryFlag } from "./CountryFlag";
 import { YouTubeCard } from "./YouTubeCard";
+import { YouTubeMetadataStatus } from "./YouTubeMetadataStatus";
+import YouTubeReferenceGraph from "./YouTubeReferenceGraph";
 import { YouTubeVersionHistory } from "./YouTubeVersionHistory";
 
 export function YouTubeCollection({
@@ -43,6 +47,7 @@ export function YouTubeCollection({
     params: URLSearchParams,
     replace?: boolean,
     backTo?: string,
+    options?: { preservePosition?: boolean },
   ) => void;
   backTo: (params: URLSearchParams) => void;
   sources?: YouTubeSources;
@@ -53,6 +58,7 @@ export function YouTubeCollection({
   const filters = youtubeFilters(params);
   const [search, setSearch] = useState(filters.q);
   const selectedId = params.get("youtube_item");
+  const graphView = params.get("references") === "graph";
   const activeFeed = sources?.feeds.find((feed) => feed.id === filters.feed);
   const activeChannel = sources?.channels.find(
     (channel) => channel.id === filters.channel,
@@ -145,7 +151,14 @@ export function YouTubeCollection({
   function close() {
     const next = new URLSearchParams(params);
     next.delete("youtube_item");
+    next.delete("references");
     backTo(next);
+  }
+  function setReferenceView(graph: boolean) {
+    const next = new URLSearchParams(params);
+    if (graph) next.set("references", "graph");
+    else next.delete("references");
+    navigate(next, true, undefined, { preservePosition: true });
   }
   function href(item: YouTubeItem) {
     const next = new URLSearchParams(params);
@@ -249,15 +262,20 @@ export function YouTubeCollection({
                     The matching source excerpts and links are shown below.
                   </p>
                 )}
+                <YouTubeMetadataStatus key={selected.id} item={selected} />
                 <p className="yt-capture-note">
                   <Clock3 size={15} />
                   {selected.video_url
                     ? "Video downloaded for local playback."
                     : selected.detail_capture.status === "captured"
                       ? "Additional video details have been collected. Playback connects to YouTube."
-                      : selected.discoveries.length
-                        ? "Feed information is saved. YouTube transcripts and comments have not been collected."
-                        : "YouTube details have not been collected."}
+                      : selected.metadata_capture?.available
+                        ? "Playback connects to YouTube. YouTube transcripts and comments have not been collected."
+                        : selected.discoveries.length
+                          ? "Feed information is saved. YouTube transcripts and comments have not been collected."
+                          : selected.metadata_capture
+                            ? "Video playback connects to YouTube."
+                            : "YouTube details have not been collected."}
                 </p>
               </aside>
             </div>
@@ -270,23 +288,56 @@ export function YouTubeCollection({
                   <h2>
                     <Link2 size={18} /> Links and mentions in your feeds
                   </h2>
-                  <span>
-                    {selected.reference_count}{" "}
-                    {selected.reference_count === 1
-                      ? "reference"
-                      : "references"}
-                  </span>
+                  <div className="yt-reference-toolbar">
+                    <span>
+                      {selected.reference_count}{" "}
+                      {selected.reference_count === 1
+                        ? "reference"
+                        : "references"}
+                    </span>
+                    <fieldset className="yt-reference-view">
+                      <legend className="visually-hidden">
+                        Reference view
+                      </legend>
+                      <button
+                        type="button"
+                        aria-label="List view"
+                        aria-pressed={!graphView}
+                        onClick={() => setReferenceView(false)}
+                      >
+                        <List size={14} /> List
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Graph view"
+                        aria-pressed={graphView}
+                        onClick={() => setReferenceView(true)}
+                      >
+                        <Network size={14} /> Graph
+                      </button>
+                    </fieldset>
+                  </div>
                 </div>
-                <div className="yt-reference-list">
-                  {selected.references.map((reference) => (
-                    <YouTubeSourceReference
-                      key={`${reference.domain}:${reference.post_id}:${reference.kind}:${reference.reference_id}`}
-                      reference={reference}
-                      params={params}
-                      open={() => openReference(reference)}
-                    />
-                  ))}
-                </div>
+                {graphView ? (
+                  <YouTubeReferenceGraph
+                    item={selected}
+                    onOpenReference={openReference}
+                    referenceHref={(reference) =>
+                      `/reader/?${referenceParams(params, reference)}`
+                    }
+                  />
+                ) : (
+                  <div className="yt-reference-list">
+                    {selected.references.map((reference) => (
+                      <YouTubeSourceReference
+                        key={`${reference.domain}:${reference.post_id}:${reference.kind}:${reference.reference_id}`}
+                        reference={reference}
+                        params={params}
+                        open={() => openReference(reference)}
+                      />
+                    ))}
+                  </div>
+                )}
                 {selected.reference_count > selected.references.length && (
                   <p className="result-note">
                     Showing {selected.references.length} of{" "}

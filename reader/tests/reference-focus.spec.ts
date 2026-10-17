@@ -197,6 +197,60 @@ async function fixtures(page: Page, post = article()) {
 }
 const detailUrl = `/reader/?view=youtube&feed=linked&q=security&youtube_item=video%3A${videoId}`;
 
+for (const width of [1210, 390]) {
+  test(`graph view keeps position and opens exact DANK evidence at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 958 });
+    const reference = await fixtures(page);
+    await page.goto(detailUrl);
+    const graphButton = page.getByRole("button", {
+      name: "Graph view",
+      exact: true,
+    });
+    await graphButton.scrollIntoViewIfNeeded();
+    const before = await page.evaluate(() => window.scrollY);
+    await graphButton.click();
+    await expect(page.locator(".relationship-graph")).toHaveAttribute(
+      "data-status",
+      "ready",
+    );
+    expect(
+      Math.abs((await page.evaluate(() => window.scrollY)) - before),
+    ).toBeLessThan(60);
+    expect(new URL(page.url()).searchParams.get("references")).toBe("graph");
+    await page
+      .getByLabel("Explore nodes")
+      .selectOption(
+        JSON.stringify([
+          "comment",
+          reference.domain,
+          reference.post_id,
+          reference.reference_id,
+        ]),
+      );
+    const details = page.getByRole("region", { name: "Selected connection" });
+    await details.getByRole("link", { name: "Open comment in reader" }).click();
+    const match = page.locator('[data-reference-match="true"]');
+    await expect(match).toHaveText("seen it happen in real time");
+    await expect(match).toBeFocused();
+    await expect(match).toBeInViewport();
+    await page.goBack();
+    await expect(graphButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".relationship-graph")).toHaveAttribute(
+      "data-status",
+      "ready",
+    );
+    await page.reload();
+    await expect(graphButton).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "List view", exact: true }).click();
+    await expect(page.locator(".relationship-graph")).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Open comment: James20k", exact: true }),
+    ).toBeVisible();
+  });
+}
+
 for (const width of [1440, 390]) {
   test(`reference opens and highlights the exact saved Reddit link at ${width}px`, async ({
     page,

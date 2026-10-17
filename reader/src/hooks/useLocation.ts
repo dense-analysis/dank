@@ -209,11 +209,19 @@ export function useLocation() {
     return () => observer?.disconnect();
   }, [search]);
 
-  function navigate(params: URLSearchParams, replace = false, backTo?: string) {
+  function navigate(
+    params: URLSearchParams,
+    replace = false,
+    backTo?: string,
+    options?: { preservePosition?: boolean },
+  ) {
     if (params.toString() === window.location.search.slice(1)) return;
     savePosition();
     const url = `${window.location.pathname}${params.size ? `?${params}` : ""}`;
-    const entry: HistoryEntry = { key: navigationKey(), scroll: null, backTo };
+    const entry: HistoryEntry =
+      replace && options?.preservePosition
+        ? { ...currentEntry(), scroll: window.scrollY }
+        : { key: navigationKey(), scroll: null, backTo };
     if (replace && document.activeElement instanceof HTMLElement)
       focused.current.set(entry.key, document.activeElement);
     const state = { ...window.history.state, readerNavigation: entry };
