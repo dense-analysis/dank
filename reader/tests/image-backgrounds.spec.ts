@@ -342,9 +342,7 @@ test("enabling and disabling the saved setting changes subsequently opened artic
     await page.reload();
     if (enabled) await expect(automatic).toBeChecked();
     else await expect(automatic).not.toBeChecked();
-    await page
-      .getByRole("button", { name: "All stories", exact: true })
-      .click();
+    await page.getByRole("button", { name: "All", exact: true }).click();
     await page
       .getByRole("link", { name: "Read Reading figures", exact: true })
       .click();

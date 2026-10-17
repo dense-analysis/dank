@@ -101,7 +101,7 @@ async function mockDetails(
 
     const selected = items.filter(
       (item) =>
-        params.get("kind") === "reddit" &&
+        ["all", "reddit"].includes(params.get("kind") ?? "") &&
         (!params.get("community") ||
           item.reddit?.community.toLowerCase() ===
             params.get("community")?.toLowerCase()) &&
@@ -233,7 +233,7 @@ test("isolates community flairs, combines shared global labels and supports OR s
   await expect(page.locator(".post-card")).toHaveCount(4);
   expect(new URL(page.url()).searchParams.has("flair")).toBe(false);
   await flairs.getByRole("button", { name: "New Model", exact: true }).click();
-  await nav.getByRole("button", { name: "All stories", exact: true }).click();
+  await nav.getByRole("button", { name: "All", exact: true }).click();
   expect(new URL(page.url()).searchParams.has("flair")).toBe(false);
   await expect(flairs).toHaveCount(0);
 });
@@ -512,9 +512,9 @@ test("updates search scope across communities, all Reddit and stories", async ({
   await expect(page.locator(".post-card .post-meta .source-link")).toHaveCount(
     4,
   );
-  await nav.getByRole("button", { name: "All stories", exact: true }).click();
+  await nav.getByRole("button", { name: "All", exact: true }).click();
   await expect(
-    page.getByRole("textbox", { name: "Search stories", exact: true }),
+    page.getByRole("textbox", { name: "Search everything", exact: true }),
   ).toBeVisible();
 });
 

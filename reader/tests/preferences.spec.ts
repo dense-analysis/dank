@@ -81,7 +81,7 @@ test("persists reading preferences across settings, feed, article and reload", a
   await expect(automatic).toBeChecked();
   await expect(page.getByRole("radio", { name: /Newsreader/ })).toBeChecked();
   await expect(size).toHaveValue("23");
-  await page.getByRole("button", { name: "All stories", exact: true }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
   await expect(page.locator(".post-open h2")).toHaveCSS(
     "font-family",
     /Newsreader/,

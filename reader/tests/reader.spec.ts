@@ -104,8 +104,13 @@ async function mockReader(page: Page): Promise<MockReader> {
     const domains = url.searchParams.getAll("domain");
     const tags = url.searchParams.getAll("tag");
     const query = url.searchParams.get("q")?.toLowerCase() ?? "";
+    const kind = url.searchParams.get("kind");
     const posts = state.posts.filter(
       (post) =>
+        (kind === "all" ||
+          (kind === "stories"
+            ? post.source !== "reddit" && post.source !== "x"
+            : post.source === kind)) &&
         (!domains.length || domains.includes(post.domain)) &&
         (!tags.length ||
           sources.some(
@@ -325,7 +330,7 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
   ).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "All stories", exact: true }),
+    page.getByRole("heading", { name: "All", exact: true }),
   ).not.toBeVisible();
   await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
@@ -504,7 +509,7 @@ test("starts a fresh cursor sequence after filters change", async ({
   const initialRequests = state.requests.length;
   await page.locator(".load-more").scrollIntoViewIfNeeded();
   await expect(page.locator(".post-card")).toHaveCount(10);
-  await page.getByRole("textbox", { name: "Search stories" }).fill("report");
+  await page.getByRole("textbox", { name: "Search everything" }).fill("report");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator(".post-card")).toHaveCount(5);
   await expect(story(page)).toHaveCount(0);
@@ -568,7 +573,7 @@ test("opens source-specific deep links and returns to their filtered timeline", 
     .click();
   await expect(story(page)).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Search stories" }),
+    page.getByRole("textbox", { name: "Search everything" }),
   ).toHaveValue("housing");
   expect(new URL(page.url()).search).toBe("?q=housing");
 });
@@ -602,9 +607,9 @@ test("keeps navigation and article controls focused on reading", async ({
     "/reader/favicon.svg",
   );
   await expect(page.locator("main .page-heading h1")).toHaveCount(0);
-  await expect(page.locator(".topbar h1")).toHaveText("All stories");
+  await expect(page.locator(".topbar h1")).toHaveText("All");
   await expect(
-    sidebar.getByRole("button", { name: "All stories", exact: true }),
+    sidebar.getByRole("button", { name: "All", exact: true }),
   ).toBeVisible();
   await expect(
     sidebar.getByRole("button", { name: "Sources", exact: true }),
@@ -668,7 +673,7 @@ const legacyLibrary = JSON.stringify(
 );
 
 for (const view of ["saved", "legacy-politics"]) {
-  test(`opens the old ${view} view as All stories and preserves filters and local data`, async ({
+  test(`opens the old ${view} view as All and preserves filters and local data`, async ({
     page,
   }) => {
     await mockReader(page);
@@ -681,7 +686,7 @@ for (const view of ["saved", "legacy-politics"]) {
     );
     await page.goto(`/reader/?view=${view}&q=housing&domain=x.com&sort=oldest`);
     await expect(
-      page.getByRole("heading", { name: "All stories", exact: true }),
+      page.getByRole("heading", { name: "All", exact: true }),
     ).toBeVisible();
     await expect(story(page, socialPost.title)).toBeVisible();
     await expect(story(page)).toHaveCount(0);
@@ -706,7 +711,7 @@ for (const view of ["saved", "legacy-politics"]) {
       .getByRole("button", { name: "Back to stories", exact: true })
       .click();
     await expect(
-      page.getByRole("heading", { name: "All stories", exact: true }),
+      page.getByRole("heading", { name: "All", exact: true }),
     ).toBeVisible();
     const params = new URL(page.url()).searchParams;
     expect(params.get("q")).toBe("housing");
@@ -894,9 +899,7 @@ test("supports mobile navigation and article reading without horizontal overflow
   await page
     .getByRole("button", { name: "Open navigation", exact: true })
     .click();
-  await navigation
-    .getByRole("button", { name: "All stories", exact: true })
-    .click();
+  await navigation.getByRole("button", { name: "All", exact: true }).click();
   await story(page).click();
   await expect(
     page.getByRole("main", { name: "Article reader" }),
@@ -957,7 +960,9 @@ test("uses one combined search and retains source filters and ordering", async (
     page.getByRole("button", { name: /^(Words|Meaning)$/ }),
   ).toHaveCount(0);
   await expect(page.locator("#search-mode-help")).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Search stories" }).fill("housing");
+  await page
+    .getByRole("textbox", { name: "Search everything" })
+    .fill("housing");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Order stories" }),
@@ -992,7 +997,7 @@ test("uses one combined search and retains source filters and ordering", async (
   await expect(story(page, socialPost.title)).toHaveCount(0);
   await page.getByRole("button", { name: "Clear search", exact: true }).click();
   await expect(
-    page.getByRole("textbox", { name: "Search stories" }),
+    page.getByRole("textbox", { name: "Search everything" }),
   ).toHaveValue("");
   expect(new URL(page.url()).searchParams.getAll("tag")).toEqual(["politics"]);
   await expect
@@ -1011,7 +1016,7 @@ for (const mode of ["words", "meaning"]) {
     await page.goto(`/reader/?q=housing&mode=${mode}&sort=relevance`);
     await expect(story(page)).toBeVisible();
     await expect(
-      page.getByRole("textbox", { name: "Search stories" }),
+      page.getByRole("textbox", { name: "Search everything" }),
     ).toHaveValue("housing");
     await expect(
       page.getByRole("group", { name: "Search method" }),
@@ -1061,9 +1066,7 @@ test("dismisses mobile navigation and switches pages without leaving an overlay"
   await expectNoHorizontalOverflow(page);
 
   await openNavigation.click();
-  await navigation
-    .getByRole("button", { name: "All stories", exact: true })
-    .click();
+  await navigation.getByRole("button", { name: "All", exact: true }).click();
   await expect(story(page)).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");

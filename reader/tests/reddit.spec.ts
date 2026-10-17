@@ -77,9 +77,10 @@ async function mockReddit(
     const params = url.searchParams;
     const selected = posts.filter(
       (post) =>
-        (params.get("kind") === "reddit"
-          ? post.source === "reddit"
-          : post.source !== "reddit") &&
+        (params.get("kind") === "all" ||
+          (params.get("kind") === "reddit"
+            ? post.source === "reddit"
+            : post.source !== "reddit" && post.source !== "x")) &&
         (!params.get("community") ||
           post.reddit?.community === params.get("community")) &&
         (!params.get("author") || post.author === params.get("author")) &&
@@ -215,11 +216,11 @@ for (const width of [1440, 980, 390, 320]) {
   });
 }
 
-test("keeps Reddit separate and exposes configured communities with accessible disclosure", async ({
+test("keeps Blogs separate and exposes configured Reddit communities with accessible disclosure", async ({
   page,
 }, testInfo) => {
   const requests = await mockReddit(page);
-  await page.goto("/reader/");
+  await page.goto("/reader/?view=stories");
   await expect(
     page.getByRole("heading", { name: blogPost.title }),
   ).toBeVisible();
