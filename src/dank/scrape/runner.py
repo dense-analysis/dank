@@ -264,7 +264,13 @@ async def _collect_source(
                 ):
                     stats.discovered(len(batch.posts), len(batch.assets))
                     stats.pending += len(batch.communities)
-                    await queue.put(batch._replace(source_index=index))
+                    # Persist this batch before moving on to the next one.
+                    saved = await _flush_posts(client, list(batch.posts))
+                    stats.counts["posts_saved"] += saved
+                    stats.persisted(saved)
+                    await queue.put(batch._replace(
+                        posts=[], source_index=index,
+                    ))
                     history.queue_size += 1
 
             stats.collected()
@@ -454,12 +460,9 @@ async def _process_batches(
     history: RunMetrics | None = None,
     download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
 ) -> ScrapeTotals:
-    saved_posts = 0
     available_assets = 0
     unavailable_assets = 0
-    pending_posts: list[RawPost] = []
     pending_discoveries: list[AssetDiscovery] = []
-    post_owners: list[SourceMetrics | None] = []
     asset_owners: list[SourceMetrics | None] = []
 
     while True:
@@ -473,20 +476,13 @@ async def _process_batches(
             owner = (
                 history.sources.get(batch.source_index) if history else None
             )
-            post_owners.extend([owner] * len(batch.posts))
             asset_owners.extend([owner] * len(batch.assets))
-            if batch.posts:
-                pending_posts.extend(batch.posts)
 
             if batch.assets:
                 pending_discoveries.extend(batch.assets)
 
-        # Persist articles before waiting on a potentially slow media batch.
+        # Posts are already durable; only media waits for a larger batch.
         flush_media = batch is None or len(pending_discoveries) >= batch_size
-
-        if batch is None or len(pending_posts) >= batch_size or flush_media:
-            saved_posts += await _flush_posts(clickhouse_client, pending_posts)
-            _records_persisted(post_owners, "posts_saved")
 
         if flush_media:
             assets = await _flush_assets(
@@ -519,7 +515,7 @@ async def _process_batches(
             # Break when there's nothing left.
             break
 
-    return ScrapeTotals(saved_posts, available_assets, unavailable_assets)
+    return ScrapeTotals(0, available_assets, unavailable_assets)
 
 
 async def _persist_community_icons(

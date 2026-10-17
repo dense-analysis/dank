@@ -19,6 +19,7 @@ from dank.config import (
     RedditTimeFilter,
 )
 from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
+from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
     BrowserSession,
@@ -72,6 +73,7 @@ BLOCKED_MESSAGES = (
     "log in to view this community",
     "this is a private community",
 )
+EMPTY_LISTING_MESSAGE = "this community doesn't have any posts yet"
 
 
 class RedditScrapeError(RuntimeError):
@@ -121,37 +123,58 @@ async def scrape_reddit_communities(
 
             visited.add(community.casefold())
 
-            async for batch in _scrape_community(
-                page,
-                community,
-                settings,
-                sort=sort,
-                time_filter=time_filter,
-            ):
-                if batch.posts:
-                    if detail_page is None:
-                        try:
-                            async with asyncio.timeout(10):
-                                detail_page = await browser.get(
-                                    "about:blank", new_tab=True,
-                                )
-                        except Exception:
-                            logger.warning("Reddit detail tab unavailable")
+            try:
+                async for batch in _scrape_community(
+                    page,
+                    community,
+                    settings,
+                    sort=sort,
+                    time_filter=time_filter,
+                ):
+                    if batch.posts:
+                        if detail_page is None:
+                            try:
+                                async with asyncio.timeout(10):
+                                    detail_page = await browser.get(
+                                        "about:blank", new_tab=True,
+                                    )
+                            except Exception:
+                                logger.warning("Reddit detail tab unavailable")
 
-                    batch = await _capture_batch_details(
-                        batch, detail_page, settings,
-                    )
+                        batch = await _capture_batch_details(
+                            batch, detail_page, settings,
+                        )
 
-                yield batch
+                    yield batch
+            except Exception as error:
+                count("fetch_failures")
+                stats = current_source.get()
+
+                if stats is not None:
+                    stats.error_type = type(error).__name__
+
+                logger.warning(
+                    "Reddit r/%s failed (%s): %s; continuing with the next "
+                    "community",
+                    community, type(error).__name__, error,
+                )
     finally:
+        await _close_tabs(page, detail_page)
+
+
+async def _close_tabs(*tabs: zendriver.Tab | None) -> None:
+    for tab in tabs:
+        if tab is None:
+            continue
+
         try:
             async with asyncio.timeout(5):
-                await page.close()
-
-                if detail_page is not None:
-                    await detail_page.close()
-        except TimeoutError:
-            logger.warning("Timed out closing the Reddit browser tab")
+                await tab.close()
+        except Exception as error:
+            logger.warning(
+                "Could not close the Reddit browser tab (%s)",
+                type(error).__name__,
+            )
 
 
 async def _capture_batch_details(
@@ -269,12 +292,10 @@ async def _scrape_community(
 
             idle_scrolls = 0 if batch.posts else idle_scrolls + 1
 
-            if len(seen_posts) >= limits.max_posts:
-                stop_reason = "post limit"
-                break
-
-            if idle_scrolls >= settings.stall_scrolls:
-                stop_reason = "repeated stall"
+            if reason := _listing_stop_reason(
+                snapshot, len(seen_posts), idle_scrolls, settings,
+            ):
+                stop_reason = reason
                 break
 
             if step < limits.max_scrolls:
@@ -296,7 +317,10 @@ async def _scrape_community(
             # Keep a header-only result until scrolling has had a chance to
             # reveal an icon that Reddit renders after the initial document.
             yield ScrapeBatch([], [], communities=(pending_community,))
-        elif not seen_posts and not community_discovered:
+        elif (
+            not seen_posts and not community_discovered
+            and stop_reason != "empty listing"
+        ):
             raise RedditScrapeError(
                 f"No public posts found for r/{community}. Reddit may have "
                 "blocked access, the community may be empty, or its listing "
@@ -310,6 +334,25 @@ async def _scrape_community(
         ) from exc
     finally:
         await capture.stop()
+
+
+def _listing_stop_reason(
+    snapshot: dict[str, object], post_count: int, idle_scrolls: int,
+    settings: RedditSettings,
+) -> str | None:
+    if post_count >= settings.scrape.max_posts:
+        return "post limit"
+
+    if (
+        not post_count and not text(snapshot.get("html"))
+        and EMPTY_LISTING_MESSAGE in text(snapshot.get("text")).casefold()
+    ):
+        return "empty listing"
+
+    if idle_scrolls >= settings.stall_scrolls:
+        return "repeated stall"
+
+    return None
 
 
 def _check_blocked(snapshot: dict[str, object], community: str) -> None:

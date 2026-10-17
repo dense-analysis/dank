@@ -10,7 +10,7 @@ means a fallback exists; “handled” means the specific case has a tested fix.
 
 ## Full-scrape improvement tasks
 
-These are open follow-ups from run `3024d25d-d50e-4cde-be87-4b8e70224e22`
+These follow-ups came from run `3024d25d-d50e-4cde-be87-4b8e70224e22`
 on 2026-10-17 (Europe/London), using commit `0e0de9a`. Its archived log is
 `logs/scrape/2026-10-16T23-41-08Z-50060.log` (filenames use UTC).
 The run used all 55 configured sources, 36 X accounts and 15 Reddit communities.
@@ -32,21 +32,37 @@ intentionally skipped. All 55 saved YouTube references lacked a local file;
 logs contained errors for 53 distinct YouTube IDs. Size-limit rejections
 produced 91 warnings for 85 distinct URLs and are included in failure counts.
 
-- [ ] **P1: Save small batches before a later source error can discard them.**
+- [x] **P1: Save small batches before a later source error can discard them.**
   Reddit queued 32 posts but saved none: both post and media buffers stayed below
   the 50-record flush threshold when a later community raised an exception.
-  Flush completed batches promptly or within a short deadline, and drain safely
-  on source failure/cancellation. Done when a regression reproducing this run
-  retains all 32 earlier posts and reports the later failure accurately.
-  [Persistence](../src/dank/scrape/runner.py).
-- [ ] **P1: Isolate empty or failed Reddit communities.** A zero-post result for
+  Post batches are now committed before discovery advances or waits on the
+  media queue. Media retains bounded batching; database write failures still
+  stop collection. Regressions retain all 32 posts after later failure or
+  cancellation and preserve committed posts while media is blocked or fails.
+  [Persistence](../src/dank/scrape/runner.py),
+  [regressions](../tests/scrape/test_scrape_history.py).
+- [x] **P1: Isolate empty or failed Reddit communities.** A zero-post result for
   `r/DomainDrivenDesign` raised `RedditScrapeError`, failed the entire run and
-  prevented the final three communities from being attempted. Distinguish a
-  legitimate empty top/day listing from blocked access and unrecognized markup;
-  record per-community outcomes and continue independent communities when safe.
-  Done when empty and blocked fixtures produce distinct results, later
-  communities still run, and failures are reflected in source counters.
-  [Collector](../src/dank/scrape/reddit/__init__.py).
+  prevented the final three communities from being attempted. A live check
+  confirmed Reddit's explicit empty-listing message there. That message now
+  ends the community normally; blocked or unrecognized listings and other
+  community errors increment fetch failures, log their community/error type,
+  and allow later communities to run. Saved records plus errors produce a
+  partial outcome. Cancellation still propagates. Regression coverage includes
+  empty, blocked and broken communities followed by successful collection.
+  [Collector](../src/dank/scrape/reddit/__init__.py),
+  [empty/access tests](../tests/scrape/test_reddit.py).
+
+  **Live verification, 2026-10-17:** Reddit-only Docker run
+  `da22432f-1c25-48e2-beb1-8a19b0baab7b` attempted all 15 communities and
+  exited normally in 5m28s. All 30 collected posts were saved (30 distinct IDs),
+  with detail/comment capture recorded. The first three rows were verified in
+  ClickHouse while the run was still active. Five listings, including
+  `DomainDrivenDesign`, were unrecognized during this run and correctly counted
+  as failures; the source/run outcome was partial, with no lost completed
+  batches. This verifies persistence and continuation, not complete Reddit
+  coverage. The empty-state recognizer is regression-tested against the message
+  observed in the standalone listing check. Pagination remains open below.
 - [ ] **P1: Recover X collection after a browser timeout.** X saved 594 records
   before its 21st account timed out; 15 accounts were never attempted. The
   30-second timeout prevented an indefinite wait and Reddit continued.

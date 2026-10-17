@@ -29,6 +29,7 @@ from dank.scrape.rss import FetchedText
 from dank.scrape.runner import (
     _collect_source,  # pyright: ignore[reportPrivateUsage]
     _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
+    _flush_posts,  # pyright: ignore[reportPrivateUsage]
     _process_batches,  # pyright: ignore[reportPrivateUsage]
     filter_settings_sources,
     run_scrape,
@@ -98,10 +99,6 @@ async def test_scrape_totals_distinguish_available_and_unavailable_assets(
 ) -> None:
     caplog.set_level(logging.INFO)
     now = datetime.datetime.now(datetime.UTC)
-    posts = [
-        RawPost("example.test", "1", "https://example.test/1", now, now,
-                "rss", "https://example.test/feed", "{}"),
-    ]
     discoveries = [
         AssetDiscovery("rss", "example.test", "1", url, "image", None)
         for url in ("https://example.test/ok.jpg", "https://example.test/fail.jpg")
@@ -123,7 +120,7 @@ async def test_scrape_totals_distinguish_available_and_unavailable_assets(
 
     monkeypatch.setattr("dank.scrape.runner.download_assets", download)
     queue: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
-    await queue.put(ScrapeBatch(posts, discoveries))
+    await queue.put(ScrapeBatch([], discoveries))
     await queue.put(None)
     totals = await _process_batches(
         queue, cast(Any, _Client()), cast(Any, None),
@@ -131,8 +128,8 @@ async def test_scrape_totals_distinguish_available_and_unavailable_assets(
         max_asset_bytes=None, batch_size=50,
     )
 
-    assert totals == ScrapeTotals(1, 1, 1)
-    assert len(saved["raw_posts"]) == 1
+    assert totals == ScrapeTotals(0, 1, 1)
+    assert "raw_posts" not in saved
     assert len(saved["raw_assets"]) == 2
     assert "1 files available; 1 not downloaded" in caplog.text
 
@@ -148,19 +145,13 @@ async def test_failed_database_write_does_not_report_saved_posts(
         async def insert_rows(self, *args: object, **kwargs: object) -> None:
             raise RuntimeError("database unavailable")
 
-    queue: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
-    await queue.put(ScrapeBatch([
+    posts = [
         RawPost("example.test", "1", "https://example.test/1", now, now,
                 "rss", "https://example.test/feed", "{}"),
-    ], []))
-    await queue.put(None)
+    ]
 
     with pytest.raises(RuntimeError, match="database unavailable"):
-        await _process_batches(
-            queue, cast(Any, _Client()), cast(Any, None),
-            assets_dir=tmp_path, browser_profile_dir=tmp_path,
-            max_asset_bytes=None, batch_size=50,
-        )
+        await _flush_posts(cast(Any, _Client()), posts)
 
     assert "Saved" not in caplog.text
 
@@ -271,6 +262,7 @@ async def test_articles_are_saved_before_waiting_for_media(
     saved: list[str] = []
     downloading = asyncio.Event()
     release = asyncio.Event()
+    collected = asyncio.Event()
     now = datetime.datetime.now(datetime.UTC)
 
     class _Client:
@@ -284,22 +276,34 @@ async def test_articles_are_saved_before_waiting_for_media(
         return []
 
     monkeypatch.setattr("dank.scrape.runner.download_assets", download)
-    queue: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
-    await queue.put(ScrapeBatch(
-        [RawPost("test", "post", "https://test/post", now, now,
-                 "rss", "https://test/feed", "{}")],
-        [AssetDiscovery("rss", "test", "post", f"https://test/{i}",
-                        "image", None) for i in range(2)],
-    ))
-    await queue.put(None)
-    task = asyncio.create_task(_process_batches(
-        queue, cast(Any, _Client()), cast(Any, None), assets_dir=tmp_path,
-        browser_profile_dir=tmp_path, max_asset_bytes=None, batch_size=2,
+    async def discover(*args: Any, **kwargs: Any):
+        post = RawPost("test", "post", "https://test/post", now, now,
+                       "rss", "https://test/feed", "{}")
+        yield ScrapeBatch([post], [
+            AssetDiscovery("rss", "test", "post", f"https://test/{i}",
+                           "image", None) for i in range(2)
+        ])
+        await downloading.wait()
+        yield ScrapeBatch([post._replace(post_id="second")], [])
+        collected.set()
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    source = SourceConfig("test", ())
+    history = RunMetrics(
+        runtime_info(), 1, 2, headless=True, options=ScrapeOptions(),
+    )
+    task = asyncio.create_task(_collect_source(
+        _make_settings(), source, 1, cast(Any, _Client()),
+        cast(Any, None), cast(Any, None), history,
+        tmp_path, tmp_path, None,
     ))
 
     try:
-        await asyncio.wait_for(downloading.wait(), timeout=1)
-        assert saved == ["raw_posts"]
+        await asyncio.wait_for(collected.wait(), timeout=1)
+        assert saved.count("raw_posts") == 2
+        assert history.sources[1].counts["posts_saved"] == 2
         assert not task.done()
     finally:
         release.set()

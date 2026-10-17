@@ -291,7 +291,9 @@ async def test_cancelled_run_records_cancellation_without_leaking_tasks(
     monkeypatch.setattr(
         "dank.scrape.runner._discover_source_batches", discover,
     )
-    task = asyncio.create_task(run_scrape(harness.settings))
+    task = asyncio.create_task(run_scrape(harness.settings._replace(
+        sources=(SourceConfig("one.test", ()),),
+    )))
     await waiting.wait()
     task.cancel()
 
@@ -301,8 +303,108 @@ async def test_cancelled_run_records_cancellation_without_leaking_tasks(
     assert harness.client.rows["scrape_runs"][-1]["status"] == "cancelled"
     final = harness.client.rows["scrape_source_runs"][-1]
     assert final["status"] == "cancelled"
-    assert final["posts_saved"] == 0
+    assert final["posts_saved"] == 1
+    assert len(harness.client.rows["raw_posts"]) == 1
     assert final["finished_at"] is not None
+
+
+@pytest.mark.parametrize("error", [RuntimeError("later failure"),
+                                  asyncio.CancelledError()])
+async def test_small_batches_survive_later_failure_or_cancellation(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+    error: BaseException,
+) -> None:
+    async def discover(*args: Any, **kwargs: Any):
+        for start in range(0, 32, 8):
+            yield ScrapeBatch([
+                _post("reddit.com")._replace(source="reddit", post_id=str(i))
+                for i in range(start, start + 8)
+            ], [])
+            assert len(harness.client.rows["raw_posts"]) == start + 8
+
+        raise error
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+
+    with pytest.raises(type(error)):
+        await run_scrape(harness.settings._replace(
+            sources=(SourceConfig("reddit.com", ()),),
+        ))
+
+    assert len(harness.client.rows["raw_posts"]) == 32
+    assert harness.client.rows["scrape_runs"][-1]["posts_saved"] == 32
+
+
+async def test_reddit_failures_preserve_posts_and_allow_later_communities(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from dank.scrape.reddit import RedditScrapeError
+
+    page = SimpleNamespace(close=AsyncMock())
+    browser = SimpleNamespace(get=AsyncMock(return_value=page))
+
+    class _Session(_Browser):
+        async def get_browser(self) -> Any:
+            return browser
+
+    visited: list[str] = []
+
+    async def collect(page: Any, community: str, *args: Any, **kwargs: Any):
+        visited.append(community)
+
+        if community == "before":
+            yield ScrapeBatch([
+                _post("reddit.com")._replace(source="reddit", post_id=str(i))
+                for i in range(32)
+            ], [])
+            assert len(harness.client.rows["raw_posts"]) == 32
+        elif community == "empty":
+            return
+        elif community == "blocked":
+            raise RedditScrapeError("access restricted")
+        elif community == "broken":
+            raise ConnectionError("page unavailable")
+        else:
+            yield ScrapeBatch([
+                _post("reddit.com")._replace(
+                    source="reddit", post_id=community,
+                ),
+            ], [])
+
+    async def detail(page: Any, raw: RawPost, settings: Any) -> RawPost:
+        return raw
+
+    monkeypatch.setattr(
+        "dank.scrape.runner.BrowserSession", Mock(return_value=_Session()),
+    )
+    monkeypatch.setattr("dank.scrape.reddit._scrape_community", collect)
+    monkeypatch.setattr("dank.scrape.reddit.capture_post_detail", detail)
+    communities = ("before", "empty", "blocked", "broken", "after")
+    await run_scrape(harness.settings._replace(
+        sources=(
+            SourceConfig("reddit.com", (), tuple(
+                f"https://www.reddit.com/r/{name}/" for name in communities
+            )),
+            SourceConfig("reddit.com", (), ("https://www.reddit.com/r/later/",)),
+        ),
+        scrape=ScrapeSettings(source_concurrency=1),
+    ), headless=True)
+
+    assert visited == [*communities, "later"]
+    assert len(harness.client.rows["raw_posts"]) == 34
+    final = harness.client.rows["scrape_runs"][-1]
+    assert final["status"] == "partial"
+    assert final["posts_saved"] == 34
+    assert final["fetch_failures"] == 2
+    sources = [row for row in harness.client.rows["scrape_source_runs"]
+               if row["version"] == 2]
+    assert [row["status"] for row in sources] == ["partial", "completed"]
+    assert sources[0]["error_type"] == "ConnectionError"
+    assert "Reddit r/blocked failed" in caplog.text
+    assert "Reddit r/broken failed" in caplog.text
 
 
 @pytest.mark.parametrize("failed", [False, True])
@@ -574,7 +676,7 @@ async def test_source_concurrency_is_bounded_and_x_is_serialized(
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_full_queue_stops_producer_and_cleans_up_on_failure(
+async def test_database_backpressure_and_cleanup_on_failure(
     harness: _Harness, monkeypatch: pytest.MonkeyPatch, *, cancel: bool,
 ) -> None:
     produced = 0
@@ -615,8 +717,8 @@ async def test_full_queue_stops_producer_and_cleans_up_on_failure(
     task = asyncio.create_task(run_scrape(settings, batch_size=1))
     await asyncio.wait_for(writing.wait(), timeout=2)
     await asyncio.sleep(0.01)
-    # One in the writer, two queued, one blocked in queue.put.
-    assert produced == 4
+    # Discovery cannot advance until the post batch has been committed.
+    assert produced == 1
 
     if cancel:
         task.cancel()
@@ -631,6 +733,53 @@ async def test_full_queue_stops_producer_and_cleans_up_on_failure(
     final = harness.client.rows["scrape_runs"][-1]
     assert final["posts_saved"] == 0
     assert final["status"] == ("cancelled" if cancel else "failed")
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_media_backpressure_keeps_committed_posts_on_failure(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch, *, cancel: bool,
+) -> None:
+    downloading = asyncio.Event()
+    release = asyncio.Event()
+    produced = 0
+
+    async def download(*args: Any, **kwargs: Any) -> list[RawAsset]:
+        downloading.set()
+        await release.wait()
+        raise RuntimeError("media failed")
+
+    async def discover(*args: Any, **kwargs: Any):
+        nonlocal produced
+
+        for i in range(1000):
+            produced += 1
+            yield ScrapeBatch([_post("one.test")._replace(post_id=str(i))], [
+                AssetDiscovery("rss", "one.test", str(i),
+                               f"https://one.test/{i}.jpg", "image", None),
+            ])
+
+    monkeypatch.setattr("dank.scrape.runner.download_assets", download)
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    task = asyncio.create_task(run_scrape(harness.settings._replace(
+        sources=(SourceConfig("one.test", ()),),
+        scrape=ScrapeSettings(queue_batches=2),
+    ), batch_size=1))
+    await asyncio.wait_for(downloading.wait(), timeout=1)
+    await asyncio.sleep(0.01)
+    # Media has one active batch, two queued and one waiting.
+    assert produced == len(harness.client.rows["raw_posts"]) == 4
+
+    if cancel:
+        task.cancel()
+    else:
+        release.set()
+
+    with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
+        await asyncio.wait_for(task, timeout=1)
+
+    assert harness.client.rows["scrape_runs"][-1]["posts_saved"] == 4
 
 
 async def test_disabled_media_is_saved_as_references_without_failing_run(

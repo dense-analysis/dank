@@ -42,7 +42,7 @@ the behaviour before this option existed.
   downloads and writes necessarily finish.
 - `elapsed_ms`: elapsed time through that source's completed downloads and
   successful writes. Overall run elapsed time is measured separately.
-- `posts_queued` / `posts_saved`: raw captures queued / successfully written,
+- `posts_queued` / `posts_saved`: raw captures discovered / successfully written,
   not unique new articles. `asset_records_saved` also counts successful writes.
 - `media_references`: queued references, before the existing URL deduplication.
 - `files_downloaded` / `files_cached`: available media files that did not /
@@ -126,8 +126,11 @@ queue_batches = 2
 ```
 
 Up to four source pipelines collect, download and save independently. Each
-has at most two queued batches; a full queue pauses its producer. Batch sizes
-vary with discovered media, so this bounds the backlog, not memory in bytes.
+post batch is committed before discovery advances, so a later collection
+failure or cancellation cannot discard those saved posts. Media keeps its
+own batching: each source has at most two queued media batches, and a full
+queue pauses its producer. Batch sizes vary with discovered media, so this
+bounds the backlog, not memory in bytes.
 A source slot is reused after its downloads and writes finish. Set
 `source_concurrency = 1` for sequential sources.
 

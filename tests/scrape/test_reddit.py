@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Generator
 from typing import Any, cast
@@ -12,7 +13,9 @@ from dank.config import (
     RedditSettings,
     RedditSort,
     RedditTimeFilter,
+    SourceConfig,
 )
+from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.reddit import (
     RedditScrapeError,
     community_url,
@@ -406,16 +409,20 @@ async def test_collection_handles_initial_delayed_content() -> None:
 async def test_collection_reports_blocked_or_empty_and_cleans_up(
     body: str,
     expected: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     page = _Page([""], body=body)
     capture = _Capture()
 
-    with (
-        patch("dank.scrape.reddit.NetworkCapture", return_value=capture),
-        patch("dank.scrape.reddit.asyncio.sleep"),
-    ):
-        with pytest.raises(RedditScrapeError, match=expected):
-            _ = [
+    stats = SourceMetrics(1, SourceConfig("reddit.com", ()))
+    token = current_source.set(stats)
+
+    try:
+        with (
+            patch("dank.scrape.reddit.NetworkCapture", return_value=capture),
+            patch("dank.scrape.reddit.asyncio.sleep"),
+        ):
+            batches = [
                 batch
                 async for batch in scrape_reddit_communities(
                     RedditSettings(stall_scrolls=2),
@@ -423,6 +430,48 @@ async def test_collection_reports_blocked_or_empty_and_cleans_up(
                     cast(Any, _Session(page)),
                 )
             ]
+    finally:
+        current_source.reset(token)
+
+    assert batches == []
+    assert expected in caplog.text
+    assert stats.counts["fetch_failures"] == 1
+    assert stats.error_type == RedditScrapeError.__name__
+    assert capture.stopped
+    assert page.closed
+
+
+async def test_explicit_empty_listing_is_not_a_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="dank.scrape.reddit")
+    page = _Page([""], body="This community doesn't have any posts yet")
+    stats = SourceMetrics(1, SourceConfig("reddit.com", ()))
+    token = current_source.set(stats)
+
+    try:
+        posts, _ = await _collect(page, RedditSettings())
+    finally:
+        current_source.reset(token)
+
+    assert posts == []
+    assert page.scrolls == 0
+    assert stats.counts["fetch_failures"] == 0
+    assert "reason=empty listing" in caplog.text
+
+
+async def test_cancellation_is_not_treated_as_a_community_failure() -> None:
+    page = _Page([""])
+    capture = _Capture()
+
+    with (
+        patch("dank.scrape.reddit.NetworkCapture", return_value=capture),
+        patch.object(page, "send", side_effect=asyncio.CancelledError()),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        _ = [batch async for batch in scrape_reddit_communities(
+            RedditSettings(), ("first", "second"), cast(Any, _Session(page)),
+        )]
 
     assert capture.stopped
     assert page.closed

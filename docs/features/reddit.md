@@ -76,8 +76,13 @@ For Docker, omit `MODE=native`. Docker already includes Chromium and runs
 collection headlessly. Reddit uses its own browser and persistent profile at
 `<storage.data_dir>/reddit-browser-profile`, independently of X's saved login.
 An X scrape waiting on its browser does not hold Reddit's browser lock.
-An inaccessible community, login requirement, or blocked page is reported as
-a collection failure; DANK does not bypass those checks.
+Each collected post batch is saved before visiting the next batch or waiting
+for media downloads. A later community failure does not discard saved posts.
+An inaccessible community, login requirement, blocked page or collection error
+is logged and counted as a fetch failure; DANK continues with the next community.
+Successful captures alongside failures produce a partial source/run outcome.
+A recognized empty listing is normal and does not count as a fetch failure;
+an unrecognized blank page is still reported as a failure.
 
 ## Collection limits
 
