@@ -14,6 +14,12 @@ import {
   type RelationshipGraphData,
   relationshipPositions,
 } from "../lib/relationshipGraph";
+import {
+  forgetGraphState,
+  readGraphState,
+  rememberGraphSelection,
+  rememberGraphViewport,
+} from "../lib/relationshipGraphState";
 import "../relationship-graph.css";
 
 const styles: StylesheetStyle[] = [
@@ -146,6 +152,7 @@ export function RelationshipGraph({
 }) {
   const canvas = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const renderedGraph = useRef(graph);
   const current = useRef({ graph, selectedNodeId, onSelectNode });
   current.current = { graph, selectedNodeId, onSelectNode };
   const topology = useRef("");
@@ -170,26 +177,31 @@ export function RelationshipGraph({
         if (disposed || current.current.graph.id !== graphId) return;
         const activeGraph = current.current.graph;
         vertical.current = container.clientWidth < 760;
+        const remembered = readGraphState(activeGraph)?.viewport;
+        const viewport =
+          remembered?.vertical === vertical.current ? remembered : undefined;
         const cy = cytoscape({
           container,
           elements: elements(activeGraph),
           style: styles,
           layout: {
             name: "preset",
-            positions: relationshipPositions(
-              activeGraph.nodes,
-              vertical.current,
-            ),
+            positions:
+              viewport?.positions ??
+              relationshipPositions(activeGraph.nodes, vertical.current),
             fit: false,
           },
+          zoom: viewport?.zoom ?? 1,
+          pan: viewport?.pan ?? { x: 0, y: 0 },
           minZoom: 0.12,
           maxZoom: 2.5,
           boxSelectionEnabled: false,
           autounselectify: true,
         });
         cyRef.current = cy;
+        renderedGraph.current = activeGraph;
         topology.current = graphTopology(activeGraph);
-        fitGraph(cy);
+        if (!viewport) fitGraph(cy);
         selectNode(cy, current.current.selectedNodeId);
         cy.on("tap", "node", (event) => {
           current.current.onSelectNode(event.target.id());
@@ -228,15 +240,30 @@ export function RelationshipGraph({
     return () => {
       disposed = true;
       observer?.disconnect();
-      cyRef.current?.destroy();
+      const cy = cyRef.current;
+
+      if (cy) {
+        rememberGraphViewport(renderedGraph.current, {
+          zoom: cy.zoom(),
+          pan: { ...cy.pan() },
+          positions: Object.fromEntries(
+            cy.nodes().map((node) => [node.id(), { ...node.position() }]),
+          ),
+          vertical: vertical.current,
+        });
+        cy.destroy();
+      }
+
       cyRef.current = null;
     };
   }, [graphId]);
 
   useEffect(() => {
+    rememberGraphSelection(graph, selectedNodeId);
     const cy = cyRef.current;
 
     if (!cy) return;
+    renderedGraph.current = graph;
     const nextTopology = graphTopology(graph);
     const changed = topology.current !== nextTopology;
     const incoming = elements(graph);
@@ -275,9 +302,11 @@ export function RelationshipGraph({
   }
 
   function reset() {
+    forgetGraphState(graph.id);
     const cy = cyRef.current;
 
     if (!cy) return;
+    selectNode(cy, null);
     cy.layout({
       name: "preset",
       positions: relationshipPositions(graph.nodes, vertical.current),

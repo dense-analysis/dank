@@ -1,5 +1,6 @@
 import { ArrowRight, ArrowUpRight, Network } from "lucide-react";
 import { useMemo, useState } from "react";
+import { readGraphState } from "../lib/relationshipGraphState";
 import { safeUrl } from "../lib/urls";
 import type { YouTubeItem, YouTubeReference } from "../lib/youtubeCollection";
 import { youtubeReferenceGraph } from "../lib/youtubeReferenceGraph";
@@ -21,9 +22,16 @@ export default function YouTubeReferenceGraph({
   const [selection, setSelection] = useState<{
     graph: string;
     node: string | null;
-  }>({ graph: item.id, node: null });
-  const selectedNodeId = selection.graph === item.id ? selection.node : null;
-  const selected = graph.nodes.find((node) => node.id === selectedNodeId);
+  }>(() => ({
+    graph: item.id,
+    node: readGraphState(graph)?.selectedNodeId ?? null,
+  }));
+  const candidate =
+    selection.graph === item.id
+      ? selection.node
+      : readGraphState(graph)?.selectedNodeId;
+  const selected = graph.nodes.find((node) => node.id === candidate);
+  const selectedNodeId = selected?.id ?? null;
   const references = selected ? (referencesByNode.get(selected.id) ?? []) : [];
   const postCount = graph.nodes.filter((node) => node.kind === "post").length;
   const sourceCount = graph.nodes.filter(

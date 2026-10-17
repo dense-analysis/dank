@@ -163,3 +163,66 @@ test("graph loading failures retain keyboard access to the saved evidence", asyn
     "reddit.com:ph4vac2",
   );
 });
+
+test("returning to the graph restores selection, viewport and moved nodes while reset clears them", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1210, height: 958 });
+  await page.goto("/reader/tests/fixtures/relationship-graph.html");
+  const graph = page.locator(".relationship-graph");
+  await expect(graph).toHaveAttribute("data-status", "ready");
+  const getRenderer = () =>
+    page
+      .locator(".relationship-graph-canvas")
+      .evaluateHandle(
+        (element) =>
+          (element as HTMLDivElement & { _cyreg: { cy: Core } })._cyreg.cy,
+      );
+  const renderer = await getRenderer();
+  const snapshot = (cy: Core) => ({
+    zoom: cy.zoom(),
+    pan: cy.pan(),
+    nodes: cy
+      .nodes()
+      .map((node) => ({ id: node.id(), position: node.position() })),
+  });
+  const defaults = await renderer.evaluate(snapshot);
+  const selectedId = referenceGraphNodeId(
+    "comment",
+    "reddit.com",
+    "reddit-discussion",
+    "ph4vac2",
+  );
+  await page.getByLabel("Explore nodes").selectOption(selectedId);
+  await renderer.evaluate((cy) => {
+    cy.nodes()[0].position({ x: -80, y: -90 });
+    cy.zoom(1.2);
+    cy.pan({ x: 170, y: 240 });
+  });
+  const explored = await renderer.evaluate(snapshot);
+  await page.getByRole("button", { name: "Toggle graph" }).click();
+  expect(await renderer.evaluate((cy) => cy.destroyed())).toBe(true);
+  await renderer.dispose();
+  await page.getByRole("button", { name: "Toggle graph" }).click();
+  await expect(graph).toHaveAttribute("data-status", "ready");
+  await expect(page.getByLabel("Explore nodes")).toHaveValue(selectedId);
+  await expect(
+    page
+      .getByRole("region", { name: "Selected connection" })
+      .getByRole("heading", { name: "James20k" }),
+  ).toBeVisible();
+  const restored = await getRenderer();
+  expect(await restored.evaluate(snapshot)).toEqual(explored);
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByLabel("Explore nodes")).toHaveValue("");
+  expect(await restored.evaluate(snapshot)).toEqual(defaults);
+  await page.getByRole("button", { name: "Toggle graph" }).click();
+  expect(await restored.evaluate((cy) => cy.destroyed())).toBe(true);
+  await restored.dispose();
+  await page.getByRole("button", { name: "Toggle graph" }).click();
+  await expect(graph).toHaveAttribute("data-status", "ready");
+  await expect(page.getByLabel("Explore nodes")).toHaveValue("");
+  const reset = await getRenderer();
+  expect(await reset.evaluate(snapshot)).toEqual(defaults);
+  await reset.dispose();
+});
