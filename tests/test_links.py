@@ -166,3 +166,17 @@ def test_malformed_anchors_do_not_abort_indexing(href: str) -> None:
     assert [link["target_url"] for link in links] == [
         "https://publisher.test/good",
     ]
+
+
+def test_aggregator_article_links_to_its_original_url() -> None:
+    article = LinkPost(
+        "lobste.rs", "from-feed", "https://publisher.test/article",
+        "<p>Collected publisher body.</p>", "rss", NOW,
+    )
+    _, links = post_index_rows(article)
+
+    assert len(links) == 1
+    assert links[0]["target_url"] == article.url
+    assert links[0]["kind"] == "primary"
+    own = article._replace(domain="publisher.test")
+    assert post_index_rows(own)[1] == []

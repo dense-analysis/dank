@@ -26,7 +26,7 @@ from dank.config import (
     load_settings,
 )
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
-from dank.links import is_platform_url, normalized_url
+from dank.links import is_original_source, is_platform_url, normalized_url
 from dank.logging_setup import configure_logging
 from dank.model import (
     AssetDiscovery,
@@ -590,13 +590,18 @@ async def _hacker_news_content_batches(
             continue
 
         known = await _known_link_destinations(client, list(articles))
+        originals = {
+            url: row for url, row in known.items()
+            if is_original_source(str(row["domain"]), str(row["url"]))
+        }
         pending = [
             LinkedArticle(url, title, (
-                str(known[url]["domain"]), str(known[url]["post_id"]),
-            ) if url in known else None)
+                str(originals[url]["domain"]), str(originals[url]["post_id"]),
+            ) if url in originals else None)
             for url, title in articles.items()
             if not is_platform_url(url) and not (
-                url in known and str(known[url].get("html") or "").strip()
+                url in originals
+                and str(originals[url].get("html") or "").strip()
             )
         ]
 

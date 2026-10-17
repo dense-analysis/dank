@@ -27,10 +27,12 @@ Publisher pages use the existing article extraction and recovery rules. A denial
 challenge or unsupported document remains an unavailable capture. Public paywall
 excerpts may remain excerpts; collection does not imply subscriber access.
 Original publisher dates/bylines are extracted when present. Readable existing
-captures are reused, rather than overwritten by an aggregator’s title or body.
+original-source captures are reused, rather than overwritten by an aggregator’s title or body.
 
 Resolved HN links open the collected destination; All shows its original source
-with incoming Links. Ask/Tell HN citations do not replace their containing post.
+with incoming Links. RSS aggregator copies, including existing Lobsters records,
+remain references to a separately collected publisher record. Ask/Tell HN
+citations do not replace their containing post.
 Known platform post IDs and observed redirects resolve aliases; ambiguous URLs
 are kept separate. Links are tied to processed versions and content hashes, so
 unprocessed captures and reprocessing cannot expose stale link relationships.

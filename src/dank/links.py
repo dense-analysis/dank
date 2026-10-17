@@ -78,6 +78,21 @@ def publisher_domain(value: str) -> str:
     return (urlsplit(value).hostname or "").removeprefix("www.")
 
 
+def is_original_source(domain: str, url: str) -> bool:
+    canonical = normalized_url(url)
+
+    if canonical is None:
+        return False
+
+    host = publisher_domain(canonical)
+    source = domain.lower().removeprefix("www.")
+
+    if source == "twitter.com":
+        source = "x.com"
+
+    return source == host
+
+
 def is_platform_url(value: str) -> bool:
     return publisher_domain(value) in {
         "x.com", "twitter.com", "youtube.com", "youtu.be", "reddit.com",
@@ -126,12 +141,20 @@ def post_index_rows(
     parser = _Links(post.url)
     parser.feed(post.html)
     primary = parser.primary if post.source == "hacker_news" else None
+    aggregated = (
+        post.source == "rss" and own_url is not None
+        and not is_original_source(post.domain, post.url)
+    )
+
+    if aggregated and own_url:
+        primary = own_url
+        parser.urls.insert(0, own_url)
 
     links: list[dict[str, object]] = [{
         "domain": post.domain, "post_id": post.post_id,
         "target_url": url, "kind": "primary" if url == primary else "link",
         "observed_at": post.updated_at,
         "content_hash": hashlib.sha256(post.html.encode()).hexdigest().upper(),
-    } for url in dict.fromkeys(parser.urls) if url != own_url]
+    } for url in dict.fromkeys(parser.urls) if url != own_url or aggregated]
 
     return identities, links

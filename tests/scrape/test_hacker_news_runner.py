@@ -239,3 +239,44 @@ async def test_pending_details_preserve_never_detailed_listing() -> None:
         cast(ClickHouseClient, client), HackerNewsSettings(),
     )
     assert selected == [latest]
+
+
+@pytest.mark.parametrize("saved_domain", ["lobste.rs", "publisher.test"])
+async def test_article_reuses_original_but_not_an_aggregators_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, saved_domain: str,
+) -> None:
+    settings, client = setup(monkeypatch, tmp_path)
+    url = "https://publisher.test/story"
+    item = post()._replace(payload=json.dumps({"hckrnews": {
+        "link": url, "link_text": "Story",
+    }}))
+
+    async def collect(*args: object) -> AsyncIterator[ScrapeBatch]:
+        yield ScrapeBatch([item], [])
+
+    monkeypatch.setattr(runner, "scrape_hacker_news", collect)
+    monkeypatch.setattr(runner, "_known_link_destinations", AsyncMock(
+        return_value={url: {"domain": saved_domain, "post_id": "saved",
+                           "url": url, "html": "<p>Saved article</p>",
+                           "source": "rss"}},
+    ))
+    requested: list[Any] = []
+
+    async def articles(
+        http: object, selected: list[Any], **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        requested.extend(selected)
+
+        if selected:
+            yield ScrapeBatch([item._replace(
+                domain="publisher.test", post_id="canonical", url=url,
+                source="linked_article",
+            )], [])
+
+    monkeypatch.setattr(runner, "scrape_linked_articles", articles)
+    await runner.run_scrape(settings, headless=True)
+    assert bool(requested) == (saved_domain == "lobste.rs")
+
+    if requested:
+        assert requested[0].identity is None
+        assert client.rows["raw_posts"][-1]["domain"] == "publisher.test"

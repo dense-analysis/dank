@@ -9,20 +9,24 @@ from typing import Any
 from dank.links import LinkPost, post_index_rows
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
-# Only suppress link-only HN wrappers when an actual saved destination exists.
+# Suppress aggregator records only after an original source is collected.
 RESOLVED_HN_POSTS_SQL = """
 SELECT DISTINCT l.domain, l.post_id
 FROM post_links AS l FINAL
-INNER JOIN (SELECT domain, post_id, updated_at,
+INNER JOIN (SELECT domain, post_id, source, updated_at,
     hex(SHA256(html)) AS content_hash FROM posts FINAL) AS origin
     ON origin.domain = l.domain AND origin.post_id = l.post_id
     AND origin.updated_at = l.observed_at
     AND origin.content_hash = l.content_hash
 INNER JOIN post_urls AS u FINAL ON u.url = l.target_url
-INNER JOIN (SELECT domain, post_id, updated_at FROM posts FINAL) AS target
+INNER JOIN (SELECT domain, post_id, url, source, updated_at
+    FROM posts FINAL) AS target
     ON target.domain = u.domain AND target.post_id = u.post_id
     AND u.observed_at <= target.updated_at
-WHERE l.domain = 'news.ycombinator.com' AND l.kind = 'primary'
+WHERE origin.source IN ('hacker_news', 'rss') AND l.kind = 'primary'
+    AND (target.source IN ('x', 'reddit', 'youtube', 'hacker_news')
+        OR replaceRegexpOne(target.domain, '^www[.]', '')
+            = domainWithoutWWW(target.url))
     AND (target.domain, target.post_id) != (l.domain, l.post_id)
 """.strip()
 
@@ -35,7 +39,7 @@ async def ensure_link_storage(client: ClickHouseClient) -> None:
             await client.execute(statement)
 
     result = await client.fetch_json(
-        "SELECT version FROM link_index_versions FINAL WHERE version = 1",
+        "SELECT version FROM link_index_versions FINAL WHERE version = 2",
     )
 
     if result.rows:
@@ -75,7 +79,7 @@ async def ensure_link_storage(client: ClickHouseClient) -> None:
         cursor = (str(last["domain"]), str(last["post_id"]))
 
     await client.insert_rows("link_index_versions", [{
-        "version": 1, "completed_at": dt.datetime.now(dt.UTC),
+        "version": 2, "completed_at": dt.datetime.now(dt.UTC),
     }])
 
 
@@ -154,6 +158,9 @@ async def add_post_links(
         "WHERE l.kind = 'primary' AND (l.domain, l.post_id) "
         "IN %(hn_link_keys)s AND (target.domain, target.post_id) "
         "!= (l.domain, l.post_id) "
+        "AND (target.source IN ('x', 'reddit', 'youtube', 'hacker_news') "
+        "OR replaceRegexpOne(target.domain, '^www[.]', '') "
+        "= domainWithoutWWW(target.url)) "
         "ORDER BY (target.domain = domainWithoutWWW(target.url)) DESC, "
         "(target.source != 'linked_article') DESC, target.domain, "
         "target.post_id LIMIT 1 BY l.domain, l.post_id",

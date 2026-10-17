@@ -138,7 +138,7 @@ async def test_all_reader_link_queries_require_current_content_evidence(
 
 
 async def test_completed_link_index_does_not_repeat_backfill() -> None:
-    client = _Client([[{"version": 1}]])
+    client = _Client([[{"version": 2}]])
     await ensure_link_storage(cast(Any, client))
 
     assert len(client.executed) == 3
@@ -174,7 +174,7 @@ async def test_backfill_pages_existing_posts_and_marks_completion_last(
     assert links[0]["observed_at"] == NOW
     assert len(str(links[0]["content_hash"])) == 64
     assert client.inserted[-1][0] == "link_index_versions"
-    assert client.inserted[-1][1][0]["version"] == 1
+    assert client.inserted[-1][1][0]["version"] == 2
 
 
 def test_linked_article_does_not_claim_collection_time_as_publication(

@@ -61,8 +61,10 @@ Reddit and YouTube URLs. Social posts without an existing capture remain linked
 externally; they are not treated as generic publisher pages. Publisher failures
 and unsupported document types remain visible as unavailable content.
 
-In **All**, a resolved HN link appears under the original source, with an
-expandable **Links** list leading back to collected references. HN self-posts
+In **All**, resolved HN links and RSS aggregator records appear under the
+original source, with an
+expandable **Links** list leading back to collected references, including
+Lobsters feed entries that point to that publisher URL. HN self-posts
 remain their own entries. Exact URLs and observed redirects establish identity;
 query strings are preserved and unrelated articles are not merged by title.
 The Links index includes links found in other processed sources too. Processing
