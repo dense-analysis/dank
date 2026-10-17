@@ -427,6 +427,7 @@ test("media-only posts remain readable and never interpret zero reported replies
     await expect(video).toHaveJSProperty("autoplay", false);
     await expect(video).toHaveAttribute("preload", "none");
     await expect(video).toHaveAttribute("poster", /\/assets\/x-photo.svg$/);
+    await video.scrollIntoViewIfNeeded();
     await video.evaluate(async (element) => {
       const player = element as HTMLVideoElement;
       player.muted = true;

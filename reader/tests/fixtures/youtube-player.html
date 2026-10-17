@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><title>YouTube player fixture</title></head>
+<body data-ready="true" data-state="-1"><button type="button">Play video</button>
+<script>
+const origin = new URL(location.href).searchParams.get("origin");
+let id;
+const events = new Set();
+const send = (event, info) => parent.postMessage(JSON.stringify({event, info, id, channel:"widget"}), origin);
+const ready = () => { if (id && document.body.dataset.ready === "true") send("onReady", null); };
+const state = (value) => {
+  document.body.dataset.state = String(value);
+  document.querySelector("button").textContent = value === 1 ? "Pause video" : "Play video";
+  if (events.has("onStateChange")) send("onStateChange", value);
+};
+addEventListener("message", event => {
+  if (event.source !== parent || event.origin !== origin) return;
+  const data = JSON.parse(event.data);
+  if (data.event === "listening") { id = data.id; ready(); }
+  if (data.event !== "command") return;
+  if (data.func === "addEventListener") events.add(data.args[0]);
+  if (data.func === "playVideo") state(1);
+  if (data.func === "pauseVideo") state(2);
+});
+addEventListener("fixture-ready", () => { document.body.dataset.ready = "true"; ready(); });
+document.querySelector("button").onclick = () => state(document.body.dataset.state === "1" ? 2 : 1);
+</script></body></html>

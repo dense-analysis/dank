@@ -1,7 +1,10 @@
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
 /** Build a trusted player URL; never embed a collected URL directly. */
-export function youtubeEmbedUrl(value: string): string | undefined {
+export function youtubeEmbedUrl(
+  value: string,
+  origin: string,
+): string | undefined {
   let url: URL;
 
   try {
@@ -40,7 +43,10 @@ export function youtubeEmbedUrl(value: string): string | undefined {
   if (!id || !VIDEO_ID.test(id)) return undefined;
 
   const embed = new URL(`https://www.youtube-nocookie.com/embed/${id}`);
-  embed.searchParams.set("autoplay", "1");
+  // Start through the bridge only after it can observe and pause playback.
+  embed.searchParams.set("autoplay", "0");
+  embed.searchParams.set("enablejsapi", "1");
+  embed.searchParams.set("origin", origin);
   embed.searchParams.set("playsinline", "1");
   const start = startSeconds(
     url.searchParams.get("start") ??

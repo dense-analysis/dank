@@ -1,5 +1,6 @@
 import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
+import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { articleText } from "../lib/article";
 import type { Post, XMedia } from "../lib/types";
 import { xMedia, xMediaUrl } from "../lib/x";
@@ -152,6 +153,7 @@ function XAttachment({
   onVideoFailure: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const videoRef = useVideoPlayback();
   const [loadedRatio, setLoadedRatio] = useState<number>();
   const ratio = loadedRatio ?? asset.aspect_ratio;
   const url = xMediaUrl(asset.url);
@@ -187,6 +189,7 @@ function XAttachment({
         </a>
       ) : (
         <video
+          ref={videoRef}
           className={ratio ? "x-video-sized" : undefined}
           style={
             ratio ? ({ "--x-video-ratio": ratio } as CSSProperties) : undefined

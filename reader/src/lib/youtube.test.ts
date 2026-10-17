@@ -14,8 +14,8 @@ describe("YouTube embeds", () => {
   ])(
     "recognizes video URL %s without forwarding arbitrary parameters",
     (url) => {
-      expect(youtubeEmbedUrl(url)).toBe(
-        `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1`,
+      expect(youtubeEmbedUrl(url, "https://dank.test")).toBe(
+        `https://www.youtube-nocookie.com/embed/${id}?autoplay=0&enablejsapi=1&origin=https%3A%2F%2Fdank.test&playsinline=1`,
       );
     },
   );
@@ -30,7 +30,10 @@ describe("YouTube embeds", () => {
     ["?t=Infinity", null],
     ["?t=9007199254740992", null],
   ])("preserves a valid start time in %s", (suffix, start) => {
-    const embed = youtubeEmbedUrl(`https://youtu.be/${id}${suffix}`);
+    const embed = youtubeEmbedUrl(
+      `https://youtu.be/${id}${suffix}`,
+      "https://dank.test",
+    );
     expect(new URL(embed ?? "").searchParams.get("start")).toBe(start);
   });
 
@@ -48,6 +51,6 @@ describe("YouTube embeds", () => {
     `https://youtube.com/@3blue1brown`,
     `https://youtube.com/clip/${id}`,
   ])("leaves unsupported or untrusted URL %s as an ordinary link", (url) => {
-    expect(youtubeEmbedUrl(url)).toBeUndefined();
+    expect(youtubeEmbedUrl(url, "https://dank.test")).toBeUndefined();
   });
 });

@@ -4,15 +4,15 @@ import type { XLink } from "../lib/types";
 import { xMediaUrl } from "../lib/x";
 import { previewReferenceKey } from "../lib/xText";
 import { youtubeEmbedUrl } from "../lib/youtube";
+import { YouTubePlayer } from "./YouTubePlayer";
 
 export function XLinkPreview({ link }: { link: XLink }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const player = useRef<HTMLIFrameElement>(null);
   const restoreFocus = useRef(false);
   const url = previewReferenceKey(link.url);
-  const embed = url ? youtubeEmbedUrl(url) : undefined;
+  const embed = url ? youtubeEmbedUrl(url, window.location.origin) : undefined;
 
   useEffect(() => {
     if (!playing) {
@@ -23,8 +23,6 @@ export function XLinkPreview({ link }: { link: XLink }) {
 
       return;
     }
-
-    player.current?.focus({ preventScroll: true });
 
     // Navigation keeps the feed mounted but hidden; unload its player to stop audio.
     const stop = () => setPlaying(false);
@@ -87,16 +85,7 @@ export function XLinkPreview({ link }: { link: XLink }) {
     <div className="x-youtube-preview">
       {playing ? (
         <div className="x-youtube-player">
-          <iframe
-            src={embed}
-            title={`YouTube video: ${title}`}
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            allowFullScreen
-            // YouTube requires a Referer for embedded playback (error 153).
-            // https://developers.google.com/youtube/iframe_api_reference#onError
-            referrerPolicy="strict-origin-when-cross-origin"
-            ref={player}
-          />
+          <YouTubePlayer src={embed} title={title} />
         </div>
       ) : (
         <button

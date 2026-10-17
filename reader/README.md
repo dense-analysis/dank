@@ -106,7 +106,9 @@ playback fails. Raw URLs represented by clickable preview cards, including
 YouTube cards, are also hidden. Descriptive links and links without previews
 remain available. YouTube previews play inline when selected, with a separate
 **Watch on YouTube** link for videos that cannot be embedded. Closing the video
-or navigating to another view stops playback.
+or navigating to another view stops playback. X videos and YouTube players pause
+when scrolled fully out of view or when another video starts. Their position is
+preserved; scrolling back does not automatically resume them.
 
 Remote media is labelled and video plays only on demand. Select the post text
 or timestamp to open it; inline links and media controls work independently.
