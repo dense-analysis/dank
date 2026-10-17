@@ -140,13 +140,28 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   bounded cleanup and login/cancellation behavior. A separate bounded refresh
   (`9061e460`) selected and saved two discussions in 24.8s without any timeline
   visits: one captured, one partial with 22 replies/context and a remaining cursor.
-- [ ] **P2: Distinguish ID-only X references from readable posts.** Three saved
-  objects in `03ccaaa1` contained only `__typename: Tweet` and `rest_id`, with no
-  text, author or media. They remain in raw storage and are correctly omitted
-  from processing, but inflate the raw post count. Classify these references
-  separately so collection totals do not imply their content was captured;
-  preserve the original payloads. [Parser](../src/dank/scrape/x/payloads.py),
-  [processor](../src/dank/process/x.py).
+- [x] **P2: Distinguish ID-only X references from readable posts.** The three
+  reference-only Tweet objects from `03ccaaa1` remain in `raw_posts`, with their
+  original payloads. New run/source counters separate post captures from
+  `post_references_queued` / `post_references_saved`; terminal summaries,
+  progress, account totals and post limits use the same distinction. References
+  and full content deduplicate independently, so either arrival order preserves
+  both captures. Processing and discussion selection exclude references before
+  choosing the latest content snapshot. A computed `raw_posts.is_reference`
+  column also classifies historical rows without rewriting JSON; old run totals
+  are not retroactively recalculated.
+
+  **Docker replay verification:** all 1,065 captures from `03ccaaa1` were replayed
+  through the real writer into an isolated database. The result was 1,062 post
+  captures and three references; all 1,065 payloads were preserved unchanged.
+  Migration from the old schema, repeated migration, historical classification
+  and a later reference following a full post were verified against ClickHouse.
+  A live check of SitDeck, karpathy and slatestarcodex (`aabbc202`) completed in
+  31.4s with 103 post captures and nine references, all 112 rows retained, and
+  no fetch/media failures. References can coexist with full posts for the same ID;
+  the reference count describes captures, not missing-post IDs.
+  [Reference regressions](../tests/scrape/test_x_references.py),
+  [run-count definitions](features/history.md#timing-and-counts).
 - [x] **P1: Verify Reddit pagination beyond the initial cards.** A controlled
   Docker check reproduced three cards while the listing was hidden, then 27
   after activating it and scrolling. The collector now activates the listing

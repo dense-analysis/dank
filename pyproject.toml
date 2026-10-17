@@ -7,7 +7,7 @@ packages = { find = { where = ["src"], include = ["*"] } }
 
 [tool.setuptools.package-data]
 "dank.scrape" = ["history.sql"]
-"dank.storage" = ["reddit.sql"]
+"dank.storage" = ["reddit.sql", "raw_posts.sql"]
 
 [build-system]
 # NOTE: We should *not* add "wheel" here!

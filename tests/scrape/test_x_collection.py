@@ -65,7 +65,7 @@ async def test_account_network_responses_reach_post_extraction(
     ))
     responses = await capture.drain(0.001)
     await capture.stop()
-    posts, _ = extract_posts_and_assets(responses, set(), set())
+    posts, _ = extract_posts_and_assets(responses, set(), set(), set())
 
     assert bool(posts) == expected
     assert page.send.await_count == (2 if expected else 1)

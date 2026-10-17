@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     version UInt64,
     posts_queued UInt64,
     posts_saved UInt64,
+    post_references_queued UInt64 DEFAULT 0,
+    post_references_saved UInt64 DEFAULT 0,
     media_references UInt64,
     asset_records_saved UInt64,
     files_downloaded UInt64,
@@ -67,6 +69,8 @@ CREATE TABLE IF NOT EXISTS scrape_source_runs (
     version UInt64,
     posts_queued UInt64,
     posts_saved UInt64,
+    post_references_queued UInt64 DEFAULT 0,
+    post_references_saved UInt64 DEFAULT 0,
     media_references UInt64,
     asset_records_saved UInt64,
     files_downloaded UInt64,
@@ -100,3 +104,10 @@ ALTER TABLE scrape_runs
 ALTER TABLE scrape_runs
     ADD COLUMN IF NOT EXISTS media_download_types Array(String)
     DEFAULT ['image', 'audio', 'video'];
+
+ALTER TABLE scrape_runs
+    ADD COLUMN IF NOT EXISTS post_references_queued UInt64 DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS post_references_saved UInt64 DEFAULT 0;
+ALTER TABLE scrape_source_runs
+    ADD COLUMN IF NOT EXISTS post_references_queued UInt64 DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS post_references_saved UInt64 DEFAULT 0;

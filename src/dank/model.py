@@ -16,6 +16,8 @@ class RawPost(NamedTuple):
     request_url: str
     # A payload such as raw XML data from a scraped post.
     payload: str
+    # Collection hint; storage computes this from the unchanged payload.
+    is_reference: bool = False
 
 
 class AssetDiscovery(NamedTuple):

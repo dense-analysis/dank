@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import math
 import re
+from collections.abc import Mapping
 from typing import Any, Literal, NotRequired, TypedDict, cast
 from urllib.parse import quote, urlsplit
 
@@ -24,6 +25,17 @@ class XMedia(TypedDict):
     remote: bool
     aspect_ratio: NotRequired[float]
     source_url: NotRequired[str]
+
+
+
+def is_x_reference(payload: Mapping[str, object]) -> bool:
+    """Identify the observed ID-only Tweet shape, not other sparse posts."""
+    return (
+        payload.get("__typename") == "Tweet"
+        and isinstance(payload.get("rest_id"), str)
+        and bool(payload.get("rest_id"))
+        and set(payload) == {"__typename", "rest_id"}
+    )
 
 
 def object_value(value: object) -> dict[str, Any]:

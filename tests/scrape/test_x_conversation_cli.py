@@ -245,6 +245,7 @@ async def test_pending_discussions_are_recent_owned_and_bounded_per_account():
     )
     assert "domain = 'x.com'" in sql
     assert "account IN %(accounts)s" in sql
+    assert sql.index("NOT is_reference") < sql.index("LIMIT 1 BY post_id")
     assert sql.index("LIMIT 1 BY post_id") < sql.index(
         "WHERE JSONExtractString",
     )

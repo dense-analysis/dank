@@ -158,16 +158,20 @@ async def run_scrape(
 
     counts = history.counts()
     logger.info(
-        "Scrape %s in %.1fs: %d posts saved; %d files new/%d cached/"
+        "Scrape %s in %.1fs: %d posts saved; %d references saved; "
+        "%d files new/%d cached/"
         "%d failed; media skipped=%d; run=%s",
         history.status, (history.elapsed_ms or 0) / 1000,
-        counts["posts_saved"], counts["files_downloaded"],
+        counts["posts_saved"], counts["post_references_saved"],
+        counts["files_downloaded"],
         counts["files_cached"], counts["files_failed"],
         counts["media_skipped"], history.run_id,
     )
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
+    raw_schema = pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
+    await client.execute(raw_schema.read_text())
     schema = pathlib.Path(__file__).with_name("history.sql").read_text()
 
     for statement in schema.split(";"):
@@ -293,11 +297,17 @@ async def _collect_source(
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
                 ):
-                    stats.discovered(len(batch.posts), len(batch.assets))
+                    stats.discovered(
+                        batch.post_count, len(batch.assets),
+                        references=batch.reference_count,
+                    )
                     stats.pending += len(batch.communities)
                     # Persist this batch before moving on to the next one.
                     saved = await _flush_posts(client, list(batch.posts))
-                    stats.counts["posts_saved"] += saved
+                    stats.counts["posts_saved"] += batch.post_count
+                    stats.counts["post_references_saved"] += (
+                        batch.reference_count
+                    )
                     stats.persisted(saved)
                     await queue.put(batch._replace(
                         posts=[], source_index=index,
@@ -306,9 +316,11 @@ async def _collect_source(
 
             stats.collected()
             logger.info(
-                "%s: collection finished; posts=%d; media references=%d; "
+                "%s: collection finished; posts=%d; references=%d; "
+                "media references=%d; "
                 "pending records=%d",
                 source.domain, stats.counts["posts_queued"],
+                stats.counts["post_references_queued"],
                 stats.counts["media_references"], stats.pending,
             )
             await queue.put(None)
@@ -426,9 +438,10 @@ async def _discover_source_batches(
 
     async for batch in batches_iter:
         logger.info(
-            "Discovered batch domain=%s posts=%d assets=%d",
+            "Discovered batch domain=%s posts=%d references=%d assets=%d",
             source.domain,
-            len(batch.posts),
+            batch.post_count,
+            batch.reference_count,
             len(batch.assets),
         )
         yield batch
@@ -479,7 +492,8 @@ async def _load_x_posts(
     result = await client.fetch_json(
         "SELECT domain, post_id, url, post_created_at, scraped_at, source, "
         "request_url, payload FROM raw_posts "
-        "WHERE domain = 'x.com' AND post_id IN %(post_ids)s "
+        "WHERE domain = 'x.com' AND NOT is_reference "
+        "AND post_id IN %(post_ids)s "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id",
         {"post_ids": list(by_id)},
     )
@@ -512,6 +526,7 @@ async def _load_pending_x_posts(
         "scraped_at, source, request_url, payload, "
         "lowerUTF8(arrayElement(splitByChar('/', url), 4)) AS account "
         "FROM raw_posts WHERE source = 'x' AND domain = 'x.com' "
+        "AND NOT is_reference "
         "AND scraped_at >= %(cutoff)s AND account IN %(accounts)s "
         "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
         "WHERE JSONExtractString(payload, 'conversation_capture', 'status') "
@@ -875,11 +890,17 @@ async def _flush_posts(
         return 0
 
     count = len(pending_posts)
+    # is_reference is a computed storage column, not part of the raw payload.
     await clickhouse_client.insert_rows(
         "raw_posts",
-        [post._asdict() for post in pending_posts],
+        [{key: value for key, value in post._asdict().items()
+          if key != "is_reference"} for post in pending_posts],
     )
-    logger.info("Saved %d raw posts", count)
+    references = sum(post.is_reference for post in pending_posts)
+    logger.info(
+        "Saved %d raw posts and %d ID-only references", count - references,
+        references,
+    )
     pending_posts.clear()
 
     return count

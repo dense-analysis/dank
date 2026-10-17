@@ -28,7 +28,13 @@ CREATE TABLE IF NOT EXISTS dank.raw_posts (
     scraped_at DateTime64(3, 'UTC'),
     source LowCardinality(String),
     request_url String,
-    payload String CODEC(ZSTD(3))
+    payload String CODEC(ZSTD(3)),
+    is_reference UInt8 ALIAS (
+        source = 'x'
+        AND JSONExtractString(payload, '__typename') = 'Tweet'
+        AND JSONExtractString(payload, 'rest_id') != ''
+        AND arraySort(JSONExtractKeys(payload)) = ['__typename', 'rest_id']
+    )
 )
 ENGINE = MergeTree
 PARTITION BY (domain, toYYYYMM(scraped_at))
@@ -138,6 +144,8 @@ CREATE TABLE IF NOT EXISTS dank.scrape_runs (
     version UInt64,
     posts_queued UInt64,
     posts_saved UInt64,
+    post_references_queued UInt64 DEFAULT 0,
+    post_references_saved UInt64 DEFAULT 0,
     media_references UInt64,
     asset_records_saved UInt64,
     files_downloaded UInt64,
@@ -173,6 +181,8 @@ CREATE TABLE IF NOT EXISTS dank.scrape_source_runs (
     version UInt64,
     posts_queued UInt64,
     posts_saved UInt64,
+    post_references_queued UInt64 DEFAULT 0,
+    post_references_saved UInt64 DEFAULT 0,
     media_references UInt64,
     asset_records_saved UInt64,
     files_downloaded UInt64,
@@ -207,6 +217,13 @@ ALTER TABLE dank.scrape_runs
     ADD COLUMN IF NOT EXISTS media_download_types Array(String)
     DEFAULT ['image', 'audio', 'video'];
 
+ALTER TABLE dank.scrape_runs
+    ADD COLUMN IF NOT EXISTS post_references_queued UInt64 DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS post_references_saved UInt64 DEFAULT 0;
+ALTER TABLE dank.scrape_source_runs
+    ADD COLUMN IF NOT EXISTS post_references_queued UInt64 DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS post_references_saved UInt64 DEFAULT 0;
+
 -- Cached community identity, separate from Reddit post media.
 CREATE TABLE IF NOT EXISTS dank.reddit_community_icons (
     community String,
@@ -219,3 +236,11 @@ CREATE TABLE IF NOT EXISTS dank.reddit_community_icons (
 )
 ENGINE = ReplacingMergeTree(scraped_at)
 ORDER BY community;
+
+ALTER TABLE dank.raw_posts
+    ADD COLUMN IF NOT EXISTS is_reference UInt8 ALIAS (
+        source = 'x'
+        AND JSONExtractString(payload, '__typename') = 'Tweet'
+        AND JSONExtractString(payload, 'rest_id') != ''
+        AND arraySort(JSONExtractKeys(payload)) = ['__typename', 'rest_id']
+    );

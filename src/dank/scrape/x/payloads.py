@@ -5,6 +5,8 @@ import re
 from collections.abc import Mapping
 from typing import NamedTuple, cast
 
+from dank.x_content import is_x_reference
+
 
 class XAsset(NamedTuple):
     url: str
@@ -20,6 +22,10 @@ class XExtractedPost(NamedTuple):
     url: str
     payload: dict[str, object]
     assets: tuple[XAsset, ...]
+
+    @property
+    def is_reference(self) -> bool:
+        return is_x_reference(self.payload)
 
 
 class _VideoVariant(NamedTuple):
@@ -56,7 +62,7 @@ def _as_int(value: object) -> int | None:
 def extract_posts_from_payload(
     payload: Mapping[str, object],
 ) -> list[XExtractedPost]:
-    extracted: dict[str, XExtractedPost] = {}
+    extracted: dict[tuple[str, bool], XExtractedPost] = {}
 
     for tweet in _iter_tweet_results(payload):
         post = _parse_tweet_result(tweet)
@@ -64,7 +70,7 @@ def extract_posts_from_payload(
         if post is None:
             continue
 
-        extracted[post.post_id] = post
+        extracted[post.post_id, post.is_reference] = post
 
     return list(extracted.values())
 

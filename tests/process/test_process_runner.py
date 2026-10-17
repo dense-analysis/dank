@@ -177,9 +177,10 @@ async def test_reprocess_keeps_domain_and_age_bounds() -> None:
     )
 
     assert "WHERE %(reprocess)s OR" in client.query
-    assert "WHERE domain = %(domain)s AND scraped_at >= %(since)s" in (
-        client.query
-    )
+    assert (
+        "WHERE domain = %(domain)s AND NOT is_reference "
+        "AND scraped_at >= %(since)s"
+    ) in client.query
     assert "LIMIT 1 BY post_id" in client.query
     assert client.params == {
         "domain": "publisher.test", "since": since, "reprocess": True,

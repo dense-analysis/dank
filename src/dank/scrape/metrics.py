@@ -20,6 +20,7 @@ RSS_CONCURRENCY = 4
 MEDIA_CONCURRENCY = 4
 COUNTERS = (
     "posts_queued", "posts_saved", "media_references",
+    "post_references_queued", "post_references_saved",
     "asset_records_saved", "files_downloaded", "files_cached",
     "files_failed", "media_skipped", "downloaded_file_bytes",
     "http_requests", "http_429", "retries", "fetch_failures",
@@ -58,10 +59,13 @@ class SourceMetrics:
         self.status = "running"
         self.error_type = ""
 
-    def discovered(self, posts: int, assets: int) -> None:
+    def discovered(
+        self, posts: int, assets: int, *, references: int = 0,
+    ) -> None:
         self.counts["posts_queued"] += posts
         self.counts["media_references"] += assets
-        self.pending += posts + assets
+        self.counts["post_references_queued"] += references
+        self.pending += posts + references + assets
 
     def collected(self) -> None:
         self.collection_ms = elapsed_ms(self.started)
@@ -87,6 +91,7 @@ class SourceMetrics:
             status = "partial" if (
                 self.counts["posts_saved"]
                 or self.counts["asset_records_saved"]
+                or self.counts["post_references_saved"]
             ) else "failed"
         else:
             status = "skipped" if self.skipped else "completed"
@@ -102,10 +107,11 @@ class SourceMetrics:
         self.status = status
         self.error_type = error_type or self.error_type
         logger.info(
-            "%s: %s in %.1fs; collection=%.1fs; posts=%d; "
+            "%s: %s in %.1fs; collection=%.1fs; posts=%d; references=%d; "
             "files=%d new/%d cached/%d failed; media skipped=%d; retries=%d",
             self.source.domain, status, self.elapsed_ms / 1000,
             (self.collection_ms or 0) / 1000, self.counts["posts_saved"],
+            self.counts["post_references_saved"],
             self.counts["files_downloaded"], self.counts["files_cached"],
             self.counts["files_failed"], self.counts["media_skipped"],
             self.counts["retries"],
@@ -181,7 +187,8 @@ class RunMetrics:
                 self.status = "skipped"
             elif outcomes & {"partial", "failed"}:
                 counts = self.counts()
-                saved = counts["posts_saved"] + counts["asset_records_saved"]
+                saved = (counts["posts_saved"] + counts["asset_records_saved"]
+                         + counts["post_references_saved"])
                 self.status = "partial" if saved else "failed"
             else:
                 self.status = "completed"
@@ -222,7 +229,7 @@ class RunMetrics:
                 "Run %s: elapsed=%.1fs; sources=%d/%d finished (%d active); "
                 "HTTP=%d active; media=%d active; retries=%d waiting; "
                 "queued batches=%d; pending records=%d; posts saved=%d; "
-                "media skipped=%d",
+                "references saved=%d; media skipped=%d",
                 str(self.run_id)[:8], elapsed_ms(self.started) / 1000,
                 sum(source.finished_at is not None for source in sources),
                 self.source_count,
@@ -231,7 +238,8 @@ class RunMetrics:
                 sum(source.active_media for source in sources),
                 sum(source.waiting_retries for source in sources),
                 self.queue_size, sum(source.pending for source in sources),
-                counts["posts_saved"], counts["media_skipped"],
+                counts["posts_saved"], counts["post_references_saved"],
+                counts["media_skipped"],
             )
 
 

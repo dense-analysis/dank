@@ -173,7 +173,15 @@ step, then rerun collection. Signing in does not automatically start a scrape.
 ## Collected data
 
 Raw posts retain their X post ID, URL, timestamps, request URL and extracted
-Tweet JSON. DANK also discovers media and links from the captured payloads.
+Tweet JSON. ID-only objects containing only `__typename: Tweet` and `rest_id`
+are preserved as raw references and counted separately in logs and run history.
+They do not consume the post limit or suppress a later full capture of the same
+ID. `raw_posts.is_reference` is a computed flag that also classifies older rows
+without rewriting their payloads. Processing and discussion refreshes select
+content snapshots before choosing the latest capture, so a newer reference
+cannot hide an earlier full post. Other sparse posts keep their existing handling.
+
+DANK also discovers media and links from the captured payloads.
 [Media downloads](media.md) save supported files locally; external links are
 recorded as references.
 

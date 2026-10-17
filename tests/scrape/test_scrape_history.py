@@ -218,7 +218,7 @@ async def test_history_tracks_source_completion_after_persistence(
     runs = harness.client.rows["scrape_runs"]
     sources = harness.client.rows["scrape_source_runs"]
     final = runs[-1]
-    assert len(harness.client.statements) == 7
+    assert len(harness.client.statements) == 10
     assert runs[0]["status"] == "running"
     assert runs[0]["finished_at"] is None
     assert final["version"] == 2
@@ -828,3 +828,93 @@ async def test_disabled_media_is_saved_as_references_without_failing_run(
                harness.client.rows["raw_assets"])
     assert "Media downloads: disabled" in caplog.text
     assert "media skipped=8" in caplog.text
+
+
+@pytest.mark.parametrize("failure", [False, True])
+async def test_reference_writes_are_durable_and_counted_separately(
+    harness: _Harness,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    failure: bool,
+) -> None:
+    caplog.set_level("INFO")
+    reference = _post("x.com")._replace(
+        post_id="reference",
+        source="x",
+        is_reference=True,
+        payload='{"__typename":"Tweet","rest_id":"123"}',
+    )
+    post = _post("x.com")._replace(source="x")
+
+    async def discover(*args: Any, **kwargs: Any):
+        yield ScrapeBatch([reference, post], [])
+        rows = harness.client.rows["raw_posts"]
+        assert [row["payload"] for row in rows] == [
+            reference.payload, post.payload,
+        ]
+        assert [row["post_id"] for row in rows] == [
+            reference.post_id, post.post_id,
+        ]
+        assert all("is_reference" not in row for row in rows)
+        if failure:
+            count("fetch_failures")
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    await run_scrape(
+        harness.settings._replace(sources=(SourceConfig("x.com", ()),)),
+    )
+    final = harness.client.rows["scrape_runs"][-1]
+    source = harness.client.rows["scrape_source_runs"][-1]
+    for row in [final, source]:
+        assert row["posts_saved"] == row["posts_queued"] == 1
+        assert (
+            row["post_references_saved"] == row["post_references_queued"] == 1
+        )
+        assert row["status"] == ("partial" if failure else "completed")
+    assert "Saved 1 raw posts and 1 ID-only references" in caplog.text
+    assert "1 posts saved; 1 references saved" in caplog.text
+
+
+async def test_failed_reference_write_never_counts_as_saved(
+    harness: _Harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def discover(*args: Any, **kwargs: Any):
+        yield ScrapeBatch([_post("x.com")._replace(is_reference=True)], [])
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    harness.client.fail_posts = True
+    with pytest.raises(RuntimeError, match="post insert failed"):
+        await run_scrape(
+            harness.settings._replace(sources=(SourceConfig("x.com", ()),)),
+        )
+    final = harness.client.rows["scrape_runs"][-1]
+    assert final["posts_saved"] == final["post_references_saved"] == 0
+    assert final["posts_queued"] == 0
+    assert final["post_references_queued"] == 1
+
+
+
+def test_reference_schema_is_bundled_and_matches_fresh_and_existing_tables():
+    root = pathlib.Path(__file__).resolve().parents[2]
+    migration = (root / "src/dank/storage/raw_posts.sql").read_text()
+    schema = (root / "schema.sql").read_text()
+    assert (
+        migration.replace(
+            "ALTER TABLE raw_posts", "ALTER TABLE dank.raw_posts",
+        )
+        in schema
+    )
+    expression = migration.split("is_reference UInt8 ALIAS (", 1)[1].split(
+        "\n    )", 1,
+    )[0]
+    fresh = schema.split("is_reference UInt8 ALIAS (", 1)[1].split(
+        "\n    )", 1,
+    )[0]
+    assert expression == fresh
+    assert '"raw_posts.sql"' in (root / "pyproject.toml").read_text()

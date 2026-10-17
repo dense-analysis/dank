@@ -153,6 +153,7 @@ async def _collect_account(
     browser: _XBrowser, account: str, settings: XSettings,
 ) -> AsyncIterator[ScrapeBatch]:
     seen_posts: set[str] = set()
+    seen_references: set[str] = set()
     seen_assets: set[str] = set()
 
     for attempt in range(2):
@@ -160,9 +161,16 @@ async def _collect_account(
             page = await browser.get_page()
 
             async for batch in _scrape_account(page, account, settings):
-                posts = [p for p in batch.posts if p.post_id not in seen_posts]
+                posts = [p for p in batch.posts if p.post_id not in (
+                    seen_references if p.is_reference else seen_posts
+                )]
                 assets = [a for a in batch.assets if a.url not in seen_assets]
-                seen_posts.update(p.post_id for p in posts)
+                seen_posts.update(
+                    p.post_id for p in posts if not p.is_reference
+                )
+                seen_references.update(
+                    p.post_id for p in posts if p.is_reference
+                )
                 seen_assets.update(a.url for a in assets)
 
                 if posts or assets:
@@ -181,11 +189,11 @@ async def _collect_account(
                 count("retries")
                 continue
 
-            _account_failed(account, seen_posts, error)
+            _account_failed(account, seen_posts, error, len(seen_references))
 
             return
         except Exception as error:
-            _account_failed(account, seen_posts, error)
+            _account_failed(account, seen_posts, error, len(seen_references))
             await browser.reset()
 
             return
@@ -194,25 +202,29 @@ async def _collect_account(
                 _account_failed(
                     account, seen_posts,
                     ValueError("No usable timeline posts returned"),
+                    len(seen_references),
                 )
             else:
                 logger.info(
                     "X timeline account=%s outcome=completed "
-                    "posts=%d attempts=%d",
-                    account, len(seen_posts), attempt + 1,
+                    "posts=%d references=%d attempts=%d",
+                    account, len(seen_posts), len(seen_references),
+                    attempt + 1,
                 )
 
             return
 
 
 def _account_failed(
-    account: str, seen_posts: set[str], error: Exception,
+    account: str, seen_posts: set[str], error: Exception, references: int,
 ) -> None:
     _record_failure(error)
     logger.warning(
-        "X timeline account=%s outcome=%s posts=%d error=%s: %s; "
+        "X timeline account=%s outcome=%s posts=%d references=%d "
+        "error=%s: %s; "
         "continuing with remaining accounts",
         account, "partial" if seen_posts else "failed", len(seen_posts),
+        references,
         type(error).__name__, error,
     )
 
@@ -298,6 +310,7 @@ async def _scrape_account(
             await _check_login_required(page)
 
         seen_posts: set[str] = set()
+        seen_references: set[str] = set()
         seen_assets: set[str] = set()
         total_posts = 0
         idle_scrolls = 0
@@ -306,15 +319,17 @@ async def _scrape_account(
             capture,
             seen_posts,
             seen_assets,
+            seen_references,
             timeout_seconds=INITIAL_DRAIN_TIMEOUT_SECONDS,
         )
         logger.info(
-            "Initial drain for %s produced posts=%d assets=%d",
+            "Initial drain for %s produced posts=%d references=%d assets=%d",
             handle,
-            len(posts),
+            sum(not post.is_reference for post in posts),
+            sum(post.is_reference for post in posts),
             len(assets),
         )
-        total_posts += len(posts)
+        total_posts += sum(not post.is_reference for post in posts)
 
         if posts or assets:
             yield ScrapeBatch(posts=posts, assets=assets)
@@ -331,22 +346,27 @@ async def _scrape_account(
                 capture,
                 seen_posts,
                 seen_assets,
+                seen_references,
                 timeout_seconds=_scroll_pause_seconds(
                     limits.scroll_pause_seconds,
                     idle_scrolls,
                 ),
             )
             logger.info(
-                "Scroll drain for %s produced posts=%d assets=%d idle=%d",
+                "Scroll drain for %s produced posts=%d references=%d "
+                "assets=%d idle=%d",
                 handle,
-                len(posts),
+                sum(not post.is_reference for post in posts),
+                sum(post.is_reference for post in posts),
                 len(assets),
                 idle_scrolls,
             )
-            total_posts += len(posts)
+            total_posts += sum(not post.is_reference for post in posts)
 
             if posts or assets:
                 yield ScrapeBatch(posts=posts, assets=assets)
+
+            if any(not post.is_reference for post in posts):
                 idle_scrolls = 0
             else:
                 idle_scrolls += 1
@@ -361,15 +381,19 @@ async def _scrape_account(
             capture,
             seen_posts,
             seen_assets,
+            seen_references,
             timeout_seconds=min(
                 limits.scroll_pause_seconds,
                 FAST_SCROLL_PAUSE_SECONDS,
             ),
         )
+        total_posts += sum(not post.is_reference for post in posts)
         logger.info(
-            "Trailing drain for %s produced posts=%d assets=%d total_posts=%d",
+            "Trailing drain for %s produced posts=%d references=%d "
+            "assets=%d total_posts=%d",
             handle,
-            len(posts),
+            sum(not post.is_reference for post in posts),
+            sum(post.is_reference for post in posts),
             len(assets),
             total_posts,
         )
@@ -384,6 +408,7 @@ async def _drain_posts_and_assets(
     capture: NetworkCapture,
     seen_posts: set[str],
     seen_assets: set[str],
+    seen_references: set[str],
     *,
     timeout_seconds: float,
 ) -> tuple[list[RawPost], list[AssetDiscovery]]:
@@ -397,6 +422,7 @@ async def _drain_posts_and_assets(
         responses,
         seen_posts,
         seen_assets,
+        seen_references,
     )
 
 
@@ -414,6 +440,7 @@ def extract_posts_and_assets(
     responses: Iterable[NetworkResponse],
     seen_posts: set[str],
     seen_assets: set[str],
+    seen_references: set[str],
 ) -> tuple[list[RawPost], list[AssetDiscovery]]:
     posts: list[RawPost] = []
     assets: list[AssetDiscovery] = []
@@ -454,14 +481,18 @@ def extract_posts_and_assets(
 
         extracted_posts = extract_posts_from_payload(payload)
         logger.info(
-            "Parsed %d posts from X response request_id=%s",
-            len(extracted_posts),
+            "Parsed %d posts and %d ID-only references from X response "
+            "request_id=%s",
+            sum(not post.is_reference for post in extracted_posts),
+            sum(post.is_reference for post in extracted_posts),
             response.request_id,
         )
 
         for extracted in extracted_posts:
-            if extracted.post_id not in seen_posts:
-                seen_posts.add(extracted.post_id)
+            seen = seen_references if extracted.is_reference else seen_posts
+
+            if extracted.post_id not in seen:
+                seen.add(extracted.post_id)
                 posts.append(
                     _raw_post_from_extracted(extracted, response.url),
                 )
@@ -474,8 +505,10 @@ def extract_posts_and_assets(
                         )
 
     logger.info(
-        "Extracted %d new posts and %d new assets from drained responses",
-        len(posts),
+        "Extracted %d new posts, %d ID-only references and %d new assets "
+        "from drained responses",
+        sum(not post.is_reference for post in posts),
+        sum(post.is_reference for post in posts),
         len(assets),
     )
 
@@ -495,6 +528,7 @@ def _raw_post_from_extracted(
         source=X_SOURCE,
         request_url=request_url,
         payload=json.dumps(extracted.payload, separators=(",", ":")),
+        is_reference=extracted.is_reference,
     )
 
 

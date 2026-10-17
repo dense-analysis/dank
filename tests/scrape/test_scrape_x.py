@@ -32,11 +32,13 @@ def test_extract_posts_and_assets_from_network_payload() -> None:
     )
     seen_posts: set[str] = set()
     seen_assets: set[str] = set()
+    seen_references: set[str] = set()
 
     posts, assets = extract_posts_and_assets(
         [response],
         seen_posts,
         seen_assets,
+        seen_references,
     )
 
     assert len(posts) >= 10
@@ -51,6 +53,7 @@ def test_extract_posts_and_assets_from_network_payload() -> None:
         [response],
         seen_posts,
         seen_assets,
+        seen_references,
     )
 
     assert not posts_repeat

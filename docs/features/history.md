@@ -42,8 +42,13 @@ the behaviour before this option existed.
   downloads and writes necessarily finish.
 - `elapsed_ms`: elapsed time through that source's completed downloads and
   successful writes. Overall run elapsed time is measured separately.
-- `posts_queued` / `posts_saved`: raw captures discovered / successfully written,
-  not unique new articles. `asset_records_saved` also counts successful writes.
+- `posts_queued` / `posts_saved`: post captures discovered / successfully written,
+  excluding ID-only X references; these are not unique new articles.
+  `post_references_queued` / `post_references_saved` count those references
+  separately. Posts and references are both retained in `raw_posts`, with
+  unchanged payloads. `asset_records_saved` also counts successful writes.
+  Older run totals remain as recorded; their new reference counters default to
+  zero and do not mean those runs contained no references.
 - `media_references`: queued references, before the existing URL deduplication.
 - `files_downloaded` / `files_cached`: available media files that did not /
   did exist before their download job. `downloaded_file_bytes` is retained
@@ -73,7 +78,7 @@ container limits. Memory capacity is not current free memory. Unknown memory
 capacity is stored as NULL.
 
 Every five seconds, stdout reports active HTTP requests and media jobs,
-waiting retries, queued batches, pending records and saved posts. Source
+waiting retries, queued batches, pending records, saved posts and saved references. Source
 summaries appear after their pending records are saved. Warnings/errors still
 use stderr; both streams also go to the configured log file.
 
@@ -158,14 +163,14 @@ the dependency lock) make comparisons reproducible.
 **Native**
 
 ```sh
-make query MODE=native ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, max_entries_per_feed, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
+make query MODE=native ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, post_references_saved, max_entries_per_feed, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
 make query MODE=native ARGS='-q "SELECT run_id, domain, status, collection_ms / 1000 AS collection_seconds, elapsed_ms / 1000 AS total_seconds, posts_saved, files_downloaded, files_cached, http_429, retries FROM scrape_source_runs FINAL ORDER BY started_at DESC LIMIT 20"'
 ```
 
 **Docker**
 
 ```sh
-make query ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, max_entries_per_feed, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
+make query ARGS='-q "SELECT run_id, started_at, status, elapsed_ms / 1000 AS seconds, posts_saved, post_references_saved, max_entries_per_feed, code_version FROM scrape_runs FINAL ORDER BY started_at DESC LIMIT 10"'
 make query ARGS='-q "SELECT run_id, domain, status, collection_ms / 1000 AS collection_seconds, elapsed_ms / 1000 AS total_seconds, posts_saved, files_downloaded, files_cached, http_429, retries FROM scrape_source_runs FINAL ORDER BY started_at DESC LIMIT 20"'
 ```
 

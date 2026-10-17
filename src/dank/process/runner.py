@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import json
 import logging
+import pathlib
 import re
 import time
 from collections.abc import Callable
@@ -65,7 +66,7 @@ async def process_source_posts(
         "payload "
         "FROM raw_posts "
         "WHERE domain = %(domain)s "
-        "AND scraped_at >= %(since)s "
+        "AND NOT is_reference AND scraped_at >= %(since)s "
         "ORDER BY scraped_at DESC "
         "LIMIT 1 BY post_id"
         ") AS raw "
@@ -296,6 +297,7 @@ def parse_raw_post_row(row: dict[str, Any]) -> RawPost:
         source=str(row.get("source", "")),
         request_url=str(row.get("request_url", "")),
         payload=row.get("payload") or "",
+        is_reference=bool(row.get("is_reference", False)),
     )
 
 
@@ -448,6 +450,10 @@ async def run_process(
     )
 
     async with ClickHouseClient(settings.clickhouse) as clickhouse_client:
+        raw_schema = (
+            pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
+        )
+        await clickhouse_client.execute(raw_schema.read_text())
         for source in sources:
             converter = {
                 "x.com": convert_raw_x_post,

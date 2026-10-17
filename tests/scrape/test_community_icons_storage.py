@@ -139,7 +139,7 @@ def test_community_schema_is_bundled_and_matches_fresh_database():
     )
     assert qualified in pathlib.Path('schema.sql').read_text()
     package = pathlib.Path('pyproject.toml').read_text()
-    assert '"dank.storage" = ["reddit.sql"]' in package
+    assert '"dank.storage" = ["reddit.sql", "raw_posts.sql"]' in package
 
 
 async def test_invalid_icon_is_retried_on_the_next_collection(
