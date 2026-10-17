@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import pathlib
 from typing import Any, cast
 
 from dank.storage.clickhouse import QueryResult
+from dank.web.app import PostRow
+from dank.web.reader_api import post_payload
 from dank.web.reader_links import (
     RESOLVED_HN_POSTS_SQL,
     add_post_links,
@@ -172,3 +175,23 @@ async def test_backfill_pages_existing_posts_and_marks_completion_last(
     assert len(str(links[0]["content_hash"])) == 64
     assert client.inserted[-1][0] == "link_index_versions"
     assert client.inserted[-1][1][0]["version"] == 1
+
+
+def test_linked_article_does_not_claim_collection_time_as_publication(
+    tmp_path: pathlib.Path,
+) -> None:
+    captured = dt.datetime(2026, 10, 17, 12, tzinfo=dt.UTC)
+    article = PostRow(
+        domain="publisher.test", post_id="article",
+        url="https://publisher.test/article", author="Reporter", title="Title",
+        html="<p>Body</p>", created_at=captured, updated_at=captured,
+        source="linked_article",
+    )
+    assert post_payload(article, [], tmp_path)["published_at"] is None
+    published = captured - dt.timedelta(days=1)
+    assert post_payload(
+        article._replace(created_at=published), [], tmp_path,
+    )["published_at"] == published.isoformat()
+    assert "published_at" not in post_payload(
+        article._replace(source="rss"), [], tmp_path,
+    )

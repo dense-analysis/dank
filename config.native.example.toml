@@ -98,6 +98,6 @@ homepage = false
 # Daily front-page stories; comments are fetched only with --hacker-news-details.
 [hacker_news]
 days = 7
-comment_limit = 50
+comment_limit = "all"
 detail_max_posts = 20
-detail_timeout_seconds = 60
+detail_timeout_seconds = "all"

@@ -19,6 +19,7 @@ from dank.web.reader_flairs import (
     MAX_FLAIR_LENGTH,
     REDDIT_COMMUNITY_SQL as REDDIT_COMMUNITY_SQL,
 )
+from dank.web.reader_links import RESOLVED_HN_POSTS_SQL
 
 POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, source"
@@ -318,6 +319,11 @@ def build_query(
             f"(created_at, domain, post_id) {operator} "
             "(toDateTime64(%(cursor_time)s, 6, 'UTC'), "
             "%(cursor_domain)s, %(cursor_id)s)",
+        )
+
+    if filters.kind in {"", "all"}:
+        conditions.append(
+            "(domain, post_id) NOT IN (" + RESOLVED_HN_POSTS_SQL + ")",
         )
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""

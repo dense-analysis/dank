@@ -100,12 +100,12 @@ def test_marked_destination_is_primary_even_when_followed_by_a_citation(
 
 @pytest.mark.parametrize("body, expected_kind", [
     ('<p><a href="https://publisher.test/a">https://publisher.test/a</a></p>',
-     "primary"),
+     "link"),
     ('<p>See <a href="https://publisher.test/a">https://publisher.test/a</a></p>',
      "link"),
     ('<p><a href="https://publisher.test/a">Article</a></p>', "link"),
 ])
-def test_legacy_primary_requires_a_link_only_body(
+def test_unmarked_hn_body_is_never_a_primary_destination(
     body: str, expected_kind: str,
 ) -> None:
     _, links = post_index_rows(_post(body))

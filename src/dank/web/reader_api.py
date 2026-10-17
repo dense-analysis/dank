@@ -37,6 +37,7 @@ from dank.web.reader_communities import community_icons, community_totals
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
 from dank.web.reader_hacker_news import add_hacker_news_metadata
+from dank.web.reader_links import add_post_links
 from dank.web.reader_query import (
     REDDIT_COMMUNITY_SQL,
     build_query,
@@ -288,6 +289,8 @@ async def _post_payloads(
         client, payloads, posts, include_discussion=include_discussion,
     )
 
+    await add_post_links(client, payloads)
+
     return payloads
 
 
@@ -425,7 +428,7 @@ async def _incomplete_page_keys(
     versions: list[tuple[str, str, int]] = []
 
     for post in posts:
-        if post.source != "rss":
+        if post.source not in {"rss", "linked_article"}:
             continue
 
         timestamp = post.updated_at
@@ -445,8 +448,9 @@ async def _incomplete_page_keys(
         "SELECT domain, post_id FROM raw_posts "
         "WHERE (domain, post_id, toUnixTimestamp64Milli(scraped_at)) "
         "IN %(post_versions)s "
-        "AND source = 'rss' "
-        "AND (JSONExtractString(payload, 'page_fetch_status') = 'failed' "
+        "AND source IN ('rss', 'linked_article') "
+        "AND (JSONExtractString(payload, 'page_fetch_status') "
+        "IN ('failed', 'unsupported') "
         "OR match(JSONExtractString(payload, 'page_html'), "
         "%(challenge_pattern)s))",
         {"post_versions": versions,
@@ -487,7 +491,7 @@ def post_payload(
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=dt.UTC)
 
-    return {
+    result: dict[str, Any] = {
         "id": post.post_id, "domain": post.domain, "url": source_url,
         "author": post.author, "title": post.title,
         "excerpt": search_excerpt(body, query) or _summarize_html(body),
@@ -497,6 +501,15 @@ def post_payload(
         "thumbnail": images.thumbnail, "media": media,
     }
 
+
+    if post.source == "linked_article":
+        # Article conversion falls back to capture time for an unknown date.
+        result["published_at"] = (
+            None if post.created_at == post.updated_at
+            else created_at.isoformat()
+        )
+
+    return result
 
 def _http_url(value: str) -> str | None:
     try:

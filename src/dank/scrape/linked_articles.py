@@ -110,7 +110,7 @@ def _build_capture(
     # Only an observed HTTP redirect can change a new destination identity.
     if article.identity is None:
         url = urldefrag(final_url).url
-        domain = urlsplit(url).hostname or domain
+        domain = (urlsplit(url).hostname or domain).removeprefix("www.")
 
     domain, post_id = article.identity or (
         domain, hashlib.sha256(url.encode()).hexdigest(),

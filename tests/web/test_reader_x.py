@@ -85,7 +85,7 @@ async def test_mixed_feed_batches_x_profiles_without_cross_domain_collisions(
     }
     assert posts[3]["reddit"]["community"] == "python"
     assert all("x" not in post for post in posts[3:])
-    assert len(fake.calls) == 6
+    assert len(fake.calls) == 7
     query, params = fake.calls[3]
     assert "toUnixTimestamp64Milli(scraped_at)" in query
     assert "LIMIT 1 BY domain, post_id" in query
@@ -145,7 +145,7 @@ async def test_x_cards_and_details_use_captured_profile_or_handle_fallback(
         assert conversation["context"] == conversation["replies"] == []
 
     assert result["x"] == {**expected, **captured}
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 4
     assert fake.calls[2][1] == {
         "x_versions": [("x.com", "same", 1791462645123)],
     }
@@ -170,7 +170,7 @@ async def test_x_posts_without_canonical_handles_do_not_guess_from_author(
     assert json.loads(response.text or "")["posts"][0]["x"] == {
         "handle": "", "name": "", "icon_url": None, **EMPTY_CONTENT,
     }
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 4
 
 
 async def test_non_x_posts_do_not_query_profiles_even_with_x_links(
@@ -183,7 +183,7 @@ async def test_non_x_posts_do_not_query_profiles_even_with_x_links(
     response = await request(app, "/api/reader/posts?kind=stories")
     assert response.status == 200
     assert "x" not in json.loads(response.text or "")["posts"][0]
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 4
     assert all("AS profile" not in query for query, _ in fake.calls)
 
 

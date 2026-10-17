@@ -16,9 +16,9 @@ sources = [
 
 [hacker_news]
 days = 7
-comment_limit = 50
+comment_limit = "all"
 detail_max_posts = 20
-detail_timeout_seconds = 60
+detail_timeout_seconds = "all"
 ```
 
 `news.ycombinator.com` is also accepted. Both names use the same canonical
@@ -49,10 +49,24 @@ make scrape MODE=native ARGS='--domains "^news\.ycombinator\.com$"'
 make process MODE=native ARGS='--age 24h --domains "^news\.ycombinator\.com$"'
 ```
 
-Omit `MODE=native` for Docker. Normal collection saves titles, outbound links,
-available authors, points, comment counts and original source records. It does
-not fetch comments or archive the external articles. Open the original article from the
-reader, or open its saved Hacker News discussion view.
+Omit `MODE=native` for Docker. Normal collection saves the listing and official
+HN story metadata, including the author and actual submission time, without
+fetching comments. Front-page arrival still determines daily grouping and
+rankings; the timestamp on each card is the submission time.
+
+Linked publisher pages are collected through the existing article pipeline.
+Opening a story reads its saved original; **Discussion** opens its saved HN
+thread. Already collected destinations are reused, including recognized X,
+Reddit and YouTube URLs. Social posts without an existing capture remain linked
+externally; they are not treated as generic publisher pages. Publisher failures
+and unsupported document types remain visible as unavailable content.
+
+In **All**, a resolved HN link appears under the original source, with an
+expandable **Links** list leading back to collected references. HN self-posts
+remain their own entries. Exact URLs and observed redirects establish identity;
+query strings are preserved and unrelated articles are not merged by title.
+The Links index includes links found in other processed sources too. Processing
+an HN collection also processes its newly collected publisher pages.
 
 ## Detailed scrape
 
@@ -64,17 +78,21 @@ make process MODE=native ARGS='--age 24h --domains "^news\.ycombinator\.com$"'
 This separate pass uses the [official Hacker News API](https://github.com/HackerNews/API)
 to capture story text and comments for up to `detail_max_posts` pending saved
 stories. It considers snapshots collected within the configured `days` window,
-newest stories first. It does not visit external article pages or recollect the
-listing. Completed discussions and partial captures that reached the comment
-limit are skipped on subsequent passes. Failed captures and partial captures interrupted
-by a network error or timeout remain eligible.
+prioritizing unfinished discussions before new captures. It does not recollect
+listings or publisher pages. Previously capped discussions become eligible
+again with the new `"all"` default; complete captures are skipped.
 
-Each discussion is bounded by `comment_limit` and `detail_timeout_seconds`.
-Replies retain their parents and API order. Deleted or dead comments are not
-shown. The reader distinguishes comments not collected, complete snapshots,
-partial snapshots and failures, and links to the live discussion. Previously
-saved comments remain available after a normal collection or failed retry;
-these are snapshots, not live discussions.
+`comment_limit = "all"` traverses every reachable comment and reply, without a
+numeric cap. `detail_timeout_seconds = "all"` removes the overall thread timeout;
+each individual request still has a timeout and bounded retries. Both settings
+accept positive numbers if a bounded capture is wanted. Increasing a numeric
+comment limit makes earlier capped captures eligible again.
+
+Requests use bounded concurrency and shared per-host limits. A failed request
+leaves an explicit partial capture, preserves previously saved comments, and
+does not prevent other branches from completing. Replies retain their parents
+and API order; deleted/dead comments are omitted from display. Counts can change
+after collection because these are snapshots of a live discussion.
 
 Recent days come from the homepage and older days from hckrnews’ daily archive.
 Unavailable or malformed days are reported as collection failures while

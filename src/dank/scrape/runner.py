@@ -10,7 +10,7 @@ import shutil
 import tempfile
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
-from typing import cast
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -26,6 +26,7 @@ from dank.config import (
     load_settings,
 )
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
+from dank.links import is_platform_url, normalized_url
 from dank.logging_setup import configure_logging
 from dank.model import (
     AssetDiscovery,
@@ -45,6 +46,7 @@ from dank.scrape.hacker_news import (
     scrape_hacker_news_details,
 )
 from dank.scrape.http import RequestLimiter, current_limiter
+from dank.scrape.linked_articles import LinkedArticle, scrape_linked_articles
 from dank.scrape.metrics import (
     RSS_CONCURRENCY,
     RunMetrics,
@@ -74,7 +76,7 @@ from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
-from dank.youtube import discovery_from_post
+from dank.youtube import discovery_from_post, payload_object
 
 logger = logging.getLogger(__name__)
 # Community avatars should remain small even when post media is unlimited.
@@ -266,6 +268,12 @@ async def _run_source_sessions(
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
+    links_schema = pathlib.Path(__file__).parents[1] / "storage/links.sql"
+
+    for statement in links_schema.read_text().split(";"):
+        if statement.strip():
+            await client.execute(statement)
+
     raw_schema = pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
     await client.execute(raw_schema.read_text())
     schema = pathlib.Path(__file__).with_name("history.sql").read_text()
@@ -500,8 +508,8 @@ async def _discover_source_batches(
 
     match source.domain:
         case "news.ycombinator.com":
-            batches_iter = scrape_hacker_news(
-                settings.hacker_news, source, http_client,
+            batches_iter = _hacker_news_content_batches(
+                settings, source, clickhouse_client, http_client,
             )
         case "youtube.com":
             known_ids = await _known_youtube_channel_ids(clickhouse_client)
@@ -562,6 +570,101 @@ async def _discover_source_batches(
             len(batch.assets),
         )
         yield batch
+
+
+async def _hacker_news_content_batches(
+    settings: Settings, source: SourceConfig,
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+) -> AsyncIterator[ScrapeBatch]:
+    seen: set[str] = set()
+
+    async for batch in scrape_hacker_news(
+        settings.hacker_news, source, http_client,
+    ):
+        # Save listing/metadata first; a slow publisher cannot erase discovery.
+        yield batch
+        articles = _hacker_news_article_links(batch.posts, seen)
+
+        if not articles:
+            continue
+
+        known = await _known_link_destinations(client, list(articles))
+        pending = [
+            LinkedArticle(url, title, (
+                str(known[url]["domain"]), str(known[url]["post_id"]),
+            ) if url in known else None)
+            for url, title in articles.items()
+            if not is_platform_url(url) and not (
+                url in known and str(known[url].get("html") or "").strip()
+            )
+        ]
+
+        async for linked_batch in scrape_linked_articles(
+            http_client, pending, batch_size=10,
+        ):
+            seen.update(
+                url for post in linked_batch.posts
+                if (url := normalized_url(post.url))
+            )
+            yield linked_batch
+
+
+def _hacker_news_article_links(
+    posts: list[RawPost], seen: set[str],
+) -> dict[str, str]:
+    links: dict[str, str] = {}
+
+    for post in posts:
+        payload = payload_object(post.payload)
+        listing = payload_object(payload.get("hckrnews"))
+        story = payload_object(payload.get("story"))
+        url = normalized_url(str(
+            listing.get("link") or story.get("url") or "",
+        ))
+
+        if url and url not in seen and url != normalized_url(post.url):
+            seen.add(url)
+            links[url] = str(
+                listing.get("link_text") or story.get("title") or "",
+            )
+
+    return links
+
+
+async def _known_link_destinations(
+    client: ClickHouseClient, urls: list[str],
+) -> dict[str, dict[str, Any]]:
+    result = await client.fetch_json(
+        "SELECT u.url AS lookup_url, p.domain, p.post_id, p.url, "
+        "p.html, p.source FROM post_urls AS u FINAL "
+        "INNER JOIN (SELECT domain, post_id, url, html, source, updated_at "
+        "FROM posts "
+        "FINAL) AS p ON p.domain = u.domain AND p.post_id = u.post_id "
+        "AND u.observed_at <= p.updated_at "
+        "WHERE u.url IN %(urls)s "
+        "ORDER BY (p.domain = domainWithoutWWW(p.url)) DESC, "
+        "(p.source != 'linked_article') DESC, p.domain, p.post_id "
+        "LIMIT 1 BY lookup_url", {"urls": urls},
+    )
+    known = {str(row["lookup_url"]): row for row in result.rows}
+    missing = [url for url in urls if url not in known]
+
+    if missing:
+        # Fall back before the web app indexes older URL aliases.
+        result = await client.fetch_json(
+            "SELECT domain, post_id, url, html, source FROM posts FINAL "
+            "WHERE url IN %(urls)s ORDER BY "
+            "(domain = domainWithoutWWW(url)) DESC, "
+            "(source != 'linked_article') DESC, domain, post_id "
+            "LIMIT 1 BY url",
+            {"urls": missing},
+        )
+
+        for row in result.rows:
+            if url := normalized_url(str(row["url"])):
+                known[url] = row
+
+    return known
 
 
 async def _reddit_listing_batches(

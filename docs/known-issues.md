@@ -8,26 +8,39 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
-## Hacker News daily snapshots
+## Hacker News stories, articles and discussions
 
-Hacker News uses hckrnews’ UTC front-page history, with Top 50% as the default.
-Recent entries are read from the homepage because their daily archive files may
-not exist yet. Older days use the daily JSON archive. Missing archives and
-unrecognized data count as failures rather than empty successful collections.
-The same points cutoffs and partial-day scaling as hckrnews determine filter
-membership; ties may exceed the nominal count. Reader filters apply only to
-saved stories, and do not rank a search result subset again.
+Hacker News uses hckrnews’ UTC front-page history and daily score cutoffs, with
+Top 50% as the default. Cards show the actual submission time from the official
+HN API (or the archive’s submission time), never a guessed front-page time.
+Unavailable metadata remains explicitly unknown. Normal collection fetches story
+metadata and linked publisher pages; comments require a separate detailed pass.
 
-Normal collection does not fetch comment bodies or external article content.
-The explicit detailed pass uses the official HN API with request/time limits.
-Deleted comments are omitted, nested replies retain their parents, and incomplete
-captures remain labelled partial or failed. A later listing scrape or failed
-capture preserves an earlier saved discussion. The snapshot is not guaranteed
-to contain every comment or the current live ranking.
+Detailed capture now defaults to `comment_limit = "all"` with no overall thread
+timeout. Item requests have a 30-second timeout, at most three attempts, bounded
+concurrency, and shared host limits. Previously capped threads are retried first.
+Failures preserve saved comments and remain partial; complete means every
+reachable branch observed during that run was fetched, not that a growing live
+thread will never acquire new comments. The API no longer truncates at 500.
+
+Publisher pages use the existing article extraction and recovery rules. A denial,
+challenge or unsupported document remains an unavailable capture. Public paywall
+excerpts may remain excerpts; collection does not imply subscriber access.
+Original publisher dates/bylines are extracted when present. Readable existing
+captures are reused, rather than overwritten by an aggregator’s title or body.
+
+Resolved HN links open the collected destination; All shows its original source
+with incoming Links. Ask/Tell HN citations do not replace their containing post.
+Known platform post IDs and observed redirects resolve aliases; ambiguous URLs
+are kept separate. Links are tied to processed versions and content hashes, so
+unprocessed captures and reprocessing cannot expose stale link relationships.
+Incoming lists show up to 50 references with the full count when more exist;
+this display limit does not apply to comments.
 
 See [configuration and collection](features/hacker-news.md),
-[collector tests](../tests/scrape/test_hacker_news.py), and
-[runner integration](../tests/scrape/test_hacker_news_runner.py).
+[collector tests](../tests/scrape/test_hacker_news.py),
+[article tests](../tests/scrape/test_linked_articles.py), and
+[link identity tests](../tests/test_links.py).
 
 ## YouTube feed discovery
 
