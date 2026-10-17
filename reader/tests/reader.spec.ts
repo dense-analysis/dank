@@ -143,7 +143,9 @@ function story(page: Page, title = article.title) {
 async function expectNoHorizontalOverflow(page: Page) {
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
     ),
   ).toBe(true);
 }
@@ -914,6 +916,62 @@ test("supports mobile navigation and article reading without horizontal overflow
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
+});
+
+test.describe("Phone reading", () => {
+  test.use({ isMobile: true, hasTouch: true });
+
+  for (const width of [320, 390]) {
+    test(`keeps navigation and reading controls reachable and restores the feed at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 720 });
+      await mockReader(page);
+      await page.goto("/reader/?view=stories");
+      const target = story(page, "Housing report 8");
+      await target.scrollIntoViewIfNeeded();
+      const feedScroll = await page.evaluate(() => window.scrollY);
+      expect(feedScroll).toBeGreaterThan(500);
+      const menu = page.getByRole("button", { name: "Open navigation" });
+      await expect(menu).toBeInViewport();
+
+      await target.tap();
+      await expect(
+        page.getByRole("main", { name: "Article reader" }),
+      ).toBeVisible();
+      await page.evaluate(() => window.scrollTo(0, 950));
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(950);
+      await expect(menu).toBeInViewport();
+      const back = page.getByRole("button", {
+        name: "Back to stories",
+        exact: true,
+      });
+      await expect(back).toBeInViewport();
+      const header = await page.locator(".topbar").boundingBox();
+      const toolbar = await page.locator(".reader-toolbar").boundingBox();
+      expect(toolbar?.y).toBeGreaterThanOrEqual(
+        (header?.y ?? 0) + (header?.height ?? 0),
+      );
+
+      const larger = page.getByRole("button", { name: "Larger article text" });
+      for (const control of [menu, back, larger]) {
+        const box = await control.boundingBox();
+        expect(box?.width).toBeGreaterThanOrEqual(44);
+        expect(box?.height).toBeGreaterThanOrEqual(44);
+      }
+      await larger.tap();
+      await expect(page.locator(".article-body")).toHaveCSS(
+        "font-size",
+        "20px",
+      );
+      await expectNoHorizontalOverflow(page);
+      await back.tap();
+      await expect(target).toBeVisible();
+      await expect
+        .poll(() => page.evaluate(() => window.scrollY))
+        .toBe(feedScroll);
+    });
+  }
 });
 
 test("has no serious or critical accessibility violations in the feed and reader", async ({

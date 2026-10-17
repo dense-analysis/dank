@@ -84,6 +84,8 @@ export function FeedToolbar({
         <Search size={18} />
         <input
           ref={input}
+          enterKeyHint="search"
+          autoCapitalize="none"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={searchLabel}

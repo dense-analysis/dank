@@ -700,7 +700,19 @@
     padding-inline: 20px;
   }
   .youtube-shell:not(.collection-context) > .topbar {
-    padding-inline: 20px;
+    height: var(--sticky-header-height);
+    padding-inline: 12px;
+  }
+  .yt-search input {
+    font-size: 16px;
+  }
+  .yt-search {
+    min-width: 0;
+  }
+  .yt-tabs button,
+  .yt-feed-tabs button,
+  .yt-reference-view button {
+    min-height: 44px;
   }
   .yt-collection,
   .yt-detail {

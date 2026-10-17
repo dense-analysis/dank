@@ -427,6 +427,8 @@ export function YouTubeCollection({
           <input
             aria-label={`Search ${scoped ? title : "YouTube"}`}
             type="search"
+            enterKeyHint="search"
+            autoCapitalize="none"
             placeholder={`Search ${scoped ? title : "YouTube discoveries"}`}
             value={search}
             onChange={(event) => setSearch(event.target.value)}

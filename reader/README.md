@@ -102,6 +102,9 @@ sidebar list. Search, source filters and dates apply within the selected view.
 
 Sidebar groups remember whether you expanded or collapsed them in this browser,
 including YouTube's nested lists, across navigation and page refreshes.
+On phones, groups start collapsed except for the active feed. Navigation stays
+within reach while scrolling; tap outside the drawer to close it. Saved group
+choices still take precedence.
 
 Expand **X** to choose a configured account, including accounts with no posts
 yet. Each entry uses the account’s display name, collected post count and captured profile image,
