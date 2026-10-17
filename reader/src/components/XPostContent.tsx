@@ -2,6 +2,7 @@ import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
+import { videoReferenceId } from "../lib/referenceFocus";
 import { postKey } from "../lib/storage";
 import type { Post, XMedia } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
@@ -23,10 +24,12 @@ export function XPostContent({
   compact = false,
   query = "",
   navigation,
+  referenceVideoId,
 }: {
   post: Post;
   compact?: boolean;
   query?: string;
+  referenceVideoId?: string;
   navigation?: { href: string; open: () => void };
 }) {
   const { preferences } = useReaderPreferences();
@@ -70,6 +73,11 @@ export function XPostContent({
       new Set(
         previews.flatMap((link) => {
           if (
+            referenceVideoId &&
+            videoReferenceId(link.url) === referenceVideoId
+          )
+            return [];
+          if (
             (!hideRawImageLinks && imageReferenceKey(link.url)) ||
             (!hideRawVideoLinks &&
               (videoReferenceKey(link.url) ||
@@ -82,7 +90,7 @@ export function XPostContent({
           return key ? [key] : [];
         }),
       ),
-    [previews, hideRawImageLinks, hideRawVideoLinks],
+    [previews, hideRawImageLinks, hideRawVideoLinks, referenceVideoId],
   );
   const html = useMemo(
     () =>
@@ -99,7 +107,12 @@ export function XPostContent({
       {compact ? (
         <XPostPreview html={html} navigation={navigation} query={query} />
       ) : (
-        <ArticleBody html={html} query={query} />
+        <ArticleBody
+          html={html}
+          query={query}
+          referenceVideoId={referenceVideoId}
+          referenceIsPost
+        />
       )}
       {media.length > 0 && (
         <section className="x-attachments" aria-label="Post attachments">
@@ -127,6 +140,10 @@ export function XPostContent({
         <XLinkPreview
           key={link.url}
           link={link}
+          highlighted={
+            !!referenceVideoId &&
+            videoReferenceId(link.url) === referenceVideoId
+          }
           positionScope={postKey(post)}
         />
       ))}

@@ -8,10 +8,15 @@ import {
 import {
   captureReadingPosition,
   loadReadingPosition,
+  readingEdge,
   readingPositionTop,
   saveReadingPosition,
 } from "../lib/readingPosition";
+import { parseReferenceTarget } from "../lib/referenceFocus";
 import { postKey } from "../lib/storage";
+
+// Leave a little space below the pinned toolbar when opening an exact reference.
+const REFERENCE_FOCUS_GAP = 16;
 
 interface HistoryEntry {
   key: string;
@@ -132,6 +137,7 @@ export function useLocation() {
     const id = params.get("article");
     const domain = params.get("article_source");
     const articleKey = id && domain ? postKey({ id, domain }) : null;
+    const reference = parseReferenceTarget(params);
     activeKey.current = entry.key;
     activeArticle.current = articleKey;
     ready.current = false;
@@ -144,8 +150,18 @@ export function useLocation() {
       if (document.querySelector('.article-page[data-reader-pending="true"]'))
         return;
 
+      if (
+        reference &&
+        document.querySelector('.article-page[data-reference-pending="true"]')
+      )
+        return;
+      const referenceFocus = reference
+        ? document.querySelector<HTMLElement>(
+            '.article-page [data-reference-match="true"], .article-page [data-reference-fallback="true"]',
+          )
+        : null;
       const body = readingBody();
-      if (articleKey && !body) {
+      if (articleKey && !body && !referenceFocus) {
         if (document.querySelector('.article-page [role="alert"]'))
           document
             .querySelector<HTMLElement>(".article-page .back-button")
@@ -153,7 +169,18 @@ export function useLocation() {
         return;
       }
       const top =
-        historyScroll ?? (body && saved ? readingPositionTop(body, saved) : 0);
+        historyScroll ??
+        (referenceFocus
+          ? Math.max(
+              0,
+              referenceFocus.getBoundingClientRect().top +
+                window.scrollY -
+                readingEdge() -
+                REFERENCE_FOCUS_GAP,
+            )
+          : body && saved
+            ? readingPositionTop(body, saved)
+            : 0);
       window.scrollTo({ top, behavior: "instant" });
       ready.current = true;
       positions.current.set(entry.key, window.scrollY);
@@ -162,9 +189,10 @@ export function useLocation() {
       const target =
         previousFocus?.isConnected && previousFocus.getClientRects().length > 0
           ? previousFocus
-          : [
+          : (referenceFocus ??
+            [
               ...document.querySelectorAll<HTMLElement>("[data-page-focus]"),
-            ].find((element) => element.getClientRects().length > 0);
+            ].find((element) => element.getClientRects().length > 0));
       target?.focus({ preventScroll: true });
     };
     restore();
@@ -175,7 +203,7 @@ export function useLocation() {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["data-reader-pending"],
+        attributeFilter: ["data-reader-pending", "data-reference-pending"],
       });
     }
     return () => observer?.disconnect();

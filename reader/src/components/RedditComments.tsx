@@ -1,6 +1,7 @@
 import { ArrowUp, ExternalLink, MessageCircle } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
+import type { ReferenceTarget } from "../lib/referenceFocus";
 import type { RedditPost } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
 import { dateLabel, safeUrl } from "./PostCard";
@@ -8,15 +9,18 @@ import { dateLabel, safeUrl } from "./PostCard";
 export function RedditComments({
   reddit,
   originalUrl,
+  referenceTarget,
 }: {
   reddit: RedditPost;
   originalUrl: string;
+  referenceTarget?: ReferenceTarget;
 }) {
   const { preferences, updatePreferences } = useReaderPreferences();
   const capture = reddit.comment_capture;
   const comments = capture?.status === "captured" ? capture.comments : [];
   const total = capture?.total_available ?? reddit.comments;
   const captured = capture?.status === "captured";
+  const revealReference = referenceTarget?.kind === "comment";
 
   if (!capture && total === 0) return null;
 
@@ -33,7 +37,7 @@ export function RedditComments({
           </span>
         )}
       </header>
-      {!preferences.showRedditComments ? (
+      {!preferences.showRedditComments && !revealReference ? (
         <div className="reddit-comments-notice">
           <p>Comments are hidden in your reading preferences.</p>
           <button
@@ -48,6 +52,12 @@ export function RedditComments({
         </div>
       ) : captured ? (
         <>
+          {revealReference && !preferences.showRedditComments && (
+            <p className="reddit-comments-summary">
+              Comments are temporarily shown for this reference. Your reading
+              preference is unchanged.
+            </p>
+          )}
           {capture.latest_attempt_status && (
             <p className="reddit-comments-summary">
               Previously saved
@@ -70,6 +80,7 @@ export function RedditComments({
                 <li
                   className="reddit-comment"
                   key={comment.id}
+                  data-reference-comment={comment.id}
                   style={
                     {
                       "--comment-depth": Math.min(comment.depth, 3),
@@ -103,9 +114,27 @@ export function RedditComments({
                   )}
                   <div className="reddit-comment-body">
                     {comment.body_html ? (
-                      <ArticleBody html={comment.body_html} />
+                      <ArticleBody
+                        html={comment.body_html}
+                        referenceVideoId={
+                          revealReference && referenceTarget.id === comment.id
+                            ? referenceTarget.videoId
+                            : undefined
+                        }
+                      />
                     ) : (
-                      <p className="reddit-comment-text">{comment.body}</p>
+                      <ArticleBody
+                        html={comment.body
+                          .replaceAll("&", "&amp;")
+                          .replaceAll("<", "&lt;")
+                          .replaceAll(">", "&gt;")
+                          .replaceAll("\n", "<br>")}
+                        referenceVideoId={
+                          revealReference && referenceTarget.id === comment.id
+                            ? referenceTarget.videoId
+                            : undefined
+                        }
+                      />
                     )}
                   </div>
                   <div className="reddit-comment-footer">

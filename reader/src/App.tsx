@@ -46,6 +46,11 @@ import {
 } from "./lib/collections";
 import { articleParams, filterParams, parseFilters } from "./lib/navigation";
 import { readingFonts } from "./lib/preferences";
+import {
+  clearReferenceParams,
+  parseReferenceTarget,
+  referenceParams,
+} from "./lib/referenceFocus";
 import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
 import { isXPost } from "./lib/x";
@@ -237,6 +242,7 @@ export function App() {
     const next = new URLSearchParams(params);
     next.delete("article");
     next.delete("article_source");
+    clearReferenceParams(next);
     backTo(next);
   }
   function selectSource(domain: string) {
@@ -408,6 +414,7 @@ export function App() {
             domain={articleDomain}
             id={articleId}
             initial={selected}
+            referenceTarget={parseReferenceTarget(params)}
             close={closeArticle}
             selectSource={selectSource}
             markRead={markRead}
@@ -470,10 +477,11 @@ export function App() {
                     }
                     retrySources={() => void youtubeSources.refetch()}
                     openReference={(reference) =>
-                      openPost({
-                        id: reference.post_id,
-                        domain: reference.domain,
-                      })
+                      navigate(
+                        referenceParams(params, reference),
+                        false,
+                        params.toString(),
+                      )
                     }
                   />
                 )

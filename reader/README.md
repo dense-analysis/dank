@@ -252,8 +252,14 @@ between the collection and discovery details in this reader tab.
 **From your feeds** combines verified YouTube links in collected posts and
 comments. Discovery details distinguish **Post link** from **Comment mention**,
 with a matching excerpt, capture date, exact video URL (including timestamps)
-and a direct link to the source post or comment. Opening the parent post and
-going Back preserves the YouTube search and selection. Counts describe distinct
+and a direct link to the source post or comment. **Open comment in DANK**
+opens the saved discussion, scrolls to the matching link, and highlights its
+exact visible label. This temporarily reveals hidden comments without changing
+your preference. **Original comment** opens the source site. Shared reader URLs
+retain the post, comment and video identity; Back and Forward preserve the
+YouTube search and selection. If the comment or link is missing from the current
+saved post, DANK shows the archived excerpt and original link when available
+instead of highlighting another comment. Counts describe distinct
 post/comment references, so multiple comments in one thread remain distinct.
 Videos without a collected YouTube title use their video ID; a source headline
 is never presented as the video's title. YouTube collection is not required.

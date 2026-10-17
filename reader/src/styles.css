@@ -2711,3 +2711,46 @@ a.x-metric:hover {
     gap: 8px;
   }
 }
+
+/* A reference highlights the actual link, including descriptive anchor labels. */
+.article-page .reference-match {
+  color: #f5ffe8;
+  background: #35432b;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px #9dcc8070;
+  text-decoration-color: #d5f4ac;
+  scroll-margin-top: 110px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.article-page .reference-match:focus {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+.reference-focus-notice {
+  margin: 20px auto;
+  padding: 16px 20px;
+  width: min(100% - 48px, 760px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.reference-focus-date {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.reference-focus-notice blockquote {
+  border-left: 2px solid var(--green);
+  padding-left: 12px;
+  margin: 12px 0;
+}
+.reference-focus-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}

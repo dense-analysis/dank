@@ -10,11 +10,13 @@ export function XPostDetail({
   selectAccount,
   pending = false,
   loadError = false,
+  referenceVideoId,
 }: {
   post: Post;
   selectAccount: (handle: string) => void;
   pending?: boolean;
   loadError?: boolean;
+  referenceVideoId?: string;
 }) {
   const account = xProfile(post);
 
@@ -29,7 +31,7 @@ export function XPostDetail({
       />
       <div className="x-focused-post">
         <XPostHeader post={post} selectAccount={selectAccount} />
-        <XPostContent post={post} />
+        <XPostContent post={post} referenceVideoId={referenceVideoId} />
       </div>
       {!hasXContent(post) && (
         <p className="x-content-unavailable">

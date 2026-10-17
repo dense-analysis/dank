@@ -219,3 +219,44 @@ it("changes raw image and video visibility without replacing images or their man
   expect(videoLink?.hidden).toBe(false);
   expect(container.querySelector("img")).toBe(image);
 });
+
+it("keeps reference anchors, focus and image controls stable through preference updates", async () => {
+  function Content() {
+    const { preferences, updatePreferences } = useReaderPreferences();
+
+    return (
+      <>
+        <button
+          type="button"
+          className="font-choice"
+          onClick={() => updatePreferences({ ...preferences, fontSize: 22 })}
+        >
+          Larger text
+        </button>
+        <ArticleBody
+          html='<p><a href="https://youtu.be/NnV_cWeoo5Q?t=1468">seen it happen</a></p><img src="/chart.svg" alt="Chart">'
+          referenceVideoId="NnV_cWeoo5Q"
+        />
+      </>
+    );
+  }
+
+  await act(() =>
+    root.render(
+      <ReaderPreferencesProvider>
+        <Content />
+      </ReaderPreferencesProvider>,
+    ),
+  );
+  const anchor = container.querySelector<HTMLAnchorElement>(
+    '[data-reference-match="true"]',
+  );
+  const image = container.querySelector("img");
+  anchor?.focus();
+  await act(() =>
+    container.querySelector<HTMLButtonElement>(".font-choice")?.click(),
+  );
+  expect(container.querySelector('[data-reference-match="true"]')).toBe(anchor);
+  expect(container.querySelector("img")).toBe(image);
+  expect(document.activeElement).toBe(anchor);
+});

@@ -9,6 +9,7 @@ import {
   redditVideoKey,
   withoutRedditVideoUrls,
 } from "../lib/redditText";
+import { highlightVideoReferences } from "../lib/referenceFocus";
 import type { RedditImage, RedditVideo } from "../lib/types";
 import { CodeCopyButton } from "./CodeCopyButton";
 import { ImageBackgroundToggle } from "./ImageBackgroundToggle";
@@ -20,6 +21,9 @@ export function ArticleBody({
   redditPostId,
   redditVideos,
   redditVideoKeys,
+  referenceVideoId,
+  referenceCommentId,
+  referenceIsPost,
 }: {
   html: string;
   query?: string;
@@ -27,6 +31,9 @@ export function ArticleBody({
   redditPostId?: string;
   redditVideos?: RedditVideo[];
   redditVideoKeys?: Set<string>;
+  referenceVideoId?: string;
+  referenceCommentId?: string;
+  referenceIsPost?: boolean;
 }) {
   const { preferences } = useReaderPreferences();
   const imageLinks = useRef<
@@ -40,7 +47,21 @@ export function ArticleBody({
     (element: HTMLDivElement | null) => {
       if (!element) return;
 
-      const content = renderArticle(element, html, query);
+      const content = renderArticle(
+        element,
+        html,
+        query,
+        referenceCommentId,
+        referenceIsPost,
+      );
+      const scope = referenceCommentId
+        ? element.querySelector<HTMLElement>(
+            '[data-reader-comment-target="true"]',
+          )
+        : element;
+
+      if (scope && referenceVideoId)
+        highlightVideoReferences(scope, referenceVideoId);
       setArticle(content);
       const imageVisibility = redditImages
         ? enhanceRedditImageLinks(element, redditImages, redditPostId)
@@ -82,7 +103,16 @@ export function ArticleBody({
           videoLinks.current = undefined;
       };
     },
-    [html, query, redditImages, redditPostId, redditVideos],
+    [
+      html,
+      query,
+      redditImages,
+      redditPostId,
+      redditVideos,
+      referenceVideoId,
+      referenceCommentId,
+      referenceIsPost,
+    ],
   );
 
   useLayoutEffect(() => {

@@ -10,9 +10,11 @@ import { YouTubePlayer } from "./YouTubePlayer";
 export function XLinkPreview({
   link,
   positionScope,
+  highlighted = false,
 }: {
   link: XLink;
   positionScope: string;
+  highlighted?: boolean;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -67,7 +69,13 @@ export function XLinkPreview({
             </>
           )}
         </span>
-        <strong>{link.title || link.url}</strong>
+        <strong
+          className={highlighted ? "reference-match" : undefined}
+          data-reference-match={highlighted ? "true" : undefined}
+          tabIndex={highlighted ? -1 : undefined}
+        >
+          {link.title || link.url}
+        </strong>
         {link.description && (
           <span className="x-link-description">{link.description}</span>
         )}

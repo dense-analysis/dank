@@ -1,0 +1,149 @@
+import { describe, expect, it } from "vitest";
+import { renderArticle } from "./article";
+import {
+  clearReferenceParams,
+  highlightVideoReferences,
+  parseReferenceTarget,
+  referenceParams,
+  videoReferenceId,
+} from "./referenceFocus";
+import type { YouTubeReference } from "./youtubeCollection";
+
+const video = "NnV_cWeoo5Q";
+const reference: YouTubeReference = {
+  domain: "reddit.com",
+  post_id: "t3_story",
+  kind: "comment",
+  reference_id: "t1_target",
+  matched_url: `https://youtu.be/${video}?t=1468`,
+  observed_at: "2026-10-17T12:00:00Z",
+  url: "https://reddit.com/r/example/comments/story",
+  title: "Discussion",
+  source: "reddit",
+  reader_url: "/reader/",
+  reference_url: "https://reddit.com/comments/story/comment/target/",
+  author: "Reader",
+  excerpt: "Seen it happen in real time",
+};
+
+describe("video reference navigation", () => {
+  it("round trips exact reference identity while preserving collection context", () => {
+    const origin = new URLSearchParams({
+      view: "youtube",
+      feed: "linked",
+      youtube_item: `video:${video}`,
+      q: "security",
+    });
+    const params = referenceParams(origin, reference);
+    expect(parseReferenceTarget(params)).toEqual({
+      kind: "comment",
+      id: "t1_target",
+      videoId: video,
+      saved: reference.observed_at,
+    });
+    expect(params.get("article_source")).toBe("reddit.com");
+    expect(params.get("article")).toBe("t3_story");
+    params.delete("article");
+    params.delete("article_source");
+    clearReferenceParams(params);
+    expect(params.toString()).toBe(origin.toString());
+    expect(origin.has("article")).toBe(false);
+  });
+
+  it.each([
+    `https://youtube.com.evil.example/watch?v=${video}`,
+    `https://youtube.com@evil.example/watch?v=${video}`,
+    `javascript:alert('${video}')`,
+    `https://example.com/?url=https://youtube.com/watch?v=${video}`,
+    `https://youtube.com/watch?v=${video}x`,
+  ])("rejects lookalike video destinations: %s", (url) => {
+    expect(videoReferenceId(url)).toBeUndefined();
+  });
+
+  it("requires article and comment identities and a valid video ID", () => {
+    const params = referenceParams(new URLSearchParams(), reference);
+    params.delete("reference_id");
+    expect(parseReferenceTarget(params)).toBeUndefined();
+    params.set("reference_id", "t1_target");
+    params.set("reference_video", "javascript:alert(1)");
+    expect(parseReferenceTarget(params)).toBeUndefined();
+  });
+
+  it("highlights exact destinations and descriptive labels, not wrong video labels", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      `<p><a href="https://youtu.be/${video}?t=1468">seen <em>it happen</em> in real time</a> <a href="https://youtube.com/watch?v=aaaaaaaaaaa">${video}</a> https://youtube.com/watch?v=${video}. <a href="javascript:alert(1)">unsafe</a></p>`,
+    );
+    const anchor = body.querySelector("a");
+    highlightVideoReferences(body, video);
+    expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
+      2,
+    );
+    expect(anchor?.classList.contains("reference-match")).toBe(true);
+    expect(anchor?.querySelector("em")?.textContent).toBe("it happen");
+    expect(
+      body.querySelectorAll("a")[1].classList.contains("reference-match"),
+    ).toBe(false);
+    expect(body.querySelector("mark")?.textContent).toBe(
+      `https://youtube.com/watch?v=${video}`,
+    );
+    expect(body.querySelector('[href^="javascript:"]')).toBeNull();
+  });
+
+  it("scopes captured RSS comments by source identity without retaining source IDs or spoofed markers", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      `<div data-reader-comment-target="true" data-reference-match="true"><a href="https://youtu.be/${video}">Wrong comment</a></div><div id="comment-target"><a href="https://youtu.be/${video}">Right comment</a><script>evil()</script></div>`,
+      "",
+      "comment-target",
+    );
+    const scope = body.querySelector<HTMLElement>(
+      '[data-reader-comment-target="true"]',
+    );
+    expect(scope).not.toBeNull();
+    highlightVideoReferences(scope as HTMLElement, video);
+    expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
+      1,
+    );
+    expect(
+      body.querySelector('[data-reference-match="true"]')?.textContent,
+    ).toBe("Right comment");
+    expect(body.querySelector("[id],script")).toBeNull();
+  });
+});
+
+it("does not include a nested RSS reply in its parent's reference", () => {
+  const body = document.createElement("div");
+  renderArticle(
+    body,
+    `<div id="comment-1">Parent has no link<div id="comment-2"><a href="https://youtu.be/${video}">Nested reply</a></div></div>`,
+    "",
+    "comment-1",
+  );
+  const scope = body.querySelector<HTMLElement>(
+    '[data-reader-comment-target="true"]',
+  );
+  highlightVideoReferences(scope as HTMLElement, video);
+  expect(body.querySelector('[data-reference-match="true"]')).toBeNull();
+});
+
+it("does not satisfy a post link with a hidden link, source comment, or recommendation", () => {
+  const body = document.createElement("div");
+  const link = `<a href="https://youtu.be/${video}">A source link</a>`;
+  renderArticle(
+    body,
+    `<p hidden>${link}</p><div id="comment-1">${link}</div><div class="recommended-items">${link}</div><p>${link}</p>`,
+    "",
+    undefined,
+    true,
+  );
+  highlightVideoReferences(body, video);
+  expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
+    1,
+  );
+  expect(
+    body.lastElementChild?.querySelector('[data-reference-match="true"]'),
+  ).not.toBeNull();
+});

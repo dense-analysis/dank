@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { articleParams } from "../lib/navigation";
+import { referenceParams } from "../lib/referenceFocus";
 import { safeUrl } from "../lib/urls";
 import {
   fetchYouTubeItems,
@@ -625,7 +625,7 @@ function YouTubeSourceReference({
   const original = safeUrl(reference.reference_url);
   const matched = safeUrl(reference.matched_url);
   const reader = reference.reader_url
-    ? `/reader/?${articleParams(params, { domain: reference.domain, id: reference.post_id })}`
+    ? `/reader/?${referenceParams(params, reference)}`
     : undefined;
   const source =
     reference.source === "x"
@@ -672,16 +672,37 @@ function YouTubeSourceReference({
           {reference.excerpt}
         </blockquote>
         <div className="yt-reference-evidence">
+          {reader && (
+            <a
+              className="yt-reference-original"
+              href={reader}
+              aria-label={`Open ${reference.kind}: ${reference.author || reference.title || reference.domain}`}
+              onClick={(event) => {
+                if (
+                  event.button ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                open();
+              }}
+            >
+              {reference.kind === "comment" ? "Open comment" : "Open post"} in
+              DANK
+            </a>
+          )}
           {original && (
             <a
               className="yt-reference-original"
               href={original}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Open ${reference.kind}: ${reference.author || reference.title || reference.domain}`}
+              aria-label={`Original ${reference.kind}: ${reference.author || reference.title || reference.domain}`}
             >
-              {reference.kind === "comment" ? "Open comment" : "Open post"}{" "}
-              <ArrowUpRight size={14} />
+              Original {reference.kind} <ArrowUpRight size={14} />
             </a>
           )}
           {matched && (

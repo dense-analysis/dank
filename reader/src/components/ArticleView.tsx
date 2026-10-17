@@ -7,13 +7,14 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
 import { hasHackerNewsBody } from "../lib/hackerNews";
+import type { ReferenceTarget } from "../lib/referenceFocus";
 import { postKey } from "../lib/storage";
 import type { Filters, Post } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
@@ -31,6 +32,7 @@ import {
   RedditMetadata,
 } from "./RedditMetadata";
 import { RedditVideo } from "./RedditVideo";
+import { ReferenceFocusNotice } from "./ReferenceFocusNotice";
 import { SourceLink } from "./SourceLink";
 import { XPostDetail } from "./XPostDetail";
 
@@ -46,10 +48,12 @@ export function ArticleView({
   selectCommunity,
   selectAccount,
   selectFlair,
+  referenceTarget,
 }: {
   domain: string;
   id: string;
   initial?: Post;
+  referenceTarget?: ReferenceTarget;
   close: () => void;
   selectSource: (domain: string) => void;
   markRead: (post: Post) => void;
@@ -62,6 +66,12 @@ export function ArticleView({
   const { preferences, updatePreferences, preferencesError } =
     useReaderPreferences();
   const { fontSize } = preferences;
+  const articleRef = useRef<HTMLElement>(null);
+  const targetKey = referenceTarget ? JSON.stringify(referenceTarget) : "";
+  const [referenceResult, setReferenceResult] = useState({
+    key: "",
+    matched: false,
+  });
   function setFontSize(size: number) {
     updatePreferences({ ...preferences, fontSize: size });
   }
@@ -105,13 +115,30 @@ export function ArticleView({
         !redditVideos.some((video) => video.url === asset.url),
     ) ?? [];
 
+  useLayoutEffect(() => {
+    if (!targetKey || !post || isPlaceholderData) return;
+
+    setReferenceResult({
+      key: targetKey,
+      matched: !!articleRef.current?.querySelector(
+        '[data-reference-match="true"]',
+      ),
+    });
+  }, [targetKey, post, isPlaceholderData]);
+  const referenceReady =
+    !!post && !isPlaceholderData && referenceResult.key === targetKey;
+
   useEffect(() => {
     if (post && hasReadableContent) markRead(post);
   }, [post, hasReadableContent, markRead]);
   return (
     <main
       id="main"
+      ref={articleRef}
       className="article-page"
+      data-reference-pending={
+        referenceTarget ? String(!referenceReady && !error) : undefined
+      }
       data-source={post?.source}
       aria-label={xPost ? "X post reader" : "Article reader"}
       data-reader-pending={
@@ -174,10 +201,24 @@ export function ArticleView({
           </button>
         </div>
       )}
+      {referenceTarget && referenceReady && (
+        <ReferenceFocusNotice
+          target={referenceTarget}
+          domain={domain}
+          postId={id}
+          matched={referenceResult.matched}
+          close={close}
+        />
+      )}
       {post && xPost && (
         <XPostDetail
           post={post}
           selectAccount={selectAccount}
+          referenceVideoId={
+            referenceTarget?.kind === "post"
+              ? referenceTarget.videoId
+              : undefined
+          }
           pending={isPlaceholderData && !error}
           loadError={!!error}
         />
@@ -185,6 +226,7 @@ export function ArticleView({
       {post?.hacker_news && (
         <HackerNewsDetail
           post={post}
+          referenceTarget={referenceTarget}
           pending={isPlaceholderData && !error}
           loadError={!!error}
         />
@@ -274,6 +316,18 @@ export function ArticleView({
               {hasContent && (
                 <ArticleBody
                   html={html}
+                  referenceVideoId={
+                    referenceTarget?.kind === "post" ||
+                    (!post.reddit && referenceTarget?.kind === "comment")
+                      ? referenceTarget.videoId
+                      : undefined
+                  }
+                  referenceIsPost={referenceTarget?.kind === "post"}
+                  referenceCommentId={
+                    !post.reddit && referenceTarget?.kind === "comment"
+                      ? referenceTarget.id
+                      : undefined
+                  }
                   redditImages={post.reddit?.images}
                   redditVideos={post.reddit ? redditVideos : undefined}
                   redditVideoKeys={redditVideoKeys}
@@ -336,7 +390,11 @@ export function ArticleView({
             </section>
           )}
           {post.reddit && !isPlaceholderData && (
-            <RedditComments reddit={post.reddit} originalUrl={post.url} />
+            <RedditComments
+              reddit={post.reddit}
+              originalUrl={post.url}
+              referenceTarget={referenceTarget}
+            />
           )}
           <div className="article-end">
             {hasReadableContent && <span>YOU’VE REACHED THE END</span>}

@@ -1,13 +1,61 @@
 import DOMPurify from "dompurify";
 import { highlightMatches } from "./highlightMatches";
 
-export function sanitizeArticle(html: string) {
-  return DOMPurify.sanitize(html, {
+export function sanitizeArticle(
+  html: string,
+  referenceCommentId?: string,
+  referenceIsPost = false,
+) {
+  const content = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ["form", "input", "button", "iframe", "style"],
-    FORBID_ATTR: ["style", "id", "name"],
+    FORBID_ATTR: ["style", "name"],
     RETURN_DOM_FRAGMENT: true,
   });
+
+  // IDs survive only inside this detached, sanitized fragment so a source
+  // comment can be identified. Remove them before returning displayable HTML.
+  for (const node of content.querySelectorAll(
+    "[data-reader-comment-target], [data-reader-comment-boundary], [data-reader-reference-excluded], [data-reference-match], .reference-match",
+  )) {
+    node.removeAttribute("data-reader-comment-target");
+    node.removeAttribute("data-reference-match");
+    node.removeAttribute("data-reader-comment-boundary");
+    node.removeAttribute("data-reader-reference-excluded");
+    node.classList.remove("reference-match");
+  }
+
+  // Keep post mentions separate from source comments and recommendation widgets.
+  for (const node of content.querySelectorAll("[id], [class]")) {
+    const markers = [node.id, ...node.classList];
+
+    if (
+      markers.some(
+        (marker) =>
+          /^(?:related|recommended)(?:[-_]|$)/.test(marker) ||
+          (referenceIsPost && /^(?:comment|comments)(?:[-_]|$)/.test(marker)),
+      )
+    )
+      node.setAttribute("data-reader-reference-excluded", "true");
+  }
+
+  if (referenceCommentId) {
+    const target = content.getElementById(referenceCommentId);
+    target?.setAttribute("data-reader-comment-target", "true");
+
+    // The reference extractor treats nested, explicitly identified replies separately.
+    for (const reply of target?.querySelectorAll(
+      "article[id], li[id], div[id]",
+    ) ?? []) {
+      if (/^comment-\d+$/.test(reply.id))
+        reply.setAttribute("data-reader-comment-boundary", "true");
+    }
+  }
+
+  for (const node of content.querySelectorAll("[id]"))
+    node.removeAttribute("id");
+
+  return content;
 }
 
 export function hasArticleContent(html: string): boolean {
@@ -82,9 +130,13 @@ export function renderArticle(
   element: HTMLElement,
   html: string,
   query = "",
+  referenceCommentId?: string,
+  referenceIsPost = false,
 ): ArticleContent {
   // Source markup is sanitized before adding any reader-owned elements.
-  element.replaceChildren(sanitizeArticle(html));
+  element.replaceChildren(
+    sanitizeArticle(html, referenceCommentId, referenceIsPost),
+  );
 
   if (query.trim()) {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);

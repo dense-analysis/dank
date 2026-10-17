@@ -667,7 +667,7 @@ test("raw-only source references open their original and processed references re
   ).toBe(false);
   await expect(
     references.getByRole("link", {
-      name: "Open comment: reader",
+      name: "Original comment: reader",
       exact: true,
     }),
   ).toHaveAttribute("href", first.references[1].reference_url);
@@ -801,7 +801,7 @@ test("references show post and comment evidence with exact destinations", async 
     region.getByText("This section explains the design at 45 seconds."),
   ).toBeVisible();
   await expect(
-    region.getByRole("link", { name: "Open comment: reader", exact: true }),
+    region.getByRole("link", { name: "Original comment: reader", exact: true }),
   ).toHaveAttribute("href", "https://lobste.rs/s/video#comment-one");
   await expect(
     region
@@ -812,7 +812,7 @@ test("references show post and comment evidence with exact destinations", async 
   await expect(region.getByText("2 references", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
-    region.getByRole("link", { name: "Open comment: reader", exact: true }),
+    region.getByRole("link", { name: "Original comment: reader", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(

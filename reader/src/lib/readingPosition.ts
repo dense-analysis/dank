@@ -64,7 +64,7 @@ export function saveReadingPosition(
   }
 }
 
-function readingEdge(): number {
+export function readingEdge(): number {
   const toolbar = document.querySelector(".reader-toolbar");
   if (!toolbar) return 0;
 

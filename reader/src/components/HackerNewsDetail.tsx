@@ -1,6 +1,7 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
 import type { CSSProperties } from "react";
 import { hackerNewsCaptureReason, hasHackerNewsBody } from "../lib/hackerNews";
+import { type ReferenceTarget, videoReferenceId } from "../lib/referenceFocus";
 import type { Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ArticleBody } from "./ArticleBody";
@@ -12,10 +13,12 @@ export function HackerNewsDetail({
   post,
   pending,
   loadError,
+  referenceTarget,
 }: {
   post: Post;
   pending: boolean;
   loadError: boolean;
+  referenceTarget?: ReferenceTarget;
 }) {
   const story = post.hacker_news;
   if (!story) return null;
@@ -29,6 +32,10 @@ export function HackerNewsDetail({
   const hasComments = comments.length > 0;
   const hasText = hasHackerNewsBody(post.html, story.external_url);
   const externalUrl = story.external_url && safeUrl(story.external_url);
+  const externalMatch =
+    referenceTarget?.kind === "post" &&
+    externalUrl &&
+    videoReferenceId(externalUrl) === referenceTarget.videoId;
   const discussionUrl = safeUrl(story.discussion_url);
   const complete = capture.status === "captured";
   const partial = capture.status === "partial" || (hasComments && !complete);
@@ -48,7 +55,8 @@ export function HackerNewsDetail({
       <div className="hn-detail-links">
         {externalUrl && (
           <a
-            className="original-link"
+            className={`original-link${externalMatch ? " reference-match" : ""}`}
+            data-reference-match={externalMatch ? "true" : undefined}
             href={externalUrl}
             target="_blank"
             rel="noreferrer"
@@ -69,7 +77,15 @@ export function HackerNewsDetail({
         )}
       </div>
       {hasText ? (
-        <ArticleBody html={post.html} />
+        <ArticleBody
+          html={post.html}
+          referenceIsPost
+          referenceVideoId={
+            referenceTarget?.kind === "post"
+              ? referenceTarget.videoId
+              : undefined
+          }
+        />
       ) : (
         <p className="hn-snapshot-note">
           Saved from the Hacker News front page.
@@ -126,6 +142,7 @@ export function HackerNewsDetail({
                   <li
                     className="hn-comment"
                     key={comment.id}
+                    data-reference-comment={comment.id}
                     style={
                       {
                         "--comment-depth": Math.min(comment.depth, 4),
@@ -145,7 +162,15 @@ export function HackerNewsDetail({
                         Reply at level {comment.depth}
                       </span>
                     )}
-                    <ArticleBody html={comment.html} />
+                    <ArticleBody
+                      html={comment.html}
+                      referenceVideoId={
+                        referenceTarget?.kind === "comment" &&
+                        referenceTarget.id === comment.id
+                          ? referenceTarget.videoId
+                          : undefined
+                      }
+                    />
                   </li>
                 ))}
               </ol>
