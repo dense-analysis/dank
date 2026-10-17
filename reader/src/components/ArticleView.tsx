@@ -75,7 +75,12 @@ export function ArticleView({
     // Feed summaries omit discussion details and must never count as a fresh detail response.
     placeholderData: initial,
   });
-  const { videos: redditVideos, html, onUnavailable } = useRedditContent(post);
+  const {
+    videos: redditVideos,
+    html,
+    onUnavailable,
+    displayed: redditVideoKeys,
+  } = useRedditContent(post, { preserveVideoLinks: true });
   const hasContent = useMemo(() => hasArticleContent(html), [html]);
   const xPost = isXPost(post ?? { domain, source: "" });
   const hasReadableContent =
@@ -251,6 +256,8 @@ export function ArticleView({
                 <ArticleBody
                   html={html}
                   redditImages={post.reddit?.images}
+                  redditVideos={post.reddit ? redditVideos : undefined}
+                  redditVideoKeys={redditVideoKeys}
                   redditPostId={post.reddit ? post.id : undefined}
                 />
               )}

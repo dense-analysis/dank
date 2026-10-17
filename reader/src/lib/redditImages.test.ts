@@ -71,7 +71,7 @@ it("restores failed image and gallery links while preserving image nodes, descri
   expect(element.querySelectorAll("img")[0]).toBe(nodes[0]);
   nodes[0].dispatchEvent(new Event("error"));
   expect(raw?.hidden).toBe(false);
-  dispose();
+  dispose.dispose();
   nodes[0].dispatchEvent(new Event("load"));
   expect(raw?.hidden).toBe(false);
 });
@@ -84,5 +84,5 @@ it("keeps references without a matching clickable image, including partial galle
   );
   const dispose = enhanceRedditImageLinks(element, images, "t3_abc");
   expect(element.querySelectorAll("[hidden]")).toHaveLength(0);
-  dispose();
+  dispose.dispose();
 });

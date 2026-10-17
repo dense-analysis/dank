@@ -26,6 +26,8 @@ export interface ReaderPreferences {
   autoImageBackground: boolean;
   fitImagePreviews: boolean;
   fitVideoPreviews: boolean;
+  hideRawImageLinks: boolean;
+  hideRawVideoLinks: boolean;
   showRedditComments: boolean;
   showRemoteContentLabels: boolean;
 }
@@ -36,6 +38,8 @@ export const defaultPreferences: ReaderPreferences = {
   autoImageBackground: false,
   fitImagePreviews: true,
   fitVideoPreviews: true,
+  hideRawImageLinks: true,
+  hideRawVideoLinks: true,
   showRedditComments: true,
   showRemoteContentLabels: true,
 };
@@ -64,6 +68,8 @@ export function loadPreferences(): ReaderPreferences {
       autoImageBackground: value.autoImageBackground === true,
       fitImagePreviews: value.fitImagePreviews !== false,
       fitVideoPreviews: value.fitVideoPreviews !== false,
+      hideRawImageLinks: value.hideRawImageLinks !== false,
+      hideRawVideoLinks: value.hideRawVideoLinks !== false,
       showRedditComments: value.showRedditComments !== false,
       showRemoteContentLabels: value.showRemoteContentLabels !== false,
     };

@@ -1,5 +1,6 @@
 import { Check, ExternalLink, ImageOff } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { hasArticleContent } from "../lib/article";
 import {
@@ -79,6 +80,7 @@ export function PostCard({
   selectCommunity: (community: string) => void;
   selectFlair: (community: string, flair: string) => void;
 }) {
+  const { preferences } = useReaderPreferences();
   const [imageFailed, setImageFailed] = useState(false);
   const { videos, html, excerpt, onUnavailable } = useRedditContent(post);
   const hasContent = useMemo(() => hasArticleContent(html), [html]);
@@ -98,7 +100,9 @@ export function PostCard({
     [post.reddit?.images, post.id, imageFailed, videos.length, thumbnail],
   );
   const summary =
-    withoutRedditImageUrls(excerpt, imageKeys) ||
+    (preferences.hideRawImageLinks
+      ? withoutRedditImageUrls(excerpt, imageKeys)
+      : excerpt) ||
     (!videos.length && (!post.reddit || !thumbnail) && hasContent
       ? "Open to read this story."
       : "");

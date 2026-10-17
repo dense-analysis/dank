@@ -1,7 +1,10 @@
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ReaderPreferencesProvider } from "../hooks/useReaderPreferences";
+import {
+  ReaderPreferencesProvider,
+  useReaderPreferences,
+} from "../hooks/useReaderPreferences";
 import { ArticleBody } from "./ArticleBody";
 
 // Pixel classification is covered in the browser; these tests exercise portal lifetime.
@@ -116,4 +119,103 @@ it("resets copy feedback and cancels its timer when the article unmounts", async
   await act(() => root.render(null));
   expect(vi.getTimerCount()).toBe(0);
   expect(container.querySelector("button")).toBeNull();
+});
+
+it("changes raw image and video visibility without replacing images or their manual backgrounds", async () => {
+  const original = "https://i.redd.it/chart.svg";
+  const videoUrl = "https://v.redd.it/clip";
+  const images = [{ url: "/assets/chart.svg", source_url: original }];
+  const videos = [
+    { url: videoUrl, source_url: videoUrl, poster_url: null, remote: true },
+  ];
+  const videoKeys = new Set(["reddit-video:clip"]);
+
+  function Controls() {
+    const { preferences, updatePreferences } = useReaderPreferences();
+
+    return (
+      <>
+        <button
+          type="button"
+          className="image-choice"
+          onClick={() =>
+            updatePreferences({
+              ...preferences,
+              hideRawImageLinks: !preferences.hideRawImageLinks,
+            })
+          }
+        >
+          Images
+        </button>
+        <button
+          type="button"
+          className="video-choice"
+          onClick={() =>
+            updatePreferences({
+              ...preferences,
+              hideRawVideoLinks: !preferences.hideRawVideoLinks,
+            })
+          }
+        >
+          Videos
+        </button>
+      </>
+    );
+  }
+
+  await act(() =>
+    root.render(
+      <StrictMode>
+        <ReaderPreferencesProvider>
+          <Controls />
+          <ArticleBody
+            html={`<img src="/assets/chart.svg"><p><a href="${original}">${original}</a> <a href="${videoUrl}">${videoUrl}</a></p>`}
+            redditImages={images}
+            redditVideos={videos}
+            redditVideoKeys={videoKeys}
+            redditPostId="t3_chart"
+          />
+        </ReaderPreferencesProvider>
+      </StrictMode>,
+    ),
+  );
+  await act(() => {
+    for (const image of container.querySelectorAll("img"))
+      image.dispatchEvent(new Event("load"));
+  });
+  const image = container.querySelector("img");
+  const imageLink = container.querySelector<HTMLAnchorElement>(
+    `a[href="${original}"]`,
+  );
+  const videoLink = container.querySelector<HTMLAnchorElement>(
+    `a[href="${videoUrl}"]`,
+  );
+  const background = container.querySelector<HTMLButtonElement>(
+    ".image-background-toggle",
+  );
+
+  expect(imageLink?.hidden).toBe(true);
+  expect(videoLink?.hidden).toBe(true);
+  await act(() => background?.click());
+  expect(background?.getAttribute("aria-pressed")).toBe("false");
+
+  await act(() =>
+    container.querySelector<HTMLButtonElement>(".image-choice")?.click(),
+  );
+  expect(imageLink?.hidden).toBe(false);
+  expect(videoLink?.hidden).toBe(true);
+  await act(() =>
+    container.querySelector<HTMLButtonElement>(".video-choice")?.click(),
+  );
+  expect(videoLink?.hidden).toBe(false);
+  expect(container.querySelector("img")).toBe(image);
+  expect(container.querySelector(".image-background-toggle")).toBe(background);
+  expect(background?.getAttribute("aria-pressed")).toBe("false");
+
+  await act(() =>
+    container.querySelector<HTMLButtonElement>(".image-choice")?.click(),
+  );
+  expect(imageLink?.hidden).toBe(true);
+  expect(videoLink?.hidden).toBe(false);
+  expect(container.querySelector("img")).toBe(image);
 });

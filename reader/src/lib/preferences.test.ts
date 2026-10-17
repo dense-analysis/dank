@@ -132,3 +132,28 @@ it("persists independent image and video preview choices", () => {
     }
   }
 });
+
+it("keeps raw link hiding enabled for older and malformed browser preferences", () => {
+  for (const value of [undefined, null, "false", 0, {}, []]) {
+    persisted = JSON.stringify({
+      hideRawImageLinks: value,
+      hideRawVideoLinks: value,
+    });
+    expect(loadPreferences().hideRawImageLinks).toBe(true);
+    expect(loadPreferences().hideRawVideoLinks).toBe(true);
+  }
+});
+
+it("persists each independent raw image and video link choice", () => {
+  for (const hideRawImageLinks of [true, false]) {
+    for (const hideRawVideoLinks of [true, false]) {
+      const preferences = {
+        ...defaultPreferences,
+        hideRawImageLinks,
+        hideRawVideoLinks,
+      };
+      expect(savePreferences(preferences)).toBe(true);
+      expect(loadPreferences()).toEqual(preferences);
+    }
+  }
+});

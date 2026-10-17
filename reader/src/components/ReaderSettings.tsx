@@ -128,6 +128,47 @@ export function ReaderSettings() {
           </label>
         </div>
       </fieldset>
+      <fieldset className="media-preview-settings">
+        <legend>Raw media links</legend>
+        <p className="settings-help" id="raw-media-links-help">
+          Hide duplicate URLs when Reddit or X already shows an image or video
+          preview. Links stay available if the media is missing or fails.
+        </p>
+        <div className="image-background-setting">
+          <label htmlFor="hide-raw-image-links">
+            <input
+              id="hide-raw-image-links"
+              type="checkbox"
+              checked={preferences.hideRawImageLinks}
+              aria-describedby="raw-media-links-help"
+              onChange={(event) =>
+                updatePreferences({
+                  ...preferences,
+                  hideRawImageLinks: event.target.checked,
+                })
+              }
+            />
+            Hide raw image links
+          </label>
+        </div>
+        <div className="image-background-setting">
+          <label htmlFor="hide-raw-video-links">
+            <input
+              id="hide-raw-video-links"
+              type="checkbox"
+              checked={preferences.hideRawVideoLinks}
+              aria-describedby="raw-media-links-help"
+              onChange={(event) =>
+                updatePreferences({
+                  ...preferences,
+                  hideRawVideoLinks: event.target.checked,
+                })
+              }
+            />
+            Hide raw video links
+          </label>
+        </div>
+      </fieldset>
       <fieldset className="reddit-reading-settings">
         <legend>Reddit reading</legend>
         <div className="image-background-setting">

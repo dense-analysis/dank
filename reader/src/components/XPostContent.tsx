@@ -1,5 +1,6 @@
 import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
+import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { postKey } from "../lib/storage";
 import type { Post, XMedia } from "../lib/types";
@@ -11,6 +12,7 @@ import {
   videoReferenceKey,
   withoutDisplayedLinks,
 } from "../lib/xText";
+import { youtubeEmbedUrl } from "../lib/youtube";
 import { ArticleBody } from "./ArticleBody";
 import { safeUrl } from "./PostCard";
 import { XLinkPreview } from "./XLinkPreview";
@@ -27,42 +29,69 @@ export function XPostContent({
   query?: string;
   navigation?: { href: string; open: () => void };
 }) {
+  const { preferences } = useReaderPreferences();
+  const { hideRawImageLinks, hideRawVideoLinks } = preferences;
   const [failedMedia, setFailedMedia] = useState<Set<string>>(() => new Set());
   const media = useMemo(() => xMedia(post), [post]);
-  const displayedMedia = useMemo(
-    () =>
-      new Set(
-        media.flatMap((asset) => {
-          if (failedMedia.has(asset.url) || !xMediaUrl(asset.url)) return [];
+  const representedMedia = useMemo(() => {
+    const displayed = new Set<string>();
+    const hidden = new Set<string>();
 
-          const referenceKey =
-            asset.type === "image" ? imageReferenceKey : videoReferenceKey;
+    for (const asset of media) {
+      if (failedMedia.has(asset.url) || !xMediaUrl(asset.url)) continue;
 
-          return [asset.source_url, asset.url].flatMap((value) => {
-            const key = value ? referenceKey(value) : undefined;
+      const image = asset.type === "image";
+      const referenceKey = image ? imageReferenceKey : videoReferenceKey;
 
-            return key ? [key] : [];
-          });
-        }),
-      ),
-    [media, failedMedia],
-  );
+      for (const value of [asset.source_url, asset.url]) {
+        const key = value ? referenceKey(value) : undefined;
+
+        if (!key) continue;
+
+        displayed.add(key);
+
+        if (image ? hideRawImageLinks : hideRawVideoLinks) hidden.add(key);
+      }
+    }
+
+    return { displayed, hidden };
+  }, [media, failedMedia, hideRawImageLinks, hideRawVideoLinks]);
   const previews = useMemo(
     () =>
       (post.x?.links ?? []).filter(
         (link) =>
           previewReferenceKey(link.url) &&
-          !displayedMedia.has(videoReferenceKey(link.url) ?? ""),
+          !representedMedia.displayed.has(videoReferenceKey(link.url) ?? ""),
       ),
-    [post.x?.links, displayedMedia],
+    [post.x?.links, representedMedia.displayed],
   );
   const displayedPreviews = useMemo(
-    () => new Set(previews.map((link) => previewReferenceKey(link.url) ?? "")),
-    [previews],
+    () =>
+      new Set(
+        previews.flatMap((link) => {
+          if (
+            (!hideRawImageLinks && imageReferenceKey(link.url)) ||
+            (!hideRawVideoLinks &&
+              (videoReferenceKey(link.url) ||
+                youtubeEmbedUrl(link.url, window.location.origin)))
+          )
+            return [];
+
+          const key = previewReferenceKey(link.url);
+
+          return key ? [key] : [];
+        }),
+      ),
+    [previews, hideRawImageLinks, hideRawVideoLinks],
   );
   const html = useMemo(
-    () => withoutDisplayedLinks(post.html, displayedMedia, displayedPreviews),
-    [post.html, displayedMedia, displayedPreviews],
+    () =>
+      withoutDisplayedLinks(
+        post.html,
+        representedMedia.hidden,
+        displayedPreviews,
+      ),
+    [post.html, representedMedia.hidden, displayedPreviews],
   );
 
   return (

@@ -1,3 +1,4 @@
+import { prepareRedditLinkVisibility } from "./redditLinkVisibility";
 import type { RedditImage } from "./types";
 
 const rawImageUrls =
@@ -89,76 +90,19 @@ export function enhanceRedditImageLinks(
   element: HTMLElement,
   images: RedditImage[],
   postId?: string,
-): () => void {
+) {
   const possible = displayedRedditImages(
     images,
     new Set(images.map((image) => redditImageKey(image.url) ?? "")),
     postId,
   );
-  const targets: { node: HTMLElement; key: string }[] = [];
-
-  for (const anchor of element.querySelectorAll<HTMLAnchorElement>("a[href]")) {
-    const key = redditImageKey(anchor.href);
-    const label = anchor.textContent?.trim() ?? "";
-
-    if (
-      key &&
-      possible.has(key) &&
-      label &&
-      !anchor.querySelector("img") &&
-      withoutRedditImageUrls(label, new Set([key])) === ""
-    )
-      targets.push({ node: anchor, key });
-  }
-
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  const textNodes: Text[] = [];
-
-  while (walker.nextNode()) {
-    if (!walker.currentNode.parentElement?.closest("a, code, pre"))
-      textNodes.push(walker.currentNode as Text);
-  }
-
-  for (const textNode of textNodes) {
-    const text = textNode.textContent ?? "";
-    const fragment = document.createDocumentFragment();
-    let offset = 0;
-
-    for (const match of text.matchAll(rawImageUrls)) {
-      const url = match[0].replace(/[.,!?;:)\]]+$/, "");
-      const key = redditImageKey(url);
-
-      if (!key || !possible.has(key)) continue;
-
-      fragment.append(text.slice(offset, match.index));
-      const span = document.createElement("span");
-      span.textContent = url;
-      fragment.append(span);
-      targets.push({ node: span, key });
-      offset = match.index + url.length;
-    }
-
-    if (offset) {
-      fragment.append(text.slice(offset));
-      textNode.replaceWith(fragment);
-    }
-  }
-
-  if (!targets.length) return () => undefined;
-
-  const blocks = new Set(
-    targets.flatMap(({ node }) => {
-      const parent = node.closest<HTMLElement>("p, div");
-
-      return parent && parent !== element ? [parent] : [];
-    }),
+  const visibility = prepareRedditLinkVisibility(
+    element,
+    possible,
+    redditImageKey,
+    withoutRedditImageUrls,
   );
-  const originals = new Map(
-    [...targets.map(({ node }) => node), ...blocks].map((node) => [
-      node,
-      node.hidden,
-    ]),
-  );
+  let hidden = true;
   const failed = new Set<HTMLImageElement>();
   const elements = [...element.querySelectorAll("img")];
   const refresh = () => {
@@ -191,17 +135,7 @@ export function enhanceRedditImageLinks(
       complete ? postId : undefined,
     );
 
-    for (const { node, key } of targets) node.hidden = displayed.has(key);
-    for (const block of blocks) block.hidden = false;
-
-    for (const block of blocks) {
-      const visible = block.cloneNode(true) as HTMLElement;
-      for (const hidden of visible.querySelectorAll("[hidden]"))
-        hidden.remove();
-      block.hidden =
-        !visible.textContent?.trim() &&
-        !visible.querySelector("img, video, audio");
-    }
+    visibility.update(displayed, hidden);
   };
   const update = (event: Event) => {
     const image = event.currentTarget as HTMLImageElement;
@@ -219,12 +153,18 @@ export function enhanceRedditImageLinks(
 
   refresh();
 
-  return () => {
-    for (const image of elements) {
-      image.removeEventListener("load", update);
-      image.removeEventListener("error", update);
-    }
+  return {
+    setHidden(value: boolean) {
+      hidden = value;
+      refresh();
+    },
+    dispose() {
+      for (const image of elements) {
+        image.removeEventListener("load", update);
+        image.removeEventListener("error", update);
+      }
 
-    for (const [node, hidden] of originals) node.hidden = hidden;
+      visibility.dispose();
+    },
   };
 }

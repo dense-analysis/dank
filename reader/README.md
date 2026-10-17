@@ -74,6 +74,10 @@ browser channel. No live collection is needed for the fixture tests.
 - **Media previews** in Settings independently fit image and video frames to
   their aspect ratios on Reddit and X. Both are on by default; turn either off
   for wider frames. The full media remains visible, and choices stay in this browser.
+- **Raw media links** in Settings independently controls duplicate image/gallery
+  URLs and video URLs on Reddit and X, including YouTube video previews in X posts.
+  Both hiding options are on by default. Turn either off to show those links
+  alongside previews; the choices stay in this browser.
 - Reopening an article resumes where you left off.
 - Code blocks use their declared language for syntax highlighting, with copy
   controls and horizontal scrolling. Unsupported or unlabelled code stays plain.
