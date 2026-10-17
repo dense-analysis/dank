@@ -83,7 +83,7 @@ async def test_item_keeps_provenance_and_multiple_source_references():
     references: list[dict[str, Any]] = [
         {"video_id": "AbCdEfGhIjK", "domain": domain, "post_id": "123",
          "url": f"https://{domain}/post/123", "title": "Shared video",
-         "source": source, "reference_count": 2}
+         "source": source, "reference_count": 2, "processed": source == "x"}
         for domain, source in (("x.com", "x"), ("reddit.com", "reddit"))
     ]
     client.fetch_json.side_effect = [
@@ -99,7 +99,9 @@ async def test_item_keeps_provenance_and_multiple_source_references():
     assert len(items) == 1
     item = items[0]
     assert item["kind"] == "short"
-    assert item["thumbnail_url"] is None
+    assert item["thumbnail_url"] == (
+        "https://i.ytimg.com/vi/AbCdEfGhIjK/hqdefault.jpg"
+    )
     assert item["detail_capture"] == {"status": "disabled"}
     assert item["reference_count"] == 2
     assert len(item["discoveries"]) == 2
@@ -107,6 +109,8 @@ async def test_item_keeps_provenance_and_multiple_source_references():
     assert item["references"][0]["reader_url"] == (
         "/reader/?article_source=x.com&article=123"
     )
+    assert item["references"][1]["reader_url"] == ""
+    assert item["references"][1]["url"] == "https://reddit.com/post/123"
 
 
 async def test_existing_link_index_is_not_backfilled_on_every_start() -> None:
@@ -180,4 +184,6 @@ async def test_local_media_requires_an_existing_file_inside_assets(
         "observed_at": timestamp, "payload": "{}",
     }], YouTubeFilters(), assets)
     assert items[0]["video_url"] == "/assets/video.mp4"
-    assert items[0]["thumbnail_url"] is None
+    assert items[0]["thumbnail_url"] == (
+        "https://i.ytimg.com/vi/AbCdEfGhIjK/hqdefault.jpg"
+    )

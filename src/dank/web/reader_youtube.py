@@ -21,7 +21,7 @@ from dank.web.reader_youtube_query import (
     parse_youtube_filters,
 )
 from dank.web.reader_youtube_sources import configured_sources
-from dank.youtube import payload_object
+from dank.youtube import VIDEO_ID, payload_object
 
 MAX_ITEM_DISCOVERIES = 100
 MAX_ITEM_REFERENCES = 100
@@ -149,7 +149,10 @@ def _item(row: dict[str, Any]) -> dict[str, Any]:
             "name": str(payload.get("channel_name") or ""),
             "url": _http_url(payload.get("channel_url")) or "",
         },
-        "thumbnail_url": _http_url(payload.get("thumbnail_url")),
+        "thumbnail_url": _http_url(payload.get("thumbnail_url")) or (
+            f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+            if video_id and VIDEO_ID.fullmatch(video_id) else None
+        ),
         "video_url": None,
         "duration_text": str(payload.get("duration_text") or ""),
         "views_text": str(payload.get("views_text") or ""),
@@ -211,6 +214,7 @@ async def _references(
         "argMax(l.source, l.observed_at) AS source, "
         "argMaxIf(if(empty(p.title), l.title, p.title), l.observed_at, "
         "notEmpty(p.title) OR notEmpty(l.title)) AS title, "
+        "max(notEmpty(p.domain)) AS processed, "
         "max(observed_at) AS latest_at, count() OVER (PARTITION BY video_id) "
         "AS reference_count FROM youtube_links AS l LEFT JOIN "
         "(SELECT domain, post_id, title FROM posts FINAL "
@@ -234,9 +238,11 @@ async def _references(
             "url": _http_url(row.get("url")) or "",
             "title": str(row.get("title") or ""),
             "source": str(row.get("source") or ""),
-            "reader_url": "/reader/?" + urlencode({
-                "article_source": domain, "article": post_id,
-            }),
+            "reader_url": (
+                "/reader/?" + urlencode({
+                    "article_source": domain, "article": post_id,
+                }) if row.get("processed") else ""
+            ),
         }
         grouped.setdefault(item_id, []).append(reference)
         counts[item_id] = int(row.get("reference_count") or 0)
