@@ -14,6 +14,7 @@ from yarl import URL
 
 from dank.model import AssetDiscovery
 from dank.scrape.assets.http import download_file_http
+from dank.scrape.http import HTTP_USER_AGENT
 from dank.scrape.rss import _fetch_text  # pyright: ignore[reportPrivateUsage]
 
 
@@ -184,7 +185,9 @@ async def test_rate_limit_recovers_with_exponential_waits(
     assert result is not None and result.text == "<rss/>"
     assert delays == [2, 4]
     assert len(client.responses) == 3
-    assert client.headers == [{"Accept": "application/rss+xml"}] * 3
+    assert client.headers == [{
+        "Accept": "application/rss+xml", "User-Agent": HTTP_USER_AGENT,
+    }] * 3
     assert "retry 1/3" in caplog.text and "retry 2/3" in caplog.text
     assert any(
         record.levelno == logging.INFO

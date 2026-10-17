@@ -60,6 +60,49 @@ keep their collected-only heading. See [collection details](features/reddit.md#c
 [enrichment tests](../tests/scrape/test_reddit_totals.py) and
 [reader acceptance tests](../reader/tests/collections.spec.ts).
 
+## Publisher recovery
+
+The follow-up to run `b34b70fc-18eb-4ddf-b48c-e6d5eb0b4b73` identified several
+recoverable request and media failures:
+
+- HTTP requests now identify DANK and its project URL. The generic Python
+  User-Agent was rejected by Ars Technica, a Microsoft article and Wikimedia
+  image delivery. Wikimedia's [published policy](https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy)
+  requires a descriptive client identifier and contact information.
+- RSS media requests carry the source page's origin as their referrer. This
+  restores the `shkspr.mobi` favicon images without sending article paths,
+  query strings or credentials. HTTPS origins are not sent to HTTP media.
+  Extensionless WebP images are also recognized during processing, so these
+  recovered icons use their local files in the reader.
+- Internet Archive storage-node links are normalized to the stable
+  `/download/<identifier>/<filename>` address in collection and reader HTML.
+  The old `ia600209.us.archive.org` host was unreachable; the canonical URL
+  works. Its 16,821,362-byte video exceeds the configured 10 MiB limit and is
+  correctly skipped, rather than treated as a connection failure.
+- Automatically discovered and cached WordPress comment feeds are excluded
+  from article collection. Explicit `feed_urls` still take precedence. This
+  removes Order Order's unrelated, rate-limited comments feed from normal runs.
+- Etsy engineering articles, Netflix Tech Blog and The Register can recover
+  HTTP 403 or recognized verification pages through a separate RSS browser.
+  Recovery preserves the browser's document response and final URL, records
+  `page_fetch_method = "browser"`, and counts failures only when recovery fails.
+  Each attempt has a 20-second budget and at most one retry. Repeated failures
+  suspend browser recovery for that host for the rest of the run. HTTP 429
+  retries retain their existing pacing; subscriber pages and other hosts do
+  not receive this fallback. X, Reddit and YouTube browsers remain independent.
+
+Real access problems remain visible: Niche Gamer's feed still presents a
+Cloudflare verification screen after a bounded browser check; some Etsy pages
+request interactive verification; LWN explicitly requires a subscription for
+restricted articles. Two diagrams in Microsoft's MSTest article return 404.
+The `stormatics.tech` / `dbadevops.com` destinations initially closed connections
+in HTTP and Chromium; both original article URLs recovered on the final rerun.
+No verification screen, subscription notice or missing-file response is
+saved as a successful article or silently reclassified as an intentional skip.
+
+See [recovery regressions](../tests/scrape/test_publisher_recovery.py) and
+[browser recovery](../src/dank/scrape/page_recovery.py).
+
 ## Latest full-scrape check
 
 On **2026-10-17**, Docker run `19bb2610-7163-4591-ba27-f409be8eaa69`
@@ -375,8 +418,9 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
 - [ ] **P2: Classify failed publisher media and make retries selective.** Runs
   `8d54ed62` and `19bb2610` each logged five Wikimedia image 403s, two Microsoft
   image 403s, three `shkspr.mobi` favicon 401s and an Internet Archive connection
-  failure. These remain real download failures, distinct from the fixed Reddit signed-preview
-  URL and configured size skips. Retain per-asset reason/status and let a scoped
+  failure. The header, referrer and Archive-link repairs above recover those
+  cases; Microsoft's two missing images remain publisher-side 404s. Durable
+  per-asset reason/status and selective media retries remain follow-ups. Let a scoped
   retry revisit unavailable media without recollecting every source; investigate
   each host before assuming stale URLs or an authentication requirement.
   [Media pipeline](../src/dank/scrape/assets/http.py).
@@ -468,7 +512,7 @@ test fixtures establish behavior, not an incident at a particular publisher.
 | X conversations contain only part of the replies or thread context | Collection saves bounded, focal-post-validated `TweetDetail` snapshots after account timelines, or for selected saved posts via `--x-post`. Parent context and replies are archived together; ads, nested quotes and unrelated recommendations are excluded from conversation slots. The reader retains earlier snapshots when a later attempt fails or skips detail capture. | **Partial coverage is explicit.** Budgets, remaining cursors, hidden branches, missing context and reply-count shortfalls mark snapshots partial. Missing responses, sign-in failures and HTTP failures never claim zero replies or completeness. A live signed-in Docker check on 2026-10-17 saved 22 related posts from a validated detail response and correctly reported a remaining cursor. Capture does not expand hidden branches or download extra reply media; remote media may expire. [Conversation guide](features/x.md#conversation-snapshots), [collector tests](../tests/scrape/test_x_conversations.py), [CLI tests](../tests/scrape/test_x_conversation_cli.py). |
 | Flattened feeds, lost figures/captions, relative URLs | Full plain-text feeds recover structure only from complete ordered text matches. Supported figures between matching sibling blocks are retained. WordPress caption containers become figures; final response URLs and valid HTML base URLs resolve links/media. | Formatted feeds stay authoritative; incomplete matches stay unchanged. Older captures without redirect metadata may need a fresh scrape. These rules do not validate every page layout. [Processing behavior](features/processing.md), [caption tests](../tests/test_readable_html.py), [redirect tests](../tests/scrape/test_rss_redirects.py). |
 | Missing or failed media downloads | Failed direct HTTP downloads remove partial files; absent local files are omitted from processed assets. `files_failed` and `media_skipped` distinguish failures from reference-only, disabled and known size-excluded downloads. | Media failure alone does not trigger **Incomplete scrape**. An article may remain readable with remote images or unavailable media. Configured size limits can also prevent downloads. [Media guide](features/media.md), [asset tests](../tests/scrape/test_scrape_assets.py). |
-| Extensionless images, observed on Microsoft Community Hub | A downloaded image with no known filename type is recognized as PNG from its signature, letting the reader use its local copy instead of the remote URL. Known filename types stay authoritative. | **Handled for PNG.** Other unknown formats remain unclassified. Existing asset processing is incremental; already-processed unknown metadata needs a refreshed raw asset. This does not discover or download embedded media automatically. [Media guide](features/media.md), [classification and reader tests](../tests/process/test_process_assets.py). |
+| Extensionless images, observed on Microsoft Community Hub and `shkspr.mobi` | Downloaded PNG and WebP images with no filename type are recognized from their signatures, letting the reader use local copies. Known filename types stay authoritative. | **Handled for PNG and WebP.** Other unknown formats remain unclassified. Existing asset processing is incremental; already-processed unknown metadata needs a refreshed raw asset. This does not discover or download embedded media automatically. [Media guide](features/media.md), [classification and reader tests](../tests/process/test_process_assets.py). |
 | Processing fails or produces no usable post | Raw captures remain available for reprocessing. Converters can return no post and be skipped; embedding/database exceptions can stop processing after earlier batches have been saved. | There is no per-article processing-error pill or durable processing-status ledger. The reader may show an older processed version or no record. Use process logs and compare raw/processed timestamps. [Processor](../src/dank/process/runner.py), [tests](../tests/process/test_process_runner.py). |
 
 Scrape outcomes such as `partial`, `failed`, `skipped` and `cancelled` are

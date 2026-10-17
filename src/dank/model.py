@@ -31,6 +31,8 @@ class AssetDiscovery(NamedTuple):
     url: str
     asset_type: str
     estimated_size_bytes: int | None
+    # Public document origin for media hosts that reject unreferenced requests.
+    referrer_url: str | None = None
 
 
 class RawAsset(NamedTuple):

@@ -37,6 +37,7 @@ from dank.scrape.metrics import (
     SourceMetrics,
     current_source,
 )
+from dank.scrape.page_recovery import PageRecovery, current_page_recovery
 from dank.scrape.reddit import scrape_reddit_communities, scrape_reddit_details
 from dank.scrape.reddit.access import RedditRequests, current_requests
 from dank.scrape.reddit.cache import DetailSnapshot
@@ -45,6 +46,7 @@ from dank.scrape.rss import (
     FeedLink,
     FeedType,
     fetch_feed_links,
+    is_comment_feed,
     retry_feed_pages,
     scrape_feed_batches,
 )
@@ -201,14 +203,23 @@ async def _run_source_sessions(
         BrowserSession(x_config) as x_session,
         BrowserSession(reddit_config) as reddit_session,
         BrowserSession(youtube_config) as youtube_session,
+        BrowserSession(x_config._replace(
+            profile_dir=settings.data_dir / "rss-browser-profile",
+            keep_open=False,
+        )) as rss_session,
     ):
-        await _collect_with_history(
-            settings, client, http_client, x_session, reddit_session,
-            youtube_session, history, assets_dir,
-            youtube_profile=youtube_config.profile_dir or assets_dir,
-            retry_failed_pages=retry_failed_pages, x_posts=x_posts,
-            reddit_details=reddit_details, x_details=x_details,
-        )
+        token = current_page_recovery.set(PageRecovery(rss_session))
+
+        try:
+            await _collect_with_history(
+                settings, client, http_client, x_session, reddit_session,
+                youtube_session, history, assets_dir,
+                youtube_profile=youtube_config.profile_dir or assets_dir,
+                retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                reddit_details=reddit_details, x_details=x_details,
+            )
+        finally:
+            current_page_recovery.reset(token)
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
@@ -792,7 +803,9 @@ async def _source_feed_urls(
 
     await _refresh_site_feeds(client, source.domain, staleness)
 
-    return await _load_site_feed_urls(client, source.domain)
+    urls = await _load_site_feed_urls(client, source.domain)
+
+    return [url for url in urls if not is_comment_feed(url)]
 
 
 async def _process_batches(
@@ -1081,6 +1094,7 @@ async def _refresh_site_feeds(
     now = datetime.datetime.now(datetime.UTC)
     cutoff = now - staleness
     recent = await _load_recent_site_feeds(clickhouse_client, domain, cutoff)
+    recent = [link for link in recent if not is_comment_feed(link.url)]
 
     if recent:
         logger.info("%s: using %d cached feed URLs", domain, len(recent))

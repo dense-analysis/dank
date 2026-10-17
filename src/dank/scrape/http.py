@@ -19,6 +19,9 @@ from dank.scrape.metrics import request_metrics, retry_sleep
 MAX_COOLDOWN_WAIT = 30.0
 # Security policies can exceed aiohttp's default 8 KiB header field limit.
 MAX_HEADER_FIELD_BYTES = 16 * 1024
+# Identify the collector rather than inheriting a generic Python client name.
+# https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy
+HTTP_USER_AGENT = "DANK/0.1 (+https://github.com/dense-analysis/dank)"
 
 
 class HostCooldownError(Exception):
@@ -124,6 +127,11 @@ async def http_response(
     retry: int = 0, max_redirects: int = 5,
     preserve_url: bool = False,
 ) -> AsyncGenerator[aiohttp.ClientResponse]:
+    headers = dict(headers or {})
+
+    if not any(name.lower() == "user-agent" for name in headers):
+        headers["User-Agent"] = HTTP_USER_AGENT
+
     limiter = current_limiter.get()
 
     if limiter is None and not preserve_url:

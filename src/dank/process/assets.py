@@ -21,8 +21,13 @@ def convert_raw_asset(raw: RawAsset) -> Asset | None:
         # Some publisher image URLs have no extension. PNG signature:
         # https://www.w3.org/TR/png-3/#5PNG-file-signature
         with path.open("rb") as file:
-            if file.read(8) == b"\x89PNG\r\n\x1a\n":
+            header = file.read(12)
+
+            if header[:8] == b"\x89PNG\r\n\x1a\n":
                 content_type = "image/png"
+            # https://developers.google.com/speed/webp/docs/riff_container
+            elif header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+                content_type = "image/webp"
 
     return Asset(
         domain=raw.domain,

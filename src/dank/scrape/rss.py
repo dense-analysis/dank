@@ -16,6 +16,7 @@ from urllib.parse import urldefrag, urljoin, urlparse
 import aiohttp
 
 from dank.html_utils import html_base_url, is_page_challenge, is_youtube_url
+from dank.media_urls import canonical_media_url
 from dank.model import AssetDiscovery, RawPost
 from dank.progress import Progress
 from dank.scrape.http import (
@@ -28,6 +29,7 @@ from dank.scrape.metrics import (
     count,
     retry_sleep,
 )
+from dank.scrape.page_recovery import current_page_recovery
 from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch
 
@@ -79,6 +81,7 @@ class PageDiscovery(NamedTuple):
 class FetchedText(NamedTuple):
     text: str
     url: str
+    method: str = "http"
 
 
 class _FeedPageDiscovery(NamedTuple):
@@ -276,11 +279,16 @@ def discover_feed_links(html: str, root_url: str) -> list[FeedLink]:
     for link in parser.links:
         absolute = urljoin(root_url, link.url)
 
-        if absolute not in seen:
+        if absolute not in seen and not is_comment_feed(absolute):
             seen.add(absolute)
             links.append(FeedLink(absolute, link.feed_type, link.mime_type))
 
     return links
+
+
+def is_comment_feed(url: str) -> bool:
+    """WordPress advertises comment feeds alongside its article feed."""
+    return urlparse(url).path.rstrip("/").endswith("/comments/feed")
 
 
 def _feed_type_from_mime(type_hint: str | None) -> FeedType:
@@ -552,6 +560,11 @@ async def retry_feed_pages(
             payload: dict[str, object] = json.loads(post.payload)
             payload.update(page_html=page.text, page_final_url=page.url)
             payload.pop("page_fetch_status", None)
+            payload.pop("page_fetch_method", None)
+
+            if page.method != "http":
+                payload["page_fetch_method"] = page.method
+
             recovered.append(post._replace(
                 payload=json.dumps(payload, separators=(",", ":")),
                 scraped_at=now,
@@ -671,6 +684,7 @@ def _build_raw_post(
         payload=_compose_payload(
             discovery.payload, page_html,
             page_final_url=page_final_url, feed_final_url=feed_final_url,
+            page_fetch_method=page.method if page else "http",
         ),
     )
     assets = _extract_page_assets(
@@ -700,6 +714,7 @@ def dedupe_discoveries(
 def _compose_payload(
     feed_xml: str, page_html: str, *,
     page_final_url: str | None, feed_final_url: str,
+    page_fetch_method: str = "http",
 ) -> str:
     payload = {
         "feed_xml": feed_xml, "page_html": page_html,
@@ -708,6 +723,9 @@ def _compose_payload(
 
     if page_final_url:
         payload["page_final_url"] = page_final_url
+
+    if page_fetch_method != "http":
+        payload["page_fetch_method"] = page_fetch_method
 
     if not page_html:
         # Preserve the article failure alongside the retained feed entry.
@@ -743,6 +761,7 @@ def _extract_page_assets(
             url=url,
             asset_type=asset_type,
             estimated_size_bytes=None,
+            referrer_url=base_url,
         )
         for url, asset_type in parser.assets()
     ]
@@ -797,7 +816,7 @@ def _normalize_asset_url(base_url: str, raw_url: str) -> str | None:
     if trimmed.startswith("data:") or trimmed.startswith("javascript:"):
         return None
 
-    absolute = urljoin(base_url, trimmed)
+    absolute = canonical_media_url(urljoin(base_url, trimmed))
     parsed = urlparse(absolute)
 
     if parsed.scheme not in {"http", "https"}:
@@ -874,12 +893,21 @@ async def _fetch_text(
 
     if fetched and is_page_challenge(fetched.text):
         logger.warning("Verification page returned fetching %s", url)
-        fetched = None
+        fetched = await _recover_page(fetched.url)
 
     if fetched is None or not fetched.text:
         count("fetch_failures")
 
     return fetched
+
+
+async def _recover_page(url: str) -> FetchedText | None:
+    recovery = current_page_recovery.get()
+
+    if recovery is not None and (page := await recovery.fetch(url)):
+        return FetchedText(page.text, page.url, "browser")
+
+    return None
 
 
 async def _fetch_text_with_retries(
@@ -921,7 +949,10 @@ async def _fetch_text_with_retries(
             )
 
             if error.status != 429:
-                return None
+                return (
+                    await _recover_page(str(error.request_info.real_url))
+                    if error.status == 403 else None
+                )
 
             if not await _wait_for_retry(url, retry, retry_after):
                 return None

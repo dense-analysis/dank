@@ -185,7 +185,7 @@ async def test_reddit_persists_while_x_waits_in_its_own_browser(
         await task
 
     assert used["first"] is used["second"]
-    assert len(sessions) == 3
+    assert len(sessions) == 4
     assert sessions[0][0].profile_dir == (
         harness.settings.data_dir / "browser-profile"
     )

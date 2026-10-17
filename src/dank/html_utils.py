@@ -5,6 +5,8 @@ import re
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
+from dank.media_urls import canonical_media_url
+
 YOUTUBE_HOSTS = {
     "youtube.com",
     "www.youtube.com",
@@ -18,8 +20,11 @@ YOUTUBE_HOSTS = {
 # The Register's verification shell can return HTTP 200 without an article.
 # Keep one pattern for capture validation and older raw-record queries.
 PAGE_CHALLENGE_PATTERN = (
-    r'(?is)<title>\s*Are we human\?\s*</title>.*?'
+    r'(?is)(?:<title>\s*Are we human\?\s*</title>.*?'
     r'<script\b[^>]*\bsrc\s*=\s*["\'][^"\']*/_labrador/pow/'
+    r'|<title>\s*(?:Just a moment\.\.\.|Attention Required! \| Cloudflare)'
+    r'\s*</title>.*?(?:challenge-platform|cf-error-details)'
+    r'|<title>\s*etsy\.com\s*</title>.*?captcha-delivery\.com)'
 )
 
 
@@ -153,15 +158,15 @@ class _ReadableHTML(HTMLParser):
         self, tag: str, attrs: list[tuple[str, str | None]],
         *, self_closing: bool = False, renamed: bool = False,
     ) -> str:
-        if not self.base_url and not renamed:
-            return self.get_starttag_text() or ""
-
         resolved: list[tuple[str, str | None]] = []
 
         for key, value in attrs:
-            if self.base_url and key in {"href", "src", "poster"} and value:
+            if key in {"href", "src", "poster"} and value:
                 try:
-                    value = urljoin(self.base_url, value)
+                    value = canonical_media_url(
+                        urljoin(self.base_url, value)
+                        if self.base_url else value,
+                    )
                 except ValueError:
                     pass
 

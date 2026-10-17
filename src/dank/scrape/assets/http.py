@@ -5,10 +5,11 @@ import hashlib
 import logging
 import pathlib
 import uuid
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import aiohttp
 
+from dank.media_urls import canonical_media_url
 from dank.model import AssetDiscovery, RawAsset
 from dank.scrape.http import http_response
 from dank.scrape.metrics import count
@@ -51,7 +52,8 @@ async def download_file_http(
 
         try:
             async with http_response(
-                http_client, discovery.url,
+                http_client, canonical_media_url(discovery.url),
+                headers=_referrer_headers(discovery),
                 preserve_url=urlparse(discovery.url).hostname in {
                     "preview.redd.it", "external-preview.redd.it",
                 },
@@ -125,3 +127,23 @@ async def download_file_http(
         source=discovery.source,
         local_path=str(target_path) if target_path else "",
     )
+
+
+def _referrer_headers(discovery: AssetDiscovery) -> dict[str, str]:
+    """Send an origin without article paths, queries or credentials."""
+    try:
+        source = urlsplit(discovery.referrer_url or "")
+        target = urlsplit(discovery.url)
+
+        if (
+            source.scheme not in {"http", "https"} or not source.hostname
+            or source.username or source.password
+            or (source.scheme == "https" and target.scheme == "http")
+        ):
+            return {}
+
+        _ = source.port
+    except ValueError:
+        return {}
+
+    return {"Referer": f"{source.scheme}://{source.netloc}/"}
