@@ -82,6 +82,7 @@ class FetchedText(NamedTuple):
     text: str
     url: str
     method: str = "http"
+    content_type: str = "text/html"
 
 
 class _FeedPageDiscovery(NamedTuple):
@@ -888,8 +889,11 @@ async def _fetch_text(
     url: str,
     *,
     accept: list[str],
+    html_only: bool = False,
 ) -> FetchedText | None:
-    fetched = await _fetch_text_with_retries(http_client, url, accept=accept)
+    fetched = await _fetch_text_with_retries(
+        http_client, url, accept=accept, html_only=html_only,
+    )
 
     if fetched and is_page_challenge(fetched.text):
         logger.warning("Verification page returned fetching %s", url)
@@ -915,6 +919,7 @@ async def _fetch_text_with_retries(
     url: str,
     *,
     accept: list[str],
+    html_only: bool = False,
 ) -> FetchedText | None:
     if not url:
         return None
@@ -926,9 +931,11 @@ async def _fetch_text_with_retries(
                 retry=retry,
             ) as response:
                 response.raise_for_status()
-                text = await response.text()
+                fetched = await _read_fetched_text(
+                    response, html_only=html_only,
+                )
 
-                if not text:
+                if not fetched.text:
                     logger.warning("Empty response fetching %s", url)
                 elif retry:
                     logger.info(
@@ -936,7 +943,7 @@ async def _fetch_text_with_retries(
                         url, retry,
                     )
 
-                return FetchedText(text, str(response.url))
+                return fetched
         except aiohttp.ClientResponseError as error:
             if error.status == 429:
                 count("http_429")
@@ -965,6 +972,20 @@ async def _fetch_text_with_retries(
             return None
 
     return None
+
+
+async def _read_fetched_text(
+    response: aiohttp.ClientResponse, *, html_only: bool,
+) -> FetchedText:
+    content_type = getattr(response, "content_type", "text/html")
+    supported = not html_only or content_type in {
+        "text/html", "application/xhtml+xml",
+    }
+
+    return FetchedText(
+        await response.text() if supported else "", str(response.url),
+        content_type=content_type,
+    )
 
 
 async def _wait_for_retry(
