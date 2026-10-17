@@ -30,7 +30,7 @@ def source_kind(domain: str) -> str:
     if domain in X_DOMAINS:
         return "x"
 
-    return "reddit" if domain == "reddit.com" else "stories"
+    return "reddit" if domain == "reddit.com" else "rss"
 
 
 async def source_accounts(

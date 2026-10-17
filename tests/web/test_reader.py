@@ -267,7 +267,7 @@ async def test_sources_include_empty_configured_and_collected_sources(
     assert data["total_posts"] == 10
     assert data["sources"][0] == {
         "domain": "empty.example", "name": "empty.example",
-        "tags": ["culture"], "count": 0, "kind": "stories",
+        "tags": ["culture"], "count": 0, "kind": "rss",
     }
     assert data["sources"][1]["tags"] == []
     assert data["sources"][2]["tags"] == ["politics"]
