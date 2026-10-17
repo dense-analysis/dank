@@ -10,41 +10,50 @@ means a fallback exists; “handled” means the specific case has a tested fix.
 
 ## Latest full-scrape check
 
-On **2026-10-17**, Docker run `8d54ed62-e308-49ec-9e3c-10c1e2dc8ff1`
-used `bec2f83` and the existing 55-source configuration. It exited normally after
-**6m00s**, with outcome **partial**: 42 sources completed, 12 were partial, and
-Niche Gamer failed. All **1,565 collected records were saved** (1,545 distinct
-source/post IDs). All 1,545 distinct posts and all 24 available YouTube files
-were processed and independently checked against the latest saved captures.
-The archived log is `logs/scrape/2026-10-17T13-19-46Z-27115.log`.
+On **2026-10-17**, Docker run `19bb2610-7163-4591-ba27-f409be8eaa69`
+used `851e95a` and the existing 55-source configuration. It exited normally after
+**6m25s**, with outcome **partial**: 43 sources completed, 10 were partial, and
+Niche Gamer and The Register failed. X and Reddit both completed. The archived
+log is `logs/scrape/2026-10-17T14-12-27Z-58404.log`.
 
-| Source | Saved records | Distinct posts | Result |
-| --- | ---: | ---: | --- |
-| RSS | 826 | 826 | Some feeds, articles and media remained unavailable. |
-| X | 145 | 125 | Four account timelines collected; the fifth timed out; 31 accounts were not attempted. Twenty records are conversation snapshots of timeline posts. |
-| Reddit | 594 | 594 | All 15 communities finished, including 29 LLMDevs posts. DomainDrivenDesign and ExperiencedDevs were explicitly empty for Top/day. |
+All **2,456 post captures plus 25 ID-only references** were saved: 2,481 raw
+rows, independently reconciled against run/source counters and account logs.
+The post captures represent **2,440 distinct posts**, not necessarily new posts.
+References remain in raw storage and do not inflate the post totals. Of their
+25 IDs, 23 also have full content in this run; two are reference-only.
+All 2,440 distinct posts and all 24 available YouTube files were processed and
+independently checked against their latest captures; the reader remained available.
 
-Reddit took **3m03s** with no collection failures, media failures or 429s. X had
-four conversation timeouts on `claudeai`, then a navigation timeout on
-`White_Rabbit_OG`; the timeout stopped X while preserving saved rows. Of 20 X
-conversation attempts, eight captured, eight were partial under cursor/reply
-limits, and four failed. The logs do not establish the browser's underlying
-failure; they do establish that subsequent accounts cannot currently recover.
+| Source | Post captures | Distinct posts | ID-only references | Result |
+| --- | ---: | ---: | ---: | --- |
+| RSS | 806 | 806 | 0 | Some feeds, articles and media remained unavailable. |
+| X | 1,063 | 1,047 | 25 | All 36 account timelines completed; one browser timeout recovered on retry. |
+| Reddit | 587 | 587 | 0 | All 15 communities completed, including 27 LLMDevs posts; two were explicitly empty. |
 
-YouTube produced **24 available MP4s from 52 references**; the other **28 were
-size-excluded**, with no unexplained missing files or YouTube download failures.
-Every available file was independently checked with FFprobe for video/audio
-streams and the unchanged 10 MiB cap; the largest was 10,229,642 bytes. The
-extractor logged two recoverable initial-data warnings and successfully used
-its API fallback. This run did not repeat playback of every video; the three
-Docker decode/playback checks below remain the playback evidence.
+X again timed out for 30s at account 21, `lexfridman`. Restarting with the saved
+session collected 32 posts on retry and all later accounts completed. Reddit
+took **3m01s**; DomainDrivenDesign and ExperiencedDevs had explicit empty Top/day
+listings, while other communities yielded 1–100 posts. Both browser sources had
+zero final fetch, parse, rate-limit or media failures. Normal runs deferred
+individual discussion refreshes as intended; X saved no conversation snapshots.
 
-Overall media: **141 new, 2,996 cached, 297 skipped, 11 failed**. Real media
-failures remain on Wikimedia, Microsoft, `shkspr.mobi` and Internet Archive.
-The four HTTP 429 responses were retries of one Order Order article, not Reddit
-or YouTube limits. Subsequent X-only verification (`03ccaaa1`, below) completed
-all 36 accounts after the recovery and posts-first changes. Scoped publisher/media
-retries remain open; the checkboxes below track the current work.
+YouTube retained **24 available MP4s from 52 references**; the other **28 were
+size-excluded**, with no unexplained missing files or download failures. All 24
+files were cached from earlier runs. FFprobe confirmed audio/video streams and
+the unchanged 10 MiB cap for every file (largest: 10,229,642 bytes); FFmpeg fully
+decoded both streams of the three largest files without errors. One extractor
+warning reported unavailable formats for `EEUdslTwYZ8`; the final outcome was an
+explicit no-fitting-format size skip. This pass verified cache reuse, size
+classification and existing files; the fresh Docker download/playback evidence
+is recorded below.
+
+Overall media: **51 new, 3,515 cached, 582 skipped, 11 failed**. The same eleven
+publisher-media failures recurred on Wikimedia, Microsoft, `shkspr.mobi` and
+Internet Archive. All **63 fetch failures** were RSS-related. The four HTTP 429
+responses were attempts on one Order Order article. The Register's feed now
+returned a verification page, preventing collection of its articles; Niche
+Gamer's feeds remained blocked by 403 responses. Publisher recovery, smaller X
+video variants, browser progress and bounded media jobs remain on the task list below.
 
 ## Full-scrape improvement tasks
 
@@ -140,6 +149,15 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   bounded cleanup and login/cancellation behavior. A separate bounded refresh
   (`9061e460`) selected and saved two discussions in 24.8s without any timeline
   visits: one captured, one partial with 22 replies/context and a remaining cursor.
+- [ ] **P2: Diagnose the recurring X browser timeout.** Both the X-only check
+  `03ccaaa1` and full run `19bb2610` timed out after 30s at account 21,
+  `lexfridman`. Restarting the browser with the saved session collected 32 posts
+  on retry in both runs and allowed later accounts to continue. Recovery is
+  working; the logs do not distinguish an account-specific problem from browser
+  lifetime or navigation/transport failure. Capture the failed browser stage and
+  compare the account in a fresh browser and a different position in the pass.
+  Done when the trigger is reproduced and addressed without weakening deadlines
+  or hiding failed attempts.
 - [x] **P2: Distinguish ID-only X references from readable posts.** The three
   reference-only Tweet objects from `03ccaaa1` remain in `raw_posts`, with their
   original payloads. New run/source counters separate post captures from
@@ -302,20 +320,22 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   prefer a smaller eligible variant where available. Raw references retain only
   the URL/path, not a durable per-asset outcome reason.
   [Variant selection](../src/dank/scrape/x/payloads.py).
-- [ ] **P2: Classify failed publisher media and make retries selective.** Run
-  `8d54ed62` logged five Wikimedia image 403s, two Microsoft image 403s, three
-  `shkspr.mobi` favicon 401s and an Internet Archive connection failure. These
-  remain real download failures, distinct from the fixed Reddit signed-preview
+- [ ] **P2: Classify failed publisher media and make retries selective.** Runs
+  `8d54ed62` and `19bb2610` each logged five Wikimedia image 403s, two Microsoft
+  image 403s, three `shkspr.mobi` favicon 401s and an Internet Archive connection
+  failure. These remain real download failures, distinct from the fixed Reddit signed-preview
   URL and configured size skips. Retain per-asset reason/status and let a scoped
   retry revisit unavailable media without recollecting every source; investigate
   each host before assuming stale URLs or an authentication requirement.
   [Media pipeline](../src/dank/scrape/assets/http.py).
 - [ ] **P2: Make blocked feed/article recovery actionable.** Niche Gamer's feeds
   returned 403; article fetches also failed across several publishers, and
-  Order Order exhausted its 429 retries. The latest check also logged article
+  Order Order exhausted its 429 retries. Run `19bb2610` also logged article
   403s for Ars Technica (20 URLs), Etsy (20), Netflix Tech Blog (10), LWN (6)
-  and Microsoft (1), plus 15 Register verification pages and connection failures
-  after redirects from `postgr.es` to `stormatics.tech` and `dbadevops.com`.
+  and Microsoft (1), plus connection failures after redirects from `postgr.es`
+  to `stormatics.tech` and `dbadevops.com`. The Register previously returned 15
+  article verification pages; in `19bb2610` its feed itself returned a verification
+  page, so no articles were collected. Previously saved articles remain stored.
   Retain host/status and retry eligibility
   in a source summary, distinguish retained feed text from a fetched article,
   and review supported feed alternatives. Done when operators can identify
