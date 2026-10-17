@@ -1,21 +1,16 @@
-import { useMemo } from "react";
-import { xTextParagraphs } from "../lib/xText";
+import type { XTextSegment } from "../lib/xText";
 import { HighlightedText } from "./HighlightedText";
 import { ReaderLink } from "./ReaderLink";
 
 export function XPostText({
-  html,
-  href,
-  open,
+  paragraphs,
+  navigation,
   query,
 }: {
-  html: string;
-  href: string;
-  open: () => void;
+  paragraphs: XTextSegment[][];
+  navigation?: { href: string; open: () => void };
   query: string;
 }) {
-  const paragraphs = useMemo(() => xTextParagraphs(html), [html]);
-
   return (
     <div className="article-body">
       {paragraphs.map((segments) => (
@@ -30,18 +25,24 @@ export function XPostText({
               >
                 <HighlightedText text={segment.text} query={query} />
               </a>
-            ) : (
+            ) : navigation ? (
               <ReaderLink
                 key={segment.start}
                 className="x-post-text-link"
-                href={href}
-                onNavigate={open}
+                href={navigation.href}
+                onNavigate={navigation.open}
                 tabIndex={-1}
                 preserveTextSelection
                 draggable={false}
               >
                 <HighlightedText text={segment.text} query={query} />
               </ReaderLink>
+            ) : (
+              <HighlightedText
+                key={segment.start}
+                text={segment.text}
+                query={query}
+              />
             ),
           )}
         </p>

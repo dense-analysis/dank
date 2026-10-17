@@ -2186,8 +2186,21 @@ input[type="checkbox"] {
 .x-post-content .article-body > :last-child {
   margin-bottom: 0;
 }
-.x-expand {
+.x-text-actions {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px 18px;
   margin-top: 10px;
+  font-size: 13px;
+}
+.x-read-full {
+  flex-wrap: wrap;
+  text-decoration: none;
+}
+.x-reading-time {
+  color: var(--muted);
+  font-size: 12px;
 }
 .x-post-actions {
   flex-wrap: wrap;

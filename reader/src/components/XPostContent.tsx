@@ -1,7 +1,6 @@
 import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
-import { articleText } from "../lib/article";
 import type { Post, XMedia } from "../lib/types";
 import { xMedia, xMediaUrl } from "../lib/x";
 import {
@@ -10,14 +9,9 @@ import {
   withoutDisplayedLinks,
 } from "../lib/xText";
 import { ArticleBody } from "./ArticleBody";
-import { HighlightedText } from "./HighlightedText";
 import { safeUrl } from "./PostCard";
-import { ReaderLink } from "./ReaderLink";
 import { XLinkPreview } from "./XLinkPreview";
-import { XPostText } from "./XPostText";
-
-// Short posts stay fully readable; long notes expand without duplicating their text.
-const PREVIEW_CHARACTERS = 600;
+import { XPostPreview } from "./XPostPreview";
 
 export function XPostContent({
   post,
@@ -30,7 +24,6 @@ export function XPostContent({
   query?: string;
   navigation?: { href: string; open: () => void };
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [failedMedia, setFailedMedia] = useState<Set<string>>(() => new Set());
   const media = useMemo(() => xMedia(post), [post]);
   const displayedVideos = useMemo(
@@ -69,55 +62,13 @@ export function XPostContent({
     () => withoutDisplayedLinks(post.html, displayedVideos, displayedPreviews),
     [post.html, displayedVideos, displayedPreviews],
   );
-  const text = useMemo(() => articleText(html), [html]);
-  const canExpand = compact && text.length > PREVIEW_CHARACTERS;
 
   return (
     <div className={`x-post-content ${compact ? "x-content-compact" : ""}`}>
-      {canExpand && !expanded ? (
-        <div className="article-body x-text-preview">
-          <p>
-            {navigation ? (
-              <ReaderLink
-                className="x-post-text-link"
-                href={navigation.href}
-                onNavigate={navigation.open}
-                tabIndex={-1}
-                preserveTextSelection
-                draggable={false}
-              >
-                <HighlightedText
-                  text={`${text.slice(0, PREVIEW_CHARACTERS).trimEnd()}…`}
-                  query={query}
-                />
-              </ReaderLink>
-            ) : (
-              <HighlightedText
-                text={`${text.slice(0, PREVIEW_CHARACTERS).trimEnd()}…`}
-                query={query}
-              />
-            )}
-          </p>
-        </div>
-      ) : navigation ? (
-        <XPostText
-          html={html}
-          href={navigation.href}
-          open={navigation.open}
-          query={query}
-        />
+      {compact ? (
+        <XPostPreview html={html} navigation={navigation} query={query} />
       ) : (
         <ArticleBody html={html} query={query} />
-      )}
-      {canExpand && (
-        <button
-          type="button"
-          className="text-button x-expand"
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
       )}
       {media.length > 0 && (
         <section className="x-attachments" aria-label="Post attachments">

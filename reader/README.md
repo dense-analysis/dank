@@ -94,9 +94,14 @@ handle, independently of the author filter, and stays in the URL through search
 and article navigation.
 
 X cards and opened posts show the account's avatar, display name and handle,
-with the post text once. Short posts are readable in the feed; **Show more**
-expands long notes. Identity links open the account's collected posts, with
-initials when an avatar is unavailable.
+with the post text once. Feed previews show about 300 characters, preserving
+paragraphs and links. **Show more** expands ordinary posts completely. Posts of
+roughly 500 words or 3,000 characters expand to about 1,200 characters, with
+**Read full post** and an estimated reading time leading to the complete reader.
+These thresholds keep feed previews manageable. **Show less** collapses the
+text; media players retain their playback position. Replies
+without a separate reader destination can still expand completely. Identity
+links open the account's collected posts, with initials when an avatar is unavailable.
 
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
