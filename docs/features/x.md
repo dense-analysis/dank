@@ -177,6 +177,9 @@ available local files are preferred, with captured X media URLs as a fallback.
 Remote media may expire or become unavailable. A link card remains a usable
 external link when its image cannot load; previews never embed third-party pages.
 
+Reply, repost, like and view counts describe the same saved capture as the
+post body. Missing counts remain unknown, not zero.
+
 ## Conversation snapshots
 
 After saving an account's timeline, collection opens its newest owned posts

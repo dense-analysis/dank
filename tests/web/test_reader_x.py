@@ -13,7 +13,8 @@ from dank.web.app import create_app
 
 ICON = "https://pbs.twimg.com/profile_images/123/account_normal.png"
 EMPTY_CONTENT: dict[str, Any] = {
-    "links": [], "reply_count": None,
+    "links": [], "reply_count": None, "repost_count": None,
+    "like_count": None, "view_count": None,
     "replies_status": "not_collected", "captured_at": None,
     "replies_captured_count": 0,
 }
@@ -207,7 +208,8 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
             "avatar": {"image_url": ICON},
         }}},
         "legacy": {
-            "reply_count": 24, "full_text": "Same capture",
+            "reply_count": 24, "retweet_count": 50, "favorite_count": 573,
+            "full_text": "Same capture",
             "extended_entities": {"media": [{
                 "type": "photo", "media_url_https": image,
             }]},
@@ -215,6 +217,7 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
                 "url": "https://t.co/abc", "expanded_url": "https://youtu.be/id",
             }]},
         },
+        "views": {"count": "56000"},
     }
     fake = FakeClickHouse([
         {**row("x.com"), "source": "x", "url": "https://x.com/Example/status/1",
@@ -242,7 +245,9 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
                    "poster_url": None, "alt": "", "remote": not file_exists}],
         "links": [{"url": "https://youtu.be/id", "title": "",
                    "description": "", "image_url": None}],
-        "reply_count": 24, "replies_status": "not_collected",
+        "reply_count": 24, "repost_count": 50,
+        "like_count": 573, "view_count": 56000,
+        "replies_status": "not_collected",
         "replies_captured_count": 0,
         "captured_at": "2026-10-08T12:30:45.123000+00:00",
     }
@@ -254,20 +259,42 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
     )
 
 
-@pytest.mark.parametrize("count", [True, -1, 2 ** 53, "24", None])
-async def test_x_unknown_reply_counts_never_claim_zero(
+@pytest.mark.parametrize("count,numeric_expected,view_expected", [
+    (0, 0, 0), (24, 24, 24),
+    (2**53 - 1, 2**53 - 1, 2**53 - 1),
+    ("0", None, 0), ("56000", None, 56000), ("00024", None, 24),
+    ("9007199254740991", None, 2**53 - 1),
+    (None, None, None), (True, None, None), (False, None, None),
+    (-1, None, None), (2**53, None, None), (24.0, None, None),
+    ([], None, None), ({}, None, None),
+    ("", None, None), ("-1", None, None), ("+1", None, None),
+    (" 24", None, None), ("24 ", None, None), ("24\n", None, None),
+    ("24.0", None, None), ("1e3", None, None), ("1,000", None, None),
+    ("0x10", None, None), ("\uff12\uff14", None, None),
+    ("9007199254740992", None, None), ("9" * 5000, None, None),
+])
+async def test_x_engagement_counts_preserve_zero_and_unknown_values(
     app: web.Application, count: object,
+    numeric_expected: int | None, view_expected: int | None,
 ) -> None:
     fake = FakeClickHouse([
         {**row("x.com"), "source": "x", "url": "https://x.com/Example/status/1"},
     ], [], [{"domain": "x.com", "post_id": "same", "payload": json.dumps({
-        "legacy": {"reply_count": count},
+        "legacy": {
+            "reply_count": count, "retweet_count": count,
+            "favorite_count": count,
+        },
+        "views": {"count": count},
     })}])
     app["clickhouse"] = fake
     response = await request(app, "/api/reader/post?domain=x.com&id=same")
     assert response.status == 200
     post = json.loads(response.text or "")
-    assert post["x"]["reply_count"] is None
+
+    for field in ("reply_count", "repost_count", "like_count"):
+        assert post["x"][field] == numeric_expected
+
+    assert post["x"]["view_count"] == view_expected
     assert post["x"]["replies_status"] == "not_collected"
     assert post["html"] == "<p>Article body</p>"
 
@@ -293,6 +320,10 @@ async def test_missing_x_snapshot_keeps_legacy_downloaded_media_available(
     post = json.loads(response.text or "")
     assert "media" not in post["x"]
     assert post["x"]["captured_at"] is None
+
+    for field in ("reply_count", "repost_count", "like_count", "view_count"):
+        assert post["x"][field] is None
+
     assert post["media"] == [{
         "url": "/assets/archived.jpg", "content_type": "image/jpeg",
     }]

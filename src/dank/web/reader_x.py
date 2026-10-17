@@ -127,14 +127,7 @@ def _content(
         ):
             local_urls[asset.url] = view["url"]
 
-    replies = object_value(payload.get("legacy")).get("reply_count")
-    reply_count = (
-        replies
-        if isinstance(replies, int)
-        and not isinstance(replies, bool)
-        and 0 <= replies < 2**53
-        else None
-    )
+    legacy = object_value(payload.get("legacy"))
     captured_at = post.updated_at.replace(
         tzinfo=post.updated_at.tzinfo or dt.UTC,
     )
@@ -157,7 +150,13 @@ def _content(
         "icon_url": icon,
         "links": post_links(payload, local_urls),
         **({"media": post_media(payload, local_urls)} if payload else {}),
-        "reply_count": reply_count,
+        "reply_count": _count(legacy.get("reply_count")),
+        "repost_count": _count(legacy.get("retweet_count")),
+        "like_count": _count(legacy.get("favorite_count")),
+        "view_count": _count(
+            object_value(payload.get("views")).get("count"),
+            allow_string=True,
+        ),
         "captured_at": captured_at.isoformat() if payload else None,
     }
 
@@ -198,3 +197,15 @@ async def _conversation_assets(
             assets.setdefault(key[0], []).append(_parse_asset_row(row))
 
     return assets
+
+
+def _count(value: object, *, allow_string: bool = False) -> int | None:
+    # X encodes view counts as decimal strings. Bound parsing to the length
+    # of JavaScript's largest safe integer before returning a JSON number.
+    if allow_string and isinstance(value, str):
+        value = int(value) if re.fullmatch(r"[0-9]{1,16}", value) else None
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value if 0 <= value < 2**53 else None
+
+    return None
