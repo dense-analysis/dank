@@ -271,6 +271,7 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
     feeds, channels = configured_sources(
         request.app["state"].settings, result.rows,
     )
+    await _channel_counts(client, channels)
     total = await client.fetch_json(
         "SELECT uniqExact(item_id) AS total FROM youtube_discoveries",
     )
@@ -283,6 +284,26 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
         "total": int(total.rows[0]["total"]) if total.rows else 0,
         "linked_count": int(linked.rows[0]["total"]) if linked.rows else 0,
     })
+
+
+async def _channel_counts(
+    client: ClickHouseClient, channels: list[dict[str, Any]],
+) -> None:
+    if not channels:
+        return
+
+    result = await client.fetch_json(
+        "SELECT id, uniqExact(item_id) AS count FROM ("
+        "SELECT item_id, arrayJoin(arrayIntersect(["
+        "JSONExtractString(payload, 'channel_id'), "
+        "JSONExtractString(payload, 'channel_url')], %(ids)s)) AS id "
+        "FROM youtube_discoveries) GROUP BY id",
+        {"ids": [str(channel["id"]) for channel in channels]},
+    )
+    counts = {str(row["id"]): int(row["count"]) for row in result.rows}
+
+    for channel in channels:
+        channel["count"] = counts.get(str(channel["id"]), 0)
 
 
 def _timestamp(value: object) -> str:

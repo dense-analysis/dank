@@ -56,3 +56,47 @@ def test_special_news_channel_and_legacy_channel_paths() -> None:
         "https://www.youtube.com/c/Example",
         "https://www.youtube.com/user/Reporter",
     }
+
+
+async def test_channel_counts_match_unique_items_across_all_feed_discoveries():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from aiohttp.test_utils import make_mocked_request
+
+    from dank.storage.clickhouse import QueryResult
+    from dank.web.reader_youtube import handle_youtube_sources
+
+    settings = load_settings("config.example.toml")._replace(sources=(
+        SourceConfig("youtube.com", (), (
+            "https://www.youtube.com/@Channel4News/videos",
+            "https://www.youtube.com/@Channel4News/shorts",
+        )),
+    ))
+    client = AsyncMock()
+    client.fetch_json.side_effect = [
+        QueryResult([
+            {"feed_url": "https://www.youtube.com/@Channel4News/" + tab,
+             "name": "@Channel4News", "kind": "channel", "region": "GB",
+             "count": count, "channel_id": "UC4News",
+             "channel_name": "Channel 4 News",
+             "channel_url": "https://www.youtube.com/@Channel4News"}
+            for tab, count in (("videos", 5), ("shorts", 3))
+        ]),
+        # One overlap between the two feeds, plus two unique News discoveries.
+        QueryResult([{"id": "UC4News", "count": 9}]),
+        QueryResult([{"total": 9}]), QueryResult([{"total": 0}]),
+    ]
+    request = make_mocked_request("GET", "/api/reader/youtube/sources", app={
+        "clickhouse": client, "state": SimpleNamespace(settings=settings),
+    })
+    response = await handle_youtube_sources(request)
+    import json
+
+    payload = json.loads(response.text or "{}")
+    assert len(payload["channels"]) == 1
+    assert payload["channels"][0]["count"] == 9
+    query, params = client.fetch_json.call_args_list[1].args
+    assert "uniqExact(item_id)" in query
+    assert "arrayIntersect" in query
+    assert params == {"ids": ["UC4News"]}
