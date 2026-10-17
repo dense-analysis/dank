@@ -29,7 +29,7 @@ def preserve_reddit_body(row: RawPost, previous_payload: str) -> RawPost:
     if (
         not isinstance(current.get("detail_capture"), dict)
         or current["detail_capture"].get("status")
-        not in ("failed", "disabled")
+        not in ("failed", "disabled", "deferred")
         or not isinstance(previous.get("detail_capture"), dict)
         or previous["detail_capture"].get("status") != "captured"
     ):

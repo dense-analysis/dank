@@ -27,7 +27,7 @@ def _row(
     }
 
 
-@pytest.mark.parametrize("status", ["failed", "disabled"])
+@pytest.mark.parametrize("status", ["failed", "disabled", "deferred"])
 async def test_discussion_retains_old_capture_and_reports_latest_attempt(
     status: str,
 ) -> None:

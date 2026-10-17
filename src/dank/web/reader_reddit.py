@@ -55,7 +55,7 @@ def comment_capture(
     capture = _mapping(snapshot.get("comment_capture"))
     status = _text(capture.get("status"))
 
-    if status not in {"captured", "disabled", "failed"}:
+    if status not in {"captured", "disabled", "failed", "deferred"}:
         status = "not_captured"
 
     total = _count(capture.get("total_available"))
@@ -103,7 +103,7 @@ def comment_capture(
                 tzinfo=captured.tzinfo or dt.UTC,
             ).isoformat()
 
-            if previous_status in {"disabled", "failed"}:
+            if previous_status in {"disabled", "failed", "deferred"}:
                 result["latest_attempt_status"] = previous_status
 
     return result

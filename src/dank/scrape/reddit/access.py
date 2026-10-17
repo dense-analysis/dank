@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import AsyncGenerator, Iterable
+from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from urllib.parse import urlsplit
 
@@ -12,7 +13,8 @@ from dank.scrape.metrics import count
 from dank.scrape.zendriver import NetworkResponse
 
 # Avoid immediately repeating browser requests when Reddit omits Retry-After.
-DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 30.0
+DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 300.0
+MAX_REDDIT_COOLDOWN_WAIT_SECONDS = 600.0
 # A run adapts upward after a real 429, rather than taxing every healthy visit.
 MAX_ADAPTIVE_INTERVAL_SECONDS = 60.0
 logger = logging.getLogger(__name__)
@@ -43,6 +45,18 @@ class RedditRequests:
 current_requests: ContextVar[RedditRequests | None] = ContextVar(
     "reddit_requests", default=None,
 )
+
+
+@asynccontextmanager
+async def request_slot(url: str) -> AsyncGenerator[None]:
+    limiter = current_limiter.get()
+    slot = limiter.slot(
+        url, max_cooldown_wait=MAX_REDDIT_COOLDOWN_WAIT_SECONDS,
+    ) if limiter else nullcontext()
+
+    async with slot:
+        await pace_request()
+        yield
 
 
 async def pace_request() -> None:

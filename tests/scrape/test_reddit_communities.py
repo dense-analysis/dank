@@ -315,7 +315,9 @@ async def test_next_community_is_activated_after_detail_visits(
 
     page = _FocusedPage()
 
-    async def visit_details(batch: ScrapeBatch, *args: Any) -> Any:
+    async def visit_details(
+        batch: ScrapeBatch, *args: Any, **kwargs: Any,
+    ) -> Any:
         page.active = False
         yield batch
 

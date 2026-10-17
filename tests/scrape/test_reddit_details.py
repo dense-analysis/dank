@@ -334,7 +334,7 @@ async def test_host_cooldown_does_not_consume_the_detail_page_budget() -> None:
     )]
 
     @asynccontextmanager
-    async def slot(url: str) -> AsyncGenerator[None]:
+    async def slot(url: str, **kwargs: Any) -> AsyncGenerator[None]:
         ready = asyncio.Event()
         timer = asyncio.get_running_loop().call_later(0.1, ready.set)
 

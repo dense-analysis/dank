@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from contextlib import nullcontext
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 import zendriver
 
-from dank.scrape.http import current_limiter
-
-from .access import check_response_status, current_requests, pace_request
+from .access import check_response_status, current_requests, request_slot
 from .payloads import as_dict, number, text
 
 SNAPSHOT_FUNCTION = """(root, url, postId) => {
@@ -105,11 +102,8 @@ async def fetch_document(
     ).replace(
         "POST_ID", json.dumps(post_id),
     ).replace("SNAPSHOT_FUNCTION", SNAPSHOT_FUNCTION)
-    limiter = current_limiter.get()
 
-    async with limiter.slot(url) if limiter else nullcontext():
-        await pace_request()
-
+    async with request_slot(url):
         async with asyncio.timeout(15):
             value = await page.evaluate(script, await_promise=True)
 

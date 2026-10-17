@@ -6,7 +6,6 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator, Iterable
-from contextlib import nullcontext
 from typing import cast
 from urllib.parse import urlencode
 
@@ -20,7 +19,6 @@ from dank.config import (
     RedditTimeFilter,
 )
 from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
-from dank.scrape.http import current_limiter
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
@@ -29,13 +27,19 @@ from dank.scrape.zendriver import (
     NetworkResponse,
 )
 
-from .access import RedditScrapeError, check_page_responses, pace_request
+from .access import (
+    RedditRateLimitError,
+    RedditScrapeError,
+    check_page_responses,
+    request_slot,
+)
 from .cache import DetailSnapshot, reuse_detail
 from .communities import discover_community
 from .details import (
     capture_post_detail,
     capture_post_document,
     defer_post_detail,
+    defer_post_refresh,
 )
 from .html import extract_html_posts
 from .payloads import (
@@ -135,7 +139,7 @@ async def scrape_reddit_communities(
             visited.add(community.casefold())
 
             try:
-                async for batch in _scrape_community(
+                async for batch in _retry_community(
                     page,
                     community,
                     settings,
@@ -143,17 +147,9 @@ async def scrape_reddit_communities(
                     time_filter=time_filter,
                 ):
                     if batch.posts:
-                        if detail_page is None:
-                            try:
-                                async with asyncio.timeout(10):
-                                    detail_page = await browser.get(
-                                        "about:blank", new_tab=True,
-                                    )
-                            except Exception:
-                                logger.warning("Reddit detail tab unavailable")
-
                         async for detailed in _capture_batch_details(
                             batch, detail_page, settings, cached_details,
+                            refresh_details=False,
                         ):
                             yield detailed
                     else:
@@ -192,6 +188,7 @@ async def _close_tabs(*tabs: zendriver.Tab | None) -> None:
 async def _capture_batch_details(
     batch: ScrapeBatch, page: zendriver.Tab | None, settings: RedditSettings,
     cached_details: dict[str, DetailSnapshot] | None = None,
+    *, refresh_details: bool = True,
 ) -> AsyncIterator[ScrapeBatch]:
     rate_limited = False
     deferred = 0
@@ -209,6 +206,9 @@ async def _capture_batch_details(
 
         if enriched is not None:
             reused += 1
+        elif not refresh_details:
+            enriched = defer_post_refresh(post, settings)
+            deferred += 1
         elif rate_limited:
             enriched = defer_post_detail(post, settings)
             deferred += 1
@@ -249,11 +249,37 @@ async def _capture_batch_details(
         reused, fetched, deferred,
     )
 
-    if deferred:
+    if deferred and refresh_details:
         logger.warning(
             "Reddit rate limited: kept %d listing posts and deferred their "
             "detail visits to a later run", deferred,
         )
+
+
+async def _retry_community(
+    page: zendriver.Tab, community: str, settings: RedditSettings,
+    *, sort: RedditSort, time_filter: RedditTimeFilter,
+) -> AsyncIterator[ScrapeBatch]:
+    for attempt in range(2):
+        collected = False
+
+        try:
+            async for batch in _scrape_community(
+                page, community, settings, sort=sort, time_filter=time_filter,
+            ):
+                collected = collected or bool(batch.posts)
+                yield batch
+
+            return
+        except RedditRateLimitError:
+            if attempt or collected:
+                raise
+
+            count("retries")
+            logger.warning(
+                "Reddit r/%s limited before its first post; retrying once "
+                "after the shared cooldown", community,
+            )
 
 
 async def _scrape_community(
@@ -266,7 +292,6 @@ async def _scrape_community(
 ) -> AsyncIterator[ScrapeBatch]:
     url = community_url(community, sort=sort, time_filter=time_filter)
     limits = settings.scrape
-    limiter = current_limiter.get()
     capture = NetworkCapture(
         page,
         REDDIT_PATTERNS,
@@ -293,9 +318,7 @@ async def _scrape_community(
         async with asyncio.timeout(10):
             await capture.start()
 
-        async with limiter.slot(url) if limiter else nullcontext():
-            await pace_request()
-
+        async with request_slot(url):
             async with asyncio.timeout(20):
                 await page.activate()
                 await page.send(cdp.page.navigate(url))
@@ -362,9 +385,7 @@ async def _scrape_community(
                 break
 
             if step < limits.max_scrolls:
-                async with limiter.slot(url) if limiter else nullcontext():
-                    await pace_request()
-
+                async with request_slot(url):
                     async with asyncio.timeout(10):
                         # Restore the listing after detail visits hide it.
                         await page.activate()
@@ -539,3 +560,22 @@ def _discover_assets(
             )
 
     return assets
+
+
+async def scrape_reddit_details(
+    settings: RedditSettings, posts: list[RawPost], session: BrowserSession,
+) -> AsyncIterator[ScrapeBatch]:
+    if not posts:
+        return
+
+    async with asyncio.timeout(30):
+        browser = await session.get_browser()
+        page = await browser.get("about:blank", new_tab=True)
+
+    try:
+        async for batch in _capture_batch_details(
+            ScrapeBatch(posts, []), page, settings,
+        ):
+            yield batch
+    finally:
+        await _close_tabs(page)

@@ -60,7 +60,7 @@ describe("Reddit archive response validation", () => {
           comment_capture: {
             ...capture,
             captured_at: "2026-10-16T17:45:00Z",
-            latest_attempt_status: "disabled",
+            latest_attempt_status: "deferred",
           },
         },
       }),

@@ -98,3 +98,36 @@ def test_access_denial_is_not_reported_as_an_empty_listing() -> None:
         check_page_responses([
             NetworkResponse(URL, 403, "text/html", "", "denied", "Document"),
         ], URL)
+
+
+async def test_reddit_cooldown_wait_releases_other_http_slots(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from dank.scrape.reddit.access import request_slot
+
+    now = [0.0]
+    limiter = RequestLimiter(ScrapeSettings(http_concurrency=1))
+    monkeypatch.setattr(
+        'dank.scrape.http.time', SimpleNamespace(monotonic=lambda: now[0]),
+    )
+    delays: list[float] = []
+
+    async def wait(delay: float):
+        delays.append(delay)
+
+        async with limiter.slot('https://other.test/feed'):
+            pass
+
+        now[0] += delay
+
+    monkeypatch.setattr('dank.scrape.http.retry_sleep', wait)
+    limiter.cool_down(URL, 300)
+    token = current_limiter.set(limiter)
+
+    try:
+        async with request_slot(URL):
+            assert now[0] == 300
+    finally:
+        current_limiter.reset(token)
+
+    assert delays == [300]

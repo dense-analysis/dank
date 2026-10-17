@@ -200,3 +200,26 @@ async def test_completed_details_are_yielded_before_visiting_the_next_post(
 
     with pytest.raises(RuntimeError, match='second visit'):
         await anext(batches)
+
+
+async def test_posts_first_reuses_archives_without_detail_visits(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    raw, cached = fixture()
+    listing = json.loads(raw.payload)
+    listing['id'] = 't3_new'
+    new = raw._replace(post_id='t3_new', payload=json.dumps(listing))
+    visit = AsyncMock(side_effect=AssertionError('No per-post requests'))
+    monkeypatch.setattr('dank.scrape.reddit.capture_post_document', visit)
+    monkeypatch.setattr('dank.scrape.reddit.capture_post_detail', visit)
+    batches = [batch async for batch in _capture_batch_details(
+        ScrapeBatch([raw, new], []), None, RedditSettings(),
+        {raw.post_id: cached}, refresh_details=False,
+    )]
+    assert len(batches) == 2
+    assert json.loads(batches[0].posts[0].payload)['detail_capture']['reused']
+    pending = json.loads(batches[1].posts[0].payload)
+    assert pending['detail_capture']['status'] == 'deferred'
+    assert pending['comment_capture']['status'] == 'deferred'
+    assert pending['selftext_html'] == listing['selftext_html']
+    visit.assert_not_awaited()

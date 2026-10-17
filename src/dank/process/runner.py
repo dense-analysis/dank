@@ -156,7 +156,7 @@ async def _previous_reddit_bodies(
 
         if isinstance(capture, dict) and cast(dict[str, Any], capture).get(
             "status",
-        ) in ("failed", "disabled"):
+        ) in ("failed", "disabled", "deferred"):
             candidates.append(raw)
 
     if not candidates:

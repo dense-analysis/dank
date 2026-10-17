@@ -71,7 +71,7 @@ function isRedditComment(value: unknown): boolean {
 function isCommentCapture(value: unknown): boolean {
   return (
     isRecord(value) &&
-    ["captured", "disabled", "failed", "not_captured"].includes(
+    ["captured", "disabled", "failed", "deferred", "not_captured"].includes(
       String(value.status),
     ) &&
     typeof value.sort === "string" &&
@@ -84,7 +84,8 @@ function isCommentCapture(value: unknown): boolean {
       typeof value.captured_at === "string") &&
     (value.latest_attempt_status === undefined ||
       value.latest_attempt_status === "disabled" ||
-      value.latest_attempt_status === "failed")
+      value.latest_attempt_status === "failed" ||
+      value.latest_attempt_status === "deferred")
   );
 }
 

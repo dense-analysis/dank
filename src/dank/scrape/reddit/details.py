@@ -5,7 +5,6 @@ import datetime
 import json
 import logging
 import re
-from contextlib import nullcontext
 from typing import cast
 from urllib.parse import urlencode, urljoin, urlsplit
 
@@ -14,7 +13,7 @@ from zendriver import cdp
 
 from dank.config import RedditSettings
 from dank.model import RawPost
-from dank.scrape.http import HostCooldownError, current_limiter
+from dank.scrape.http import HostCooldownError
 from dank.scrape.metrics import count, current_source
 from dank.scrape.zendriver import NetworkCapture, NetworkResponse
 
@@ -25,6 +24,7 @@ from .access import (
     check_response_status,
     current_requests,
     pace_request,
+    request_slot,
 )
 from .cache import listing_signature
 from .documents import (
@@ -524,7 +524,6 @@ async def capture_post_detail(
         else settings.comment_sort
     )
     url = raw.url.rstrip("/") + "/?" + urlencode({"sort": sort})
-    limiter = current_limiter.get()
 
     try:
         if page is None:
@@ -537,9 +536,7 @@ async def capture_post_detail(
             requests.interval * (MAX_COMMENT_SCROLLS + 1) if requests else 0
         )
 
-        async with limiter.slot(url) if limiter else nullcontext():
-            await pace_request()
-
+        async with request_slot(url):
             async with asyncio.timeout(DETAIL_TIMEOUT_SECONDS + pacing_budget):
                 await capture.start()
                 await page.activate()
@@ -710,3 +707,14 @@ async def _document_comments(
         latest = more
 
     return {**snapshot, "comments": comments}
+
+
+def defer_post_refresh(raw: RawPost, settings: RedditSettings) -> RawPost:
+    post = as_dict(json.loads(raw.payload))
+    post["detail_capture"] = {"status": "deferred"}
+    post["comment_capture"] = comment_capture(
+        settings, post,
+        status="deferred" if settings.capture_comments else "disabled",
+    )
+
+    return raw._replace(payload=json.dumps(post, separators=(",", ":")))

@@ -60,7 +60,7 @@ def _previous() -> str:
     )
 
 
-@pytest.mark.parametrize("status", ["failed", "disabled"])
+@pytest.mark.parametrize("status", ["failed", "disabled", "deferred"])
 def test_failed_detail_retains_complete_body_without_mutating_raw(
     status: str,
 ) -> None:

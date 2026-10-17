@@ -12,14 +12,14 @@ export interface RedditComment {
 }
 
 export interface RedditCommentCapture {
-  status: "captured" | "disabled" | "failed" | "not_captured";
+  status: "captured" | "disabled" | "failed" | "deferred" | "not_captured";
   sort: string;
   limit: number;
   total_available: number | null;
   has_more: boolean;
   comments: RedditComment[];
   captured_at?: string;
-  latest_attempt_status?: "disabled" | "failed";
+  latest_attempt_status?: "disabled" | "failed" | "deferred";
 }
 
 export interface RedditVideo {

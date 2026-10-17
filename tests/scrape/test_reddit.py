@@ -423,7 +423,7 @@ async def test_pagination_resumes_after_details_hide_the_listing(
         "".join(_card(str(i)) for i in range(12)),
     ])
 
-    async def visit_details(batch: Any, *args: Any) -> Any:
+    async def visit_details(batch: Any, *args: Any, **kwargs: Any) -> Any:
         page.active = False
         yield batch
 

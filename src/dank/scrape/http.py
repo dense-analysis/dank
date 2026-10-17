@@ -40,9 +40,11 @@ class RequestLimiter:
         )
 
     @asynccontextmanager
-    async def slot(self, url: str) -> AsyncGenerator[None]:
+    async def slot(
+        self, url: str, *, max_cooldown_wait: float = MAX_COOLDOWN_WAIT,
+    ) -> AsyncGenerator[None]:
         host = urlsplit(url).hostname or ""
-        await self._acquire(host)
+        await self._acquire(host, max_cooldown_wait)
 
         try:
             yield
@@ -52,7 +54,7 @@ class RequestLimiter:
                 self._hosts[host] -= 1
                 self._condition.notify_all()
 
-    async def _acquire(self, host: str) -> None:
+    async def _acquire(self, host: str, max_cooldown_wait: float) -> None:
         wait_until: float | None = None
 
         while True:
@@ -75,11 +77,12 @@ class RequestLimiter:
 
             # Cooldowns never occupy HTTP slots or the condition lock.
             if wait_until is None:
-                wait_until = now + MAX_COOLDOWN_WAIT
+                wait_until = now + max_cooldown_wait
 
             if now + delay > wait_until:
                 raise HostCooldownError(
-                    f"{host}: shared cooldown exceeds the 30s wait budget",
+                    f"{host}: shared cooldown exceeds the "
+                    f"{max_cooldown_wait:g}s wait budget",
                 )
 
             await retry_sleep(delay)

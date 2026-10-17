@@ -37,7 +37,16 @@ def main() -> None:
         help="Capture a saved X conversation; repeat for multiple posts",
     )
 
+    parser.add_argument(
+        "--reddit-details", action="store_true",
+        help="Refresh pending Reddit details saved in the last 24 hours",
+    )
     args = parser.parse_args()
+
+    if args.reddit_details and (args.x_post or args.retry_failed_pages):
+        parser.error(
+            "--reddit-details cannot be combined with other retry modes",
+        )
 
     if args.x_post and (args.domains or args.retry_failed_pages):
         parser.error(
@@ -59,6 +68,7 @@ def main() -> None:
         domain_regex=domain_regex,
         retry_failed_pages=args.retry_failed_pages,
         x_posts=tuple(args.x_post),
+        reddit_details=args.reddit_details,
     )
 
 

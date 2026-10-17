@@ -1,12 +1,15 @@
 # Reddit communities
 
-DANK collects posts from community listing pages with a Chromium browser.
-It reads the page's network responses and rendered posts while scrolling,
-then reads new or changed post documents for their full body, media and
-discussion. Detail requests use the same browser session and parse the returned
-HTML without navigating or running another page. Embedded comment templates
-and bounded top-level comment pages are included. A normal rendered post visit
-remains available when the document cannot provide a usable capture. Access restrictions remain visible as capture failures.
+DANK collects community listings first and saves each post immediately, including
+available body text, media and current counts. Normal scrapes reuse suitable
+saved details and defer individual thread visits so one community's discussion
+archive does not delay collecting the others.
+
+A separate `--reddit-details` pass refreshes pending post bodies and discussions.
+It reads public HTML in the existing browser session, including embedded comment
+templates and bounded top-level comment pages. A rendered post visit remains
+available when a document cannot provide a usable capture. Access restrictions
+remain visible as failures.
 
 ## Configure
 
@@ -52,10 +55,10 @@ sources = [
 sorts, use separate source tables. Best uses Reddit's ranking without a daily
 window; Top + day selects its highest-ranked posts from the past day.
 
-Comments default to **Best**, with up to **50 comments including replies**
+The separate detail pass captures comments in **Best** order by default, with up to **50 comments including replies**
 per post. `comment_limit` accepts 1–500. `comment_sort` accepts `best`, `top`,
 `new`, `controversial`, `old`, or `qa`; Reddit supplies that ordering. Set
-`capture_comments = false` to collect the post without its discussion.
+`capture_comments = false` to refresh post bodies without discussions.
 These settings affect future captures. They do not remove existing archives.
 
 Videos default to remote playback: DANK keeps the video link and available
@@ -75,12 +78,24 @@ make scrape MODE=native ARGS='--headless --domains "^reddit\.com$"'
 make process MODE=native ARGS='--age 24h --domains "^reddit\.com$"'
 ```
 
+To refresh deferred details separately:
+
+```sh
+make scrape MODE=native ARGS='--headless --reddit-details'
+make process MODE=native ARGS='--age 24h --domains "^reddit\.com$"'
+```
+
+`--reddit-details` selects only configured Reddit communities and their pending
+snapshots saved in the last 24 hours, up to `max_posts` per community. Successful
+latest captures are skipped. It does not recrawl the community listings and
+cannot be combined with RSS retries or targeted X refreshes.
+
 For Docker, omit `MODE=native`. Docker already includes Chromium and runs
 collection headlessly. Reddit uses its own browser and persistent profile at
 `<storage.data_dir>/reddit-browser-profile`, independently of X's saved login.
 An X scrape waiting on its browser does not hold Reddit's browser lock.
-Each completed detail capture or cache hit is saved before visiting the next
-post or waiting for media downloads. A later community failure does not discard saved posts.
+Each listing post, completed detail capture or cache hit is saved before
+advancing collection or waiting for media downloads. A later community failure does not discard saved posts.
 An inaccessible community, login requirement, blocked page or collection error
 is logged and counted as a fetch failure; DANK continues with the next community.
 Successful captures alongside failures produce a partial source/run outcome.
@@ -95,18 +110,18 @@ the interval doubles for the rest of that run, up to 60 seconds, in addition to
 the host cooldown. This is a conservative DANK setting, not a published Reddit quota. The
 clock is shared across Reddit sources in a run. Browser subrequests still
 belong to Reddit's pages, so spacing cannot guarantee access or eliminate 429s.
-Most uncached posts use one document request, plus comment pages only when
+Normal collection makes no individual thread requests. During a detail pass,
+most uncached posts use one document request, plus comment pages only when
 needed to approach the configured limit. The first post initializes the detail
 tab normally; later document requests avoid loading its scripts, styles and
 other page resources. Logs identify each detail and report reused, fetched
 and deferred counts for every listing batch.
 
 Successful details are reused for up to `detail_cache_hours` (default **24 hours**,
-allowed 0–168; zero forces refreshes). Reuse requires matching visible post
+allowed 0–168; zero disables reuse). Reuse requires matching visible post
 content, media identity and comment count, plus compatible comment sort/limit.
 Scores and ranking can change without forcing another detail visit. Listing
-metadata is still saved on each run. Failed captures are retried; expired or
-changed captures are refreshed. The cache reads the existing database in both
+metadata is still saved on each run. Expired, changed or failed details are marked for the separate refresh pass. The cache reads the existing database in both
 native and Docker mode, and keeps the original capture timestamps across reuse.
 Edits to comments or content not exposed by the listing may remain unseen until
 the cache expires. Lower the age or set it to zero when a fresh discussion matters.
@@ -136,9 +151,11 @@ pagination continue instead of stopping at the initial few cards.
 
 HTTP failures from listings, pagination and thread requests retain their status
 instead of being reported as empty pages. A 429 starts a shared Reddit host
-cooldown of at least 30 seconds, extended by `Retry-After` when supplied. A
-cooldown beyond the existing 30-second wait budget is reported as a deferred
-request; collection does not retry before it expires. Saved posts remain
+cooldown of at least five minutes, extended by `Retry-After` when supplied.
+Reddit requests can wait up to ten minutes without occupying a shared HTTP
+slot. Longer cooldowns are deferred without early requests. An initially
+limited community is retried once after that cooldown; a community that already
+yielded posts is not restarted and duplicated. Saved posts remain
 available and failed/deferred captures make the outcome partial.
 If a detail visit is rate limited, the remaining details in that batch are
 deferred to a later run. Their listing posts are still saved, with an explicit
@@ -193,9 +210,10 @@ changing playback or download policy. Downloaded videos play locally when
 available. Reader date ordering sorts collected posts locally and does not
 change the configured Reddit collection sort.
 
-A failed detail refresh keeps the last successful body and media. Failed or
-disabled comment refreshes retain an existing archived discussion with its
-original capture date and the latest attempt state. A successful empty
+A deferred or failed detail refresh keeps the last successful body and media.
+Deferred, failed or disabled comment refreshes retain an existing archived discussion with its
+original capture date and the latest attempt state. The reader distinguishes
+a deferred refresh from a failed request or disabled comment collection. A successful empty
 capture replaces an older discussion. Historical posts without a discussion
 archive remain clearly marked as not captured.
 

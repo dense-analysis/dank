@@ -274,6 +274,7 @@ for (const status of [
   "disabled",
   "failed",
   "not_captured",
+  "deferred",
 ] as const) {
   test(`explains ${status ?? "historical"} comments without claiming an empty conversation`, async ({
     page,
@@ -440,4 +441,27 @@ test("falls back to a verified MP4 with audio when HLS fails", async ({
   await expect(
     page.getByText("This video couldn’t be played here.", { exact: false }),
   ).toHaveCount(0);
+});
+
+test("keeps archived comments when a refresh is deferred", async ({ page }) => {
+  await mockArchive(page, {
+    ...post,
+    reddit: {
+      ...reddit,
+      video: null,
+      comment_capture: {
+        ...capture,
+        captured_at: "2026-10-16T17:45:00Z",
+        latest_attempt_status: "deferred",
+      },
+    },
+  });
+  await openPost(page);
+  await expect(
+    page.getByText(
+      "Post details and comments are awaiting a separate refresh.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(page.locator(".reddit-comment")).toHaveCount(3);
 });

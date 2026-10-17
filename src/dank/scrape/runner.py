@@ -35,7 +35,7 @@ from dank.scrape.metrics import (
     SourceMetrics,
     current_source,
 )
-from dank.scrape.reddit import scrape_reddit_communities
+from dank.scrape.reddit import scrape_reddit_communities, scrape_reddit_details
 from dank.scrape.reddit.access import RedditRequests, current_requests
 from dank.scrape.reddit.cache import DetailSnapshot
 from dank.scrape.rss import (
@@ -64,7 +64,13 @@ async def run_scrape(
     batch_size: int = 50,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
+    reddit_details: bool = False,
 ) -> None:
+    if reddit_details:
+        settings = filter_settings_sources(
+            settings, re.compile(r"^reddit\.com$"),
+        )
+
     if not settings.sources:
         logger.warning("No sources selected; check sources and --domains.")
 
@@ -134,6 +140,7 @@ async def run_scrape(
                     settings, clickhouse_client, http_client,
                     x_session, reddit_session, history, assets_dir,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                    reddit_details=reddit_details,
                 )
         except BaseException as error:
             history.finish(error)
@@ -192,6 +199,7 @@ async def _collect_with_history(
     *,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
+    reddit_details: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     browser_locks = {
@@ -215,6 +223,7 @@ async def _collect_with_history(
                 history, assets_dir, profile_dir,
                 browser_locks.get(source.domain),
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                reddit_details=reddit_details,
             )
 
     try:
@@ -249,6 +258,7 @@ async def _collect_source(
     *,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
+    reddit_details: bool = False,
 ) -> None:
     stats = SourceMetrics(index, source)
     history.sources[index] = stats
@@ -278,6 +288,7 @@ async def _collect_source(
                     ),
                     batch_size=history.batch_size,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                    reddit_details=reddit_details,
                 ):
                     stats.discovered(len(batch.posts), len(batch.assets))
                     stats.pending += len(batch.communities)
@@ -335,11 +346,13 @@ async def _discover_source_batches(
     batch_size: int,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
+    reddit_details: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
-    if x_posts or retry_failed_pages:
+    if x_posts or retry_failed_pages or reddit_details:
         async for batch in _retry_saved_posts(
             settings, source, clickhouse_client, http_client, session,
             x_posts=x_posts, batch_size=batch_size,
+            reddit_details=reddit_details,
         ):
             yield batch
 
@@ -347,6 +360,10 @@ async def _discover_source_batches(
 
     match source.domain:
         case "reddit.com":
+            logger.info(
+                "Collecting Reddit posts first; details are deferred. "
+                "Use --reddit-details to refresh saved posts separately.",
+            )
             options = source.reddit or RedditSourceConfig()
             communities = tuple(
                 urlsplit(url).path.split("/")[2] for url in source.feed_urls
@@ -417,8 +434,15 @@ async def _retry_saved_posts(
     settings: Settings, source: SourceConfig, client: ClickHouseClient,
     http_client: aiohttp.ClientSession, session: BrowserSession,
     *, x_posts: tuple[str, ...], batch_size: int,
+    reddit_details: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
-    if x_posts:
+    if reddit_details:
+        posts = await _load_pending_reddit_posts(
+            client, source, settings.reddit,
+        )
+        logger.info("Refreshing details for %d saved Reddit posts", len(posts))
+        batches = scrape_reddit_details(settings.reddit, posts, session)
+    elif x_posts:
         posts = await _load_x_posts(client, x_posts)
         batches = scrape_x_posts(settings.x, posts, session)
     elif source.domain in {"x.com", "reddit.com"}:
@@ -464,6 +488,41 @@ async def _load_x_posts(
         )
 
     return posts
+
+
+async def _load_pending_reddit_posts(
+    client: ClickHouseClient, source: SourceConfig, settings: RedditSettings,
+) -> list[RawPost]:
+    communities = [
+        urlsplit(url).path.split("/")[2].lower() for url in source.feed_urls
+    ]
+    result = await client.fetch_json(
+        "SELECT * FROM (SELECT domain, post_id, url, post_created_at, "
+        "scraped_at, "
+        "source, request_url, payload, lowerUTF8(JSONExtractString(payload, "
+        "'subreddit')) AS community FROM raw_posts WHERE source = 'reddit' "
+        "AND domain = 'reddit.com' AND scraped_at >= %(cutoff)s "
+        "AND community IN %(communities)s "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
+        "WHERE JSONExtractString(payload, 'detail_capture', 'status') "
+        "!= 'captured' "
+        "OR (%(comments)s AND JSONExtractString(payload, "
+        "'comment_capture', 'status') "
+        "!= 'captured') ORDER BY scraped_at DESC LIMIT %(limit)s BY community",
+        {"communities": communities, "comments": settings.capture_comments,
+         "limit": settings.scrape.max_posts,
+         "cutoff": datetime.datetime.now(datetime.UTC)
+         - datetime.timedelta(days=1)},
+    )
+
+    return [RawPost(
+        domain=str(row["domain"]), post_id=str(row["post_id"]),
+        url=str(row["url"]),
+        post_created_at=parse_datetime(row["post_created_at"]),
+        scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+        source=str(row["source"]), request_url=str(row["request_url"]),
+        payload=str(row["payload"]),
+    ) for row in result.rows]
 
 
 async def _load_reddit_details(
@@ -930,6 +989,7 @@ def run_scrape_from_config(
     domain_regex: re.Pattern[str] | None = None,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
+    reddit_details: bool = False,
 ) -> None:
     settings = load_settings(path)
     configure_logging(settings.logging, component="scrape")
@@ -944,7 +1004,7 @@ def run_scrape_from_config(
 
     asyncio.run(run_scrape(
         settings, headless=headless, retry_failed_pages=retry_failed_pages,
-        x_posts=x_posts,
+        x_posts=x_posts, reddit_details=reddit_details,
     ))
 
 

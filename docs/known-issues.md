@@ -90,8 +90,8 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   All five failures in the earlier run were HTTP 429 responses, not evidence
   that those communities were unavailable or empty. Listing/pagination and
   thread requests now preserve HTTP status and Retry-After. A 429 counts as a
-  rate-limit failure and starts a shared host cooldown (at least 30 seconds);
-  waits longer than the 30-second budget are deferred without early requests.
+  rate-limit failure. The initial 30-second cooldown was insufficient; the
+  current five-minute Reddit cooldown is described below.
   Waiting for that cooldown is separate from the detail-page read deadline.
   JSON endpoint denials still allow the existing public rendered-thread fallback.
   After a rate-limited detail visit, the remaining details in that batch are
@@ -109,29 +109,39 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   affected listing posts were saved, with explicit capture reasons. The outcome
   was correctly partial, with no failed media downloads. Full Reddit coverage
   remains constrained by the site's quota; the collector does not bypass it.
-- [x] **P1: Pace Reddit requests and reuse unchanged details.** Reddit browser
-  requests share a configurable interval (2 seconds by default), doubled after
-  a 429 up to 60 seconds for that run. Successful
-  details can be reused for 24 hours when listing content, comment counts and
-  comment capture options still match. Cache hits retain original capture dates
-  and do not extend expiry; fresh scores and listing metadata are still saved.
-  Each completed post is yielded for persistence before the next detail visit;
-  comment scrolling stops when its load-more control disappears.
-  Existing successful archives are eligible using their original listing payloads.
-  New details normally use browser fetches of public HTML and top-level comment
-  fragments instead of loading another live page per post. Inert templates are
-  parsed without executing captured scripts; rendered visits remain a fallback.
-  A denied comments JSON endpoint is tried only once per run before falling back
-  to rendered threads. Browser subrequests and upstream quotas remain outside
-  this pacing control. The initial 10-second-per-action test was stopped after
-  13m02s with 91 saved posts (44 reused details, zero 429s); its throughput was
-  too low, prompting the document path and adaptive pacing. Live document
-  checks captured the same 35- and 27-comment discussions in 2.3 and 4.0
-  seconds respectively, including pacing. Pagination retains the public cursor
-  and the fragment endpoint's POST/HTML response format.
-  [Configuration and limitations](features/reddit.md#pacing-and-saved-details),
+- [x] **P1: Collect Reddit posts before refreshing discussions.** Normal scrapes
+  save community listings immediately, reuse unchanged successful details for
+  up to 24 hours, and defer individual thread visits. `--reddit-details` refreshes
+  pending snapshots from the last 24 hours separately, bounded by `max_posts`
+  per community. Deferred snapshots preserve existing full bodies, media and
+  discussions with their original capture dates; the reader explains the state.
+  Detail refreshes use inert HTML documents and cursor-based comment fragments,
+  with rendered visits as a fallback. Live checks retained the same 35- and
+  27-comment discussions in 2.3 and 4.0 seconds respectively.
+  Reddit requests start two seconds apart and double their interval after a 429,
+  up to 60 seconds. A shared five-minute cooldown honors longer Retry-After
+  values, with a ten-minute wait budget that does not hold HTTP capacity. An
+  initially limited community gets one retry; partially saved listings are not
+  restarted and duplicated.
+
+  **Docker verification, 2026-10-17:** run
+  `05b39a46-62e9-4d54-b521-e2886f438a12` attempted all 15 configured communities
+  in **3m03s**, saved **604 distinct posts**, reused **126 detail archives**, and
+  deferred **478 refreshes** without individual thread requests or HTTP 429s.
+  Fourteen communities completed, including an explicitly empty daily listing
+  for DomainDrivenDesign. LLMDevs returned no posts; a separate browser check
+  confirmed Reddit's network-security block. The run correctly remained partial.
+  A bounded separate refresh check completed two pending posts successfully.
+  [Configuration](features/reddit.md#run),
   [cache tests](../tests/scrape/test_reddit_cache.py),
-  [pacing tests](../tests/scrape/test_reddit_pacing.py).
+  [refresh tests](../tests/scrape/test_reddit_refresh.py).
+- [ ] **P2: Recheck LLMDevs access.** The posts-first pass completed the other
+  communities, but Reddit's network-security page blocked this one. Keep the
+  failure visible and verify access before claiming 15/15 successful collection.
+- [ ] **P2: Investigate Reddit preview-image 403 responses.** One external-preview
+  image failed in the same run. Check URL freshness and signed-query handling;
+  neither cause is established. Preserve the post and distinguish unavailable
+  media from collection failures.
 - [ ] **P1: Restore YouTube format discovery and downloads.** Logs reported
   unavailable requested formats and missing challenge-solver scripts. The
   container has Node and yt-dlp `2026.8.19`, but no `yt-dlp-ejs`. Pin compatible
@@ -152,6 +162,8 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   [Progress metrics](../src/dank/scrape/metrics.py).
 - [ ] **P2: Separate size exclusions from download failures.** The configured
   10 MiB cap rejected many videos, while empty download paths count as failures.
+  The posts-first Reddit run also rejected five GIFs of roughly 15–46 MB under
+  that cap; those posts were saved.
   X selects the largest variant before applying that cap. Preserve a structured
   outcome such as size-excluded, unavailable or failed, and consider a smaller
   eligible variant. Done when policy exclusions do not inflate failure counts,

@@ -54,7 +54,9 @@ export function RedditComments({
               {capture.captured_at ? ` ${dateLabel(capture.captured_at)}` : ""}.{" "}
               {capture.latest_attempt_status === "disabled"
                 ? "The latest collection skipped comments."
-                : "The latest collection couldn’t refresh comments."}
+                : capture.latest_attempt_status === "deferred"
+                  ? "Post details and comments are awaiting a separate refresh."
+                  : "The latest collection couldn’t refresh comments."}
             </p>
           )}
           <p className="reddit-comments-summary">
@@ -153,9 +155,11 @@ export function RedditComments({
           <p>
             {capture?.status === "disabled"
               ? "Comment collection was turned off when this post was saved."
-              : capture?.status === "failed"
-                ? "The conversation couldn’t be collected with this post."
-                : "This saved post doesn’t include its conversation."}
+              : capture?.status === "deferred"
+                ? "The post is saved. Details and comments will be refreshed separately."
+                : capture?.status === "failed"
+                  ? "The conversation couldn’t be collected with this post."
+                  : "This saved post doesn’t include its conversation."}
             {total !== null && total > 0
               ? ` Reddit reported ${total.toLocaleString()} ${total === 1 ? "comment" : "comments"} at collection.`
               : ""}
