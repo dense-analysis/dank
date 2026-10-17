@@ -1,6 +1,7 @@
 import type { Post } from "../lib/types";
 import { hasXContent, xProfile } from "../lib/x";
 import { XConversation, XThreadContext } from "./XConversation";
+import { XEngagement } from "./XEngagement";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -35,6 +36,7 @@ export function XPostDetail({
           Post content is unavailable in this capture. View the original on X.
         </p>
       )}
+      <XEngagement post={post.x} />
       <XConversation
         post={post}
         selectAccount={selectAccount}

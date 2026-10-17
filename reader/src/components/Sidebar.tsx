@@ -84,7 +84,16 @@ export function Sidebar({
             selectItem={selectAccount}
             items={accounts.map((item) => ({
               id: item.handle,
-              label: `@${item.handle}`,
+              label:
+                item.name.trim() &&
+                item.name.toLowerCase() !== item.handle.toLowerCase()
+                  ? item.name
+                  : `@${item.handle}`,
+              accessibleLabel:
+                item.name.trim() &&
+                item.name.toLowerCase() !== item.handle.toLowerCase()
+                  ? `${item.name} (@${item.handle})`
+                  : `@${item.handle}`,
               title: item.name
                 ? `${item.name} (@${item.handle})`
                 : `@${item.handle}`,

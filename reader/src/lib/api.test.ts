@@ -98,6 +98,9 @@ describe("reader API", () => {
     for (const bad of [
       { reply_count: -1 },
       { replies_status: "invented" },
+      { repost_count: -1 },
+      { like_count: "5" },
+      { view_count: Number.MAX_SAFE_INTEGER + 1 },
       { links: [{ ...x.links[0], image_url: 7 }] },
       { media: [{ ...x.media[0], remote: "false" }] },
       { media: [{ ...x.media[0], type: "iframe" }] },

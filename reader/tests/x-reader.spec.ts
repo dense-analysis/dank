@@ -283,7 +283,7 @@ for (const width of [1440, 390, 320]) {
       await reader
         .getByRole("button", { name: "Back to stories", exact: true })
         .click();
-      await expect(openPost(card)).toBeFocused();
+      await expect(card.getByText(postText, { exact: true })).toBeFocused();
       await expect(card.getByText("Read", { exact: true })).toBeVisible();
     }
 
@@ -520,7 +520,7 @@ for (const width of [1440, 390, 320]) {
         .getByRole("button", { name: "Back to stories", exact: true })
         .click();
       await expect(page).toHaveURL(originalUrl);
-      await expect(openPost(card, textPost)).toBeFocused();
+      await expect(card.getByText(paragraph, { exact: true })).toBeFocused();
     }
 
     await page
@@ -558,7 +558,10 @@ test("selecting post text leaves the feed open and preserves the selected words"
       range.setEnd(node, offset + 1);
       const rect = range.getBoundingClientRect();
 
-      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      return {
+        x: Math.round(rect.x + rect.width / 2),
+        y: Math.round(rect.y + rect.height / 2),
+      };
     };
 
     return { start: point(2), end: point(38) };
@@ -663,7 +666,8 @@ test("playing a feed video does not open the post", async ({
   });
   const box = await video.boundingBox();
   expect(box).not.toBeNull();
-  await video.click({ position: { x: 22, y: (box?.height ?? 0) - 25 } });
+  await video.hover();
+  await video.click({ position: { x: 24, y: (box?.height ?? 0) - 48 } });
   await expect
     .poll(() =>
       video.evaluate((element) => (element as HTMLVideoElement).currentTime),
@@ -681,14 +685,12 @@ test("engagement distinguishes uncaptured counts from captured zeroes", async ({
 }) => {
   await mockX(context, [longNote, mediaPost]);
   await page.goto("/reader/?view=x");
-  const unknownCard = page
-    .locator(".post-card")
-    .filter({
-      has: page.getByRole("link", {
-        name: `Read ${longNote.title}`,
-        exact: true,
-      }),
-    });
+  const unknownCard = page.locator(".post-card").filter({
+    has: page.getByRole("link", {
+      name: `Read ${longNote.title}`,
+      exact: true,
+    }),
+  });
   const unknown = unknownCard.getByRole("group", {
     name: "Engagement when collected",
   });
@@ -702,14 +704,12 @@ test("engagement distinguishes uncaptured counts from captured zeroes", async ({
     ).toBeVisible();
   }
 
-  const zeroCard = page
-    .locator(".post-card")
-    .filter({
-      has: page.getByRole("link", {
-        name: `Read ${mediaPost.title}`,
-        exact: true,
-      }),
-    });
+  const zeroCard = page.locator(".post-card").filter({
+    has: page.getByRole("link", {
+      name: `Read ${mediaPost.title}`,
+      exact: true,
+    }),
+  });
   const zero = zeroCard.getByRole("group", {
     name: "Engagement when collected",
   });
@@ -725,4 +725,41 @@ test("engagement distinguishes uncaptured counts from captured zeroes", async ({
       zero.getByTitle(`0 ${metric} reported when collected`, { exact: true }),
     ).toBeVisible();
   }
+});
+
+test("saved conversation status has its own row below engagement on a narrow read card", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  const captured: Post = {
+    ...grant,
+    x: { ...profile, replies_status: "partial", replies_captured_count: 8 },
+  };
+  await mockX(context, [captured]);
+  await page.addInitScript(
+    (id) =>
+      localStorage.setItem(
+        "dank-reader:read:v1",
+        JSON.stringify([JSON.stringify(["x.com", id])]),
+      ),
+    grant.id,
+  );
+  await page.goto("/reader/?view=x");
+  const card = page.locator(".post-card");
+  const group = card.getByRole("group", { name: "Engagement when collected" });
+  const summary = card.getByText("8 saved · partial", { exact: true });
+  await expect(summary).toBeVisible();
+  const metricsBox = await group.boundingBox();
+  const summaryBox = await summary.boundingBox();
+  expect(metricsBox).not.toBeNull();
+  expect(summaryBox).not.toBeNull();
+  expect(summaryBox?.y ?? 0).toBeGreaterThanOrEqual(
+    (metricsBox?.y ?? 0) + (metricsBox?.height ?? 0),
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

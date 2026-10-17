@@ -112,6 +112,9 @@ export interface XPost extends XProfile {
   reply_count?: number | null;
   replies_status?: XConversationStatus;
   replies_captured_count?: number;
+  repost_count?: number | null;
+  like_count?: number | null;
+  view_count?: number | null;
   captured_at?: string | null;
   conversation?: XConversation;
 }

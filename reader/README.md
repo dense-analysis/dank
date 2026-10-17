@@ -87,7 +87,7 @@ shows articles; **X** and **Reddit** each have their own feed and expandable
 sidebar list. Search, source filters and dates apply within the selected view.
 
 Expand **X** to choose a configured account, including accounts with no posts
-yet. Each entry shows its collected post count and captured profile image,
+yet. Each entry uses the account’s display name, collected post count and captured profile image,
 with an initial when no image is available. X profile images load from its image
 host; Reddit icons use cached local assets. Account selection follows the post's
 handle, independently of the author filter, and stays in the URL through search
@@ -100,8 +100,11 @@ initials when an avatar is unavailable.
 
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
-Remote media is labelled and video plays only on demand. **Open post** shows
-the full content, saved parent context, and captured replies in thread order.
+Remote media is labelled and video plays only on demand. Select the post text
+or timestamp to open it; inline links and media controls work independently.
+The footer shows captured comments, reposts, likes and views, with a dash for
+unavailable counts. Opening a post shows full content, saved parent context,
+and captured replies in thread order.
 Author continuations are labelled, and missing reply parents are explicit.
 
 **Partial conversation** means a limit, interrupted request, unexpanded branch

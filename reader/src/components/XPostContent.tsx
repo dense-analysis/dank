@@ -6,6 +6,8 @@ import { xMedia, xMediaUrl } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
 import { HighlightedText } from "./HighlightedText";
 import { safeUrl } from "./PostCard";
+import { ReaderLink } from "./ReaderLink";
+import { XPostText } from "./XPostText";
 
 // Short posts stay fully readable; long notes expand without duplicating their text.
 const PREVIEW_CHARACTERS = 600;
@@ -14,10 +16,12 @@ export function XPostContent({
   post,
   compact = false,
   query = "",
+  navigation,
 }: {
   post: Post;
   compact?: boolean;
   query?: string;
+  navigation?: { href: string; open: () => void };
 }) {
   const [expanded, setExpanded] = useState(false);
   const text = useMemo(() => articleText(post.html), [post.html]);
@@ -29,12 +33,35 @@ export function XPostContent({
       {canExpand && !expanded ? (
         <div className="article-body x-text-preview">
           <p>
-            <HighlightedText
-              text={`${text.slice(0, PREVIEW_CHARACTERS).trimEnd()}…`}
-              query={query}
-            />
+            {navigation ? (
+              <ReaderLink
+                className="x-post-text-link"
+                href={navigation.href}
+                onNavigate={navigation.open}
+                tabIndex={-1}
+                preserveTextSelection
+                draggable={false}
+              >
+                <HighlightedText
+                  text={`${text.slice(0, PREVIEW_CHARACTERS).trimEnd()}…`}
+                  query={query}
+                />
+              </ReaderLink>
+            ) : (
+              <HighlightedText
+                text={`${text.slice(0, PREVIEW_CHARACTERS).trimEnd()}…`}
+                query={query}
+              />
+            )}
           </p>
         </div>
+      ) : navigation ? (
+        <XPostText
+          html={post.html}
+          href={navigation.href}
+          open={navigation.open}
+          query={query}
+        />
       ) : (
         <ArticleBody html={post.html} query={query} />
       )}

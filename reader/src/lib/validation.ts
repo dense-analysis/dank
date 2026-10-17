@@ -227,9 +227,10 @@ function isXPost(value: unknown, allowConversation: boolean): boolean {
             typeof media.remote === "boolean" &&
             (media.poster_url === null || typeof media.poster_url === "string"),
         ))) &&
-    (value.reply_count === undefined ||
-      value.reply_count === null ||
-      isCount(value.reply_count)) &&
+    ["reply_count", "repost_count", "like_count", "view_count"].every(
+      (key) =>
+        value[key] === undefined || value[key] === null || isCount(value[key]),
+    ) &&
     (value.replies_status === undefined ||
       isConversationStatus(value.replies_status)) &&
     (value.replies_captured_count === undefined ||

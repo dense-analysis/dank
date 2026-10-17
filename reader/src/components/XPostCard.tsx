@@ -1,7 +1,7 @@
-import { Check, ExternalLink, MessageCircle } from "lucide-react";
+import { Check, ExternalLink } from "lucide-react";
 import type { Post } from "../lib/types";
 import { safeUrl } from "./PostCard";
-import { ReaderLink } from "./ReaderLink";
+import { XEngagement } from "./XEngagement";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -20,29 +20,18 @@ export function XPostCard({
   selectAccount: (handle: string) => void;
   query: string;
 }) {
+  const navigation = { href, open };
+
   return (
     <article className={`post-card x-post-card ${read ? "is-read" : ""}`}>
-      <XPostHeader post={post} selectAccount={selectAccount} />
-      <XPostContent post={post} compact query={query} />
+      <XPostHeader
+        post={post}
+        selectAccount={selectAccount}
+        navigation={navigation}
+      />
+      <XPostContent post={post} compact query={query} navigation={navigation} />
       <footer className="post-bottom x-post-actions">
-        <ReaderLink
-          href={href}
-          className="text-button post-open"
-          onNavigate={open}
-          aria-label={`Read ${post.title || "Untitled post"}`}
-        >
-          <MessageCircle size={15} aria-hidden="true" /> Open post
-          {post.x?.reply_count != null && (
-            <span
-              className="x-reply-count"
-              title="Replies reported when collected"
-            >
-              {" "}
-              · {post.x.reply_count.toLocaleString()}{" "}
-              {post.x.reply_count === 1 ? "reply" : "replies"}
-            </span>
-          )}
-        </ReaderLink>
+        <XEngagement post={post.x} navigation={navigation} />
         {(post.x?.replies_status === "captured" ||
           post.x?.replies_status === "partial") &&
           post.x.replies_captured_count != null && (
@@ -52,18 +41,20 @@ export function XPostCard({
             </span>
           )}
         {read && (
-          <span className="read-indicator">
-            <Check size={12} /> Read
+          <span className="read-indicator" title="Read">
+            <Check size={13} />
+            <span className="visually-hidden">Read</span>
           </span>
         )}
         <a
-          className="x-original-link"
+          className="x-original-link icon-button"
           href={safeUrl(post.url)}
           target="_blank"
           rel="noreferrer"
           aria-label={`Open original: ${post.title}`}
+          title="View on X"
         >
-          <ExternalLink size={14} /> View on X
+          <ExternalLink size={16} />
         </a>
       </footer>
     </article>

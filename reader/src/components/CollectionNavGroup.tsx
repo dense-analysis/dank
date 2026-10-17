@@ -5,6 +5,7 @@ interface CollectionItem {
   id: string;
   label: string;
   title?: string;
+  accessibleLabel?: string;
   count: number;
   avatar: ReactNode;
 }
@@ -73,7 +74,7 @@ export function CollectionNavGroup({
                 aria-current={current ? "page" : undefined}
                 onClick={() => selectItem(item.id)}
                 title={item.title ?? item.label}
-                aria-label={`${item.label}, ${item.count} collected posts`}
+                aria-label={`${item.accessibleLabel ?? item.label}, ${item.count} collected posts`}
               >
                 {item.avatar}
                 <span className="collection-name">{item.label}</span>
