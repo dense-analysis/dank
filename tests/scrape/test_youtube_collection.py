@@ -262,3 +262,51 @@ def test_global_positions_preserve_shelves_across_batches() -> None:
     assert [item["rank"] for item in context] == [1, 2, 1]
     timestamps = {post.scraped_at for post in [*first.posts, *second.posts]}
     assert len(timestamps) == 1
+
+
+async def test_one_failed_feed_keeps_other_feeds_and_reports_partial_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dank.config import SourceConfig, load_settings
+    from dank.scrape.metrics import SourceMetrics, current_source
+    from dank.scrape.types import ScrapeBatch
+    from dank.scrape.youtube import YouTubeFeedError, scrape_youtube_feeds
+
+    fixture = tmp_path / "settings.fixture.toml"
+    fixture.write_text("")
+    settings = load_settings(fixture)._replace(youtube=YouTubeSettings(
+        hype=False, news_tabs=("top_stories", "business"),
+    ))
+    source = SourceConfig("youtube.com", ())
+    statistics = SourceMetrics(0, source)
+    page = AsyncMock()
+    browser = AsyncMock()
+    browser.get.return_value = page
+    session = AsyncMock()
+    session.get_browser.return_value = browser
+
+    async def collect(*args: Any):
+        feed = args[1]
+
+        if feed.tab == "top_stories":
+            raise YouTubeFeedError("Unavailable first listing")
+
+        post = normalize("videoRenderer", {"videoId": "abcdefghijk"})
+        assert post is not None
+        yield ScrapeBatch([post], [])
+
+    monkeypatch.setattr("dank.scrape.youtube._scrape_feed", collect)
+    token = current_source.set(statistics)
+
+    try:
+        batches = [batch async for batch in scrape_youtube_feeds(
+            settings, source, session,
+        )]
+    finally:
+        current_source.reset(token)
+
+    assert len(batches) == 1
+    assert statistics.counts["fetch_failures"] == 1
+    assert statistics.error_type == "YouTubeFeedError"
+    assert len(statistics.feed_urls) == 2
+    page.close.assert_awaited_once()
