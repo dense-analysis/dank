@@ -288,6 +288,8 @@ export function App() {
   return (
     <div
       className="app-shell"
+      data-fit-image-previews={preferences.fitImagePreviews}
+      data-fit-video-previews={preferences.fitVideoPreviews}
       style={
         {
           "--reading-font": readingFonts[preferences.font].family,

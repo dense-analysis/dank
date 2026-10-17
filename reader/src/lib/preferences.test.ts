@@ -107,3 +107,28 @@ it("persists opting out of Reddit comment and remote label display", () => {
   expect(loadPreferences().showRedditComments).toBe(false);
   expect(loadPreferences().showRemoteContentLabels).toBe(false);
 });
+
+it("defaults older or malformed media preferences to fitted previews", () => {
+  for (const value of [undefined, null, "false", 0, {}, []]) {
+    persisted = JSON.stringify({
+      fitImagePreviews: value,
+      fitVideoPreviews: value,
+    });
+    expect(loadPreferences().fitImagePreviews).toBe(true);
+    expect(loadPreferences().fitVideoPreviews).toBe(true);
+  }
+});
+
+it("persists independent image and video preview choices", () => {
+  for (const fitImagePreviews of [true, false]) {
+    for (const fitVideoPreviews of [true, false]) {
+      const preferences = {
+        ...defaultPreferences,
+        fitImagePreviews,
+        fitVideoPreviews,
+      };
+      expect(savePreferences(preferences)).toBe(true);
+      expect(loadPreferences()).toEqual(preferences);
+    }
+  }
+});

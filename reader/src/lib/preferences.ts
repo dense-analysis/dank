@@ -24,6 +24,8 @@ export interface ReaderPreferences {
   font: ReadingFont;
   fontSize: number;
   autoImageBackground: boolean;
+  fitImagePreviews: boolean;
+  fitVideoPreviews: boolean;
   showRedditComments: boolean;
   showRemoteContentLabels: boolean;
 }
@@ -32,6 +34,8 @@ export const defaultPreferences: ReaderPreferences = {
   font: "dm-sans",
   fontSize: 19,
   autoImageBackground: false,
+  fitImagePreviews: true,
+  fitVideoPreviews: true,
   showRedditComments: true,
   showRemoteContentLabels: true,
 };
@@ -58,6 +62,8 @@ export function loadPreferences(): ReaderPreferences {
           ? value.fontSize
           : defaultPreferences.fontSize,
       autoImageBackground: value.autoImageBackground === true,
+      fitImagePreviews: value.fitImagePreviews !== false,
+      fitVideoPreviews: value.fitVideoPreviews !== false,
       showRedditComments: value.showRedditComments !== false,
       showRemoteContentLabels: value.showRemoteContentLabels !== false,
     };

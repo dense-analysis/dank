@@ -71,6 +71,9 @@ browser channel. No live collection is needed for the fixture tests.
   Enable it to give sparse transparent figures a light background when contrast
   clearly improves. Mixed or uncertain images keep their original background;
   the per-image toggle overrides the automatic choice while the article is open.
+- **Media previews** in Settings independently fit image and video frames to
+  their aspect ratios on Reddit and X. Both are on by default; turn either off
+  for wider frames. The full media remains visible, and choices stay in this browser.
 - Reopening an article resumes where you left off.
 - Code blocks use their declared language for syntax highlighting, with copy
   controls and horizontal scrolling. Unsupported or unlabelled code stays plain.

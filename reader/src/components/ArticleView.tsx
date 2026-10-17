@@ -95,6 +95,7 @@ export function ArticleView({
     <main
       id="main"
       className="article-page"
+      data-source={post?.source}
       aria-label={xPost ? "X post reader" : "Article reader"}
       data-reader-pending={
         xPost && isPlaceholderData && !error ? "true" : undefined
