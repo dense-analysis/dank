@@ -230,8 +230,10 @@ def _items_table(filters: YouTubeFilters) -> str:
 def _metadata_items(items: str, *, prefer_metadata: bool = False) -> str:
     # Feed captures own their title. Metadata fills gaps and carries its own
     # capture state; a failed refresh never erases the last successful preview.
-    captured = "if(empty(i.payload), '{}', i.payload)"
-    metadata = "if(empty(m.payload), '{}', m.payload)"
+    # clickhouse-connect 0.8 interprets brace/colon spans as server parameters;
+    # construct empty JSON without braces so ordinary filters still bind.
+    captured = "if(empty(i.payload), toJSONString(map()), i.payload)"
+    metadata = "if(empty(m.payload), toJSONString(map()), m.payload)"
     combined = (
         f"JSONMergePatch({captured}, {metadata})" if prefer_metadata else
         "if(notEmpty(JSONExtractString(i.payload, 'title')), "
@@ -246,7 +248,8 @@ def _metadata_items(items: str, *, prefer_metadata: bool = False) -> str:
         "FROM (" + items + ") AS i LEFT JOIN ("
         "SELECT v.video_id AS video_id, JSONMergePatch("
         "if(empty(argMaxIf(v.payload, v.observed_at, v.status = 'captured')), "
-        "'{}', argMaxIf(v.payload, v.observed_at, v.status = 'captured')), "
+        "toJSONString(map()), "
+        "argMaxIf(v.payload, v.observed_at, v.status = 'captured')), "
         "argMax(v.payload, v.observed_at)) AS payload "
         "FROM youtube_video_metadata AS v GROUP BY v.video_id"
         ") AS m ON i.item_id = concat('video:', m.video_id)"
