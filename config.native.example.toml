@@ -4,6 +4,7 @@
 # Domain strings and tables with feed_urls/tags can be mixed.
 # See docs/features/rss.md for examples.
 # Reddit: sources = [{ domain = "reddit.com", feed_urls = ["r/LocalLLaMA"] }]
+# YouTube: sources = [{ domain = "youtube.com", accounts = ["@Channel4News"] }]
 sources = []
 
 [clickhouse]
@@ -72,3 +73,23 @@ level = "INFO"
 # [x.onepassword]
 # username = "op://Personal/X/username"
 # password = "op://Personal/X/password"
+
+
+# YouTube starts with public Hype and News feeds when selected as a source.
+[youtube]
+scrape_videos = false
+include_shorts = true
+include_posts = true
+hype = true
+news_tabs = ["top_stories", "business", "world"]
+region = "GB"
+max_posts = 200
+max_scrolls = 20
+scroll_pause_seconds = 1.5
+stall_scrolls = 3
+# Stop chronological channel feeds after this many consecutive known videos.
+known_overlap = 5
+# Saved browser sessions are opt-in; homepage also requires a signed-in session.
+authenticated = false
+homepage = false
+# profile_dir = "data/youtube-browser-profile"

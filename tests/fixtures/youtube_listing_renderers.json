@@ -1,0 +1,824 @@
+{
+  "videoRenderer": {
+    "videoId": "G8iz9BMmOIU",
+    "thumbnail": {
+      "thumbnails": [
+        {
+          "url": "https://i.ytimg.com/vi/G8iz9BMmOIU/hqdefault.jpg?sqp=-oaymwEmCKgBEF5IWvKriqkDGQgBFQAAiEIYAdgBAeIBCggYEAIYBjgBQAE=&rs=AOn4CLC1hnzEYL_PQI0LI_HYV5YLCQqsRg",
+          "width": 168,
+          "height": 94
+        },
+        {
+          "url": "https://i.ytimg.com/vi/G8iz9BMmOIU/hqdefault.jpg?sqp=-oaymwEmCMQBEG5IWvKriqkDGQgBFQAAiEIYAdgBAeIBCggYEAIYBjgBQAE=&rs=AOn4CLDUTrQ7xg5ANIRowrMq8nsFf8vAfg",
+          "width": 196,
+          "height": 110
+        },
+        {
+          "url": "https://i.ytimg.com/vi/G8iz9BMmOIU/hqdefault.jpg?sqp=-oaymwEnCPYBEIoBSFryq4qpAxkIARUAAIhCGAHYAQHiAQoIGBACGAY4AUAB&rs=AOn4CLB-bcvGX4WsLs3THQaEAC1ZBRu9YA",
+          "width": 246,
+          "height": 138
+        },
+        {
+          "url": "https://i.ytimg.com/vi/G8iz9BMmOIU/hqdefault.jpg?sqp=-oaymwEnCNACELwBSFryq4qpAxkIARUAAIhCGAHYAQHiAQoIGBACGAY4AUAB&rs=AOn4CLCbCsLnCJ01wa8TMyJLMve-Lz042w",
+          "width": 336,
+          "height": 188
+        }
+      ]
+    },
+    "title": {
+      "runs": [
+        {
+          "text": "Mass protests in Paris #FranceProtests #France #Paris"
+        }
+      ],
+      "accessibility": {
+        "accessibilityData": {
+          "label": "Mass protests in Paris #FranceProtests #France #Paris 57 seconds"
+        }
+      }
+    },
+    "descriptionSnippet": {
+      "runs": [
+        {
+          "text": "Mass protests have begun across France, as thousands are expected to take part in demonstrations around the country's cost of living and education standards.\n\nVideo from Paris shows people..."
+        }
+      ]
+    },
+    "longBylineText": {
+      "runs": [
+        {
+          "text": "Channel 4 News",
+          "navigationEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "url": "/@Channel4News",
+                "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                "rootVe": 3611,
+                "apiUrl": "/youtubei/v1/browse"
+              }
+            },
+            "browseEndpoint": {
+              "browseId": "UCTrQ7HXWRRxr7OsOtodr2_w",
+              "canonicalBaseUrl": "/@Channel4News"
+            }
+          }
+        }
+      ]
+    },
+    "publishedTimeText": {
+      "simpleText": "1 hr ago"
+    },
+    "lengthText": {
+      "accessibility": {
+        "accessibilityData": {
+          "label": "57 seconds"
+        }
+      },
+      "simpleText": "0:57"
+    },
+    "viewCountText": {
+      "simpleText": "5,270 views"
+    },
+    "navigationEndpoint": {
+      "commandMetadata": {
+        "webCommandMetadata": {
+          "url": "/watch?v=G8iz9BMmOIU",
+          "webPageType": "WEB_PAGE_TYPE_WATCH",
+          "rootVe": 3832
+        }
+      },
+      "watchEndpoint": {
+        "videoId": "G8iz9BMmOIU"
+      }
+    },
+    "ownerBadges": [
+      {
+        "metadataBadgeRenderer": {
+          "icon": {
+            "iconType": "CHECK_CIRCLE_THICK"
+          },
+          "style": "BADGE_STYLE_TYPE_VERIFIED",
+          "tooltip": "Verified",
+          "accessibilityData": {
+            "label": "Verified"
+          }
+        }
+      }
+    ],
+    "ownerText": {
+      "runs": [
+        {
+          "text": "Channel 4 News",
+          "navigationEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "url": "/@Channel4News",
+                "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                "rootVe": 3611,
+                "apiUrl": "/youtubei/v1/browse"
+              }
+            },
+            "browseEndpoint": {
+              "browseId": "UCTrQ7HXWRRxr7OsOtodr2_w",
+              "canonicalBaseUrl": "/@Channel4News"
+            }
+          }
+        }
+      ]
+    },
+    "shortBylineText": {
+      "runs": [
+        {
+          "text": "Channel 4 News",
+          "navigationEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "url": "/@Channel4News",
+                "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                "rootVe": 3611,
+                "apiUrl": "/youtubei/v1/browse"
+              }
+            },
+            "browseEndpoint": {
+              "browseId": "UCTrQ7HXWRRxr7OsOtodr2_w",
+              "canonicalBaseUrl": "/@Channel4News"
+            }
+          }
+        }
+      ]
+    },
+    "showActionMenu": false,
+    "shortViewCountText": {
+      "accessibility": {
+        "accessibilityData": {
+          "label": "5.2 thousand views"
+        }
+      },
+      "simpleText": "5.2k"
+    },
+    "channelThumbnailSupportedRenderers": {
+      "channelThumbnailWithLinkRenderer": {
+        "thumbnail": {
+          "thumbnails": [
+            {
+              "url": "https://yt3.ggpht.com/ytc/AIdro_mNdhtpAi0ZQmCqfkDSq6MQVdbfZe-c70nZ1qqdyQNzK3c=s68-c-k-c0x00ffffff-no-rj",
+              "width": 68,
+              "height": 68
+            }
+          ]
+        },
+        "navigationEndpoint": {
+          "commandMetadata": {
+            "webCommandMetadata": {
+              "url": "/@Channel4News",
+              "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+              "rootVe": 3611,
+              "apiUrl": "/youtubei/v1/browse"
+            }
+          },
+          "browseEndpoint": {
+            "browseId": "UCTrQ7HXWRRxr7OsOtodr2_w",
+            "canonicalBaseUrl": "/@Channel4News"
+          }
+        },
+        "accessibility": {
+          "accessibilityData": {
+            "label": "Go to channel Channel 4 News"
+          }
+        },
+        "title": "Channel 4 News"
+      }
+    },
+    "thumbnailOverlays": [
+      {
+        "thumbnailOverlayTimeStatusRenderer": {
+          "text": {
+            "accessibility": {
+              "accessibilityData": {
+                "label": "57 seconds"
+              }
+            },
+            "simpleText": "0:57"
+          },
+          "style": "DEFAULT"
+        }
+      },
+      {
+        "thumbnailOverlayToggleButtonRenderer": {
+          "isToggled": false,
+          "untoggledIcon": {
+            "iconType": "WATCH_LATER"
+          },
+          "toggledIcon": {
+            "iconType": "CHECK"
+          },
+          "untoggledTooltip": "Watch Later",
+          "toggledTooltip": "Added",
+          "untoggledServiceEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "sendPost": true,
+                "apiUrl": "/youtubei/v1/browse/edit_playlist"
+              }
+            },
+            "playlistEditEndpoint": {
+              "playlistId": "WL",
+              "actions": [
+                {
+                  "addedVideoId": "G8iz9BMmOIU",
+                  "action": "ACTION_ADD_VIDEO"
+                }
+              ]
+            }
+          },
+          "toggledServiceEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "sendPost": true,
+                "apiUrl": "/youtubei/v1/browse/edit_playlist"
+              }
+            },
+            "playlistEditEndpoint": {
+              "playlistId": "WL",
+              "actions": [
+                {
+                  "action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID",
+                  "removedVideoId": "G8iz9BMmOIU"
+                }
+              ]
+            }
+          },
+          "untoggledAccessibility": {
+            "accessibilityData": {
+              "label": "Watch Later"
+            }
+          },
+          "toggledAccessibility": {
+            "accessibilityData": {
+              "label": "Added"
+            }
+          }
+        }
+      },
+      {
+        "thumbnailOverlayToggleButtonRenderer": {
+          "untoggledIcon": {
+            "iconType": "ADD_TO_QUEUE_TAIL"
+          },
+          "toggledIcon": {
+            "iconType": "PLAYLIST_ADD_CHECK"
+          },
+          "untoggledTooltip": "Add to queue",
+          "toggledTooltip": "Added",
+          "untoggledServiceEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "sendPost": true
+              }
+            },
+            "signalServiceEndpoint": {
+              "signal": "CLIENT_SIGNAL",
+              "actions": [
+                {
+                  "addToPlaylistCommand": {
+                    "openMiniplayer": true,
+                    "videoId": "G8iz9BMmOIU",
+                    "listType": "PLAYLIST_EDIT_LIST_TYPE_QUEUE",
+                    "onCreateListCommand": {
+                      "commandMetadata": {
+                        "webCommandMetadata": {
+                          "sendPost": true,
+                          "apiUrl": "/youtubei/v1/playlist/create"
+                        }
+                      },
+                      "createPlaylistServiceEndpoint": {
+                        "videoIds": [
+                          "G8iz9BMmOIU"
+                        ],
+                        "params": "CAQ%3D"
+                      }
+                    },
+                    "videoIds": [
+                      "G8iz9BMmOIU"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "untoggledAccessibility": {
+            "accessibilityData": {
+              "label": "Add to queue"
+            }
+          },
+          "toggledAccessibility": {
+            "accessibilityData": {
+              "label": "Added"
+            }
+          }
+        }
+      },
+      {
+        "thumbnailOverlayNowPlayingRenderer": {
+          "text": {
+            "runs": [
+              {
+                "text": "Now playing"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "richThumbnail": {
+      "movingThumbnailRenderer": {
+        "movingThumbnailDetails": {
+          "thumbnails": [
+            {
+              "url": "https://i.ytimg.com/an_webp/G8iz9BMmOIU/mqdefault_6s.webp?du=3000&sqp=CJvyzdYG&rs=AOn4CLCcgsHawv6hAO1gpMHeWPK_hNoafg",
+              "width": 320,
+              "height": 180
+            }
+          ],
+          "logAsMovingThumbnail": true
+        },
+        "enableHoveredLogging": true,
+        "enableOverlay": true
+      }
+    },
+    "owner": {
+      "thumbnail": {
+        "thumbnails": [
+          {
+            "url": "https://yt3.ggpht.com/ytc/AIdro_mNdhtpAi0ZQmCqfkDSq6MQVdbfZe-c70nZ1qqdyQNzK3c=s68-c-k-c0x00ffffff-no-rj",
+            "width": 68,
+            "height": 68
+          }
+        ]
+      },
+      "navigationEndpoint": {
+        "commandMetadata": {
+          "webCommandMetadata": {
+            "url": "/@Channel4News",
+            "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+            "rootVe": 3611,
+            "apiUrl": "/youtubei/v1/browse"
+          }
+        },
+        "browseEndpoint": {
+          "browseId": "UCTrQ7HXWRRxr7OsOtodr2_w",
+          "canonicalBaseUrl": "/@Channel4News"
+        }
+      },
+      "accessibility": {
+        "accessibilityData": {
+          "label": "Go to channel Channel 4 News"
+        }
+      },
+      "title": "Channel 4 News"
+    }
+  },
+  "postRenderer": {
+    "postId": "Ugkxn1wJFpv47oYnc30a8m5nmxsO4S5h7tUw",
+    "authorText": {
+      "runs": [
+        {
+          "text": "talkSPORT",
+          "navigationEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "url": "/@talkSPORT",
+                "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+                "rootVe": 3611,
+                "apiUrl": "/youtubei/v1/browse"
+              }
+            },
+            "browseEndpoint": {
+              "browseId": "UCWw6scNyopJ0yjMu1SyOEyw",
+              "canonicalBaseUrl": "/@talkSPORT"
+            }
+          }
+        }
+      ],
+      "accessibility": {
+        "accessibilityData": {
+          "label": "talkSPORT"
+        }
+      }
+    },
+    "authorThumbnail": {
+      "thumbnails": [
+        {
+          "url": "//yt3.googleusercontent.com/i_nrwhCjuhW-XibmYmGBLptarZmwXf5qma5vXgVEVZKR7FkpPvjx4oWt5vUccCBI2WIn3RscRFI=s32-c-k-c0x00ffffff-no-rj-mo",
+          "width": 32,
+          "height": 32
+        },
+        {
+          "url": "//yt3.googleusercontent.com/i_nrwhCjuhW-XibmYmGBLptarZmwXf5qma5vXgVEVZKR7FkpPvjx4oWt5vUccCBI2WIn3RscRFI=s48-c-k-c0x00ffffff-no-rj-mo",
+          "width": 48,
+          "height": 48
+        },
+        {
+          "url": "//yt3.googleusercontent.com/i_nrwhCjuhW-XibmYmGBLptarZmwXf5qma5vXgVEVZKR7FkpPvjx4oWt5vUccCBI2WIn3RscRFI=s76-c-k-c0x00ffffff-no-rj-mo",
+          "width": 76,
+          "height": 76
+        }
+      ],
+      "accessibility": {
+        "accessibilityData": {
+          "label": "talkSPORT"
+        }
+      }
+    },
+    "authorEndpoint": {
+      "commandMetadata": {
+        "webCommandMetadata": {
+          "url": "/@talkSPORT",
+          "webPageType": "WEB_PAGE_TYPE_CHANNEL",
+          "rootVe": 3611,
+          "apiUrl": "/youtubei/v1/browse"
+        }
+      },
+      "browseEndpoint": {
+        "browseId": "UCWw6scNyopJ0yjMu1SyOEyw",
+        "canonicalBaseUrl": "/@talkSPORT"
+      }
+    },
+    "contentText": {
+      "runs": [
+        {
+          "text": "Chelsea star rushed to hospital as Everton game stopped "
+        },
+        {
+          "text": "https://talksport.com/football/4650163/",
+          "navigationEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "url": "https://www.youtube.com/redirect?q=https%3A%2F%2Ftalksport.com%2Ffootball%2F4650163%2F",
+                "webPageType": "WEB_PAGE_TYPE_UNKNOWN",
+                "rootVe": 83769
+              }
+            },
+            "urlEndpoint": {
+              "url": "https://www.youtube.com/redirect?q=https%3A%2F%2Ftalksport.com%2Ffootball%2F4650163%2F",
+              "target": "TARGET_NEW_WINDOW",
+              "nofollow": true
+            }
+          }
+        }
+      ]
+    },
+    "backstageAttachment": {
+      "backstageImageRenderer": {
+        "image": {
+          "thumbnails": [
+            {
+              "url": "https://yt3.ggpht.com/1vbEuChGMLERPVS5Dx1jbXrJweIpZsQLBhBQsBfeamNXHxySsV5cnEPbEakA5Du4Lb65Q_Fa9xFLzg=s288-c-fcrop64=1,00000000ffffffff-rw-nd-v1",
+              "width": 288,
+              "height": 288
+            }
+          ]
+        }
+      }
+    },
+    "publishedTimeText": {
+      "runs": [
+        {
+          "text": "1 hour ago",
+          "navigationEndpoint": {
+            "commandMetadata": {
+              "webCommandMetadata": {
+                "url": "/post/Ugkxn1wJFpv47oYnc30a8m5nmxsO4S5h7tUw",
+                "webPageType": "WEB_PAGE_TYPE_BROWSE",
+                "rootVe": 247244,
+                "apiUrl": "/youtubei/v1/browse"
+              }
+            },
+            "browseEndpoint": {
+              "browseId": "FEpost_detail",
+              "params": "wgNaEhhVQ1d3NnNjTnlvcEoweWpNdTFTeU9FeXcaJFVna3huMXdKRnB2NDdvWW5jMzBhOG01bm14c080UzVoN3RVd1oYVUNXdzZzY055b3BKMHlqTXUxU3lPRXl3",
+              "canonicalBaseUrl": "/post/Ugkxn1wJFpv47oYnc30a8m5nmxsO4S5h7tUw"
+            }
+          }
+        }
+      ]
+    },
+    "voteCount": {
+      "accessibility": {
+        "accessibilityData": {
+          "label": "16 likes"
+        }
+      },
+      "simpleText": "16"
+    },
+    "voteStatus": "INDIFFERENT",
+    "surface": "BACKSTAGE_SURFACE_TYPE_NEWS_DESTINATION",
+    "navigationEndpoint": {
+      "commandMetadata": {
+        "webCommandMetadata": {
+          "url": "/post/Ugkxn1wJFpv47oYnc30a8m5nmxsO4S5h7tUw",
+          "webPageType": "WEB_PAGE_TYPE_BROWSE",
+          "rootVe": 247244,
+          "apiUrl": "/youtubei/v1/browse"
+        }
+      },
+      "browseEndpoint": {
+        "browseId": "FEpost_detail",
+        "params": "wgNaEhhVQ1d3NnNjTnlvcEoweWpNdTFTeU9FeXcaJFVna3huMXdKRnB2NDdvWW5jMzBhOG01bm14c080UzVoN3RVd1oYVUNXdzZzY055b3BKMHlqTXUxU3lPRXl3",
+        "canonicalBaseUrl": "/post/Ugkxn1wJFpv47oYnc30a8m5nmxsO4S5h7tUw"
+      }
+    }
+  },
+  "lockupViewModel": {
+    "contentImage": {
+      "thumbnailViewModel": {
+        "image": {
+          "sources": [
+            {
+              "url": "https://i.ytimg.com/vi/3OyRy_zZQjA/hq720_custom_2.jpg?sqp=CKCkztYG-oaymwEnCOgCEMoBSFryq4qpAxkIARUAAIhCGAHYAQHiAQoIGBACGAY4AUAB&rs=AOn4CLDqSI9eVKI54cnStfUsnctsg_rLxQ",
+              "width": 360,
+              "height": 202
+            },
+            {
+              "url": "https://i.ytimg.com/vi/3OyRy_zZQjA/hq720_custom_2.jpg?sqp=CKCkztYG-oaymwEnCNAFEJQDSFryq4qpAxkIARUAAIhCGAHYAQHiAQoIGBACGAY4AUAB&rs=AOn4CLBR42mB8zVpDIck6KytSiiyVxgCwQ",
+              "width": 720,
+              "height": 404
+            }
+          ]
+        },
+        "overlays": [
+          {
+            "thumbnailBottomOverlayViewModel": {
+              "badges": [
+                {
+                  "thumbnailBadgeViewModel": {
+                    "text": "12:35",
+                    "badgeStyle": "THUMBNAIL_OVERLAY_BADGE_STYLE_DEFAULT",
+                    "animationActivationTargetId": "3OyRy_zZQjA",
+                    "animationActivationEntityKey": "Eh8veW91dHViZS9hcHAvd2F0Y2gvcGxheWVyX3N0YXRlIMMCKAE%3D",
+                    "animatedText": "Now playing",
+                    "animationActivationEntitySelectorType": "THUMBNAIL_BADGE_ANIMATION_ENTITY_SELECTOR_TYPE_PLAYER_STATE"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "animatedThumbnailOverlayViewModel": {
+              "thumbnail": {
+                "sources": [
+                  {
+                    "url": "https://i.ytimg.com/an_webp/3OyRy_zZQjA/mqdefault_6s.webp?du=3000&sqp=CKCeztYG&rs=AOn4CLCtDoeX5VmnXnKH3PENjGV5G60OHg",
+                    "width": 320,
+                    "height": 180
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "thumbnailHoverOverlayToggleActionsViewModel": {
+              "buttons": [
+                {
+                  "toggleButtonViewModel": {
+                    "defaultButtonViewModel": {
+                      "buttonViewModel": {
+                        "iconName": "WATCH_LATER",
+                        "onTap": {
+                          "innertubeCommand": {
+                            "commandMetadata": {
+                              "webCommandMetadata": {
+                                "sendPost": true,
+                                "apiUrl": "/youtubei/v1/browse/edit_playlist"
+                              }
+                            },
+                            "playlistEditEndpoint": {
+                              "playlistId": "WL",
+                              "actions": [
+                                {
+                                  "addedVideoId": "3OyRy_zZQjA",
+                                  "action": "ACTION_ADD_VIDEO"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "accessibilityText": "Watch Later",
+                        "style": "BUTTON_VIEW_MODEL_STYLE_OVERLAY_DARK",
+                        "type": "BUTTON_VIEW_MODEL_TYPE_TONAL",
+                        "buttonSize": "BUTTON_VIEW_MODEL_SIZE_COMPACT",
+                        "state": "BUTTON_VIEW_MODEL_STATE_ACTIVE"
+                      }
+                    },
+                    "toggledButtonViewModel": {
+                      "buttonViewModel": {
+                        "iconName": "CHECK",
+                        "onTap": {
+                          "innertubeCommand": {
+                            "commandMetadata": {
+                              "webCommandMetadata": {
+                                "sendPost": true,
+                                "apiUrl": "/youtubei/v1/browse/edit_playlist"
+                              }
+                            },
+                            "playlistEditEndpoint": {
+                              "playlistId": "WL",
+                              "actions": [
+                                {
+                                  "action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID",
+                                  "removedVideoId": "3OyRy_zZQjA"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "accessibilityText": "Added",
+                        "style": "BUTTON_VIEW_MODEL_STYLE_OVERLAY_DARK",
+                        "type": "BUTTON_VIEW_MODEL_TYPE_TONAL",
+                        "buttonSize": "BUTTON_VIEW_MODEL_SIZE_COMPACT",
+                        "state": "BUTTON_VIEW_MODEL_STATE_ACTIVE"
+                      }
+                    },
+                    "isToggled": false
+                  }
+                },
+                {
+                  "toggleButtonViewModel": {
+                    "defaultButtonViewModel": {
+                      "buttonViewModel": {
+                        "iconName": "ADD_TO_QUEUE_TAIL",
+                        "onTap": {
+                          "innertubeCommand": {
+                            "commandMetadata": {
+                              "webCommandMetadata": {
+                                "sendPost": true
+                              }
+                            },
+                            "signalServiceEndpoint": {
+                              "signal": "CLIENT_SIGNAL",
+                              "actions": [
+                                {
+                                  "addToPlaylistCommand": {
+                                    "openMiniplayer": true,
+                                    "videoId": "3OyRy_zZQjA",
+                                    "listType": "PLAYLIST_EDIT_LIST_TYPE_QUEUE",
+                                    "onCreateListCommand": {
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "sendPost": true,
+                                          "apiUrl": "/youtubei/v1/playlist/create"
+                                        }
+                                      },
+                                      "createPlaylistServiceEndpoint": {
+                                        "videoIds": [
+                                          "3OyRy_zZQjA"
+                                        ],
+                                        "params": "CAQ%3D"
+                                      }
+                                    },
+                                    "videoIds": [
+                                      "3OyRy_zZQjA"
+                                    ],
+                                    "videoCommand": {
+                                      "commandMetadata": {
+                                        "webCommandMetadata": {
+                                          "url": "/watch?v=3OyRy_zZQjA&pp=0gcJCbcAKgI3ePta",
+                                          "webPageType": "WEB_PAGE_TYPE_WATCH",
+                                          "rootVe": 3832
+                                        }
+                                      },
+                                      "watchEndpoint": {
+                                        "videoId": "3OyRy_zZQjA",
+                                        "playerParams": "0gcJCbcAKgI3ePta"
+                                      }
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "accessibilityText": "Add to queue",
+                        "style": "BUTTON_VIEW_MODEL_STYLE_OVERLAY_DARK",
+                        "type": "BUTTON_VIEW_MODEL_TYPE_TONAL",
+                        "buttonSize": "BUTTON_VIEW_MODEL_SIZE_COMPACT",
+                        "state": "BUTTON_VIEW_MODEL_STATE_ACTIVE"
+                      }
+                    },
+                    "toggledButtonViewModel": {
+                      "buttonViewModel": {
+                        "iconName": "CHECK",
+                        "accessibilityText": "Added",
+                        "style": "BUTTON_VIEW_MODEL_STYLE_OVERLAY_DARK",
+                        "type": "BUTTON_VIEW_MODEL_TYPE_TONAL",
+                        "buttonSize": "BUTTON_VIEW_MODEL_SIZE_COMPACT",
+                        "state": "BUTTON_VIEW_MODEL_STATE_ACTIVE"
+                      }
+                    },
+                    "isToggled": false
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "metadata": {
+      "lockupMetadataViewModel": {
+        "title": {
+          "content": "Brand trial day 5: Brand became 'wide-eyed maniac', second alleged victim tells court"
+        },
+        "metadata": {
+          "contentMetadataViewModel": {
+            "metadataRows": [
+              {
+                "metadataParts": [
+                  {
+                    "text": {
+                      "content": "74k"
+                    },
+                    "accessibilityLabel": "74 thousand views",
+                    "leadingIcon": {
+                      "name": "PLAY_ARROW_OUTLINED",
+                      "height": 12,
+                      "width": 12
+                    }
+                  },
+                  {
+                    "text": {
+                      "content": "20 hr ago"
+                    },
+                    "accessibilityLabel": "20 hours ago"
+                  }
+                ]
+              }
+            ],
+            "delimiter": " "
+          }
+        }
+      }
+    },
+    "contentId": "3OyRy_zZQjA",
+    "contentType": "LOCKUP_CONTENT_TYPE_VIDEO"
+  },
+  "shelfRenderer": {
+    "title": {
+      "simpleText": "Top 100"
+    },
+    "menu": {
+      "buttonRenderer": {
+        "navigationEndpoint": {
+          "commandMetadata": {
+            "webCommandMetadata": {
+              "url": "/playlist?list=OLJbGgOZgwZ9k_XXE2tcr-JsD4tag1iKjng"
+            }
+          }
+        }
+      }
+    }
+  },
+  "shortsLockupViewModel": {
+    "entityId": "shorts-shelf-item-zStjnDUDTv8",
+    "overlayMetadata": {
+      "primaryText": {
+        "content": "Naza director: 'Mass killing is IDF policy' #NAZA #Israel #Gaza"
+      },
+      "secondaryText": {
+        "content": "330 views"
+      }
+    },
+    "thumbnailViewModel": {
+      "thumbnailViewModel": {
+        "image": {
+          "sources": [
+            {
+              "url": "https://i.ytimg.com/vi/zStjnDUDTv8/sardefault.jpg?sqp=-oaymwEoCJUDENAFSFqQAgHyq4qpAxcIARUAAIhC2AEB4gEKCBgQAhgGOAFAAQ==&rs=AOn4CLDn4ifcgGYQ6Vc7ZlHODzCTmtiK_A",
+              "width": 405,
+              "height": 720
+            },
+            {
+              "url": "https://i.ytimg.com/vi/zStjnDUDTv8/sardefault.jpg?sqp=-oaymwErCJUDEOAESFqQAgHyq4qpAxoIARUAAIhCyAEB2AEB4gEKCBgQAhgGOAFAAQ==&rs=AOn4CLDJZJ6uneIjaDSxK1j-kFrHs1rucQ",
+              "width": 405,
+              "height": 608
+            }
+          ]
+        }
+      }
+    },
+    "onTap": {
+      "innertubeCommand": {
+        "commandMetadata": {
+          "webCommandMetadata": {
+            "url": "/shorts/zStjnDUDTv8",
+            "webPageType": "WEB_PAGE_TYPE_SHORTS",
+            "rootVe": 37414
+          }
+        },
+        "reelWatchEndpoint": {
+          "videoId": "zStjnDUDTv8"
+        }
+      }
+    }
+  }
+}

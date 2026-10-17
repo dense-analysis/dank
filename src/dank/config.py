@@ -42,6 +42,23 @@ class XSettings(NamedTuple):
     conversation: XConversationSettings = XConversationSettings()
 
 
+class YouTubeSettings(NamedTuple):
+    """Feed discovery is independent of optional video archiving."""
+
+    scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
+    scrape_videos: bool = False
+    include_shorts: bool = True
+    include_posts: bool = True
+    authenticated: bool = False
+    homepage: bool = False
+    hype: bool = True
+    news_tabs: tuple[str, ...] = ("top_stories", "business", "world")
+    region: str = "GB"
+    stall_scrolls: int = 3
+    known_overlap: int = 5
+    profile_dir: pathlib.Path | None = None
+
+
 class RedditCommentSort(StrEnum):
     BEST = "best"
     TOP = "top"
@@ -139,6 +156,7 @@ class Settings(NamedTuple):
     scrape: ScrapeSettings = ScrapeSettings()
     media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
     reddit: RedditSettings = RedditSettings()
+    youtube: YouTubeSettings = YouTubeSettings()
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -225,6 +243,17 @@ def _parse_source(
 
     if {"reddit_sort", "reddit_time_filter"}.intersection(options):
         raise ConfigError("Reddit sorting options require a Reddit source")
+
+    if domain in {"youtube.com", "www.youtube.com", "https://youtube.com",
+                  "https://www.youtube.com"}:
+        return SourceConfig(
+            "youtube.com", accounts,
+            tuple(dict.fromkeys(
+                _youtube_feed_url(url)
+                for url in _source_strings(options.get("feed_urls", []),
+                                           "feed_urls")
+            )), tags,
+        )
 
     feeds = _parse_feed_urls(options.get("feed_urls", []))
 
@@ -678,4 +707,118 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
             data.get("media", {}),
         ),
         reddit=_parse_reddit_settings(data.get("reddit", {})),
+        youtube=_parse_youtube_settings(data.get("youtube", {})),
     )
+
+
+YOUTUBE_NEWS_TABS = (
+    "top_stories", "sports", "entertainment", "business", "world",
+)
+
+
+def _youtube_feed_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        raise ConfigError(
+            "YouTube feed_urls must be YouTube listing URLs",
+        ) from None
+
+    path = parsed.path.rstrip("/")
+    allowed = (
+        path in {"", "/feed/hype", "/feed/news_destination", "/playlist"}
+        or path.startswith("/feed/news_destination/")
+        or re.fullmatch(
+            r"/(?:@[^/?#]+|(?:channel|c|user)/[^/?#]+)"
+            r"(?:/(?:videos|shorts|posts|community|featured))?", path,
+        ) is not None
+    )
+
+    if (parsed.scheme not in {"http", "https"}
+            or parsed.netloc.lower() not in {"youtube.com", "www.youtube.com"}
+            or not allowed or parsed.fragment
+            or any(char.isspace() for char in value)):
+        raise ConfigError("YouTube feed_urls must be YouTube listing URLs")
+
+    if re.fullmatch(r"/(?:@[^/]+|(?:channel|c|user)/[^/]+)", path):
+        path += "/videos"
+
+    return "https://www.youtube.com" + (path or "/") + (
+        "?" + parsed.query if parsed.query else ""
+    )
+
+
+def _parse_youtube_settings(value: object) -> YouTubeSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("youtube must be a table")
+
+    defaults = YouTubeSettings()
+    flags: dict[str, bool] = {}
+
+    for key in ("scrape_videos", "include_shorts", "include_posts",
+                "authenticated", "homepage", "hype"):
+        flag = data.get(key, getattr(defaults, key))
+
+        if not isinstance(flag, bool):
+            raise ConfigError(f"youtube.{key} must be a boolean")
+
+        flags[key] = flag
+
+    if flags["homepage"] and not flags["authenticated"]:
+        raise ConfigError("youtube.homepage requires youtube.authenticated")
+
+    limits: dict[str, int] = {}
+
+    for key in ("max_posts", "max_scrolls", "stall_scrolls", "known_overlap"):
+        fallback = getattr(defaults.scrape, key, getattr(defaults, key, None))
+        setting = data.get(key, fallback)
+        minimum = 0 if key == "max_scrolls" else 1
+
+        if (not isinstance(setting, int) or isinstance(setting, bool)
+                or not minimum <= setting < 2 ** 32):
+            raise ConfigError(f"youtube.{key} must be an integer >= {minimum}")
+
+        limits[key] = setting
+
+    pause = data.get(
+        "scroll_pause_seconds", defaults.scrape.scroll_pause_seconds,
+    )
+
+    if (not isinstance(pause, int | float) or isinstance(pause, bool)
+            or not math.isfinite(pause) or not 0.25 <= pause <= 60):
+        raise ConfigError("youtube.scroll_pause_seconds must be 0.25 to 60")
+
+    tabs = data.get("news_tabs", list(defaults.news_tabs))
+
+    if (not isinstance(tabs, list) or any(
+            tab not in YOUTUBE_NEWS_TABS for tab in cast(list[object], tabs))):
+        raise ConfigError(
+            "youtube.news_tabs accepts " + ", ".join(YOUTUBE_NEWS_TABS),
+        )
+
+    region = data.get("region", defaults.region)
+
+    if not isinstance(region, str) or not re.fullmatch("[A-Za-z]{2}", region):
+        raise ConfigError("youtube.region must be a two-letter country code")
+
+
+    return YouTubeSettings(
+        **flags, region=region.upper(),
+        news_tabs=tuple(dict.fromkeys(cast(list[str], tabs))),
+        profile_dir=_youtube_profile(data.get("profile_dir")),
+        stall_scrolls=limits["stall_scrolls"],
+        known_overlap=limits["known_overlap"],
+        scrape=BrowserScrapeSettings(
+            max_posts=limits["max_posts"], max_scrolls=limits["max_scrolls"],
+            scroll_pause_seconds=float(pause),
+        ),
+    )
+
+
+def _youtube_profile(value: object) -> pathlib.Path | None:
+    if value is not None and _parse_path(value) is None:
+        raise ConfigError("youtube.profile_dir must be a non-empty path")
+
+    return _parse_path(value)
