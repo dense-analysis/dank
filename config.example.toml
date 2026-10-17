@@ -6,6 +6,7 @@
 # Domain strings and tables with feed_urls/tags can be mixed.
 # See docs/features/rss.md for examples.
 # YouTube: sources = [{ domain = "youtube.com", accounts = ["@Channel4News"] }]
+# Hacker News: sources = [{ domain = "hckrnews.com", hacker_news_filter = "top50" }]
 sources = []
 
 [clickhouse]
@@ -97,3 +98,10 @@ known_overlap = 5
 authenticated = false
 homepage = false
 # profile_dir = "data/youtube-browser-profile"
+
+# Daily front-page stories; comments are fetched only with --hacker-news-details.
+[hacker_news]
+days = 7
+comment_limit = 50
+detail_max_posts = 20
+detail_timeout_seconds = 60

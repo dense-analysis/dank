@@ -42,6 +42,10 @@ def main() -> None:
         help="Refresh pending Reddit details saved in the last 24 hours",
     )
     parser.add_argument(
+        "--hacker-news-details", action="store_true",
+        help="Capture comments for saved Hacker News stories",
+    )
+    parser.add_argument(
         "--x-details", action="store_true",
         help="Refresh pending X discussions saved in the last 24 hours",
     )
@@ -71,7 +75,8 @@ def main() -> None:
         parser.error("--youtube-thumbnail-id must be an 11-character video ID")
 
     if sum((bool(args.x_post), args.x_details, args.reddit_details,
-            args.retry_failed_pages, args.retry_youtube_thumbnails)) > 1:
+            args.hacker_news_details, args.retry_failed_pages,
+            args.retry_youtube_thumbnails)) > 1:
         parser.error(
             "Discussion/detail refresh and retry modes cannot be combined",
         )
@@ -98,6 +103,7 @@ def main() -> None:
         x_posts=tuple(args.x_post),
         reddit_details=args.reddit_details,
         x_details=args.x_details,
+        hacker_news_details=args.hacker_news_details,
         retry_youtube_thumbnails_only=args.retry_youtube_thumbnails,
         youtube_thumbnail_ids=tuple(
             f"video:{item}" for item in args.youtube_thumbnail_id

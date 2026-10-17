@@ -123,6 +123,7 @@ class SourceMetrics:
             "domain": self.source.domain,
             "source": {
                 "x.com": "x", "reddit.com": "reddit", "youtube.com": "youtube",
+                "news.ycombinator.com": "hacker_news",
             }.get(self.source.domain, "rss"),
             "accounts": list(self.source.accounts),
             "tags": list(self.source.tags),

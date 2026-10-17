@@ -2,7 +2,7 @@
 
 DANK is a locally hosted Dense Analysis tool for collecting and exploring
 public Internet content. It collects RSS/Atom articles, X posts, Reddit
-community posts and YouTube feeds, preserves raw source payloads, downloads
+community posts, Hacker News stories and YouTube feeds, preserves raw source payloads, downloads
 media, and prepares posts for browsing and semantic search using local text
 embeddings.
 
@@ -14,6 +14,7 @@ perception and evolving narratives.
 - [RSS and Atom feeds](docs/features/rss.md) — discover feeds and collect articles.
 - [X accounts](docs/features/x.md) — capture posts from configured accounts.
 - [Reddit communities](docs/features/reddit.md) — collect ranked community posts.
+- [Hacker News](docs/features/hacker-news.md) — browse daily front-page stories and optional discussions.
 - [YouTube feeds](docs/features/youtube.md) — save recommendations and their context.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.

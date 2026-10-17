@@ -17,6 +17,7 @@ import aiohttp
 
 from dank.config import (
     MEDIA_DOWNLOAD_TYPES,
+    HackerNewsSettings,
     RedditSettings,
     RedditSourceConfig,
     Settings,
@@ -38,6 +39,10 @@ from dank.scrape.assets import download_assets
 from dank.scrape.assets.http import (
     thumbnail_observation,
     youtube_thumbnail_urls,
+)
+from dank.scrape.hacker_news import (
+    scrape_hacker_news,
+    scrape_hacker_news_details,
 )
 from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.metrics import (
@@ -85,9 +90,13 @@ async def run_scrape(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    hacker_news_details: bool = False,
 ) -> None:
-    if reddit_details or x_details:
-        pattern = r"^reddit\.com$" if reddit_details else r"^x\.com$"
+    if reddit_details or x_details or hacker_news_details:
+        pattern = (
+            r"^news\.ycombinator\.com$" if hacker_news_details
+            else r"^reddit\.com$" if reddit_details else r"^x\.com$"
+        )
         settings = filter_settings_sources(settings, re.compile(pattern))
 
     if not settings.sources:
@@ -174,6 +183,7 @@ async def run_scrape(
                     browser_config, reddit_config, youtube_config,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
+                    hacker_news_details=hacker_news_details,
                 )
         except BaseException as error:
             history.finish(error)
@@ -206,7 +216,7 @@ async def _run_source_sessions(
     assets_dir: pathlib.Path, x_config: BrowserConfig,
     reddit_config: BrowserConfig, youtube_config: BrowserConfig,
     *, retry_failed_pages: bool, x_posts: tuple[str, ...],
-    reddit_details: bool, x_details: bool,
+    reddit_details: bool, x_details: bool, hacker_news_details: bool = False,
 ) -> None:
     async with (
         aiohttp.ClientSession(
@@ -229,6 +239,7 @@ async def _run_source_sessions(
                 youtube_profile=youtube_config.profile_dir or assets_dir,
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 reddit_details=reddit_details, x_details=x_details,
+                hacker_news_details=hacker_news_details,
             )
         finally:
             current_page_recovery.reset(token)
@@ -273,6 +284,7 @@ async def _collect_with_history(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    hacker_news_details: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     totals_seen: set[str] = set()
@@ -303,6 +315,7 @@ async def _collect_with_history(
                 browser_locks.get(source.domain),
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 reddit_details=reddit_details, x_details=x_details,
+                hacker_news_details=hacker_news_details,
                 totals_seen=totals_seen,
             )
 
@@ -340,6 +353,7 @@ async def _collect_source(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    hacker_news_details: bool = False,
     totals_seen: set[str] | None = None,
 ) -> None:
     stats = SourceMetrics(index, source)
@@ -371,6 +385,7 @@ async def _collect_source(
                     batch_size=history.batch_size,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
+                    hacker_news_details=hacker_news_details,
                     totals_seen=totals_seen,
                 ):
                     stats.discovered(
@@ -448,51 +463,35 @@ async def _discover_source_batches(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    hacker_news_details: bool = False,
     totals_seen: set[str] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
-    if x_posts or retry_failed_pages or reddit_details or x_details:
+    if (x_posts or retry_failed_pages or reddit_details or x_details
+            or hacker_news_details):
         async for batch in _retry_saved_posts(
             settings, source, clickhouse_client, http_client, session,
             x_posts=x_posts, batch_size=batch_size,
             reddit_details=reddit_details, x_details=x_details,
+            hacker_news_details=hacker_news_details,
         ):
             yield batch
 
         return
 
     match source.domain:
+        case "news.ycombinator.com":
+            batches_iter = scrape_hacker_news(
+                settings.hacker_news, source, http_client,
+            )
         case "youtube.com":
             known_ids = await _known_youtube_channel_ids(clickhouse_client)
             batches_iter = scrape_youtube_feeds(
                 settings, source, session, known_ids=known_ids,
             )
         case "reddit.com":
-            logger.info(
-                "Collecting Reddit posts first; details are deferred. "
-                "Use --reddit-details to refresh saved posts separately.",
-            )
-            options = source.reddit or RedditSourceConfig()
-            communities = tuple(
-                urlsplit(url).path.split("/")[2] for url in source.feed_urls
-            )
-            new_communities = tuple(dict.fromkeys(
-                name.lower() for name in communities
-                if totals_seen is None or name.lower() not in totals_seen
-            ))
-
-            if totals_seen is not None:
-                totals_seen.update(new_communities)
-
-            await _refresh_reddit_totals(
-                clickhouse_client, http_client, new_communities,
-            )
-            cached_details = await _load_reddit_details(
-                clickhouse_client, communities, settings.reddit,
-            )
-            batches_iter = scrape_reddit_communities(
-                settings.reddit, communities, session,
-                sort=options.sort, time_filter=options.time_filter,
-                cached_details=cached_details,
+            batches_iter = await _reddit_listing_batches(
+                settings, source, clickhouse_client, http_client, session,
+                totals_seen,
             )
         case "x.com":
             logger.info(
@@ -545,6 +544,42 @@ async def _discover_source_batches(
         yield batch
 
 
+async def _reddit_listing_batches(
+    settings: Settings, source: SourceConfig,
+    clickhouse_client: ClickHouseClient,
+    http_client: aiohttp.ClientSession, session: BrowserSession,
+    totals_seen: set[str] | None,
+) -> AsyncIterator[ScrapeBatch]:
+    logger.info(
+        "Collecting Reddit posts first; details are deferred. "
+        "Use --reddit-details to refresh saved posts separately.",
+    )
+    options = source.reddit or RedditSourceConfig()
+    communities = tuple(
+        urlsplit(url).path.split("/")[2] for url in source.feed_urls
+    )
+    new_communities = tuple(dict.fromkeys(
+        name.lower() for name in communities
+        if totals_seen is None or name.lower() not in totals_seen
+    ))
+
+    if totals_seen is not None:
+        totals_seen.update(new_communities)
+
+    await _refresh_reddit_totals(
+        clickhouse_client, http_client, new_communities,
+    )
+    cached_details = await _load_reddit_details(
+        clickhouse_client, communities, settings.reddit,
+    )
+
+    return scrape_reddit_communities(
+        settings.reddit, communities, session,
+        sort=options.sort, time_filter=options.time_filter,
+        cached_details=cached_details,
+    )
+
+
 async def _persist_youtube_discoveries(
     client: ClickHouseClient, posts: list[RawPost], run_id: str,
 ) -> None:
@@ -592,8 +627,17 @@ async def _retry_saved_posts(
     *, x_posts: tuple[str, ...], batch_size: int,
     reddit_details: bool = False,
     x_details: bool = False,
+    hacker_news_details: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
-    if reddit_details:
+    if hacker_news_details:
+        posts = await _load_pending_hacker_news_posts(
+            client, settings.hacker_news,
+        )
+        logger.info("Refreshing details for %d saved HN posts", len(posts))
+        batches = scrape_hacker_news_details(
+            settings.hacker_news, posts, http_client,
+        )
+    elif reddit_details:
         posts = await _load_pending_reddit_posts(
             client, source, settings.reddit,
         )
@@ -611,7 +655,9 @@ async def _retry_saved_posts(
     elif x_posts:
         posts = await _load_x_posts(client, x_posts)
         batches = scrape_x_posts(settings.x, posts, session)
-    elif source.domain in {"x.com", "reddit.com", "youtube.com"}:
+    elif source.domain in {
+        "x.com", "reddit.com", "youtube.com", "news.ycombinator.com",
+    }:
         return
     else:
         posts = await _load_failed_rss_pages(client, source)
@@ -677,6 +723,37 @@ async def _load_pending_x_posts(
          "limit": settings.conversation.max_posts_per_account,
          "cutoff": datetime.datetime.now(datetime.UTC)
          - datetime.timedelta(days=1)},
+    )
+
+    return [RawPost(
+        domain=str(row["domain"]), post_id=str(row["post_id"]),
+        url=str(row["url"]),
+        post_created_at=parse_datetime(row["post_created_at"]),
+        scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+        source=str(row["source"]), request_url=str(row["request_url"]),
+        payload=str(row["payload"]),
+    ) for row in result.rows]
+
+
+async def _load_pending_hacker_news_posts(
+    client: ClickHouseClient, settings: HackerNewsSettings,
+) -> list[RawPost]:
+    result = await client.fetch_json(
+        "SELECT * FROM (SELECT domain, post_id, url, post_created_at, "
+        "scraped_at, source, request_url, payload FROM raw_posts "
+        "WHERE source = 'hacker_news' AND domain = 'news.ycombinator.com' "
+        "AND scraped_at >= %(cutoff)s "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
+        "WHERE JSONExtractString(payload, 'comment_capture', 'status') "
+        "NOT IN ('captured', 'partial') "
+        "AND post_id NOT IN (SELECT post_id FROM raw_posts "
+        "WHERE domain = 'news.ycombinator.com' "
+        "AND JSONExtractString(payload, 'comment_capture', 'status') "
+        "IN ('captured', 'partial')) "
+        "ORDER BY post_created_at DESC, post_id DESC LIMIT %(limit)s",
+        {"limit": settings.detail_max_posts,
+         "cutoff": datetime.datetime.now(datetime.UTC)
+         - datetime.timedelta(days=settings.days)},
     )
 
     return [RawPost(
@@ -1450,6 +1527,7 @@ def run_scrape_from_config(
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
     x_details: bool = False,
+    hacker_news_details: bool = False,
     retry_youtube_thumbnails_only: bool = False,
     youtube_thumbnail_ids: tuple[str, ...] = (),
 ) -> None:
@@ -1474,6 +1552,7 @@ def run_scrape_from_config(
     asyncio.run(run_scrape(
         settings, headless=headless, retry_failed_pages=retry_failed_pages,
         x_posts=x_posts, reddit_details=reddit_details, x_details=x_details,
+        hacker_news_details=hacker_news_details,
     ))
 
 
