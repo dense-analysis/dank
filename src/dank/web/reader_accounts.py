@@ -4,26 +4,32 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 from urllib.parse import urlsplit
 
 from dank.storage.clickhouse import ClickHouseClient
 
+if TYPE_CHECKING:
+    from dank.web.app import PostRow
+
 X_DOMAINS = ("x.com", "twitter.com")
 # Keep counts and account filtering tied to the same post owner, independent
 # of the editable author search or the timeline a post was discovered on.
-X_ACCOUNT_SQL = (
-    "extract(lowerUTF8(url), "
-    "'^https?://(?:www[.])?(?:x[.]com|twitter[.]com)/"
-    "([a-z0-9_]{1,15})/status/')"
+X_ACCOUNT_PATTERN = (
+    "^https?://(?:www[.])?(?:x[.]com|twitter[.]com)/"
+    "([a-z0-9_]{1,15})/status/"
 )
+X_ACCOUNT_SQL = f"extract(lowerUTF8(url), '{X_ACCOUNT_PATTERN}')"
 
 
-class Account(TypedDict):
+class AccountIdentity(TypedDict):
     handle: str
     name: str
-    count: int
     icon_url: str | None
+
+
+class Account(AccountIdentity):
+    count: int
 
 
 def source_kind(domain: str) -> str:
@@ -54,25 +60,62 @@ async def source_accounts(
     if not handles:
         return []
 
+    profiles = await _account_profiles(
+        client, {(domain, handle) for handle in handles},
+    )
+
+    return [
+        {**profiles[domain, handle], "count": counts.get(handle, 0)}
+        for handle in sorted(handles)
+    ]
+
+
+async def post_accounts(
+    client: ClickHouseClient, posts: list[PostRow],
+) -> dict[tuple[str, str], AccountIdentity]:
+    accounts: dict[tuple[str, str], tuple[str, str]] = {}
+
+    for post in posts:
+        if post.domain not in X_DOMAINS:
+            continue
+
+        match = re.match(X_ACCOUNT_PATTERN, post.url.lower())
+
+        if match:
+            accounts[post.domain, post.post_id] = (post.domain, match[1])
+
+    profiles = await _account_profiles(client, set(accounts.values()))
+
+    return {key: profiles[account] for key, account in accounts.items()}
+
+
+async def _account_profiles(
+    client: ClickHouseClient, accounts: set[tuple[str, str]],
+) -> dict[tuple[str, str], AccountIdentity]:
+    if not accounts:
+        return {}
+
     result = await client.fetch_json(
-        f"SELECT {X_ACCOUNT_SQL} AS handle, "
+        f"SELECT domain, {X_ACCOUNT_SQL} AS handle, "
         "argMax(JSONExtractRaw(payload, 'core', 'user_results', 'result'), "
         "scraped_at) AS profile FROM raw_posts "
-        "WHERE domain = %(domain)s AND handle IN %(handles)s "
-        "GROUP BY handle",
-        {"domain": domain, "handles": sorted(handles)},
+        "WHERE (domain, handle) IN %(accounts)s GROUP BY domain, handle",
+        {"accounts": sorted(accounts)},
     )
     profiles = {
-        str(row["handle"]): _profile(row.get("profile"), str(row["handle"]))
+        (str(row["domain"]), str(row["handle"])):
+        _profile(row.get("profile"), str(row["handle"]))
         for row in result.rows
     }
 
-    return [
-        {"handle": handle, "name": profiles.get(handle, (handle, None))[0],
-         "count": counts.get(handle, 0),
-         "icon_url": profiles.get(handle, (handle, None))[1]}
-        for handle in sorted(handles)
-    ]
+    return {
+        (domain, handle): {
+            "handle": handle,
+            "name": profiles.get((domain, handle), (handle, None))[0],
+            "icon_url": profiles.get((domain, handle), (handle, None))[1],
+        }
+        for domain, handle in accounts
+    }
 
 
 def _profile(value: object, handle: str) -> tuple[str, str | None]:

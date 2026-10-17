@@ -104,7 +104,8 @@ async def test_account_identity_uses_committed_modern_x_profile() -> None:
     client.fetch_json.side_effect = [
         QueryResult([{"handle": "watcherguru", "count": 2}]),
         QueryResult([{
-            "handle": "watcherguru", "profile": json.dumps(profile),
+            "domain": "x.com", "handle": "watcherguru",
+            "profile": json.dumps(profile),
         }]),
     ]
     accounts = await source_accounts(client, "x.com", ("@WatcherGuru",))
@@ -131,7 +132,10 @@ async def test_account_profiles_handle_legacy_mismatched_and_malformed_data(
     client = AsyncMock()
     client.fetch_json.side_effect = [
         QueryResult([]),
-        QueryResult([{"handle": "example", "profile": json.dumps(profile)}]),
+        QueryResult([{
+            "domain": "x.com", "handle": "example",
+            "profile": json.dumps(profile),
+        }]),
     ]
     accounts = await source_accounts(client, "x.com", ("Example", "@EXAMPLE"))
     assert accounts == [{
@@ -154,7 +158,7 @@ async def test_account_icons_allow_only_https_x_profile_images(
 ) -> None:
     client = AsyncMock()
     client.fetch_json.side_effect = [QueryResult([]), QueryResult([{
-        "handle": "example", "profile": json.dumps({
+        "domain": "x.com", "handle": "example", "profile": json.dumps({
             "core": {"screen_name": "example", "name": "Example"},
             "avatar": {"image_url": icon},
         }),

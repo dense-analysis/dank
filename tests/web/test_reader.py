@@ -286,7 +286,7 @@ async def test_x_sources_include_configured_accounts_and_exclude_other_authors(
          {"domain": "reddit.com", "count": 3}],
         [{"handle": "watcherguru", "count": 7},
          {"handle": "oldaccount", "count": 2}],
-        [{"handle": "watcherguru", "profile": json.dumps({
+        [{"domain": "x.com", "handle": "watcherguru", "profile": json.dumps({
             "core": {"screen_name": "WatcherGuru", "name": "Watcher.Guru"},
             "avatar": {"image_url": icon},
         })}],

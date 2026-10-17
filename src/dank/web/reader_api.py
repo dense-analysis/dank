@@ -29,7 +29,11 @@ from dank.web.app import (
     _search_embedding,  # pyright: ignore[reportPrivateUsage]
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
-from dank.web.reader_accounts import source_accounts, source_kind
+from dank.web.reader_accounts import (
+    post_accounts,
+    source_accounts,
+    source_kind,
+)
 from dank.web.reader_communities import community_icons
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
@@ -256,6 +260,14 @@ async def _post_payloads(
         )
         for post in posts
     ]
+    accounts = await post_accounts(client, posts)
+
+    for post in payloads:
+        account = accounts.get((post["domain"], post["id"]))
+
+        if account:
+            post["x"] = account
+
     await _add_reddit_metadata(
         client, payloads, assets_dir, posts, assets,
         include_discussion=include_discussion,
