@@ -105,7 +105,8 @@ paragraphs and links. **Show more** expands ordinary posts completely. Posts of
 roughly 500 words or 3,000 characters expand to about 1,200 characters, with
 **Read full post** and an estimated reading time leading to the complete reader.
 These thresholds keep feed previews manageable. **Show less** collapses the
-text and returns to the post's top, below the sticky header. Media players
+text and scrolls smoothly to the post's top, below the sticky header. Reduced
+motion uses an instant return. Media players
 retain their playback position. Replies
 without a separate reader destination can still expand completely. Identity
 links open the account's collected posts, with initials when an avatar is unavailable.

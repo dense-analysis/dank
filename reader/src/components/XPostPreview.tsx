@@ -46,7 +46,9 @@ export function XPostPreview({
         0,
         window.scrollY + post.getBoundingClientRect().top - offset,
       ),
-      behavior: "instant",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : "smooth",
     });
   }, [expanded]);
   const paragraphs = useMemo(() => xTextParagraphs(html), [html]);
