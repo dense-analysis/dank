@@ -472,3 +472,24 @@ def test_feed_conversation_summary_does_not_render_reply_bodies(
     assert summary["status"] == "captured"
     assert summary["captured_count"] == 1
     assert "replies" not in summary and "context" not in summary
+
+
+def test_reply_video_keeps_layout_and_source_metadata() -> None:
+    focal = tweet("100")
+    reply = tweet("101", "100")
+    source_url = "https://x.com/author/status/101/video/1"
+    reply["legacy"]["extended_entities"] = {"media": [{
+        "type": "video", "expanded_url": source_url,
+        "video_info": {
+            "aspect_ratio": [9, 16],
+            "variants": [{
+                "url": "https://video.twimg.com/video.mp4",
+                "content_type": "video/mp4",
+            }],
+        },
+    }]}
+    focal["conversation_capture"] = archive([reply])
+    capture = project(focal)
+    media = capture["replies"][0]["x"]["media"][0]
+    assert media["aspect_ratio"] == 9 / 16
+    assert media["source_url"] == source_url

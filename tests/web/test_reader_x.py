@@ -212,6 +212,16 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
             "full_text": "Same capture",
             "extended_entities": {"media": [{
                 "type": "photo", "media_url_https": image,
+            }, {
+                "type": "video",
+                "expanded_url": "https://x.com/Example/status/1/video/1",
+                "video_info": {
+                    "aspect_ratio": [9, 16],
+                    "variants": [{
+                        "url": "https://video.twimg.com/video.mp4",
+                        "content_type": "video/mp4",
+                    }],
+                },
             }]},
             "entities": {"urls": [{
                 "url": "https://t.co/abc", "expanded_url": "https://youtu.be/id",
@@ -242,7 +252,12 @@ async def test_x_content_uses_saved_capture_and_existing_local_media(
         "handle": "example", "name": "Example Person", "icon_url": ICON,
         "media": [{"type": "image",
                    "url": "/assets/photo.jpg" if file_exists else image,
-                   "poster_url": None, "alt": "", "remote": not file_exists}],
+                   "poster_url": None, "alt": "", "remote": not file_exists},
+                  {"type": "video",
+                   "url": "https://video.twimg.com/video.mp4",
+                   "poster_url": None, "alt": "", "remote": True,
+                   "source_url": "https://x.com/Example/status/1/video/1",
+                   "aspect_ratio": 9 / 16}],
         "links": [{"url": "https://youtu.be/id", "title": "",
                    "description": "", "image_url": None}],
         "reply_count": 24, "repost_count": 50,

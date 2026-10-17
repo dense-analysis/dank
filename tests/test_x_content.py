@@ -282,3 +282,141 @@ def test_malformed_capture_fields_are_tolerated(
     assert post_html(payload) == ""
     assert post_links(payload, {}) == []
     assert post_media(payload, {}) == []
+
+
+def video_post(**fields: object) -> dict[str, Any]:
+    return {
+        "legacy": {
+            "extended_entities": {
+                "media": [
+                    {
+                        "type": "video",
+                        "expanded_url": (
+                            "https://x.com/alice/status/123/video/1"
+                        ),
+                        "media_url_https": (
+                            "https://pbs.twimg.com/media/poster.jpg"
+                        ),
+                        "video_info": {
+                            "variants": [
+                                {
+                                    "url": "https://video.twimg.com/video.mp4",
+                                    "content_type": "video/mp4",
+                                },
+                            ],
+                        },
+                        **fields,
+                    },
+                ],
+            },
+        },
+    }
+
+
+@pytest.mark.parametrize("kind", ["video", "animated_gif"])
+@pytest.mark.parametrize("dimensions", [[9, 16], [16, 9], [1, 1]])
+@pytest.mark.parametrize("local", [False, True])
+def test_video_layout_metadata_preserves_media_and_source(
+    kind: str, dimensions: list[int], *, local: bool,
+) -> None:
+    payload = video_post(type=kind)
+    item = payload["legacy"]["extended_entities"]["media"][0]
+    item["video_info"]["aspect_ratio"] = dimensions
+    item["original_info"] = {"width": 999, "height": 999}
+    remote_url = "https://video.twimg.com/video.mp4"
+    local_urls = {remote_url: "/assets/video.mp4"} if local else {}
+    media = post_media(payload, local_urls)[0]
+    assert media == {
+        "type": "video" if kind == "video" else "gif",
+        "url": "/assets/video.mp4" if local else remote_url,
+        "alt": "",
+        "poster_url": "https://pbs.twimg.com/media/poster.jpg",
+        "remote": not local,
+        "source_url": "https://x.com/alice/status/123/video/1",
+        "aspect_ratio": dimensions[0] / dimensions[1],
+    }
+
+
+@pytest.mark.parametrize(
+    "dimensions",
+    [
+        None, [], [9], [9, 16, 1], "9:16", ["9", 16], [9, "16"],
+        [0, 16], [9, 0], [-9, 16], [9, -16], [True, 16], [9, False],
+        [float("nan"), 16], [9, float("nan")],
+        [float("inf"), 16], [9, float("inf")],
+        [float("inf"), float("inf")], [10 ** 1000, 1], [1, 10 ** 1000],
+    ],
+)
+def test_invalid_video_dimensions_are_omitted_or_use_original_dimensions(
+    dimensions: object,
+) -> None:
+    payload = video_post()
+    item = payload["legacy"]["extended_entities"]["media"][0]
+    item["video_info"]["aspect_ratio"] = dimensions
+    assert "aspect_ratio" not in post_media(payload, {})[0]
+    item["original_info"] = {"width": 720, "height": 1280}
+    assert post_media(payload, {})[0].get("aspect_ratio") == 9 / 16
+
+
+@pytest.mark.parametrize(
+    "dimensions",
+    [
+        {}, {"width": 0, "height": 1}, {"width": 1, "height": False},
+        {"width": float("inf"), "height": 1},
+        {"width": 1, "height": float("nan")},
+        {"width": "720", "height": 1280},
+    ],
+)
+def test_invalid_original_video_dimensions_are_omitted(
+    dimensions: object,
+) -> None:
+    assert "aspect_ratio" not in post_media(
+        video_post(original_info=dimensions), {},
+    )[0]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://x.com/alice/status/123/video/1",
+        "https://twitter.com/alice/status/123/video/2?s=20",
+        "https://www.x.com/alice/status/123/video/1#clip",
+        "http://mobile.twitter.com/alice/status/123/video/1",
+    ],
+)
+def test_video_source_permalink_preserves_exact_captured_reference(
+    url: str,
+) -> None:
+    media = post_media(video_post(expanded_url=url), {})
+    assert media[0].get("source_url") == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        None, "", "javascript:alert(1)", "https://x.com.evil.com/a",
+        "https://youtube.com/watch?v=123", "https://t.co/123",
+        "https://x.com/alice/status/123", "https://x.com/alice",
+        "https://x.com/alice/status/123/photo/1",
+        "https://x.com/alice/status/123/video/0",
+        "https://x.com/alice/status/123/video/1/other",
+        "https://x.com:444/alice/status/123/video/1",
+        "https://user@x.com/alice/status/123/video/1",
+        "https://x.com/\\alice/status/123/video/1",
+    ],
+)
+def test_unrelated_or_unsafe_video_source_urls_are_omitted(
+    url: object,
+) -> None:
+    assert "source_url" not in post_media(video_post(expanded_url=url), {})[0]
+
+
+def test_poster_only_fallback_does_not_claim_playable_video_metadata() -> None:
+    payload = video_post(video_info={"aspect_ratio": [9, 16]})
+    assert post_media(payload, {}) == [{
+        "type": "image",
+        "url": "https://pbs.twimg.com/media/poster.jpg",
+        "poster_url": None,
+        "alt": "",
+        "remote": True,
+    }]

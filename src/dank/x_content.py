@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import html
+import math
 import re
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict, cast
 from urllib.parse import quote, urlsplit
 
 
@@ -21,6 +22,8 @@ class XMedia(TypedDict):
     poster_url: str | None
     alt: str
     remote: bool
+    aspect_ratio: NotRequired[float]
+    source_url: NotRequired[str]
 
 
 def object_value(value: object) -> dict[str, Any]:
@@ -336,13 +339,23 @@ def _attachment(
         if playable:
             url = str(playable[0]["url"])
 
-            return {
+            attachment: XMedia = {
                 "type": "gif" if kind == "animated_gif" else "video",
                 "url": local_urls.get(url, url),
                 "poster_url": local_urls.get(image, image) if image else None,
                 "alt": alt,
                 "remote": url not in local_urls,
             }
+            aspect_ratio = _video_aspect_ratio(item)
+            source_url = _video_source_url(item.get("expanded_url"))
+
+            if aspect_ratio is not None:
+                attachment["aspect_ratio"] = aspect_ratio
+
+            if source_url:
+                attachment["source_url"] = source_url
+
+            return attachment
 
     if image:
         return {
@@ -360,3 +373,61 @@ def _bitrate(value: object) -> int:
     return (
         value if isinstance(value, int) and not isinstance(value, bool) else 0
     )
+
+
+def _video_aspect_ratio(item: dict[str, Any]) -> float | None:
+    ratio = object_value(item.get("video_info")).get("aspect_ratio")
+    original = object_value(item.get("original_info"))
+    dimensions: list[object] = [
+        ratio, [original.get("width"), original.get("height")],
+    ]
+
+    for pair in dimensions:
+        if not isinstance(pair, list) or len(cast(list[object], pair)) != 2:
+            continue
+
+        width, height = cast(list[object], pair)
+
+        if (
+            not isinstance(width, (int, float))
+            or isinstance(width, bool)
+            or not isinstance(height, (int, float))
+            or isinstance(height, bool)
+            or width <= 0
+            or height <= 0
+        ):
+            continue
+
+        try:
+            result = width / height
+        except OverflowError:
+            continue
+
+        if math.isfinite(result) and result > 0:
+            return result
+
+    return None
+
+
+def _video_source_url(value: object) -> str | None:
+    source_url = http_url(value)
+
+    if not source_url:
+        return None
+
+    parsed = urlsplit(source_url)
+
+    if (
+        parsed.hostname in {
+            "x.com", "www.x.com", "twitter.com", "www.twitter.com",
+            "mobile.twitter.com",
+        }
+        and parsed.port in {None, 80 if parsed.scheme == "http" else 443}
+        and re.fullmatch(
+            r"/[A-Za-z0-9_]{1,15}/status/[0-9]+/video/[1-9][0-9]*",
+            parsed.path,
+        )
+    ):
+        return source_url
+
+    return None
