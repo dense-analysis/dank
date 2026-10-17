@@ -127,7 +127,8 @@ class FeedCapture:
         return True
 
     def _check_overlap(self, item_id: str) -> None:
-        if self.feed.kind != "channel" or self.feed.tab != "videos":
+        if (self.feed.kind != "channel" or self.feed.tab != "videos"
+                or urlsplit(self.feed.url).query):
             return
 
         self.overlap = self.overlap + 1 if item_id in self.known_ids else 0

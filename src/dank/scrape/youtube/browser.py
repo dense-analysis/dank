@@ -13,6 +13,8 @@ from .payloads import as_dict
 SNAPSHOT_SCRIPT = """JSON.stringify((() => {
     const renderers = {
         'ytd-video-renderer': 'videoRenderer',
+        'ytd-rich-grid-media': 'videoRenderer',
+        'ytd-rich-item-renderer': 'richItemRenderer',
         'ytd-grid-video-renderer': 'gridVideoRenderer',
         'ytd-playlist-video-renderer': 'playlistVideoRenderer',
         'ytd-reel-item-renderer': 'reelItemRenderer',

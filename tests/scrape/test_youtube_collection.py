@@ -60,7 +60,7 @@ def test_actual_public_renderers_preserve_source_and_metadata() -> None:
         assert payload["discovery"]["observed_at"] == NOW.isoformat()
         assert payload["detail_capture"] == {"status": "disabled"}
         assert all(
-            asset.asset_type != "video"
+            asset.asset_type not in {"video", "youtube"}
             for asset in discover_assets(
                 post,
                 YouTubeSettings(),
@@ -134,7 +134,7 @@ def test_shorts_toggle_does_not_treat_short_duration_as_a_short() -> None:
         discover_assets(short, YouTubeSettings(scrape_videos=True))[
             -1
         ].asset_type
-        == "video"
+        == "youtube"
     )
 
 
@@ -310,3 +310,16 @@ async def test_one_failed_feed_keeps_other_feeds_and_reports_partial_failure(
     assert statistics.error_type == "YouTubeFeedError"
     assert len(statistics.feed_urls) == 2
     page.close.assert_awaited_once()
+
+
+def test_sorted_channel_feeds_do_not_use_chronological_overlap() -> None:
+    feed = YouTubeFeed("https://www.youtube.com/@news/videos?sort=p",
+                       "Popular", "channel", "videos")
+    capture = FeedCapture(feed, YouTubeSettings(known_overlap=1),
+                          {"video:aaaaaaaaaaa"})
+    batch = capture.extract([
+        ("videoRenderer", {"videoId": "aaaaaaaaaaa"}, ""),
+        ("videoRenderer", {"videoId": "bbbbbbbbbbb"}, ""),
+    ], feed.url)
+    assert len(batch.posts) == 2
+    assert not capture.reached_overlap

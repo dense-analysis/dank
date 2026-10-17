@@ -459,7 +459,7 @@ def discover_assets(
                 "youtube.com",
                 post.post_id,
                 post.url,
-                "video",
+                "youtube",
                 None,
             ),
         )
