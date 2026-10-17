@@ -10,12 +10,14 @@ export function ReferenceFocusNotice({
   postId,
   matched,
   close,
+  backLabel,
 }: {
   target: ReferenceTarget;
   domain: string;
   postId: string;
   matched: boolean;
   close: () => void;
+  backLabel?: string;
 }) {
   const evidence = useQuery({
     queryKey: ["reference-evidence", domain, postId, target],
@@ -77,9 +79,10 @@ export function ReferenceFocusNotice({
           )}
           <div className="reference-focus-actions">
             <button type="button" className="text-button" onClick={close}>
-              {target.videoId
-                ? "Back to video evidence"
-                : "Back to connections"}
+              {backLabel ??
+                (target.videoId
+                  ? "Back to video evidence"
+                  : "Back to connections")}
             </button>
             {original && (
               <a href={original} target="_blank" rel="noopener noreferrer">

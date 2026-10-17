@@ -158,7 +158,7 @@ describe("filter URLs", () => {
   );
 });
 
-it("normal article navigation clears every reference target without losing graph context", () => {
+it("normal article navigation clears every reference target and previous graph mode", () => {
   const params = new URLSearchParams({
     connections: "graph",
     article: "previous",
@@ -173,6 +173,6 @@ it("normal article navigation clears every reference target without losing graph
   expect([...next.keys()].some((key) => key.startsWith("reference_"))).toBe(
     false,
   );
-  expect(next.get("connections")).toBe("graph");
+  expect(next.has("connections")).toBe(false);
   expect(params.get("reference_id")).toBe("123");
 });

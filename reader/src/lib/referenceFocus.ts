@@ -104,6 +104,26 @@ function visibleReference(node: Element, scope: HTMLElement): boolean {
   return true;
 }
 
+/** Keep balanced path delimiters and query punctuation, as the evidence extractor does. */
+function textReferenceUrl(value: string): string {
+  let result = value.includes("?") ? value : value.replace(/[.,;:]+$/, "");
+
+  for (const [closing, opening] of [
+    [")", "("],
+    ["]", "["],
+    ["}", "{"],
+  ]) {
+    let excess = result.split(closing).length - result.split(opening).length;
+
+    while (excess > 0 && result.endsWith(closing)) {
+      result = result.slice(0, -1);
+      excess -= 1;
+    }
+  }
+
+  return result;
+}
+
 /** Mark actual destinations within the selected source body, never matching labels alone. */
 export function highlightLinkReferences(
   scope: HTMLElement,
@@ -142,11 +162,17 @@ export function highlightLinkReferences(
     let offset = 0;
 
     for (const match of node.data.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
-      const candidate = matchesLinkUrl(match[0], url)
-        ? match[0]
-        : match[0].replace(/[.,!?;:)\]]+$/, "");
+      const candidates = [match[0], textReferenceUrl(match[0])];
 
-      if (!matchesLinkUrl(candidate, url)) continue;
+      // Legacy video IDs also tolerate sentence punctuation after their query.
+      if (
+        normalizedLinkUrl(url)?.startsWith("https://www.youtube.com/watch?v=")
+      )
+        candidates.push(textReferenceUrl(match[0].replace(/[.,;:!?]+$/, "")));
+
+      const candidate = candidates.find((value) => matchesLinkUrl(value, url));
+
+      if (!candidate) continue;
 
       fragment.append(node.data.slice(offset, match.index));
       const mark = document.createElement("mark");

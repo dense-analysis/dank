@@ -160,7 +160,7 @@ describe("article reference navigation", () => {
     });
     expect(params.get("reference_url")).toBe(url);
     expect(params.has("reference_video")).toBe(false);
-    expect(params.get("connections")).toBe("graph");
+    expect(params.has("connections")).toBe(false);
     expect(parseReferenceTarget(params)).toMatchObject({
       url,
       videoId: "",
@@ -195,7 +195,7 @@ describe("article reference navigation", () => {
     const body = document.createElement("div");
     renderArticle(
       body,
-      `<p><a href="${url}">Read <em>the source</em></a> ${url}. <a href="https://publisher.test/article?edition=1#security">Wrong edition</a><a href="https://publisher.test/article?edition=2#other">Wrong section</a><a href="https://publisher.test.evil.example/article?edition=2#security">Wrong host</a></p>`,
+      `<p><a href="${url}">Read <em>the source</em></a> ${url} <a href="https://publisher.test/article?edition=1#security">Wrong edition</a><a href="https://publisher.test/article?edition=2#other">Wrong section</a><a href="https://publisher.test.evil.example/article?edition=2#security">Wrong host</a></p>`,
     );
     highlightLinkReferences(body, url);
     expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
@@ -218,5 +218,51 @@ describe("article reference navigation", () => {
     expect(
       body.querySelector('[data-reference-match="true"]')?.textContent,
     ).toBe("Relative source");
+  });
+});
+
+describe("reference URL punctuation", () => {
+  it.each([
+    [
+      "https://en.wikipedia.org/wiki/Function_(mathematics)",
+      "(https://en.wikipedia.org/wiki/Function_(mathematics)).",
+    ],
+    ["https://target.test/path[part]", "[https://target.test/path[part]]."],
+    ["https://target.test/?q=wow!", "https://target.test/?q=wow!"],
+    ["https://target.test/?q=wow.", "https://target.test/?q=wow."],
+  ])("preserves the actual destination in %s", (target, text) => {
+    const body = document.createElement("div");
+    renderArticle(body, `<p>${text}</p>`);
+    highlightLinkReferences(body, target);
+    expect(
+      body.querySelector('[data-reference-match="true"]')?.textContent,
+    ).toBe(target);
+  });
+
+  it("does not discard meaningful query punctuation to highlight a different destination", () => {
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      "<p>https://target.test/?q=wow! https://target.test/?q=wow.</p>",
+    );
+    highlightLinkReferences(body, "https://target.test/?q=wow");
+    expect(body.querySelector('[data-reference-match="true"]')).toBeNull();
+  });
+
+  it("keeps structured anchor queries including apostrophes and punctuation intact", () => {
+    const target = "https://target.test/?q=don't!";
+    const body = document.createElement("div");
+    renderArticle(
+      body,
+      `<p><a href="${target}">Quoted research</a><a href="https://target.test/?q=don">Different query</a></p>`,
+    );
+    highlightLinkReferences(body, target);
+    expect(body.querySelectorAll('[data-reference-match="true"]')).toHaveLength(
+      1,
+    );
+    expect(
+      body.querySelector('[data-reference-match="true"]')?.textContent,
+    ).toBe("Quoted research");
+    expect(body.querySelector("a")?.getAttribute("href")).toBe(target);
   });
 });

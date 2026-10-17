@@ -41,6 +41,8 @@ export function YouTubeCollection({
   sourcesError,
   retrySources,
   openReference,
+  referenceHref,
+  returnToConnections,
 }: {
   params: URLSearchParams;
   navigate: (
@@ -54,6 +56,8 @@ export function YouTubeCollection({
   sourcesError?: string;
   retrySources: () => void;
   openReference: (reference: YouTubeReference) => void;
+  referenceHref?: (reference: YouTubeReference) => string;
+  returnToConnections?: () => void;
 }) {
   const filters = youtubeFilters(params);
   const [search, setSearch] = useState(filters.q);
@@ -149,6 +153,7 @@ export function YouTubeCollection({
     navigate(next, false, params.toString());
   }
   function close() {
+    if (returnToConnections) return returnToConnections();
     const next = new URLSearchParams(params);
     next.delete("youtube_item");
     next.delete("references");
@@ -171,7 +176,10 @@ export function YouTubeCollection({
     return (
       <div className="yt-detail">
         <button type="button" className="text-button yt-back" onClick={close}>
-          <ArrowLeft size={16} /> Back to {title.toLowerCase()}
+          <ArrowLeft size={16} />{" "}
+          {returnToConnections
+            ? "Back to connections"
+            : `Back to ${title.toLowerCase()}`}
         </button>
         {selected ? (
           <>
@@ -323,6 +331,7 @@ export function YouTubeCollection({
                     item={selected}
                     onOpenReference={openReference}
                     referenceHref={(reference) =>
+                      referenceHref?.(reference) ??
                       `/reader/?${referenceParams(params, reference)}`
                     }
                   />
@@ -334,6 +343,7 @@ export function YouTubeCollection({
                         reference={reference}
                         params={params}
                         open={() => openReference(reference)}
+                        href={referenceHref?.(reference)}
                       />
                     ))}
                   </div>
@@ -670,15 +680,17 @@ function YouTubeSourceReference({
   reference,
   params,
   open,
+  href,
 }: {
   reference: YouTubeReference;
   params: URLSearchParams;
   open: () => void;
+  href?: string;
 }) {
   const original = safeUrl(reference.reference_url);
   const matched = safeUrl(reference.matched_url);
   const reader = reference.reader_url
-    ? `/reader/?${referenceParams(params, reference)}`
+    ? (href ?? `/reader/?${referenceParams(params, reference)}`)
     : undefined;
   const source =
     reference.source === "x"

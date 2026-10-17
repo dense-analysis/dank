@@ -7,7 +7,14 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
@@ -27,7 +34,6 @@ import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HackerNewsDetail } from "./HackerNewsDetail";
 import { PostTimestamp, readingTime, SourceMark, safeUrl } from "./PostCard";
-import { PostLinks } from "./PostLinks";
 import { ReaderLink } from "./ReaderLink";
 import { RedditComments } from "./RedditComments";
 import {
@@ -55,11 +61,15 @@ export function ArticleView({
   selectAccount,
   selectFlair,
   referenceTarget,
+  renderConnections,
+  backLabel,
 }: {
   domain: string;
   id: string;
   initial?: Post;
   referenceTarget?: ReferenceTarget;
+  renderConnections: (post: Post) => ReactNode;
+  backLabel?: string;
   params: URLSearchParams;
   openPost: (post: Pick<Post, "id" | "domain">) => void;
   close: () => void;
@@ -144,9 +154,7 @@ export function ArticleView({
       post.domain.toLowerCase().replace(/^www\./, "") &&
     matchesLinkUrl(post.url, referenceTarget.url)
   );
-  const postLinks = post && (
-    <PostLinks post={post} params={params} open={openPost} />
-  );
+  const postLinks = post && renderConnections(post);
 
   useEffect(() => {
     if (post && hasReadableContent) markRead(post);
@@ -173,7 +181,7 @@ export function ArticleView({
           data-page-focus
         >
           <ArrowLeft size={17} />
-          Back to stories
+          {backLabel ?? "Back to stories"}
         </button>
         <div className="reader-type">
           <button
@@ -228,6 +236,7 @@ export function ArticleView({
           postId={id}
           matched={referenceResult.matched}
           close={close}
+          backLabel={backLabel}
         />
       )}
       {post && xPost && (
@@ -439,7 +448,7 @@ export function ArticleView({
             {hasReadableContent && <span>YOU’VE REACHED THE END</span>}
             <button type="button" className="secondary-button" onClick={close}>
               <ArrowLeft size={15} />
-              Back to your reading
+              {backLabel ?? "Back to your reading"}
             </button>
           </div>
         </div>

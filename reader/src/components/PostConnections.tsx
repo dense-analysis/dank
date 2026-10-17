@@ -47,7 +47,12 @@ export function PostConnections({
   });
 
   return (
-    <section className="post-connections" aria-labelledby={headingId}>
+    <section
+      className="post-connections"
+      aria-labelledby={headingId}
+      tabIndex={-1}
+      data-connections-pending={mode !== null && isPending ? "true" : undefined}
+    >
       <div className="post-connections-heading">
         <h2 id={headingId}>
           <button
@@ -112,7 +117,13 @@ export function PostConnections({
                     No verified links found in the saved evidence for this post.
                   </p>
                 ) : mode === "graph" ? (
-                  <Suspense fallback={<p role="status">Loading graph…</p>}>
+                  <Suspense
+                    fallback={
+                      <p role="status" data-connections-loading>
+                        Loading graph…
+                      </p>
+                    }
+                  >
                     <PostConnectionsGraph
                       key={JSON.stringify([post.domain, post.id])}
                       data={data}

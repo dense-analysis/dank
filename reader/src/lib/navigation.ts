@@ -15,12 +15,22 @@ export function clearReferenceParams(params: URLSearchParams) {
     params.delete(key);
 }
 
+export function clearConnectionParams(params: URLSearchParams) {
+  for (const key of [
+    "connections",
+    "connections_direction",
+    "connections_from",
+  ])
+    params.delete(key);
+}
+
 export function articleParams(
   params: URLSearchParams,
   post: Pick<Post, "id" | "domain">,
 ): URLSearchParams {
   const next = new URLSearchParams(params);
   clearReferenceParams(next);
+  clearConnectionParams(next);
   next.set("article", post.id);
   next.set("article_source", post.domain);
   return next;

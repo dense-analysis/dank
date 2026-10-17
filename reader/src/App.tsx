@@ -28,6 +28,10 @@ import { IdentityAvatar } from "./components/IdentityAvatar";
 import { Modal } from "./components/Modal";
 import { PlatformIcon } from "./components/PlatformIcon";
 import { PostCard } from "./components/PostCard";
+import {
+  type ConnectionsMode,
+  PostConnections,
+} from "./components/PostConnections";
 import { PostLinks } from "./components/PostLinks";
 import { ReaderSettings } from "./components/ReaderSettings";
 import { Sidebar } from "./components/Sidebar";
@@ -45,12 +49,20 @@ import {
   sourceKind,
   sourcesForFeed,
 } from "./lib/collections";
+import {
+  connectionEvidenceParams,
+  connectionReturn,
+  connectionsClosedParams,
+  connectionTargetParams,
+} from "./lib/connectionNavigation";
 import { articleParams, filterParams, parseFilters } from "./lib/navigation";
+import type { PostConnectionTarget } from "./lib/postConnections";
+import type { ConnectionDirection } from "./lib/postConnectionsGraph";
 import { readingFonts } from "./lib/preferences";
 import {
-  clearReferenceParams,
   parseReferenceTarget,
   referenceParams,
+  type SourceReference,
 } from "./lib/referenceFocus";
 import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
@@ -58,7 +70,11 @@ import { isXPost } from "./lib/x";
 import { fetchYouTubeSources } from "./lib/youtubeCollection";
 
 export function App() {
-  const { params, navigate, backTo, positionError } = useLocation();
+  const { params, navigate, backTo, backToConnection, positionError } =
+    useLocation();
+  const returnToConnections = connectionReturn(params);
+  const connectionsMode = params.get("connections");
+  const connectionsDirection = params.get("connections_direction");
   const { read, markRead, storageError } = useReadPosts();
   const { preferences } = useReaderPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -253,11 +269,38 @@ export function App() {
     navigate(next, false, params.toString());
   }
   function closeArticle() {
+    if (returnToConnections) backToConnection(returnToConnections);
+    else backTo(connectionsClosedParams(params));
+  }
+  function setConnectionsMode(mode: ConnectionsMode) {
     const next = new URLSearchParams(params);
-    next.delete("article");
-    next.delete("article_source");
-    clearReferenceParams(next);
-    backTo(next);
+    if (mode) next.set("connections", mode);
+    else next.delete("connections");
+    navigate(next, true, undefined, { preservePosition: true });
+  }
+  function setConnectionsDirection(direction: ConnectionDirection) {
+    const next = new URLSearchParams(params);
+    if (direction === "all") next.delete("connections_direction");
+    else next.set("connections_direction", direction);
+    navigate(next, true, undefined, { preservePosition: true });
+  }
+  function evidenceHref(evidence: SourceReference) {
+    return `/reader/?${connectionEvidenceParams(params, evidence)}`;
+  }
+  function openEvidence(evidence: SourceReference) {
+    navigate(
+      connectionEvidenceParams(params, evidence),
+      false,
+      params.toString(),
+    );
+  }
+  function targetHref(target: PostConnectionTarget) {
+    const next = connectionTargetParams(params, target);
+    return next ? `/reader/?${next}` : undefined;
+  }
+  function exploreTarget(target: PostConnectionTarget) {
+    const next = connectionTargetParams(params, target);
+    if (next) navigate(next, false, params.toString());
   }
   function selectSource(domain: string) {
     select(sourceKind(domain), {
@@ -434,6 +477,30 @@ export function App() {
             params={params}
             openPost={openPost}
             close={closeArticle}
+            backLabel={returnToConnections ? "Back to connections" : undefined}
+            renderConnections={(post) => (
+              <PostConnections
+                key={postKey(post)}
+                post={post}
+                mode={
+                  connectionsMode === "graph" || connectionsMode === "list"
+                    ? connectionsMode
+                    : null
+                }
+                onModeChange={setConnectionsMode}
+                direction={
+                  connectionsDirection === "incoming" ||
+                  connectionsDirection === "outgoing"
+                    ? connectionsDirection
+                    : "all"
+                }
+                onDirectionChange={setConnectionsDirection}
+                evidenceHref={evidenceHref}
+                onOpenEvidence={openEvidence}
+                targetHref={targetHref}
+                onExploreTarget={exploreTarget}
+              />
+            )}
             selectSource={selectSource}
             markRead={markRead}
             filters={filters}
@@ -487,6 +554,11 @@ export function App() {
                     params={params}
                     navigate={navigate}
                     backTo={backTo}
+                    returnToConnections={
+                      returnToConnections
+                        ? () => backToConnection(returnToConnections)
+                        : undefined
+                    }
                     sources={youtubeSources.data}
                     sourcesError={
                       youtubeSources.isError
@@ -494,13 +566,18 @@ export function App() {
                         : undefined
                     }
                     retrySources={() => void youtubeSources.refetch()}
-                    openReference={(reference) =>
-                      navigate(
-                        referenceParams(params, reference),
-                        false,
-                        params.toString(),
-                      )
+                    referenceHref={
+                      returnToConnections ? evidenceHref : undefined
                     }
+                    openReference={(reference) => {
+                      if (returnToConnections) openEvidence(reference);
+                      else
+                        navigate(
+                          referenceParams(params, reference),
+                          false,
+                          params.toString(),
+                        );
+                    }}
                   />
                 )
               ) : section === "settings" ? (

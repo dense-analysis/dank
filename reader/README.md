@@ -103,9 +103,20 @@ browser channel. No live collection is needed for the fixture tests.
 
 **All** combines collected blogs, X posts, Reddit discussions and Hacker News.
 When a Hacker News story links to a collected article, All shows the original
-source once. **Links** on cards and articles lists collected posts referencing
-that item; each link opens its saved discussion or post while preserving the
-current view. Collected linked articles show their publication date when available
+source once. **Links** on feed cards lists collected posts referencing
+that item. Open any article or post and choose **Connections → Graph** to explore
+saved incoming and outgoing links, or **List** to read the matching excerpts.
+Post links and comment mentions remain distinct. Select a node to inspect its
+evidence, open the exact highlighted link or comment in DANK, or explore a
+connected post's graph. Known videos open their YouTube details; uncollected
+destinations have an external link. **Back to connections** restores the graph,
+filter and viewport within the tab; copied links retain a return destination.
+Counts cover saved evidence, with explicit limits for large neighborhoods.
+Historical links retain their capture dates and show an archived excerpt if
+the matching passage is absent from the current post. These are observed links,
+not inferred topic or semantic relationships.
+
+Collected linked articles show their publication date when available
 and explicitly label missing dates. Hacker News keeps its own daily listing and discussions.
 
 **Blogs**
@@ -309,8 +320,10 @@ Fonts are served locally. No separate frontend application server is required
 for production.
 
 `RelationshipGraph` renders domain-neutral nodes and edges using lazily loaded
-Cytoscape.js. `youtubeReferenceGraph` maps verified source evidence into that
-model; additional relationship views can supply their own adapters.
+Cytoscape.js. `youtubeReferenceGraph` and `postConnectionsGraph` map verified
+source evidence into that model. `PostConnections` owns loading and view state;
+its navigation callbacks keep article routing outside the graph renderer.
+Additional relationship views can supply their own adapters.
 
 `src/components` owns presentation; `src/lib` owns API contracts, validation,
 URL filters and persistence; `src/hooks` bridges browser state. The additive

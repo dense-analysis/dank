@@ -5,6 +5,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { connectionOrigin } from "../lib/connectionNavigation";
 import {
   captureReadingPosition,
   loadReadingPosition,
@@ -138,6 +139,8 @@ export function useLocation() {
     const domain = params.get("article_source");
     const articleKey = id && domain ? postKey({ id, domain }) : null;
     const reference = parseReferenceTarget(params);
+    const exploring =
+      articleKey && ["graph", "list"].includes(params.get("connections") ?? "");
     activeKey.current = entry.key;
     activeArticle.current = articleKey;
     ready.current = false;
@@ -160,8 +163,29 @@ export function useLocation() {
             '.article-page [data-reference-match="true"], .article-page [data-reference-fallback="true"]',
           )
         : null;
+      const connectionFocus =
+        exploring && !reference
+          ? document.querySelector<HTMLElement>(
+              ".article-page .post-connections",
+            )
+          : null;
+      if (
+        exploring &&
+        !reference &&
+        !document.querySelector('.article-page [role="alert"]')
+      ) {
+        if (
+          !connectionFocus ||
+          connectionFocus.dataset.connectionsPending === "true" ||
+          connectionFocus.querySelector(
+            '[data-connections-loading], .relationship-graph[data-status="loading"]',
+          )
+        )
+          return;
+      }
+      const destinationFocus = referenceFocus ?? connectionFocus;
       const body = readingBody();
-      if (articleKey && !body && !referenceFocus) {
+      if (articleKey && !body && !destinationFocus) {
         if (document.querySelector('.article-page [role="alert"]'))
           document
             .querySelector<HTMLElement>(".article-page .back-button")
@@ -170,10 +194,10 @@ export function useLocation() {
       }
       const top =
         historyScroll ??
-        (referenceFocus
+        (destinationFocus
           ? Math.max(
               0,
-              referenceFocus.getBoundingClientRect().top +
+              destinationFocus.getBoundingClientRect().top +
                 window.scrollY -
                 readingEdge() -
                 REFERENCE_FOCUS_GAP,
@@ -189,7 +213,7 @@ export function useLocation() {
       const target =
         previousFocus?.isConnected && previousFocus.getClientRects().length > 0
           ? previousFocus
-          : (referenceFocus ??
+          : (destinationFocus ??
             [
               ...document.querySelectorAll<HTMLElement>("[data-page-focus]"),
             ].find((element) => element.getClientRects().length > 0));
@@ -203,7 +227,12 @@ export function useLocation() {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["data-reader-pending", "data-reference-pending"],
+        attributeFilter: [
+          "data-reader-pending",
+          "data-reference-pending",
+          "data-connections-pending",
+          "data-status",
+        ],
       });
     }
     return () => observer?.disconnect();
@@ -237,10 +266,22 @@ export function useLocation() {
     } else navigate(params, true);
   }
 
+  function backToConnection(params: URLSearchParams) {
+    const previous = currentEntry().backTo;
+    if (
+      previous &&
+      connectionOrigin(new URLSearchParams(previous)) === params.toString()
+    ) {
+      savePosition();
+      window.history.back();
+    } else navigate(params, true);
+  }
+
   return {
     params: new URLSearchParams(search),
     navigate,
     backTo,
+    backToConnection,
     positionError,
   };
 }
