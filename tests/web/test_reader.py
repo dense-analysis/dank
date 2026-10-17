@@ -777,8 +777,9 @@ async def test_community_identity_and_flair_choices_are_shared_with_posts(
     assert metadata["flair"] == "New Model"
 
 
+@pytest.mark.parametrize('naive_dates', [False, True])
 async def test_community_totals_include_archive_provenance_and_both_dates(
-    app: web.Application,
+    app: web.Application, *, naive_dates: bool,
 ) -> None:
     state = app['state']
     app['state'] = state._replace(settings=state.settings._replace(sources=(
@@ -791,8 +792,15 @@ async def test_community_totals_include_archive_provenance_and_both_dates(
         [{'domain': 'reddit.com', 'count': 238}],
         [{'community': 'conspiracy', 'count': 238}], [],
         [{'community': 'conspiracy', 'total_posts': 1866004,
-          'source': 'arctic_shift', 'updated_at': '2026-10-11T09:26:38+00:00',
-          'scraped_at': '2026-10-17T15:00:00+00:00'}], [],
+          'source': 'arctic_shift',
+          'updated_at': (
+              dt.datetime(2026, 10, 11, 9, 26, 38) if naive_dates
+              else '2026-10-11T09:26:38+00:00'
+          ),
+          'scraped_at': (
+              dt.datetime(2026, 10, 17, 15) if naive_dates
+              else '2026-10-17T15:00:00+00:00'
+          )}], [],
     )
     response = await request(app, '/api/reader/sources')
     assert response.status == 200

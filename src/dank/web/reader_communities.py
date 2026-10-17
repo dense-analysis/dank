@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 from typing import TypedDict
 
-from dank.storage.clickhouse import ClickHouseClient
+from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.web.app import (
     AssetRow,
     _asset_view,  # pyright: ignore[reportPrivateUsage]
@@ -62,11 +62,17 @@ async def community_totals(
         {"communities": sorted({name.lower() for name in communities})},
     )
 
-    return {
-        str(row["community"]).lower(): {
-            "count": int(row["total_posts"]), "source": str(row["source"]),
-            "updated_at": str(row["updated_at"]),
-            "captured_at": str(row["scraped_at"]),
-        }
-        for row in result.rows
-    }
+    totals: dict[str, CommunityPostTotal] = {}
+
+    for row in result.rows:
+        updated = parse_datetime(row["updated_at"])
+        captured = parse_datetime(row["scraped_at"])
+
+        if updated is not None and captured is not None:
+            totals[str(row["community"]).lower()] = {
+                "count": int(row["total_posts"]), "source": str(row["source"]),
+                "updated_at": updated.isoformat(),
+                "captured_at": captured.isoformat(),
+            }
+
+    return totals
