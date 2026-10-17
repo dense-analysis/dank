@@ -256,6 +256,9 @@ class _Page:
         self.closed = False
         self.urls: list[str] = []
 
+    async def activate(self) -> None:
+        pass
+
     async def send(
         self,
         command: Generator[dict[str, object], object, object],
@@ -392,6 +395,45 @@ async def test_collection_handles_initial_delayed_content() -> None:
     )
 
     assert posts == ["t3_aaa"]
+    assert page.scrolls == 1
+
+
+async def test_pagination_resumes_after_details_hide_the_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FocusedPage(_Page):
+        active = False
+
+        async def activate(self) -> None:
+            self.active = True
+
+        async def send(self, command: Any) -> None:
+            assert self.active, "Navigation must render in the active tab"
+            await super().send(command)
+
+        async def evaluate(self, script: str) -> str:
+            if not script.startswith("JSON.stringify") and not self.active:
+                # Background scrolling never triggers the next-page loader.
+                return ""
+
+            return await super().evaluate(script)
+
+    page = _FocusedPage([
+        "".join(_card(str(i)) for i in range(3)),
+        "".join(_card(str(i)) for i in range(12)),
+    ])
+
+    async def visit_details(batch: Any, *args: Any) -> Any:
+        page.active = False
+        return batch
+
+    monkeypatch.setattr(
+        "dank.scrape.reddit._capture_batch_details", visit_details,
+    )
+    posts, _ = await _collect(
+        page, RedditSettings(scrape=BrowserScrapeSettings(max_posts=8)),
+    )
+    assert posts == [f"t3_{i}" for i in range(8)]
     assert page.scrolls == 1
 
 

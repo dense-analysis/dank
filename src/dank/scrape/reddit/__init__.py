@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator, Iterable
+from contextlib import nullcontext
 from typing import cast
 from urllib.parse import urlencode
 
@@ -19,6 +20,7 @@ from dank.config import (
     RedditTimeFilter,
 )
 from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
+from dank.scrape.http import current_limiter
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
@@ -27,8 +29,9 @@ from dank.scrape.zendriver import (
     NetworkResponse,
 )
 
+from .access import RedditScrapeError, check_page_responses
 from .communities import discover_community
-from .details import capture_post_detail
+from .details import capture_post_detail, defer_post_detail
 from .html import extract_html_posts
 from .payloads import as_dict, extract_json_posts, text, timestamp
 
@@ -74,10 +77,6 @@ BLOCKED_MESSAGES = (
     "this is a private community",
 )
 EMPTY_LISTING_MESSAGE = "this community doesn't have any posts yet"
-
-
-class RedditScrapeError(RuntimeError):
-    """A Reddit listing could not be collected without user intervention."""
 
 
 def community_url(
@@ -181,6 +180,8 @@ async def _capture_batch_details(
     batch: ScrapeBatch, page: zendriver.Tab | None, settings: RedditSettings,
 ) -> ScrapeBatch:
     posts: list[RawPost] = []
+    rate_limited = False
+    deferred = 0
     fresh_ids = {post.post_id for post in batch.posts}
     assets = {
         f"{item.post_id}:{item.url}": item for item in batch.assets
@@ -188,13 +189,29 @@ async def _capture_batch_details(
     }
 
     for post in batch.posts:
-        enriched = await capture_post_detail(page, post, settings)
+        if rate_limited:
+            enriched = defer_post_detail(post, settings)
+            deferred += 1
+        else:
+            enriched = await capture_post_detail(page, post, settings)
+
+        payload = as_dict(json.loads(enriched.payload))
+        rate_limited = (
+            as_dict(payload.get("detail_capture")).get("reason")
+            == "rate_limited"
+        )
         posts.append(enriched)
 
         for asset in _discover_assets(
-            as_dict(json.loads(enriched.payload)), post.post_id, set(),
+            payload, post.post_id, set(),
         ):
             assets[f"{asset.post_id}:{asset.url}"] = asset
+
+    if deferred:
+        logger.warning(
+            "Reddit rate limited: kept %d listing posts and deferred their "
+            "detail visits to a later run", deferred,
+        )
 
     return batch._replace(posts=posts, assets=list(assets.values()))
 
@@ -209,6 +226,7 @@ async def _scrape_community(
 ) -> AsyncIterator[ScrapeBatch]:
     url = community_url(community, sort=sort, time_filter=time_filter)
     limits = settings.scrape
+    limiter = current_limiter.get()
     capture = NetworkCapture(
         page,
         REDDIT_PATTERNS,
@@ -235,8 +253,10 @@ async def _scrape_community(
         async with asyncio.timeout(10):
             await capture.start()
 
-        async with asyncio.timeout(20):
-            await page.send(cdp.page.navigate(url))
+        async with limiter.slot(url) if limiter else nullcontext():
+            async with asyncio.timeout(20):
+                await page.activate()
+                await page.send(cdp.page.navigate(url))
 
         for step in range(limits.max_scrolls + 1):
             # Reddit may redirect its initial document before rendering cards.
@@ -254,6 +274,7 @@ async def _scrape_community(
                         str(await page.evaluate(SNAPSHOT_SCRIPT)),
                     ),
                 )
+            check_page_responses(responses, url)
             batch = extract_posts_and_assets(
                 responses,
                 community,
@@ -299,8 +320,11 @@ async def _scrape_community(
                 break
 
             if step < limits.max_scrolls:
-                async with asyncio.timeout(10):
-                    await page.evaluate(SCROLL_SCRIPT)
+                async with limiter.slot(url) if limiter else nullcontext():
+                    async with asyncio.timeout(10):
+                        # Restore the listing after detail visits hide it.
+                        await page.activate()
+                        await page.evaluate(SCROLL_SCRIPT)
 
         logger.info(
             "Finished Reddit r/%s posts=%d scrolls=%d reason=%s "

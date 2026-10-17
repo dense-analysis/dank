@@ -216,6 +216,9 @@ class _Page:
         self.url = LISTING_URL
         self.visited: list[str] = []
 
+    async def activate(self) -> None:
+        pass
+
     async def send(
         self,
         command: Generator[dict[str, object], object, object],
@@ -295,6 +298,33 @@ async def test_metadata_deduplicates_within_each_run() -> None:
         assert len([post for batch in batches for post in batch.posts]) == 2
 
     assert page.visited == [COMMUNITY, "accelerate", COMMUNITY, "accelerate"]
+
+
+async def test_next_community_is_activated_after_detail_visits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FocusedPage(_Page):
+        active = False
+
+        async def activate(self) -> None:
+            self.active = True
+
+        async def send(self, command: Any) -> None:
+            assert self.active, "Background navigation did not hydrate"
+            await super().send(command)
+
+    page = _FocusedPage()
+
+    async def visit_details(batch: ScrapeBatch, *args: Any) -> ScrapeBatch:
+        page.active = False
+        return batch
+
+    monkeypatch.setattr(
+        "dank.scrape.reddit._capture_batch_details", visit_details,
+    )
+    batches = await _collect(page, (COMMUNITY, "accelerate"))
+    assert page.visited == [COMMUNITY, "accelerate"]
+    assert len([post for batch in batches for post in batch.posts]) == 2
 
 
 @pytest.mark.parametrize("icon", [True, False])

@@ -53,8 +53,10 @@ the behaviour before this option existed.
   Intentional skips do not make a run partial or failed.
 - `http_requests`, `http_429`, `retries`, `fetch_failures` and
   `parse_failures` explain incomplete results. HTTP counters cover RSS and
-  direct media requests made through aiohttp; Chromium and yt-dlp's internal
-  requests are not included. Redirect hops count as separate HTTP requests.
+  direct media requests made through aiohttp. Reddit additionally records
+  observed browser 429s in `http_429`, but Chromium's other request/timing counts
+  and yt-dlp's internal requests are not included. Redirect hops count as
+  separate HTTP requests.
 - `request_ms` and `retry_wait_ms` sum individual request/wait durations.
   They can overlap and must not be added to derive elapsed time.
 

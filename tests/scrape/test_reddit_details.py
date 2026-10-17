@@ -1,22 +1,38 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import html
 import json
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from dank.config import RedditCommentSort, RedditSettings
+from dank.config import (
+    RedditCommentSort,
+    RedditSettings,
+    ScrapeSettings,
+    SourceConfig,
+)
 from dank.model import RawPost
+from dank.scrape.http import HostCooldownError, RequestLimiter, current_limiter
+from dank.scrape.metrics import SourceMetrics, current_source
+from dank.scrape.reddit import (
+    _capture_batch_details,  # pyright: ignore[reportPrivateUsage]
+)
 from dank.scrape.reddit.details import (
     capture_post_detail,
+    defer_post_detail,
     extract_thread,
     thread_url,
 )
 from dank.scrape.reddit.html import extract_html_posts
 from dank.scrape.reddit.payloads import extract_json_posts
+from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import NetworkResponse
 
 URL = "https://www.reddit.com/r/python/comments/abc/post/"
@@ -182,6 +198,11 @@ async def test_browser_detail_uses_thread_response_without_extra_fetch() -> (
 ):
     payload = _thread(_comment("first"))
     page = AsyncMock()
+
+    async def navigate(*args: Any) -> None:
+        assert page.activate.await_count == 1
+
+    page.send.side_effect = navigate
     response = NetworkResponse(
         URL, 200, "application/json", json.dumps(payload), "id", "Fetch",
     )
@@ -205,7 +226,139 @@ async def test_browser_detail_uses_thread_response_without_extra_fetch() -> (
     assert result["comment_capture"]["status"] == "captured"
     assert len(result["comment_capture"]["comments"]) == 1
     page.evaluate.assert_not_called()
+    page.activate.assert_awaited_once()
     capture.stop.assert_awaited_once()
+
+
+@pytest.mark.parametrize("stage", ["document", "json"])
+async def test_rate_limited_details_keep_post_and_apply_host_cooldown(
+    stage: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    page = AsyncMock()
+    page.evaluate.return_value = json.dumps({
+        "status": 429, "retry_after": "120", "body": "",
+    })
+    capture = AsyncMock()
+    capture.drain.return_value = [NetworkResponse(
+        URL, 429, "text/html", "", "limited", "Document", "120",
+    )] if stage == "document" else []
+    limiter = RequestLimiter(ScrapeSettings())
+    stats = SourceMetrics(1, SourceConfig("reddit.com", ()))
+    limit_token = current_limiter.set(limiter)
+    stats_token = current_source.set(stats)
+
+    try:
+        with (
+            patch("dank.scrape.reddit.details.NetworkCapture",
+                  return_value=capture),
+            patch("dank.scrape.reddit.details.asyncio.sleep"),
+        ):
+            result = json.loads((await capture_post_detail(
+                page, _raw(), RedditSettings(),
+            )).payload)
+
+        with pytest.raises(HostCooldownError):
+            async with limiter.slot(URL):
+                pytest.fail("Detail requested during Reddit cooldown")
+    finally:
+        current_limiter.reset(limit_token)
+        current_source.reset(stats_token)
+
+    assert result["selftext"] == "short"
+    assert result["detail_capture"]["status"] == "failed"
+    assert result["detail_capture"]["reason"] == "rate_limited"
+    assert stats.counts["fetch_failures"] == stats.counts["http_429"] == 1
+    assert "HTTP 429" in caplog.text
+    assert page.evaluate.await_count == (0 if stage == "document" else 1)
+
+
+@pytest.mark.parametrize("comments", [False, True])
+async def test_rate_limit_defers_batch_details_without_losing_listings(
+    monkeypatch: pytest.MonkeyPatch, *, comments: bool,
+) -> None:
+    settings = RedditSettings(capture_comments=comments)
+    posts = [_raw()._replace(post_id=f"t3_{i}") for i in range(4)]
+    originals = [post.payload for post in posts]
+    visit = AsyncMock(return_value=defer_post_detail(posts[0], settings))
+    monkeypatch.setattr("dank.scrape.reddit.capture_post_detail", visit)
+    result = await _capture_batch_details(
+        ScrapeBatch(posts, []), AsyncMock(), settings,
+    )
+
+    visit.assert_awaited_once()
+    assert [post.post_id for post in result.posts] == [
+        post.post_id for post in posts
+    ]
+    assert [post.payload for post in posts] == originals
+
+    for post in result.posts:
+        payload = json.loads(post.payload)
+        assert payload["selftext"] == "short"
+        assert payload["detail_capture"]["reason"] == "rate_limited"
+        assert payload["comment_capture"]["status"] == (
+            "failed" if comments else "disabled"
+        )
+
+
+async def test_successful_json_fallback_preserves_thread_extraction() -> None:
+    page = AsyncMock()
+    page.evaluate.return_value = json.dumps({
+        "status": 200, "retry_after": None,
+        "body": json.dumps(_thread(_comment("first"))),
+    })
+    capture = AsyncMock()
+    capture.drain.return_value = []
+
+    with (
+        patch(
+            "dank.scrape.reddit.details.NetworkCapture", return_value=capture,
+        ),
+        patch("dank.scrape.reddit.details.asyncio.sleep"),
+    ):
+        result = json.loads((await capture_post_detail(
+            page, _raw(), RedditSettings(),
+        )).payload)
+
+    assert result["detail_capture"]["status"] == "captured"
+    assert result["comment_capture"]["comments"][0]["id"] == "t1_first"
+    page.evaluate.assert_awaited_once()
+
+
+async def test_host_cooldown_does_not_consume_the_detail_page_budget() -> None:
+    page = AsyncMock()
+    capture = AsyncMock()
+    capture.drain.return_value = [NetworkResponse(
+        URL, 200, "application/json", json.dumps(_thread(_comment("first"))),
+        "id", "Fetch",
+    )]
+
+    @asynccontextmanager
+    async def slot(url: str) -> AsyncGenerator[None]:
+        ready = asyncio.Event()
+        timer = asyncio.get_running_loop().call_later(0.1, ready.set)
+
+        try:
+            await ready.wait()
+            yield
+        finally:
+            timer.cancel()
+
+    token = current_limiter.set(cast(Any, SimpleNamespace(slot=slot)))
+
+    try:
+        with (
+            patch("dank.scrape.reddit.details.DETAIL_TIMEOUT_SECONDS", 0.05),
+            patch("dank.scrape.reddit.details.NetworkCapture",
+                  return_value=capture),
+            patch("dank.scrape.reddit.details.asyncio.sleep"),
+        ):
+            result = json.loads((await capture_post_detail(
+                page, _raw(), RedditSettings(),
+            )).payload)
+    finally:
+        current_limiter.reset(token)
+
+    assert result["detail_capture"]["status"] == "captured"
 
 
 @pytest.mark.parametrize("disabled", [False, True])
@@ -287,7 +440,10 @@ async def test_json_denied_uses_rendered_comments_and_original_html() -> (
     )
     page = AsyncMock()
     def evaluate(script: str, **_kwargs: object) -> str:
-        return "" if "fetch(" in script else snapshot
+        if "fetch(" in script:
+            return json.dumps({"status": 403, "retry_after": None, "body": ""})
+
+        return snapshot
 
     page.evaluate.side_effect = evaluate
     capture = AsyncMock()

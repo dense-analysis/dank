@@ -98,6 +98,23 @@ Top + day asks Reddit for its daily ranking; the limits bound how much of that
 listing DANK captures. Run collection regularly to build your local history.
 Progress logs report each community and why collection stopped.
 
+The listing tab is activated before navigation and each scroll, and the detail
+tab is activated before each post visit. Reddit's next-page loader can remain
+idle in a background tab; restoring the listing after detail visits lets
+pagination continue instead of stopping at the initial few cards.
+
+HTTP failures from listings, pagination and thread requests retain their status
+instead of being reported as empty pages. A 429 starts a shared Reddit host
+cooldown of at least 30 seconds, extended by `Retry-After` when supplied. A
+cooldown beyond the existing 30-second wait budget is reported as a deferred
+request; collection does not retry before it expires. Saved posts remain
+available and failed/deferred captures make the outcome partial.
+If a detail visit is rate limited, the remaining details in that batch are
+deferred to a later run. Their listing posts are still saved, with an explicit
+rate-limit reason in capture metadata, instead of issuing a request per post
+against the same restriction. Cooldown waiting has a separate budget from
+reading a detail page.
+
 Each detail visit has a 35-second budget and shares the browser session's
 request pacing. A blocked or timed-out detail page keeps the listing post.
 Comments can be fewer than the configured limit when Reddit returns collapsed

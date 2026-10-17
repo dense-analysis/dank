@@ -14,9 +14,16 @@ from zendriver import cdp
 
 from dank.config import RedditSettings
 from dank.model import RawPost
-from dank.scrape.http import current_limiter
+from dank.scrape.http import HostCooldownError, current_limiter
+from dank.scrape.metrics import count, current_source
 from dank.scrape.zendriver import NetworkCapture, NetworkResponse
 
+from .access import (
+    RedditRateLimitError,
+    RedditScrapeError,
+    check_page_responses,
+    check_response_status,
+)
 from .html import extract_html_posts
 from .payloads import (
     POST_PATH,
@@ -374,7 +381,11 @@ async def _fetch_thread(
                 credentials: 'same-origin',
                 signal: AbortSignal.timeout(TIMEOUT_VALUE),
             });
-            return response.ok ? await response.text() : '';
+            return JSON.stringify({
+                status: response.status,
+                retry_after: response.headers.get('Retry-After'),
+                body: response.ok ? await response.text() : '',
+            });
         } catch { return ''; }
     })()""".replace(
         "URL_VALUE", json.dumps(thread_url(listing, settings)),
@@ -384,9 +395,22 @@ async def _fetch_thread(
     )
 
     try:
-        payload = json.loads(
+        response = as_dict(json.loads(
             str(await page.evaluate(script, await_promise=True)),
-        )
+        ))
+        status = number(response.get("status")) or 0
+
+        if status == 429:
+            check_response_status(
+                status, thread_url(listing, settings),
+                text(response.get("retry_after")),
+            )
+
+        # JSON denial can still leave a usable rendered thread.
+        if not 200 <= status < 300:
+            return None
+
+        payload = json.loads(text(response.get("body")))
 
         return extract_thread(
             payload,
@@ -487,18 +511,20 @@ async def capture_post_detail(
     limiter = current_limiter.get()
 
     try:
-        async with asyncio.timeout(DETAIL_TIMEOUT_SECONDS):
-            if page is None:
-                raise RuntimeError("Detail browser tab unavailable")
+        if page is None:
+            raise RuntimeError("Detail browser tab unavailable")
 
-            await capture.start()
-
-            async with limiter.slot(url) if limiter else nullcontext():
+        # Host cooldowns have their own budget; keep time to read the page.
+        async with limiter.slot(url) if limiter else nullcontext():
+            async with asyncio.timeout(DETAIL_TIMEOUT_SECONDS):
+                await capture.start()
+                await page.activate()
                 await page.send(cdp.page.navigate(url))
                 await asyncio.sleep(
                     max(1.0, settings.scrape.scroll_pause_seconds),
                 )
                 responses = await capture.drain(timeout_seconds=0.05)
+                check_page_responses(responses, url)
                 detail = (
                     _network_thread(responses, raw, settings)
                     if settings.capture_comments else None
@@ -519,11 +545,24 @@ async def capture_post_detail(
                         settings, post, status="disabled",
                     )
     except Exception as error:
+        if isinstance(error, RedditRateLimitError | HostCooldownError):
+            post["detail_capture"] = {
+                "status": "failed", "reason": "rate_limited",
+            }
+
+        if isinstance(error, RedditScrapeError | HostCooldownError):
+            count("fetch_failures")
+            stats = current_source.get()
+
+            if stats is not None:
+                stats.error_type = type(error).__name__
+
         # A detail failure must not discard an already discovered listing.
         logger.warning(
-            "Reddit detail unavailable for %s (%s)",
+            "Reddit detail unavailable for %s (%s: %s)",
             raw.post_id,
             type(error).__name__,
+            error,
         )
     finally:
         await capture.stop()
@@ -532,3 +571,15 @@ async def capture_post_detail(
         payload=json.dumps(post, separators=(",", ":")),
         scraped_at=datetime.datetime.now(datetime.UTC),
     )
+
+
+def defer_post_detail(raw: RawPost, settings: RedditSettings) -> RawPost:
+    """Keep a listing when detail visits must wait for a later run."""
+    post = as_dict(json.loads(raw.payload))
+    post["detail_capture"] = {"status": "failed", "reason": "rate_limited"}
+    post["comment_capture"] = comment_capture(
+        settings, post,
+        status="failed" if settings.capture_comments else "disabled",
+    )
+
+    return raw._replace(payload=json.dumps(post, separators=(",", ":")))

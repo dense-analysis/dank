@@ -58,8 +58,9 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   exited normally in 5m28s. All 30 collected posts were saved (30 distinct IDs),
   with detail/comment capture recorded. The first three rows were verified in
   ClickHouse while the run was still active. Five listings, including
-  `DomainDrivenDesign`, were unrecognized during this run and correctly counted
-  as failures; the source/run outcome was partial, with no lost completed
+  `DomainDrivenDesign`, were reported as unrecognized during this run and counted
+  as failures; a later audit found HTTP 429 responses for all five in the network
+  log. The source/run outcome was partial, with no lost completed
   batches. This verifies persistence and continuation, not complete Reddit
   coverage. The empty-state recognizer is regression-tested against the message
   observed in the standalone listing check. Pagination remains open below.
@@ -71,14 +72,43 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   the affected account, and allows remaining accounts to be attempted without
   automatic sign-in retries. The underlying renderer failure remains unknown.
   [Collector](../src/dank/scrape/x/__init__.py).
-- [ ] **P1: Verify Reddit pagination beyond the initial cards.** Communities
-  repeatedly returned only 3–4 posts before the repeated-stall limit. A
-  read-only browser snapshot showed a hidden listing tab and an unexpanded
-  `community-more-posts` partial. These are investigation clues, not a proven
-  cause or proof that every community has more eligible posts. Done when
-  collection advances beyond the initial cards on a known active community,
-  with tests covering detail-tab focus and delayed pagination.
+- [x] **P1: Verify Reddit pagination beyond the initial cards.** A controlled
+  Docker check reproduced three cards while the listing was hidden, then 27
+  after activating it and scrolling. The collector now activates the listing
+  before navigation/scrolling and the detail tab before each post visit.
+  A listing-only check with detail-tab handoffs extracted 66 unique posts from
+  LocalLLaMA, 100 from conspiracy, 41 from gamedev and 97 from godot across
+  multiple batches. DomainDrivenDesign had an explicit empty daily listing;
+  ExperiencedDevs had two eligible posts. Regression tests cover both tab
+  handoffs and the existing post cap. Persisted verification run
+  `d06ad28c-8c45-4499-b99b-52f2609aa2dc` saved all 66 LocalLLaMA posts plus four
+  accelerate posts before it was cancelled to improve rate-limit handling.
+  Those rows remain saved. This establishes pagination beyond the initial cards,
+  not exhaustive coverage of the selected ranking.
   [Listing collector](../src/dank/scrape/reddit/__init__.py).
+- [x] **Identify HTTP errors before classifying Reddit listings as empty.**
+  All five failures in the earlier run were HTTP 429 responses, not evidence
+  that those communities were unavailable or empty. Listing/pagination and
+  thread requests now preserve HTTP status and Retry-After. A 429 counts as a
+  rate-limit failure and starts a shared host cooldown (at least 30 seconds);
+  waits longer than the 30-second budget are deferred without early requests.
+  Waiting for that cooldown is separate from the detail-page read deadline.
+  JSON endpoint denials still allow the existing public rendered-thread fallback.
+  After a rate-limited detail visit, the remaining details in that batch are
+  deferred while their listing posts are retained with a rate-limit reason.
+  Access restrictions and quota exhaustion can still leave a partial run;
+  increasing pagination depth also increases detail-request volume.
+  [Rate-limit handling](../src/dank/scrape/reddit/access.py),
+  [regressions](../tests/scrape/test_reddit_access.py).
+
+  **Final Docker verification:** run `7eedea39-748f-46b1-86f2-9cace3a06c16`
+  used the existing configured limits and attempted all 15 communities in
+  11m19s. It saved all 39 collected posts (26 LLMDevs, 13 AbsoluteUnits),
+  independently verified in ClickHouse. Thirteen listings were rate limited;
+  one detail 429 caused three further detail visits to be deferred. All four
+  affected listing posts were saved, with explicit capture reasons. The outcome
+  was correctly partial, with no failed media downloads. Full Reddit coverage
+  remains constrained by the site's quota; the collector does not bypass it.
 - [ ] **P1: Restore YouTube format discovery and downloads.** Logs reported
   unavailable requested formats and missing challenge-solver scripts. The
   container has Node and yt-dlp `2026.8.19`, but no `yt-dlp-ejs`. Pin compatible

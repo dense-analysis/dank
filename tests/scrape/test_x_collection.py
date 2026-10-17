@@ -57,7 +57,7 @@ async def test_account_network_responses_reach_post_extraction(
         type_=cdp.network.ResourceType.FETCH,
         request_id="fixture-request",
         response=SimpleNamespace(
-            url=url, status=200, mime_type="application/json",
+            url=url, status=200, mime_type="application/json", headers={},
         ),
     ))
     await handlers[cdp.network.LoadingFinished](SimpleNamespace(

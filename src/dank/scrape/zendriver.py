@@ -8,7 +8,7 @@ import pathlib
 import re
 import shutil
 from collections.abc import AsyncIterator, Iterable
-from typing import IO, Any, NamedTuple
+from typing import IO, Any, NamedTuple, cast
 
 import zendriver
 from zendriver import cdp
@@ -47,6 +47,7 @@ class NetworkResponse(NamedTuple):
     body: str
     request_id: str
     resource_type: str
+    retry_after: str | None = None
 
 
 class BrowserConfig(NamedTuple):
@@ -332,7 +333,11 @@ class NetworkCapture:
             )
         except Exception:
             logger.debug("Failed to read response body", exc_info=True)
-            return
+
+            if response.response.status < 400:
+                return
+
+            body, is_base64 = "", False
 
         text = _decode_body(body, is_base64=is_base64)
         logger.info(
@@ -341,6 +346,7 @@ class NetworkCapture:
             len(text),
             response.response.url,
         )
+        headers = cast(dict[str, object], response.response.headers)
         await self._queue.put(
             NetworkResponse(
                 url=response.response.url,
@@ -349,6 +355,11 @@ class NetworkCapture:
                 body=text,
                 request_id=str(event.request_id),
                 resource_type=response.type_.value,
+                retry_after=next((
+                    str(value)
+                    for key, value in headers.items()
+                    if key.lower() == "retry-after"
+                ), None),
             ),
         )
 
