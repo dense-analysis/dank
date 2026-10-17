@@ -274,6 +274,11 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(observed_at)
 ORDER BY (post_id, observed_at, content_hash);
 
+ALTER TABLE dank.youtube_thumbnail_observations
+ADD COLUMN IF NOT EXISTS title String DEFAULT '';
+ALTER TABLE dank.youtube_thumbnail_observations
+ADD COLUMN IF NOT EXISTS title_observed_at Nullable(DateTime64(3, 'UTC'));
+
 CREATE TABLE IF NOT EXISTS dank.youtube_channels (
     channel_id String,
     channel_name String,

@@ -143,6 +143,12 @@ async def _download_candidates(
                     thumbnail_observation, temp_path, discovery.post_id,
                     timestamp, discovery.url, url,
                 )
+                if capture := discovery.youtube_capture:
+                    observation = observation._replace(
+                        title=capture.title,
+                        title_observed_at=capture.observed_at,
+                    )
+
                 suffix = await asyncio.to_thread(thumbnail_suffix, temp_path)
                 target_path = target_path.parent / "thumbnails" / (
                     f"{observation.content_hash}{suffix}"

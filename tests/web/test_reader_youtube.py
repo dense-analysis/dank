@@ -136,6 +136,8 @@ def test_schema_copies_and_package_data_include_youtube() -> None:
     schema = (root / "schema.sql").read_text()
     assert migration.replace(
         "EXISTS youtube_", "EXISTS dank.youtube_",
+    ).replace(
+        "ALTER TABLE youtube_", "ALTER TABLE dank.youtube_",
     ).replace("TO youtube_links", "TO dank.youtube_links").replace(
         "FROM posts", "FROM dank.posts",
     ).replace("FROM raw_posts", "FROM dank.raw_posts") in schema
@@ -344,13 +346,14 @@ async def test_thumbnail_history_groups_renditions_and_checks_local_files(
         ["video:AbCdEfGhIjK", "video:Outside1234"], assets,
     )
     assert history == {"video:AbCdEfGhIjK": [
-        {"url": "/assets/current.jpg",
+        {"url": "/assets/current.jpg", "title_pairs": [],
          "first_seen": (first + dt.timedelta(days=1)).isoformat(),
          "last_seen": latest.isoformat()},
-        {"url": "/assets/old.jpg", "first_seen": first.isoformat(),
+        {"url": "/assets/old.jpg", "title_pairs": [],
+         "first_seen": first.isoformat(),
          "last_seen": first.isoformat()},
     ]}
-    query, params = client.fetch_json.call_args.args
+    query, params = client.fetch_json.call_args_list[0].args
     assert "GROUP BY d.post_id, d.content_hash" in query
     assert "min(d.observed_at) AS first_seen" in query
     assert "WHERE d.post_id IN %(ids)s AND d.local_path != ''" in query
@@ -397,7 +400,7 @@ async def test_latest_successful_snapshot_overrides_remote_thumbnail(
             "content_hash": "different-image", "visual_hash": "0" * 64,
             "visual_color": "100,100,100", "width": 1280, "height": 720,
             "first_seen": timestamp, "last_seen": timestamp,
-        }]),
+        }]), QueryResult([]),
     ]
     items = await youtube_items(cast(ClickHouseClient, client), [{
         "item_id": "video:AbCdEfGhIjK", "kind": "video",
@@ -408,6 +411,7 @@ async def test_latest_successful_snapshot_overrides_remote_thumbnail(
     }], YouTubeFilters(), tmp_path)
     assert items[0]["thumbnail_url"] == "/assets/latest.jpg"
     assert items[0]["thumbnail_variants"] == [{
-        "url": "/assets/latest.jpg", "first_seen": timestamp.isoformat(),
+        "url": "/assets/latest.jpg", "title_pairs": [],
+        "first_seen": timestamp.isoformat(),
         "last_seen": timestamp.isoformat(),
     }]

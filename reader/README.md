@@ -219,7 +219,9 @@ When a video has multiple saved thumbnails, hover or keyboard-focus its preview
 to gently cycle through them. This does not start a video. Reduced-motion mode
 keeps the preview still. Discovery details show the saved images and distinct
 observed titles with their capture dates; title changes never create another
-video card. The card keeps the title from the selected feed snapshot.
+video card. Each thumbnail lists its associated titles with first/last dates for
+that specific combination. Older pairings are labelled when matched from saved
+captures; uncertain or recovered-image pairings remain unspecified. The card keeps the title from the selected feed snapshot.
 
 Landscape videos, portrait Shorts and community posts have distinct layouts.
 Select a title or its information button to inspect the captured shelf, rank,

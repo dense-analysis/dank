@@ -26,12 +26,14 @@ export function YouTubeVersionHistory({ item }: { item: YouTubeItem }) {
 
   return (
     <>
-      {thumbnails.length > 1 && (
+      {(thumbnails.length > 1 ||
+        (thumbnails.length > 0 && titles.length > 1)) && (
         <section className="yt-version-history" aria-label="Saved thumbnails">
-          <h2>Saved thumbnails</h2>
+          <h2>Title &amp; thumbnail combinations</h2>
           <p>
-            Different images observed for this video. Hover or focus its preview
-            to cycle through them.
+            Titles shown with each saved image. Dates belong to each
+            combination; older pairings are matched only when the saved captures
+            agree.
           </p>
           <div className="yt-version-thumbnails">
             {thumbnails.map((version) => (
@@ -41,9 +43,47 @@ export function YouTubeVersionHistory({ item }: { item: YouTubeItem }) {
                   captured={version.last_seen}
                 />
                 <figcaption>
-                  First seen <ObservedTime value={version.first_seen} />
-                  <br />
-                  Last seen <ObservedTime value={version.last_seen} />
+                  {version.title_pairs?.length ? (
+                    <ul
+                      className="yt-title-pairs"
+                      aria-label="Titles captured with this thumbnail"
+                    >
+                      {version.title_pairs.map((pair) => (
+                        <li key={pair.title}>
+                          <strong>{pair.title}</strong>
+                          <span>
+                            First seen <ObservedTime value={pair.first_seen} />
+                          </span>
+                          <span>
+                            Last seen <ObservedTime value={pair.last_seen} />
+                          </span>
+                          {pair.association === "matched" && (
+                            <span className="yt-pair-provenance">
+                              Matched from saved captures
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <>
+                      <strong className="yt-pair-unknown">
+                        Title pairing unavailable
+                      </strong>
+                      <span>
+                        This image could not be linked unambiguously to a
+                        captured title.
+                      </span>
+                      <span>
+                        Image first saved{" "}
+                        <ObservedTime value={version.first_seen} />
+                      </span>
+                      <span>
+                        Image last saved{" "}
+                        <ObservedTime value={version.last_seen} />
+                      </span>
+                    </>
+                  )}
                 </figcaption>
               </figure>
             ))}

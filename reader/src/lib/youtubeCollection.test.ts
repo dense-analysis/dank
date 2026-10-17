@@ -272,3 +272,39 @@ it("validates observed versions without making them separate video identities", 
     }),
   ).toBe(false);
 });
+
+it("validates the title combinations nested under thumbnails", () => {
+  const version = {
+    url: "/assets/image.jpg",
+    first_seen: video.observed_at,
+    last_seen: video.observed_at,
+    title_pairs: [
+      {
+        title: "A paired title",
+        first_seen: video.observed_at,
+        last_seen: video.observed_at,
+        association: "captured",
+      },
+    ],
+  };
+  expect(isYouTubeItem({ ...video, thumbnail_variants: [version] })).toBe(true);
+  expect(
+    isYouTubeItem({
+      ...video,
+      thumbnail_variants: [
+        {
+          ...version,
+          title_pairs: [{ ...version.title_pairs[0], association: "guessed" }],
+        },
+      ],
+    }),
+  ).toBe(false);
+  expect(
+    isYouTubeItem({
+      ...video,
+      thumbnail_variants: [
+        { ...version, title_pairs: [{ title: "Missing dates" }] },
+      ],
+    }),
+  ).toBe(false);
+});

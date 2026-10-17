@@ -25,11 +25,27 @@ const video: YouTubeItem = {
   thumbnail_variants: [
     {
       url: "/assets/thumbnail-new.jpg",
+      title_pairs: [
+        {
+          title: "The current observed title",
+          first_seen: "2026-10-17T09:00:00Z",
+          last_seen: "2026-10-17T10:00:00Z",
+          association: "captured",
+        },
+      ],
       first_seen: "2026-10-17T10:00:00Z",
       last_seen: "2026-10-17T10:00:00Z",
     },
     {
       url: "/assets/thumbnail-old.jpg",
+      title_pairs: [
+        {
+          title: "An earlier observed title",
+          first_seen: "2026-10-15T09:00:00Z",
+          last_seen: "2026-10-16T10:00:00Z",
+          association: "matched",
+        },
+      ],
       first_seen: "2026-10-15T10:00:00Z",
       last_seen: "2026-10-16T10:00:00Z",
     },
@@ -271,4 +287,64 @@ test("preview pauses when the page is hidden and resumes without starting playba
     page.locator(".yt-thumbnail-versions .is-current"),
   ).toHaveAttribute("src", /thumbnail-old/);
   await expect(page.locator("iframe, video")).toHaveCount(0);
+});
+
+test("each image shows only its paired title and combination dates", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page
+    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .click();
+  const figures = page
+    .getByRole("region", { name: "Saved thumbnails" })
+    .locator("figure");
+  await expect(figures.nth(0)).toContainText("The current observed title");
+  await expect(figures.nth(0)).not.toContainText("An earlier observed title");
+  await expect(figures.nth(0).locator("time").first()).toHaveAttribute(
+    "datetime",
+    "2026-10-17T09:00:00Z",
+  );
+  await expect(figures.nth(1)).toContainText("An earlier observed title");
+  await expect(figures.nth(1)).not.toContainText("The current observed title");
+  await expect(figures.nth(1)).toContainText("Matched from saved captures");
+});
+
+test("one thumbnail can retain two separately dated title combinations", async ({
+  page,
+}) => {
+  const variants = video.thumbnail_variants ?? [];
+  const item = {
+    ...video,
+    thumbnail_variants: variants.slice(0, 1).map((version) => ({
+      ...version,
+      title_pairs: variants.flatMap((variant) => variant.title_pairs ?? []),
+    })),
+  };
+  await fixture(page, item);
+  await page
+    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .click();
+  const history = page.getByRole("region", { name: "Saved thumbnails" });
+  await expect(history.locator("figure")).toHaveCount(1);
+  await expect(history.locator(".yt-title-pairs li")).toHaveCount(2);
+  await expect(history.locator("time")).toHaveCount(4);
+});
+
+test("unpaired images do not invent a title association", async ({ page }) => {
+  const item = {
+    ...video,
+    thumbnail_variants: (video.thumbnail_variants ?? []).map((version) => ({
+      ...version,
+      title_pairs: [],
+    })),
+  };
+  await fixture(page, item);
+  await page
+    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .click();
+  const history = page.getByRole("region", { name: "Saved thumbnails" });
+  await expect(history.locator(".yt-pair-unknown")).toHaveCount(2);
+  await expect(history).not.toContainText(video.title);
+  await expect(history).toContainText("Image first saved");
 });

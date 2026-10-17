@@ -841,3 +841,28 @@
 .yt-detail-main {
   min-width: 0;
 }
+
+.yt-title-pairs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.yt-title-pairs li {
+  margin: 12px 0 0;
+}
+.yt-title-pairs strong,
+.yt-pair-unknown {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+.yt-version-thumbnails figcaption > span,
+.yt-title-pairs li > span {
+  display: block;
+}
+.yt-title-pairs .yt-pair-provenance {
+  margin-top: 5px;
+  font-size: 11px;
+}

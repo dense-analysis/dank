@@ -80,6 +80,17 @@ and [source API tests](../tests/web/test_reader_youtube_sources.py).
 
 ### Thumbnail recovery and observed versions
 
+Title/image combination history now records the listing title and its capture
+time with each fetched thumbnail. Multiple listing captures sharing an image URL
+retain their own metadata. Pair dates are aggregated per image and title; visually
+grouped encodings merge dates only for identical titles. Historical matches use
+an exact URL in one recorded scrape, reject conflicting titles or overlapping
+runs, and are labelled as matched. Fallback images and records outside a known
+run remain unpaired. Read-only ClickHouse cases verify recurrence, reused URLs,
+conflicting titles, fallback images and exact date ranges; tests cover capture
+metadata, pair grouping and per-image UI captions.
+
+
 Captured thumbnail URLs can expire or return 404 while another rendition for
 that video remains available. Collection now tries bounded same-video fallback
 URLs on 404, retaining the captured URL and the URL actually fetched. Failed

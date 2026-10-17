@@ -16,6 +16,10 @@ from dank.web.app import (
     _asset_view,  # pyright: ignore[reportPrivateUsage]
     _parse_asset_row,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.web.reader_youtube_pairs import (
+    merge_title_pairs,
+    thumbnail_title_pairs,
+)
 from dank.web.reader_youtube_query import (
     YouTubeFilters,
     build_youtube_query,
@@ -447,7 +451,7 @@ async def _local_media(
 
 async def _thumbnail_history(
     client: ClickHouseClient, ids: list[str], assets_dir: pathlib.Path,
-) -> dict[str, list[dict[str, str]]]:
+) -> dict[str, list[dict[str, Any]]]:
     video_ids = [item for item in ids if item.startswith("video:")]
 
     if not video_ids:
@@ -470,7 +474,11 @@ async def _thumbnail_history(
         "LIMIT %(limit)s BY post_id",
         {"ids": video_ids, "limit": MAX_THUMBNAIL_CANDIDATES},
     )
-    groups: dict[str, list[tuple[ThumbnailSignature, dict[str, str]]]] = {}
+    pairs = await thumbnail_title_pairs(client, video_ids, [
+        str(row["content_hash"]) for row in result.rows
+        if row.get("content_hash")
+    ])
+    groups: dict[str, list[tuple[ThumbnailSignature, dict[str, Any]]]] = {}
 
     for row in result.rows:
         asset = AssetRow(
@@ -488,10 +496,13 @@ async def _thumbnail_history(
             str(row.get("visual_color") or ""),
             int(row.get("width") or 0), int(row.get("height") or 0),
         )
-        value = {
+        value: dict[str, Any] = {
             "url": view["url"],
             "first_seen": _timestamp(row.get("first_seen")),
             "last_seen": _timestamp(row.get("last_seen")),
+            "title_pairs": pairs.get(
+                (str(row["post_id"]), str(row["content_hash"])), [],
+            ),
         }
         variants = groups.setdefault(str(row["post_id"]), [])
         same = next((saved for fingerprint, saved in variants
@@ -501,6 +512,9 @@ async def _thumbnail_history(
         if same is not None:
             same["first_seen"] = min(same["first_seen"], value["first_seen"])
             same["last_seen"] = max(same["last_seen"], value["last_seen"])
+            same["title_pairs"] = merge_title_pairs(
+                same["title_pairs"], value["title_pairs"],
+            )
         else:
             variants.append((signature, value))
 

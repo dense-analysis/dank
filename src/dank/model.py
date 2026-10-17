@@ -20,6 +20,13 @@ class RawPost(NamedTuple):
     is_reference: bool = False
 
 
+class YouTubeThumbnailCapture(NamedTuple):
+    """The listing metadata associated with a thumbnail request."""
+
+    title: str
+    observed_at: datetime.datetime
+
+
 class AssetDiscovery(NamedTuple):
     """
     An asset discovery used in scraping for queuing assets to process
@@ -33,6 +40,7 @@ class AssetDiscovery(NamedTuple):
     estimated_size_bytes: int | None
     # Public document origin for media hosts that reject unreferenced requests.
     referrer_url: str | None = None
+    youtube_capture: YouTubeThumbnailCapture | None = None
 
 
 class YouTubeThumbnailObservation(NamedTuple):
@@ -48,6 +56,8 @@ class YouTubeThumbnailObservation(NamedTuple):
     visual_color: str
     width: int
     height: int
+    title: str = ""
+    title_observed_at: datetime.datetime | None = None
 
 
 class RawAsset(NamedTuple):

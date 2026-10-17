@@ -10,7 +10,7 @@ from typing import Any, NamedTuple, cast
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from dank.config import YouTubeSettings
-from dank.model import AssetDiscovery, RawPost
+from dank.model import AssetDiscovery, RawPost, YouTubeThumbnailCapture
 
 ORIGIN = "https://www.youtube.com"
 UK_HYPE_PLAYLIST = "OLJbGgOZgwZ9k_XXE2tcr-JsD4tag1iKjng"
@@ -450,6 +450,9 @@ def discover_assets(
                 str(thumbnail),
                 "image",
                 None,
+                youtube_capture=YouTubeThumbnailCapture(
+                    str(payload.get("title") or ""), post.scraped_at,
+                ) if payload.get("kind") in {"video", "short"} else None,
             ),
         )
 

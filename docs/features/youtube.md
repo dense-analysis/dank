@@ -100,6 +100,14 @@ Videos keep the same identity when their title or thumbnail changes. Raw
 captures preserve observed titles; discovery details show their first and last
 capture dates. A card retains the title from its selected feed snapshot.
 
+Thumbnail details list each title captured with that image, with first/last dates
+for the combination. A reused image can therefore have several separately dated
+titles. New captures save the title alongside the image observation. Older
+matches require an exact thumbnail URL and a unique title in the same completed
+scrape before the image was fetched; they are labelled as matched. Ambiguous
+matches, unlinked captures and fallback images do not claim a pairing. Dates
+reflect observed captures, not continuous use of that title/image combination.
+
 With image downloads enabled, thumbnails are checked again when a video is
 encountered. Changed bytes are saved separately, including changes at an unchanged
 URL. Identical images reuse storage, and visually similar resolutions or encodings

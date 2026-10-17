@@ -22,8 +22,12 @@ export interface YouTubeReference {
   source: string;
   reader_url: string;
 }
+export interface YouTubeTitlePair extends YouTubeTitleVersion {
+  association: "captured" | "matched";
+}
 export interface YouTubeThumbnailVariant {
   url: string;
+  title_pairs?: YouTubeTitlePair[];
   first_seen: string;
   last_seen: string;
 }
@@ -119,7 +123,16 @@ export function isYouTubeItem(value: unknown): value is YouTubeItem {
         value.thumbnail_variants.every(
           (version) =>
             isRecord(version) &&
-            strings(version, ["url", "first_seen", "last_seen"]),
+            strings(version, ["url", "first_seen", "last_seen"]) &&
+            (version.title_pairs === undefined ||
+              (Array.isArray(version.title_pairs) &&
+                version.title_pairs.every(
+                  (pair) =>
+                    isRecord(pair) &&
+                    strings(pair, ["title", "first_seen", "last_seen"]) &&
+                    (pair.association === "captured" ||
+                      pair.association === "matched"),
+                ))),
         ))) &&
     (value.title_history === undefined ||
       (Array.isArray(value.title_history) &&

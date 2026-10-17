@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from dank.config import MEDIA_DOWNLOAD_TYPES
-from dank.model import AssetDiscovery, RawAsset
+from dank.model import AssetDiscovery, RawAsset, YouTubeThumbnailCapture
 from dank.progress import Progress
 from dank.scrape.http import current_limiter
 from dank.scrape.metrics import (
@@ -46,11 +46,16 @@ async def download_assets(
     owners: dict[AssetDiscovery, SourceMetrics] | None = None,
 ) -> list[RawAsset]:
     timestamp = scraped_at or datetime.datetime.now(datetime.UTC)
-    unique: dict[str, AssetDiscovery] = {}
+    unique: dict[
+        tuple[str, YouTubeThumbnailCapture | None], AssetDiscovery,
+    ] = {}
 
     for discovery in discoveries:
         if discovery.url:
-            unique.setdefault(discovery.url, discovery)
+            # Different listing captures can use the same mutable image URL.
+            unique.setdefault(
+                (discovery.url, discovery.youtube_capture), discovery,
+            )
 
     limiter = current_limiter.get()
     # Limit each batch's waiters so one large source cannot monopolise the run.

@@ -321,3 +321,51 @@ def test_cli_rejects_ambiguous_thumbnail_repair(
 
     assert error.value.code == 2
     run.assert_not_called()
+
+
+async def test_same_image_url_keeps_each_listing_title_and_capture_time(
+    tmp_path: pathlib.Path,
+) -> None:
+    from dank.model import YouTubeThumbnailCapture
+
+    earlier = NOW - dt.timedelta(minutes=3)
+    discoveries = [
+        discovery()._replace(youtube_capture=YouTubeThumbnailCapture(
+            "Title A", earlier,
+        )),
+        discovery()._replace(youtube_capture=YouTubeThumbnailCapture(
+            "Title B", NOW,
+        )),
+    ]
+    client = Client({CAPTURED: Response(picture())})
+    saved = await download_assets(
+        discoveries, assets_dir=tmp_path, http_client=cast(Any, client),
+        scraped_at=NOW, download_types=("image",),
+    )
+    assert len(saved) == 2
+    assert saved[0].local_path == saved[1].local_path
+    assert saved[0].thumbnail is not None
+    assert saved[1].thumbnail is not None
+    assert saved[0].thumbnail.title == "Title A"
+    assert saved[0].thumbnail.title_observed_at == earlier
+    assert saved[1].thumbnail.title == "Title B"
+    assert saved[1].thumbnail.title_observed_at == NOW
+
+
+def test_discovered_thumbnail_carries_its_original_listing_title() -> None:
+    import json
+
+    from dank.config import YouTubeSettings
+    from dank.model import RawPost, YouTubeThumbnailCapture
+    from dank.scrape.youtube.payloads import discover_assets
+
+    post = RawPost(
+        "youtube.com", f"video:{VIDEO}", "https://www.youtube.com/watch",
+        None, NOW, "youtube", "https://www.youtube.com/feed/hype",
+        json.dumps({"kind": "video", "title": "Observed together",
+                    "thumbnail_url": CAPTURED}),
+    )
+    assets = discover_assets(post, YouTubeSettings())
+    assert assets[0].youtube_capture == YouTubeThumbnailCapture(
+        "Observed together", NOW,
+    )
