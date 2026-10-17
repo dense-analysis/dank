@@ -341,7 +341,7 @@ export function App() {
                 {section === "x" && (
                   <p className="collection-description">
                     Collected posts from{" "}
-                    {accountContext ? `@${accountName}` : "your X accounts"}.
+                    {accountContext ? `@${accountHandle}` : "your X accounts"}.
                   </p>
                 )}
                 {!feedSection && (

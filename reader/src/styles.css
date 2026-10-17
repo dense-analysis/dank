@@ -176,6 +176,7 @@ input[type="checkbox"] {
   position: sticky;
   top: 0;
   height: var(--sticky-header-height);
+  padding: 0 8px;
   z-index: 10;
 }
 .collection-context .timeline {
@@ -1519,7 +1520,6 @@ input[type="checkbox"] {
     white-space: nowrap;
   }
   .collection-context > .topbar {
-    padding: 0 12px;
     gap: 6px;
   }
   .collection-context .breadcrumb {
