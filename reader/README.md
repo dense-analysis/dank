@@ -93,6 +93,9 @@ browser channel. No live collection is needed for the fixture tests.
 shows articles; **X** and **Reddit** each have their own feed and expandable
 sidebar list. Search, source filters and dates apply within the selected view.
 
+Sidebar groups remember whether you expanded or collapsed them in this browser,
+including YouTube's nested lists, across navigation and page refreshes.
+
 Expand **X** to choose a configured account, including accounts with no posts
 yet. Each entry uses the account’s display name, collected post count and captured profile image,
 with an initial when no image is available. X profile images load from its image

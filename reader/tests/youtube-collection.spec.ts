@@ -263,6 +263,29 @@ async function noOverflow(page: Page) {
   ).toBe(true);
 }
 
+test("nested YouTube groups remember independent expansion choices", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/reader/?view=youtube");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("button", { name: "Collapse YouTube News" }).click();
+  await nav.getByRole("button", { name: "Channel Feeds", exact: true }).click();
+  await nav.getByRole("button", { name: "Collapse YouTube feeds" }).click();
+  await page.reload();
+  await expect(page.locator("#youtube-feeds")).toBeHidden();
+  await nav.getByRole("button", { name: "Expand YouTube feeds" }).click();
+  await expect(page.locator("#youtube-hype")).toBeVisible();
+  await expect(page.locator("#youtube-news")).toBeHidden();
+  await expect(page.locator("#youtube-channels")).toBeHidden();
+  await nav.getByRole("button", { name: "Expand YouTube News" }).click();
+  await nav.getByRole("button", { name: "Channel Feeds", exact: true }).click();
+  await page.reload();
+  await expect(page.locator("#youtube-feeds")).toBeVisible();
+  await expect(page.locator("#youtube-news")).toBeVisible();
+  await expect(page.locator("#youtube-channels")).toBeVisible();
+});
+
 test("YouTube offers independent shelves, portrait Shorts, posts and safe on-demand playback", async ({
   page,
 }) => {

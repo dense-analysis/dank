@@ -396,6 +396,99 @@ test("X accounts have accessible disclosure, safe icons and initial fallbacks", 
   ).toEqual([]);
 });
 
+for (const width of [390, 1280]) {
+  test(`sidebar expansion choices survive refresh and navigation at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await mockCollections(page);
+    await page.goto("/reader/");
+    const nav = page.getByRole("navigation", { name: "Main navigation" });
+
+    async function openNavigation() {
+      if (width < 600)
+        await page.getByRole("button", { name: "Open navigation" }).click();
+    }
+
+    await openNavigation();
+    await nav.getByRole("button", { name: "Collapse X accounts" }).click();
+    await expect(page.locator("#x-accounts")).toBeHidden();
+    await expect(page.locator("#reddit-communities")).toBeVisible();
+    await page.reload();
+    await openNavigation();
+    await expect(
+      nav.getByRole("button", { name: "Expand X accounts" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#x-accounts")).toBeHidden();
+    await expect(page.locator("#reddit-communities")).toBeVisible();
+
+    await nav.getByRole("button", { name: "Expand X accounts" }).click();
+    await nav
+      .getByRole("button", { name: "Collapse Reddit communities" })
+      .click();
+    await nav.getByRole("button", { name: "X", exact: true }).click();
+    await expect(page).toHaveURL(/view=x/);
+    await openNavigation();
+    await expect(page.locator("#x-accounts")).toBeVisible();
+    await expect(page.locator("#reddit-communities")).toBeHidden();
+    await page.reload();
+    await openNavigation();
+    await expect(page.locator("#x-accounts")).toBeVisible();
+    await expect(
+      nav.getByRole("button", { name: "Expand Reddit communities" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#reddit-communities")).toBeHidden();
+  });
+}
+
+test("invalid sidebar storage falls back without resetting other group choices", async ({
+  page,
+}) => {
+  await mockCollections(page);
+  await page.goto("/reader/");
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "dank-reader:collection-expanded:v1:x-accounts",
+      "invalid",
+    );
+    localStorage.setItem(
+      "dank-reader:collection-expanded:v1:reddit-communities",
+      "false",
+    );
+  });
+  await page.reload();
+  await expect(page.locator("#x-accounts")).toBeVisible();
+  await expect(page.locator("#reddit-communities")).toBeHidden();
+  await page.getByRole("button", { name: "Collapse X accounts" }).click();
+  await page.reload();
+  await expect(page.locator("#x-accounts")).toBeHidden();
+  await expect(page.locator("#reddit-communities")).toBeHidden();
+});
+
+for (const method of ["getItem", "setItem"] as const) {
+  test(`sidebar controls remain usable when storage ${method} fails`, async ({
+    page,
+  }) => {
+    await mockCollections(page);
+    await page.addInitScript((method) => {
+      Object.defineProperty(Storage.prototype, method, {
+        value: () => {
+          throw new DOMException("Storage unavailable", "SecurityError");
+        },
+      });
+    }, method);
+    await page.goto("/reader/");
+    await page.getByRole("button", { name: "Collapse X accounts" }).click();
+    await expect(page.locator("#x-accounts")).toBeHidden();
+    await page.getByRole("button", { name: "Expand X accounts" }).click();
+    await expect(page.locator("#x-accounts")).toBeVisible();
+    await page
+      .getByRole("button", { name: "Collapse Reddit communities" })
+      .click();
+    await expect(page.locator("#reddit-communities")).toBeHidden();
+  });
+}
+
 test("account search, author, loaded pages and history survive article navigation and refresh", async ({
   page,
 }) => {

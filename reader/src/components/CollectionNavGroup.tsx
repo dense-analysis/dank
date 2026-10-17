@@ -37,7 +37,25 @@ export function CollectionNavGroup({
   countLabel?: string;
   caseSensitive?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const storageKey = `dank-reader:collection-expanded:v1:${id}`;
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      return globalThis.localStorage.getItem(storageKey) !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  function toggleExpanded() {
+    const next = !expanded;
+    setExpanded(next);
+
+    try {
+      globalThis.localStorage.setItem(storageKey, String(next));
+    } catch {
+      // Keep the disclosure usable when browser storage is unavailable.
+    }
+  }
 
   return (
     <div className="collection-navigation">
@@ -46,7 +64,7 @@ export function CollectionNavGroup({
           type="button"
           className={`nav-item ${active && !selected ? "active" : ""}`}
           aria-current={active && !selected ? "page" : undefined}
-          onClick={select ?? (() => setExpanded(!expanded))}
+          onClick={select ?? toggleExpanded}
           aria-expanded={select ? undefined : expanded}
           aria-controls={select ? undefined : id}
         >
@@ -59,7 +77,7 @@ export function CollectionNavGroup({
             aria-label={`${expanded ? "Collapse" : "Expand"} ${itemsLabel}`}
             aria-expanded={expanded}
             aria-controls={id}
-            onClick={() => setExpanded(!expanded)}
+            onClick={toggleExpanded}
           >
             <ChevronDown size={16} />
           </button>
