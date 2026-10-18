@@ -145,7 +145,16 @@ export interface XReplyTo {
   collected: boolean;
 }
 
+export interface XQuote {
+  id: string;
+  domain: string;
+  url: string;
+  collected: boolean;
+  post?: Post;
+}
+
 export interface XPost extends XProfile {
+  quote?: XQuote;
   reply_to?: XReplyTo;
   conversation_id?: string;
   links?: XLink[];

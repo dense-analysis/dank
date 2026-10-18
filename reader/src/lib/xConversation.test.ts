@@ -118,3 +118,31 @@ describe("X conversation response boundary", () => {
     }
   });
 });
+
+it("validates quoted identities and rejects recursive quotes and discussions", () => {
+  const quote = {
+    id: "2",
+    domain: "x.com",
+    url: "https://x.com/quoted/status/2",
+    collected: true,
+    post: { ...post, id: "2" },
+  };
+  const parent = (value: unknown) => ({
+    ...post,
+    x: { ...post.x, quote: value },
+  });
+  expect(isPost(parent(quote))).toBe(true);
+  expect(isPost(parent({ ...quote, post: undefined, collected: false }))).toBe(
+    true,
+  );
+  for (const bad of [
+    { id: "bad" },
+    { domain: "example.com" },
+    { collected: "yes" },
+    { post },
+    { post: { ...quote.post, domain: "twitter.com" } },
+    { post: { ...quote.post, x: { ...post.x, quote } } },
+    { post: { ...quote.post, x: { ...post.x, conversation } } },
+  ])
+    expect(isPost(parent({ ...quote, ...bad }))).toBe(false);
+});

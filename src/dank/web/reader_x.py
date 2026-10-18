@@ -28,6 +28,7 @@ from dank.web.reader_x_conversation import (
     identifier,
 )
 from dank.web.reader_x_history import preserve_x_archives
+from dank.web.reader_x_quotes import quote_target, quoted_post, saved_quotes
 from dank.web.reader_x_saved import reply_metadata, saved_parents, saved_thread
 from dank.x_content import object_value, post_links, post_media
 
@@ -82,9 +83,19 @@ async def post_x_content(
                 client, post, snapshots.get(key, {}),
             )
 
+    quote_nodes = {
+        **_related_nodes(archives if include_discussion else {}, saved),
+        **snapshots,
+    }
+    quote_keys = {
+        (domain, target[0])
+        for (domain, _), payload in quote_nodes.items()
+        if (target := quote_target(payload))
+    }
+    quotes = await saved_quotes(client, quote_keys)
     related_assets = await _conversation_assets(
-        client, archives, saved,
-    ) if include_discussion else {}
+        client, archives if include_discussion else {}, saved, quote_keys,
+    )
 
     return {
         (post.domain, post.post_id): _content(
@@ -94,7 +105,7 @@ async def post_x_content(
             + related_assets.get(post.domain, []),
             assets_dir, archives.get((post.domain, post.post_id), {}),
             include_discussion=include_discussion,
-            parents=parents,
+            parents=parents, quotes=quotes, quote_nodes=quote_nodes,
             saved=saved.get((post.domain, post.post_id), ([], False)),
         )
         for post in rows
@@ -119,6 +130,8 @@ def _content(
     conversation_payload: dict[str, Any],
     *, include_discussion: bool,
     parents: dict[tuple[str, str], str],
+    quotes: dict[tuple[str, str], dict[str, Any]],
+    quote_nodes: dict[tuple[str, str], dict[str, Any]],
     saved: tuple[list[dict[str, Any]], bool],
 ) -> dict[str, Any]:
     match = re.match(X_ACCOUNT_PATTERN, post.url.lower())
@@ -162,6 +175,12 @@ def _content(
             conversation, post, payload, saved[0], local_urls,
             limited=saved[1],
         )
+        for node in conversation["context"] + conversation["replies"]:
+            node["x"].update(quoted_post(
+                quote_nodes.get((post.domain, node["id"]), {}),
+                post.domain, local_urls, quotes,
+            ))
+
         summary["conversation"] = conversation
 
     relationship = reply_metadata(payload)
@@ -175,7 +194,9 @@ def _content(
             reply.update(collected=True, url=parent_url)
 
     return {
-        **summary, **relationship, "handle": handle,
+        **summary, **relationship,
+        **quoted_post(payload, post.domain, local_urls, quotes),
+        "handle": handle,
         "name": name,
         "icon_url": icon,
         "links": post_links(payload, local_urls),
@@ -195,25 +216,9 @@ async def _conversation_assets(
     client: ClickHouseClient,
     snapshots: dict[tuple[str, str], dict[str, Any]],
     saved: dict[tuple[str, str], tuple[list[dict[str, Any]], bool]],
+    quote_keys: set[tuple[str, str]],
 ) -> dict[str, list[AssetRow]]:
-    keys = {
-        (domain, node_id)
-        for (domain, _), (nodes, _) in saved.items()
-        for node in nodes if (node_id := identifier(node.get("rest_id")))
-    }
-
-    for (domain, _), payload in snapshots.items():
-        capture = object_value(payload.get("conversation_capture"))
-        posts = capture.get("posts")
-
-        if not isinstance(posts, list):
-            continue
-
-        for raw in cast(list[object], posts)[:MAX_CONVERSATION_POSTS]:
-            post_id = identifier(object_value(raw).get("rest_id"))
-
-            if post_id:
-                keys.add((domain, post_id))
+    keys = set(_related_nodes(snapshots, saved)) | quote_keys
 
     if not keys:
         return {}
@@ -232,6 +237,33 @@ async def _conversation_assets(
             assets.setdefault(key[0], []).append(_parse_asset_row(row))
 
     return assets
+
+
+def _related_nodes(
+    snapshots: dict[tuple[str, str], dict[str, Any]],
+    saved: dict[tuple[str, str], tuple[list[dict[str, Any]], bool]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    related: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for (domain, _), payload in snapshots.items():
+        nodes = object_value(payload.get("conversation_capture")).get("posts")
+
+        if isinstance(nodes, list):
+            for raw in cast(list[object], nodes)[:MAX_CONVERSATION_POSTS]:
+                node = object_value(raw)
+                node_id = identifier(node.get("rest_id"))
+
+                if node_id:
+                    related.setdefault((domain, node_id), node)
+
+    for (domain, _), (nodes, _) in saved.items():
+        for node in nodes[:MAX_CONVERSATION_POSTS]:
+            node_id = identifier(node.get("rest_id"))
+
+            if node_id:
+                related.setdefault((domain, node_id), node)
+
+    return related
 
 
 def _count(value: object, *, allow_string: bool = False) -> int | None:

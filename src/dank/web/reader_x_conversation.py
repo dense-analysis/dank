@@ -8,13 +8,9 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 from dank.storage.clickhouse import parse_datetime
-from dank.web.app import (
-    PostRow,
-    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
-    _summarize_html,  # pyright: ignore[reportPrivateUsage]
-)
-from dank.web.reader_accounts import profile_identity
-from dank.x_content import object_value, post_html, post_links, post_media
+from dank.web.app import PostRow
+from dank.web.reader_x_post import captured_post, post_handle
+from dank.x_content import object_value
 
 # Defensive reader limits, independent of a collector's configured budget.
 MAX_CONVERSATION_POSTS = 200
@@ -166,7 +162,7 @@ def _add_posts(
     result["captured_count"] = len(replies)
 
     if include_posts:
-        root_handle = _handle(payload)
+        root_handle = post_handle(payload)
         result["context"] = [
             _post(node, post, root_handle, local_urls, depth=0,
                   missing_parent=False)
@@ -201,7 +197,7 @@ def _node(raw: object, conversation_id: str) -> dict[str, Any]:
         or identifier(legacy.get("conversation_id_str")) != conversation_id
         or legacy.get("id_str", node_id) != node_id
         or node.get("promotedMetadata") or node.get("promoted_metadata")
-        or not _handle(node)
+        or not post_handle(node)
     ):
         return {}
 
@@ -319,67 +315,16 @@ def _ordered_replies(
     return ordered
 
 
-def _handle(payload: dict[str, Any]) -> str:
-    profile = object_value(object_value(object_value(
-        payload.get("core"),
-    ).get("user_results")).get("result"))
-    core = object_value(profile.get("core"))
-    identity = core if core.get("screen_name") else object_value(
-        profile.get("legacy"),
-    )
-    value = identity.get("screen_name")
-
-    return value.lower() if isinstance(value, str) and re.fullmatch(
-        r"[A-Za-z0-9_]{1,15}", value,
-    ) else ""
-
-
 def _post(
     node: dict[str, Any], selected: PostRow, root_handle: str,
     local_urls: dict[str, str], *, depth: int, missing_parent: bool,
 ) -> dict[str, Any]:
-    handle = _handle(node)
-    profile = object_value(object_value(node.get("core")).get("user_results"))
-    name, icon = profile_identity(profile.get("result"), handle)
-    body = _sanitize_html(post_html(node))
-    legacy = object_value(node.get("legacy"))
-    node_id = str(node["rest_id"])
-
     return {
-        "id": node_id, "domain": selected.domain,
-        "url": f"https://x.com/{handle}/status/{node_id}",
-        "author": handle, "title": "", "html": body,
-        "excerpt": _summarize_html(body), "source": "x",
-        "created_at": _created_at(legacy.get("created_at"), node_id),
-        "thumbnail": None, "media": [], "parent_id": _parent(node),
-        "depth": depth, "missing_parent": missing_parent,
-        "is_author": bool(root_handle and handle == root_handle),
-        "x": {
-            "handle": handle, "name": name, "icon_url": icon,
-            "links": post_links(node, local_urls),
-            "media": post_media(node, local_urls),
-            "reply_count": count(legacy.get("reply_count")),
-        },
+        **captured_post(node, selected.domain, local_urls),
+        "parent_id": _parent(node), "depth": depth,
+        "missing_parent": missing_parent,
+        "is_author": bool(root_handle and post_handle(node) == root_handle),
     }
-
-
-def _created_at(value: object, node_id: str) -> str:
-    if isinstance(value, str):
-        try:
-            return dt.datetime.strptime(
-                value, "%a %b %d %H:%M:%S %z %Y",
-            ).isoformat()
-        except ValueError:
-            parsed = _timestamp(value)
-
-            if parsed:
-                return parsed
-
-    # X snowflakes encode their creation time even if legacy text is missing.
-    # https://github.com/twitter-archive/snowflake/blob/snowflake-2010/src/main/scala/com/twitter/service/snowflake/IdWorker.scala#L22-L31
-    milliseconds = (int(node_id) >> 22) + 1288834974657
-
-    return dt.datetime.fromtimestamp(milliseconds / 1000, dt.UTC).isoformat()
 
 
 def connect_saved_posts(
@@ -412,7 +357,7 @@ def connect_saved_posts(
         node_id = node["rest_id"]
         local_ids.add(node_id)
         nodes.setdefault(node_id, _post(
-            node, post, _handle(payload), local_urls, depth=0,
+            node, post, post_handle(payload), local_urls, depth=0,
             missing_parent=False,
         ))
         nodes[node_id]["collected"] = True

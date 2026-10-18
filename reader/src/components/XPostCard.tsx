@@ -40,7 +40,13 @@ export function XPostCard({
         navigation={navigation}
       />
       <XParentLink post={post} params={params} openPost={openPost} />
-      <XPostContent post={post} compact query={query} navigation={navigation} />
+      <XPostContent
+        quoteNavigation={{ params, openPost, selectAccount }}
+        post={post}
+        compact
+        query={query}
+        navigation={navigation}
+      />
       <footer className="post-bottom x-post-actions social-post-actions">
         <XEngagement post={post.x} navigation={navigation} />
         {(post.x?.replies_status === "captured" ||

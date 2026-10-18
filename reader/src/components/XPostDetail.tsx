@@ -42,7 +42,11 @@ export function XPostDetail({
       <div className="x-focused-post">
         <XPostHeader post={post} selectAccount={selectAccount} />
         <XParentLink post={post} params={params} openPost={openPost} />
-        <XPostContent post={post} referenceUrl={referenceUrl} />
+        <XPostContent
+          quoteNavigation={{ params, openPost, selectAccount }}
+          post={post}
+          referenceUrl={referenceUrl}
+        />
       </div>
       {!hasXContent(post) && (
         <p className="x-content-unavailable">

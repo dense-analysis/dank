@@ -244,6 +244,7 @@ function ConversationPosts({
               )}
             </div>
             <XPostContent
+              quoteNavigation={{ params, openPost, selectAccount }}
               post={post}
               compact
               navigation={

@@ -770,3 +770,21 @@ ancestor levels; gaps and limits are explicit. Archive dates and capture counts
 retain their original meaning. Covered by
 [relationship tests](../tests/web/test_reader_x_saved.py) and
 [reader acceptance tests](../reader/tests/x-saved-replies.spec.ts).
+
+### X embedded quoted posts
+
+On 2026-10-18 the saved Eric Weinstein post `2110938986801938839` contained
+Haider's quoted post `2110797855879471162` and its video, but the reader omitted
+the entire quote. Feeds and opened conversations now render one embedded level
+from the parent snapshot, with a separately saved post as the ID-only fallback.
+Quoted posts and their media are already discovered by timeline collection;
+this change exposes those captures without another scrape. Saved local files
+are preferred, and remote playback still depends on the captured URL remaining
+available. The example's direct video returned HTTP 403 in Chrome; a targeted
+retry saved its captured 720p rendition within the existing download limit and
+verified local playback. Missing/deleted quote content stays explicit; this
+does not collect all replies or fetch missing quotes when opening the reader.
+Covered by
+[quote API tests](../tests/web/test_reader_x_quotes.py),
+[collection tests](../tests/scrape/test_x_references.py) and
+[reader tests](../reader/tests/x-reader.spec.ts).

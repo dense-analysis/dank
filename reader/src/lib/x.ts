@@ -53,6 +53,7 @@ export function xMedia(post: Post): XMedia[] {
 
 export function hasXContent(post: Post): boolean {
   return (
+    !!post.x?.quote ||
     hasArticleContent(post.html) ||
     xMedia(post).length > 0 ||
     (post.x?.links?.length ?? 0) > 0

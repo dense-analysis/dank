@@ -198,6 +198,14 @@ available local files are preferred, with captured X media URLs as a fallback.
 Remote media may expire or become unavailable. A link card remains a usable
 external link when its image cannot load; previews never embed third-party pages.
 
+Quoted posts appear as embedded cards with their own author, text and media in
+feeds and conversations. Timeline collection already saves nested quoted posts
+and discovers their assets. The reader prefers the quote embedded in the parent
+capture, falling back to a separately saved post for ID-only references. It opens
+saved quotes in DANK and otherwise links to X. Missing quotes show an explicit
+placeholder. Cards embed one level; opening the quoted post reveals its own quote.
+Existing captures gain these cards without reprocessing or another scrape.
+
 Reply, repost, like and view counts describe the same saved capture as the
 post body. Missing counts remain unknown, not zero.
 

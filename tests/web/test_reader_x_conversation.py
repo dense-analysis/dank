@@ -466,7 +466,7 @@ def test_feed_conversation_summary_does_not_render_reply_bodies(
         pytest.fail("Feed summaries must not serialize entire conversations")
 
     monkeypatch.setattr(
-        "dank.web.reader_x_conversation.post_html", unexpected_render,
+        "dank.web.reader_x_post.post_html", unexpected_render,
     )
     focal = tweet("100", replies=1)
     focal["conversation_capture"] = archive([tweet("101", "100")])

@@ -122,6 +122,31 @@ function mediaReferenceKey(
   return undefined;
 }
 
+export function xPostReferenceId(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (
+      ["http:", "https:"].includes(url.protocol) &&
+      [
+        "x.com",
+        "www.x.com",
+        "twitter.com",
+        "www.twitter.com",
+        "mobile.twitter.com",
+      ].includes(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.port
+    )
+      return /^\/[a-z0-9_]{1,15}\/status\/([0-9]{1,20})\/?$/i.exec(
+        url.pathname,
+      )?.[1];
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 export function previewReferenceKey(value: string): string | undefined {
   if (!value) return undefined;
 

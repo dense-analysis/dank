@@ -2936,3 +2936,51 @@ a.x-metric:hover {
   font-size: 13px;
   margin: 10px 0 14px;
 }
+
+.x-quote-card {
+  margin-top: 16px;
+  padding: 14px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: border-color 150ms ease;
+}
+.x-quote-card:hover {
+  border-color: var(--muted);
+}
+.x-quote-card .x-post-header {
+  align-items: center;
+  gap: 6px 12px;
+}
+.x-quote-card .identity-avatar {
+  width: 28px;
+  height: 28px;
+}
+.x-quote-card .x-account-identity {
+  gap: 8px;
+}
+.x-quote-card .x-account-labels {
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+.x-quote-card .x-post-content {
+  margin-top: 10px;
+}
+.x-quote-card .x-attachments {
+  grid-template-columns: 1fr;
+}
+.x-quote-original,
+.x-quote-unavailable {
+  color: var(--muted);
+  font-size: 13px;
+}
+.x-quote-original {
+  display: inline-block;
+  margin-top: 10px;
+}
+.x-quote-unavailable {
+  margin: 0;
+}

@@ -819,3 +819,127 @@ for (const shown of [true, false]) {
     }
   });
 }
+
+const quoted: Post = {
+  ...grant,
+  id: "200",
+  url: "https://x.com/quoted/status/200",
+  title: "Embedded original",
+  html: `<p>Quoted explanation. ${"Additional context for the original. ".repeat(14)}</p>`,
+  x: {
+    ...longProfile,
+    handle: "quoted",
+    name: "Quoted Author",
+    media: [attachments.media[1]],
+  },
+};
+const quoteParent: Post = {
+  ...grant,
+  id: "100",
+  title: "Outer post",
+  html: '<p>Outer commentary on the original.</p><p><a href="https://twitter.com/quoted/status/200">https://twitter.com/quoted/status/200</a></p>',
+  x: {
+    ...longProfile,
+    quote: {
+      id: quoted.id,
+      domain: quoted.domain,
+      url: quoted.url,
+      collected: true,
+      post: quoted,
+    },
+  },
+};
+
+for (const width of [1440, 390, 320]) {
+  test(`quoted posts retain identity, playable media and independent navigation at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockX(context, [quoteParent, quoted]);
+    await page.goto("/reader/?view=x&account=3blue1brown");
+    const parent = page
+      .locator(".x-post-card")
+      .filter({ hasText: "Outer commentary" });
+    const quote = parent.locator(".x-quote-card");
+    await expect(
+      quote.getByRole("link", { name: "Posts from @quoted", exact: true }),
+    ).toContainText("Quoted Author");
+    await expect(
+      parent.getByRole("link", {
+        name: "https://twitter.com/quoted/status/200",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const initial = page.url();
+    await quote.getByRole("button", { name: "Show more", exact: true }).click();
+    await expect(
+      quote.getByRole("button", { name: "Show less", exact: true }),
+    ).toBeVisible();
+    expect(page.url()).toBe(initial);
+    const video = quote.locator("video");
+    await video.scrollIntoViewIfNeeded();
+    await video.evaluate(async (element: HTMLVideoElement) => {
+      element.muted = true;
+      await element.play();
+    });
+    await expect
+      .poll(() =>
+        video.evaluate((element: HTMLVideoElement) => element.currentTime),
+      )
+      .toBeGreaterThan(0);
+    expect(page.url()).toBe(initial);
+    await expect(video).toHaveJSProperty("paused", false);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    );
+    expect(overflow).toBe(false);
+    await quote.click({ position: { x: 6, y: 6 } });
+    await expect(page).toHaveURL(/article=200/);
+    await expect(page).toHaveURL(/account=3blue1brown/);
+    await expect(page.locator(".x-focused-post")).toContainText(
+      "Quoted explanation",
+    );
+    await page.goBack();
+    await expect(quote).toBeVisible();
+    await parent
+      .locator(".x-post-header")
+      .first()
+      .locator("a[data-card-link]")
+      .click();
+    await expect(page).toHaveURL(/article=100/);
+    await expect(page.locator(".x-focused-post .x-quote-card")).toContainText(
+      "Quoted explanation",
+    );
+  });
+}
+
+test("missing and embedded-only quotes keep an honest external destination", async ({
+  page,
+  context,
+}) => {
+  const missing = {
+    ...quoteParent,
+    x: {
+      ...longProfile,
+      quote: {
+        id: "200",
+        domain: "x.com",
+        url: quoted.url,
+        collected: false,
+      },
+    },
+  };
+  await mockX(context, [missing]);
+  await page.goto("/reader/?view=x");
+  const quote = page.locator(".x-quote-card");
+  await expect(quote).toContainText("Quoted post unavailable in this capture");
+  await expect(
+    quote.getByRole("link", { name: "View quoted post on X" }),
+  ).toHaveAttribute("href", quoted.url);
+  await expect(quote.getByRole("link")).toHaveAttribute("target", "_blank");
+  const accessibility = await new AxeBuilder({ page })
+    .include(".x-quote-card")
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+});
