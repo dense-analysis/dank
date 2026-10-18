@@ -81,7 +81,8 @@ make process ARGS='--age 24h'
 ```
 
 Source arrays can mix domain strings with tables containing optional
-`feed_urls` and `tags`. `[rss].max_entries_per_feed` limits each feed per run;
+`feed_urls`, `tags` and `adapters`. A source can compose collection methods,
+including [Hacker News with RSS](docs/features/hacker-news.md#add-rss-or-use-it-alone). `[rss].max_entries_per_feed` limits each feed per run;
 omitting it preserves unlimited fetching. See [RSS configuration](docs/features/rss.md#configure).
 Reddit sources use `feed_urls` for community URLs or `r/community` shorthand;
 see [Reddit configuration](docs/features/reddit.md#configure).

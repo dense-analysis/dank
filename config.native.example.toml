@@ -6,6 +6,7 @@
 # Reddit: sources = [{ domain = "reddit.com", feed_urls = ["r/LocalLLaMA"] }]
 # YouTube: sources = [{ domain = "youtube.com", accounts = ["@Channel4News"] }]
 # Hacker News: sources = [{ domain = "hckrnews.com", hacker_news_filter = "top50" }]
+# Compose HN with RSS: docs/features/hacker-news.md#add-rss-or-use-it-alone
 sources = []
 
 [clickhouse]

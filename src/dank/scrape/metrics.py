@@ -121,10 +121,9 @@ class SourceMetrics:
         return {
             "run_id": run_id, "source_index": self.index,
             "domain": self.source.domain,
-            "source": {
-                "x.com": "x", "reddit.com": "reddit", "youtube.com": "youtube",
-                "news.ycombinator.com": "hacker_news",
-            }.get(self.source.domain, "rss"),
+            "source": "+".join(dict.fromkeys(
+                adapter.kind for adapter in self.source.collection_adapters
+            )),
             "accounts": list(self.source.accounts),
             "tags": list(self.source.tags),
             "feed_urls": list(self.feed_urls),

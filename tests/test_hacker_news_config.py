@@ -43,7 +43,6 @@ def test_hacker_news_configurable_ranking(
 @pytest.mark.parametrize("source", [
     '{ domain = "hckrnews.com", hacker_news_filter = "best" }',
     '{ domain = "hckrnews.com", accounts = ["person"] }',
-    '{ domain = "hckrnews.com", feed_urls = ["https://example.test/rss"] }',
     '{ domain = "hckrnews.com", reddit_sort = "top" }',
     '{ domain = "example.test", hacker_news_filter = "top10" }',
     '{ domain = "reddit.com", feed_urls = ["r/python"], '

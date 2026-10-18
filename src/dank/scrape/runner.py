@@ -21,6 +21,8 @@ from dank.config import (
     RedditSettings,
     RedditSourceConfig,
     Settings,
+    SourceAdapter,
+    SourceAdapterConfig,
     SourceConfig,
     XSettings,
     load_settings,
@@ -46,13 +48,15 @@ from dank.scrape.hacker_news import (
     scrape_hacker_news,
     scrape_hacker_news_details,
 )
-from dank.scrape.http import RequestLimiter, current_limiter
+from dank.scrape.hacker_news_rss import scrape_hacker_news_rss
+from dank.scrape.http import HostCooldownError, RequestLimiter, current_limiter
 from dank.scrape.linked_articles import LinkedArticle, scrape_linked_articles
 from dank.scrape.metrics import (
     RSS_CONCURRENCY,
     RunMetrics,
     ScrapeOptions,
     SourceMetrics,
+    count,
     current_source,
 )
 from dank.scrape.page_recovery import PageRecovery, current_page_recovery
@@ -329,9 +333,11 @@ async def _collect_with_history(
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     totals_seen: set[str] = set()
-    browser_locks = {
+    source_locks = {
         domain: asyncio.Lock()
-        for domain in ("x.com", "reddit.com", "youtube.com")
+        for domain in (
+            "x.com", "reddit.com", "youtube.com", "news.ycombinator.com",
+        )
     }
     token = current_limiter.set(RequestLimiter(settings.scrape))
     reddit_requests = RedditRequests(settings.reddit.request_interval_seconds)
@@ -353,7 +359,7 @@ async def _collect_with_history(
             await _collect_source(
                 settings, source, index, client, http_client, session,
                 history, assets_dir, profile_dir,
-                browser_locks.get(source.domain),
+                source_locks.get(source.domain),
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 reddit_details=reddit_details, x_details=x_details,
                 hacker_news_details=hacker_news_details,
@@ -415,7 +421,7 @@ async def _collect_source(
         token = current_source.set(stats)
 
         try:
-            # Same-site sources share a tab, independently of the other site.
+            # Same-site browser tabs and composed HN snapshots are serialized.
             async with (
                 browser_lock if browser_lock is not None else nullcontext()
             ):
@@ -520,81 +526,127 @@ async def _discover_source_batches(
 
         return
 
-    match source.domain:
-        case "news.ycombinator.com":
+    seen_articles: set[str] = set()
+
+    for adapter in source.collection_adapters:
+        logger.info(
+            "%s: collecting with %s adapter", source.domain, adapter.kind,
+        )
+
+        try:
+            async for batch in _discover_adapter_batches(
+                settings, source, adapter, clickhouse_client, http_client,
+                session, feed_staleness=feed_staleness,
+                batch_size=batch_size, totals_seen=totals_seen,
+                seen_articles=seen_articles,
+            ):
+                logger.info(
+                    "Discovered batch domain=%s adapter=%s posts=%d "
+                    "references=%d assets=%d", source.domain, adapter.kind,
+                    batch.post_count, batch.reference_count, len(batch.assets),
+                )
+                yield batch
+        except (aiohttp.ClientError, TimeoutError, HostCooldownError) as error:
+            count("fetch_failures")
+            logger.warning("%s: %s adapter failed: %s", source.domain,
+                           adapter.kind, error)
+
+
+async def _discover_adapter_batches(
+    settings: Settings, source: SourceConfig, adapter: SourceAdapterConfig,
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    session: BrowserSession, *, feed_staleness: datetime.timedelta,
+    batch_size: int, totals_seen: set[str] | None, seen_articles: set[str],
+) -> AsyncIterator[ScrapeBatch]:
+    match adapter.kind:
+        case SourceAdapter.HACKER_NEWS:
             batches_iter = _hacker_news_content_batches(
-                settings, source, clickhouse_client, http_client,
+                settings, source, client, http_client, seen=seen_articles,
             )
-        case "youtube.com":
-            known_ids = await _known_youtube_channel_ids(clickhouse_client)
+        case SourceAdapter.YOUTUBE:
+            known_ids = await _known_youtube_channel_ids(client)
             batches_iter = scrape_youtube_feeds(
                 settings, source, session, known_ids=known_ids,
             )
-        case "reddit.com":
+        case SourceAdapter.REDDIT:
             batches_iter = await _reddit_listing_batches(
-                settings, source, clickhouse_client, http_client, session,
-                totals_seen,
+                settings, source, client, http_client, session, totals_seen,
             )
-        case "x.com":
-            logger.info(
-                "Scraping X source accounts=%d",
-                len(source.accounts),
-            )
-
+        case SourceAdapter.X:
             batches_iter = scrape_x_accounts(
-                settings.x,
-                source.accounts,
-                session,
+                settings.x, source.accounts, session,
             )
-        case _:
-            logger.info("Scraping RSS feeds for domain=%s", source.domain)
-            feed_urls = await _source_feed_urls(
-                clickhouse_client, source, feed_staleness,
-            )
-            stats = current_source.get()
-
-            if stats is not None:
-                stats.feed_urls = tuple(feed_urls)
-                stats.skipped = not feed_urls
-
-            if not feed_urls:
-                logger.warning(
-                    "%s: no usable feeds; source skipped", source.domain,
-                )
-
-                return
-
-            batches_iter = scrape_feed_batches(
-                http_client,
-                domain=source.domain,
-                feed_urls=feed_urls,
-                batch_size=batch_size,
-                keep_feed_on_fetch_failure=(
-                    settings.keep_feed_on_fetch_failure
-                ),
-                max_entries_per_feed=settings.max_entries_per_feed,
+        case SourceAdapter.RSS:
+            batches_iter = _rss_adapter_batches(
+                settings, source, adapter, client, http_client,
+                feed_staleness=feed_staleness, batch_size=batch_size,
+                seen_articles=seen_articles,
             )
 
     async for batch in batches_iter:
-        logger.info(
-            "Discovered batch domain=%s posts=%d references=%d assets=%d",
-            source.domain,
-            batch.post_count,
-            batch.reference_count,
-            len(batch.assets),
+        yield batch
+
+
+async def _rss_adapter_batches(
+    settings: Settings, source: SourceConfig, adapter: SourceAdapterConfig,
+    client: ClickHouseClient, http_client: aiohttp.ClientSession, *,
+    feed_staleness: datetime.timedelta, batch_size: int,
+    seen_articles: set[str],
+) -> AsyncIterator[ScrapeBatch]:
+    feeds = adapter.feed_urls
+
+    if source.domain == "news.ycombinator.com" and not feeds:
+        feeds = ("https://news.ycombinator.com/rss",)
+
+    feed_urls = await _source_feed_urls(
+        client, source._replace(feed_urls=feeds), feed_staleness,
+    )
+    stats = current_source.get()
+
+    if stats is not None:
+        stats.feed_urls = tuple(dict.fromkeys((*stats.feed_urls, *feed_urls)))
+        stats.skipped = not feed_urls and not stats.counts["posts_queued"]
+
+    if not feed_urls:
+        logger.warning(
+            "%s: no usable feeds; source skipped RSS adapter", source.domain,
         )
+
+        return
+
+    if source.domain == "news.ycombinator.com":
+        batches_iter = _hacker_news_content_batches(
+            settings, source, client, http_client, seen=seen_articles,
+            batches=scrape_hacker_news_rss(
+                http_client, feed_urls, batch_size=batch_size,
+                max_entries_per_feed=settings.max_entries_per_feed,
+            ),
+        )
+    else:
+        batches_iter = scrape_feed_batches(
+            http_client, domain=source.domain, feed_urls=feed_urls,
+            batch_size=batch_size,
+            keep_feed_on_fetch_failure=settings.keep_feed_on_fetch_failure,
+            max_entries_per_feed=settings.max_entries_per_feed,
+        )
+
+    async for batch in batches_iter:
         yield batch
 
 
 async def _hacker_news_content_batches(
     settings: Settings, source: SourceConfig,
-    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    client: ClickHouseClient, http_client: aiohttp.ClientSession, *,
+    batches: AsyncIterator[ScrapeBatch] | None = None,
+    seen: set[str] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
-    seen: set[str] = set()
+    if seen is None:
+        seen = set()
 
-    async for batch in scrape_hacker_news(
-        settings.hacker_news, source, http_client,
-    ):
+    if batches is None:
+        batches = scrape_hacker_news(settings.hacker_news, source, http_client)
+
+    async for batch in batches:
         # Save listing/metadata first; a slow publisher cannot erase discovery.
         yield batch
         articles = _hacker_news_article_links(batch.posts, seen)
@@ -637,14 +689,16 @@ def _hacker_news_article_links(
         payload = payload_object(post.payload)
         listing = payload_object(payload.get("hckrnews"))
         story = payload_object(payload.get("story"))
+        rss = payload_object(payload.get("rss"))
         url = normalized_url(str(
-            listing.get("link") or story.get("url") or "",
+            listing.get("link") or story.get("url") or rss.get("url") or "",
         ))
 
         if url and url not in seen and url != normalized_url(post.url):
             seen.add(url)
             links[url] = str(
-                listing.get("link_text") or story.get("title") or "",
+                listing.get("link_text") or story.get("title")
+                or rss.get("title") or "",
             )
 
     return links
@@ -1370,6 +1424,46 @@ def _asset_owner_map(
     return result
 
 
+async def _compose_hacker_news_captures(
+    client: ClickHouseClient, posts: list[RawPost],
+) -> list[RawPost]:
+    ids = [post.post_id for post in posts if post.source == "hacker_news"]
+
+    if not ids:
+        return posts
+
+    result = await client.fetch_json(
+        "SELECT post_id, payload, post_created_at FROM raw_posts "
+        "WHERE domain = 'news.ycombinator.com' AND post_id IN %(ids)s "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id", {"ids": ids},
+    )
+    previous = {str(row["post_id"]): row for row in result.rows}
+    composed: list[RawPost] = []
+
+    for post in posts:
+        if post.source != "hacker_news":
+            composed.append(post)
+            continue
+
+        old = previous.get(post.post_id, {})
+        prior = payload_object(old.get("payload"))
+        incoming = payload_object(post.payload)
+        payload = prior | incoming
+        created = post.post_created_at
+
+        if prior.get("hckrnews") and not incoming.get("hckrnews"):
+            created = parse_datetime(old.get("post_created_at")) or created
+
+        post = post._replace(
+            payload=json.dumps(payload, ensure_ascii=False),
+            post_created_at=created,
+        )
+        previous[post.post_id] = post._asdict()
+        composed.append(post)
+
+    return composed
+
+
 async def _flush_posts(
     clickhouse_client: ClickHouseClient,
     pending_posts: list[RawPost],
@@ -1377,6 +1471,9 @@ async def _flush_posts(
     if not pending_posts:
         return 0
 
+    pending_posts[:] = await _compose_hacker_news_captures(
+        clickhouse_client, pending_posts,
+    )
     count = len(pending_posts)
     # is_reference is a computed storage column, not part of the raw payload.
     await clickhouse_client.insert_rows(

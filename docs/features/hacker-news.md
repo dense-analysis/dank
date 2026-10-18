@@ -42,6 +42,55 @@ Reader filters apply to collected stories. To make the complete daily range
 available under All, collect with `hacker_news_filter = "all"`. The reader
 still starts at Top 50%. Search and date filters do not recalculate rankings.
 
+## Add RSS or use it alone
+
+A source is the identity you browse; its adapters determine how DANK collects
+it. To keep hckrnews and the official API and add the
+[HN RSS feed](https://news.ycombinator.com/rss), use this source definition:
+
+```toml
+[[sources]]
+domain = "news.ycombinator.com"
+hacker_news_filter = "top50"
+
+[[sources.adapters]]
+type = "hacker_news"
+
+[[sources.adapters]]
+type = "rss"
+feed_urls = ["https://news.ycombinator.com/rss"]
+```
+
+The `hacker_news` adapter retains the existing archive and API behavior.
+Adapters run in the configured order; a network failure in one does not prevent
+the next from collecting. History records the selected adapter types and feed
+URLs. Existing source definitions without adapters keep their current behavior.
+
+For RSS alone, the ordinary feed configuration also works:
+
+```toml
+sources = [
+  { domain = "news.ycombinator.com", feed_urls = ["https://news.ycombinator.com/rss"] }
+]
+```
+
+Alternatively, select only the `rss` adapter. With no explicit feed URLs, it uses
+HN's official RSS URL. RSS-only discovery does not call hckrnews or the HN API;
+it still collects linked publisher pages through the article pipeline. The
+separate detailed-scrape command remains available if discussions are wanted.
+
+RSS entries use their HN discussion IDs, so repeat captures enrich the same
+story. Two HN submissions linking to the same article retain separate identities.
+Raw feed XML, feed URLs and capture times are retained. New captures preserve
+previously collected archive rankings, API story bodies and discussions; native
+fields take precedence when present. Older snapshots remain stored.
+
+RSS provides the current feed, not the archive's seven-day history, points or
+daily ranking eligibility. RSS-only stories appear under **All** in the Hacker
+News collection. The Top filters require saved hckrnews eligibility, and unknown
+counts remain unknown. `[rss].max_entries_per_feed` applies to RSS collection;
+`hacker_news_filter` applies only when the `hacker_news` adapter is selected.
+
 ## Collect
 
 ```sh

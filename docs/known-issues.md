@@ -16,6 +16,15 @@ HN API (or the archive’s submission time), never a guessed front-page time.
 Unavailable metadata remains explicitly unknown. Normal collection fetches story
 metadata and linked publisher pages; comments require a separate detailed pass.
 
+Optional RSS collection uses native HN discussion IDs and preserves the raw feed
+entry. It can run alone or alongside the archive/API adapter. Composed snapshots
+retain previously captured rankings, story bodies and comments; adapters share
+publisher fetches within a source run. Network failures leave the source partial
+when another adapter succeeds. RSS-only items have no inferred daily ranking or
+scores and are available under **All**. RSS does not reconstruct front-page arrival
+times or historical days. See [RSS tests](../tests/scrape/test_hacker_news_rss.py)
+and [composition tests](../tests/scrape/test_hacker_news_runner.py).
+
 Detailed capture now defaults to `comment_limit = "all"` with no overall thread
 timeout. Item requests have a 30-second timeout, at most three attempts, bounded
 concurrency, and shared host limits. Previously capped threads are retried first.

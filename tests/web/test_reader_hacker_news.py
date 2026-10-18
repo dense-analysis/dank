@@ -323,3 +323,22 @@ async def test_full_discussions_preserve_over_500_comments_without_recursion():
     assert hn["comments_items"][-1]["depth"] == 32
     assert hn["comment_capture"]["captured"] == 750
     assert hn["comment_capture"]["status"] == "captured"
+
+
+async def test_rss_story_metadata_keeps_unknown_counts_and_native_link():
+    client = AsyncMock()
+    client.fetch_json.return_value = QueryResult([stored({"rss": {
+        "title": "Feed title", "url": "https://publisher.test/story",
+        "time": int(NOW.timestamp()),
+    }})])
+    result = summary()
+    await add_hacker_news_metadata(
+        client, [result], [POST], include_discussion=False,
+    )
+    metadata = result["hacker_news"]
+    assert metadata["points"] is None
+    assert metadata["comments"] is None
+    assert metadata["rank"] is None
+    assert metadata["external_url"] == "https://publisher.test/story"
+    assert metadata["discussion_url"] == POST.url
+    assert metadata["submitted_at"] == NOW.isoformat()

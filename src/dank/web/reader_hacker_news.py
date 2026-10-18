@@ -103,8 +103,11 @@ async def add_hacker_news_metadata(
         snapshot = snapshots.get(post["id"], {})
         listing = _object(snapshot.get("hckrnews"))
         story = _object(snapshot.get("story"))
+        rss = _object(snapshot.get("rss"))
         metadata = _object(snapshot.get("hacker_news"))
-        external_url = _http_url(listing.get("link") or story.get("url"))
+        external_url = _http_url(
+            listing.get("link") or story.get("url") or rss.get("url"),
+        )
         day = metadata.get("day")
 
         try:
@@ -127,6 +130,7 @@ async def add_hacker_news_metadata(
             "submitted_at": (
                 _timestamp(story.get("time"))
                 or _timestamp(listing.get("time"))
+                or _timestamp(rss.get("time"))
             ),
         }
 

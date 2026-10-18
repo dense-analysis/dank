@@ -134,6 +134,28 @@ class ClickHouseSettings(NamedTuple):
     use_http: bool
 
 
+class SourceAdapter(StrEnum):
+    RSS = "rss"
+    HACKER_NEWS = "hacker_news"
+    X = "x"
+    REDDIT = "reddit"
+    YOUTUBE = "youtube"
+
+
+class SourceAdapterConfig(NamedTuple):
+    kind: SourceAdapter
+    feed_urls: tuple[str, ...] = ()
+
+
+def default_source_adapter(domain: str) -> SourceAdapter:
+    return {
+        "news.ycombinator.com": SourceAdapter.HACKER_NEWS,
+        "x.com": SourceAdapter.X,
+        "reddit.com": SourceAdapter.REDDIT,
+        "youtube.com": SourceAdapter.YOUTUBE,
+    }.get(domain, SourceAdapter.RSS)
+
+
 class SourceConfig(NamedTuple):
     domain: str
     accounts: tuple[str, ...]
@@ -141,6 +163,13 @@ class SourceConfig(NamedTuple):
     tags: tuple[str, ...] = ()
     reddit: RedditSourceConfig | None = None
     hacker_news: HackerNewsSourceConfig | None = None
+    adapters: tuple[SourceAdapterConfig, ...] = ()
+
+    @property
+    def collection_adapters(self) -> tuple[SourceAdapterConfig, ...]:
+        return self.adapters or (SourceAdapterConfig(
+            default_source_adapter(self.domain), self.feed_urls,
+        ),)
 
 
 class BrowserSettings(NamedTuple):
@@ -233,6 +262,84 @@ def _parse_source(
     domain: str, accounts: tuple[str, ...], item: object,
 ) -> SourceConfig:
     options = _as_dict(item) or {}
+    raw_adapters = options.get("adapters")
+    source = _parse_native_source(domain, accounts, options)
+
+    if raw_adapters is None:
+        if source.adapters and "hacker_news_filter" in options:
+            raise ConfigError(
+                "Use explicit adapters to combine hacker_news_filter and RSS",
+            )
+
+        return source
+
+    entries = _as_list(raw_adapters)
+
+    if not entries:
+        raise ConfigError("sources.adapters must be a non-empty array")
+
+    adapters = tuple(_parse_source_adapter(source, entry) for entry in entries)
+
+    if len(set(adapters)) != len(adapters):
+        raise ConfigError("sources.adapters must not contain duplicates")
+
+    kinds = {adapter.kind for adapter in adapters}
+
+    if ("hacker_news_filter" in options
+            and SourceAdapter.HACKER_NEWS not in kinds):
+        raise ConfigError(
+            "hacker_news_filter requires the hacker_news adapter",
+        )
+
+    if (source.domain == "news.ycombinator.com" and source.feed_urls
+            and SourceAdapter.RSS not in kinds):
+        raise ConfigError("Hacker News feed_urls require an RSS adapter")
+
+    return source._replace(adapters=adapters)
+
+
+def _parse_source_adapter(
+    source: SourceConfig, value: object,
+) -> SourceAdapterConfig:
+    options = _as_dict(value)
+
+    if options is None or set(options) - {"type", "feed_urls"}:
+        raise ConfigError(
+            "Each sources.adapters entry needs type and optional feed_urls",
+        )
+
+    kind = _parse_enum(
+        SourceAdapter, options.get("type"), "sources.adapters.type",
+    )
+    native = default_source_adapter(source.domain)
+
+    if kind == SourceAdapter.RSS:
+        if native in {
+            SourceAdapter.X, SourceAdapter.REDDIT, SourceAdapter.YOUTUBE,
+        }:
+            raise ConfigError(
+                "RSS adapters currently support publishers and Hacker News",
+            )
+
+        return SourceAdapterConfig(kind, _parse_feed_urls(
+            options.get("feed_urls", list(source.feed_urls)),
+        ))
+
+    if kind != native:
+        raise ConfigError(
+            f"Adapter {kind} is not supported for {source.domain}",
+        )
+
+    if "feed_urls" in options:
+        raise ConfigError("Only RSS adapters accept adapter feed_urls")
+
+    return SourceAdapterConfig(kind, source.feed_urls)
+
+
+def _parse_native_source(
+    domain: str, accounts: tuple[str, ...], item: object,
+) -> SourceConfig:
+    options = _as_dict(item) or {}
     tags = tuple(dict.fromkeys(
         tag.lower() for tag in _source_strings(options.get("tags", []), "tags")
     ))
@@ -248,16 +355,20 @@ def _parse_source(
     if domain in hacker_news_domains:
         feeds = _source_strings(options.get("feed_urls", []), "feed_urls")
 
-        if accounts or feeds or {
+        if accounts or {
             "reddit_sort", "reddit_time_filter",
         }.intersection(options):
             raise ConfigError(
                 "Hacker News sources use hacker_news_filter, not accounts, "
-                "feed_urls or Reddit sorting options",
+                "or Reddit sorting options",
             )
 
         return SourceConfig(
             domain="news.ycombinator.com", accounts=(), tags=tags,
+            feed_urls=_parse_feed_urls(list(feeds)),
+            adapters=(SourceAdapterConfig(
+                SourceAdapter.RSS, _parse_feed_urls(list(feeds)),
+            ),) if feeds else (),
             hacker_news=HackerNewsSourceConfig(filter=_parse_enum(
                 HackerNewsFilter,
                 options.get("hacker_news_filter", HackerNewsFilter.TOP50),

@@ -130,3 +130,16 @@ def test_self_post_cannot_supply_internal_destination_evidence() -> None:
     assert post is not None
     assert "data-dank-hn-destination" not in post.html
     assert "A cited page" in post.html
+
+
+def test_rss_only_story_processes_without_native_metadata():
+    post = convert_raw_hacker_news_post(raw({"rss": {
+        "title": "Feed story", "url": "https://publisher.test/article",
+    }}))
+    assert post is not None
+    assert post.title == "Feed story"
+    assert post.author == ""
+    assert post.source == "hacker_news"
+    assert post.url == "https://news.ycombinator.com/item?id=123"
+    assert 'data-dank-hn-destination="1"' in post.html
+    assert "https://publisher.test/article" in post.html

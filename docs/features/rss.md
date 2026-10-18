@@ -1,8 +1,9 @@
 # RSS and Atom feeds
 
 DANK collects posts from websites with RSS 1.0, RSS 2.0 or Atom feeds.
-For configured domains other than `x.com`, it reads selected or discovered
-feeds and fetches their linked article pages.
+For publisher sources, it reads selected or discovered feeds and fetches their
+linked article pages. Hacker News RSS retains native story identities; see
+[Hacker News adapters](hacker-news.md#add-rss-or-use-it-alone).
 
 ## Configure
 
@@ -33,6 +34,34 @@ Optional `tags` are manual source labels: trimmed, lowercased and deduplicated.
 They are saved with effective feed URLs in [source history](history.md), not
 inferred as article topics or applied as article-search filters. Tags also
 work for X sources; explicit RSS feeds are not supported for `x.com`.
+
+A source may explicitly select multiple adapters, each with its own feed URLs:
+
+```toml
+[[sources]]
+domain = "publisher.example"
+tags = ["news"]
+
+[[sources.adapters]]
+type = "rss"
+feed_urls = ["https://feeds.example/news.xml"]
+
+[[sources.adapters]]
+type = "rss"
+feed_urls = ["https://feeds.example/technology.xml"]
+```
+
+An adapter is a collection method, not another publisher or a link relationship.
+Supported types are `rss`, `hacker_news`, `x`, `reddit` and `youtube`; native
+adapters require their corresponding source domain and retain the source's
+existing account/listing options. RSS composition currently supports publishers
+and Hacker News. Reddit, X and YouTube RSS normalization and additional adapters
+such as standalone yt-dlp discovery are not implemented. Unsupported combinations
+fail configuration validation rather than silently selecting another collector.
+
+Without `adapters`, existing source routing is unchanged, except that explicit
+HN `feed_urls` now select RSS. An explicit adapter list replaces the defaults;
+include `hacker_news` alongside `rss` to keep HN's existing collectors.
 
 Automatically discovered feed URLs are cached in ClickHouse. `feed_staleness_days` controls when DANK
 refreshes feed discovery; it does not schedule scraping. Each scrape run reads

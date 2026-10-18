@@ -69,13 +69,15 @@ def _raw_content(
         case "hacker_news":
             story = payload_object(payload.get("story"))
             listing = payload_object(payload.get("hckrnews"))
+            rss = payload_object(payload.get("rss"))
 
             return _PostContent(
-                _text(story.get("title") or listing.get("link_text")),
+                _text(story.get("title") or listing.get("link_text")
+                      or rss.get("title")),
                 _text(story.get("by")),
                 links_from(_text(story.get("text")))
                 + direct(
-                    story.get("url") or listing.get("link"),
+                    story.get("url") or listing.get("link") or rss.get("url"),
                 ),
                 _objects(payload.get("comments")),
             )

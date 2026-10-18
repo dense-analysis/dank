@@ -302,3 +302,109 @@ async def test_saved_destination_lookup_uses_stable_result_column_names(
 
     assert result[url]["domain"] == "publisher.test"
     client.fetch_json.assert_awaited_once()
+
+
+@pytest.mark.parametrize("rss_first", [False, True])
+async def test_composed_adapters_preserve_metadata_and_fetch_destination_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *,
+    rss_first: bool,
+) -> None:
+    from dank.config import SourceAdapter, SourceAdapterConfig
+
+    settings, client = setup(monkeypatch, tmp_path)
+    native = SourceAdapterConfig(SourceAdapter.HACKER_NEWS)
+    feed = SourceAdapterConfig(SourceAdapter.RSS, (
+        "https://news.ycombinator.com/rss",
+    ))
+    adapters = (feed, native) if rss_first else (native, feed)
+    settings = settings._replace(sources=(SourceConfig(
+        DOMAIN, (), adapters=adapters,
+    ),))
+    native_post = post()._replace(payload=json.dumps({
+        "hckrnews": {"link_text": "Saved title", "points": 42,
+                     "link": "https://publisher.test/story"},
+        "hacker_news": {"day": "2026-10-17", "filters": ["top50", "all"]},
+        "story": {"by": "Ada", "text": "Saved body"},
+        "comments": [{"id": 124, "text": "Saved discussion"}],
+        "comment_capture": {"status": "captured", "total": 1},
+    }))
+    feed_post = post()._replace(
+        payload=json.dumps({"rss": {"title": "Feed title",
+                                   "url": "https://publisher.test/story"}}),
+        post_created_at=post().scraped_at - dt.timedelta(days=3),
+        request_url=feed.feed_urls[0],
+    )
+    calls: list[str] = []
+
+    async def collect_native(*args: object) -> AsyncIterator[ScrapeBatch]:
+        calls.append("native")
+        yield ScrapeBatch([native_post], [])
+
+    async def collect_feed(*args: Any, **kwargs: Any):
+        calls.append("rss")
+        yield ScrapeBatch([feed_post], [])
+
+    async def saved(query: str, params: Any = None):
+        if "post_id IN %(ids)s" in query:
+            latest = {
+                row["post_id"]: row for row in client.rows.get("raw_posts", [])
+                if row["domain"] == DOMAIN
+            }
+            return SimpleNamespace(rows=list(latest.values()))
+
+        return SimpleNamespace(rows=[])
+
+    async def articles(*args: Any, **kwargs: Any):
+        calls.append("publisher")
+
+        if False:
+            yield ScrapeBatch([], [])
+
+    monkeypatch.setattr(runner, "scrape_hacker_news", collect_native)
+    monkeypatch.setattr(runner, "scrape_hacker_news_rss", collect_feed)
+    monkeypatch.setattr(runner, "scrape_linked_articles", articles)
+    monkeypatch.setattr(client, "fetch_json", saved)
+    await runner.run_scrape(settings, headless=True)
+    captures = client.rows["raw_posts"]
+    assert {row["post_id"] for row in captures} == {"123"}
+    latest = json.loads(captures[-1]["payload"])
+    assert latest["rss"]["title"] == "Feed title"
+    assert latest["hckrnews"]["points"] == 42
+    assert latest["hacker_news"]["filters"] == ["top50", "all"]
+    assert latest["story"]["text"] == "Saved body"
+    assert latest["comments"][0]["text"] == "Saved discussion"
+    assert latest["comment_capture"]["status"] == "captured"
+    assert captures[-1]["post_created_at"] == native_post.post_created_at
+    assert calls.count("publisher") == 1
+    assert calls.count("native") == calls.count("rss") == 1
+    assert client.rows["scrape_source_runs"][-1]["source"] == (
+        "rss+hacker_news" if rss_first else "hacker_news+rss"
+    )
+
+
+async def test_failed_adapter_does_not_prevent_rss_collection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    from dank.config import SourceAdapter, SourceAdapterConfig
+
+    settings, client = setup(monkeypatch, tmp_path)
+    settings = settings._replace(sources=(SourceConfig(DOMAIN, (), adapters=(
+        SourceAdapterConfig(SourceAdapter.HACKER_NEWS),
+        SourceAdapterConfig(SourceAdapter.RSS),
+    )),))
+
+    async def unavailable(*args: Any, **kwargs: Any):
+        raise TimeoutError("Archive unavailable")
+        yield ScrapeBatch([], [])
+
+    async def feed(*args: Any, **kwargs: Any):
+        assert args[1] == ["https://news.ycombinator.com/rss"]
+        yield ScrapeBatch([post()._replace(payload=json.dumps({
+            "rss": {"title": "RSS self-post"},
+        }))], [])
+
+    monkeypatch.setattr(runner, "scrape_hacker_news", unavailable)
+    monkeypatch.setattr(runner, "scrape_hacker_news_rss", feed)
+    await runner.run_scrape(settings, headless=True)
+    assert len(client.rows["raw_posts"]) == 1
+    assert client.rows["scrape_source_runs"][-1]["status"] == "partial"

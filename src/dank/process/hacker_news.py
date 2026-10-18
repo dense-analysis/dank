@@ -40,14 +40,15 @@ def convert_raw_hacker_news_post(row: RawPost) -> Post | None:
 
     listing = _object(payload.get("hckrnews"))
     story = _object(payload.get("story"))
-    title = listing.get("link_text") or story.get("title")
+    rss = _object(payload.get("rss"))
+    title = listing.get("link_text") or story.get("title") or rss.get("title")
 
     if not isinstance(title, str) or not title.strip():
         return None
 
     body = story.get("text")
     body = remove_page_noise(body) if isinstance(body, str) else ""
-    link = listing.get("link") or story.get("url")
+    link = listing.get("link") or story.get("url") or rss.get("url")
 
     if isinstance(link, str):
         try:

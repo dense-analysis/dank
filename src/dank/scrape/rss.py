@@ -85,7 +85,7 @@ class FetchedText(NamedTuple):
     content_type: str = "text/html"
 
 
-class _FeedPageDiscovery(NamedTuple):
+class FeedPageDiscovery(NamedTuple):
     feed_url: str
     page: PageDiscovery
     feed_final_url: str
@@ -484,7 +484,7 @@ async def scrape_feed_batches(
     if not feed_urls:
         return
 
-    page_discoveries = await _fetch_feed_page_discoveries(
+    page_discoveries = await fetch_feed_page_discoveries(
         http_client,
         domain=domain,
         feed_urls=feed_urls,
@@ -584,19 +584,20 @@ async def retry_feed_pages(
             yield ScrapeBatch(recovered, assets)
 
 
-async def _fetch_feed_page_discoveries(
+async def fetch_feed_page_discoveries(
     http_client: aiohttp.ClientSession,
     *,
     domain: str,
     feed_urls: list[str],
-    concurrency: int,
+    concurrency: int = RSS_CONCURRENCY,
     max_entries_per_feed: int = 0,
-) -> list[_FeedPageDiscovery]:
+    deduplicate_urls: bool = True,
+) -> list[FeedPageDiscovery]:
     seen_urls: set[str] = set()
     semaphore = asyncio.Semaphore(concurrency)
     progress = Progress(f"Fetching feeds for {domain}", len(feed_urls))
 
-    async def _fetch_feed(feed_url: str) -> list[_FeedPageDiscovery]:
+    async def _fetch_feed(feed_url: str) -> list[FeedPageDiscovery]:
         # Feed fetches are bounded so many-feed domains do not spike traffic.
         async with semaphore:
             feed = await _fetch_text(
@@ -628,7 +629,7 @@ async def _fetch_feed_page_discoveries(
         )
 
         return [
-            _FeedPageDiscovery(feed_url, discovery, feed.url)
+            FeedPageDiscovery(feed_url, discovery, feed.url)
             for discovery in discoveries
         ]
 
@@ -637,14 +638,16 @@ async def _fetch_feed_page_discoveries(
             asyncio.create_task(_fetch_feed(feed_url))
             for feed_url in feed_urls
         )
-    unique: list[_FeedPageDiscovery] = []
+    unique: list[FeedPageDiscovery] = []
 
     # Prevent duplicates from overlapping feeds from double-scraping.
     for feed_discoveries in all_discoveries:
         for feed_discovery in feed_discoveries:
             page_url = feed_discovery.page.url
 
-            if page_url and page_url not in seen_urls:
+            if page_url and (
+                not deduplicate_urls or page_url not in seen_urls
+            ):
                 seen_urls.add(page_url)
                 unique.append(feed_discovery)
 
