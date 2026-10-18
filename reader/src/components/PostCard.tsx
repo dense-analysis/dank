@@ -16,6 +16,7 @@ import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HighlightedText } from "./HighlightedText";
+import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
 import {
   RedditCommunityLink,
@@ -25,6 +26,7 @@ import {
 import { RedditVideo } from "./RedditVideo";
 import { SourceLink, sourceName } from "./SourceLink";
 
+export { dateLabel } from "../lib/timestamps";
 export { safeUrl } from "../lib/urls";
 
 export function readingTime(post: Post) {
@@ -35,25 +37,13 @@ export function readingTime(post: Post) {
     ),
   );
 }
-export function dateLabel(date: string) {
-  const value = new Date(date);
-  return Number.isNaN(value.getTime())
-    ? "Date unavailable"
-    : new Intl.DateTimeFormat(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      }).format(value);
-}
+
 export function PostTimestamp({ post }: { post: Post }) {
   const date =
     post.published_at === undefined ? post.created_at : post.published_at;
 
   return date ? (
-    <time dateTime={date}>{dateLabel(date)}</time>
+    <PostTime date={date} />
   ) : (
     <span>Publication date unavailable</span>
   );
@@ -221,14 +211,15 @@ export function PostCard({
           onUnavailable={onUnavailable}
         />
       ))}
-      <div className="post-bottom">
+      <div
+        className={`post-bottom${post.reddit ? " reddit-post-actions" : ""}`}
+      >
         <AuthorLink
           author={post.author}
           fallback={post.domain}
           filters={filters}
           select={selectAuthor}
         />
-        {post.reddit && <RedditMetadata reddit={post.reddit} />}
         {!post.reddit && hasContent && (
           <>
             <span className="meta-dot">·</span>
@@ -240,7 +231,8 @@ export function PostCard({
             <Check size={12} /> Read
           </span>
         )}
-        <div className="post-actions">
+        <div className={post.reddit ? "social-post-actions" : "post-actions"}>
+          {post.reddit && <RedditMetadata reddit={post.reddit} />}
           <a
             href={safeUrl(post.url)}
             target="_blank"

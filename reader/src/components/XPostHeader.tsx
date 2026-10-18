@@ -1,6 +1,6 @@
 import type { Post } from "../lib/types";
 import { xProfile } from "../lib/x";
-import { dateLabel } from "./PostCard";
+import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
 import { XAccountLink } from "./XAccountLink";
 
@@ -29,12 +29,10 @@ export function XPostHeader({
           onNavigate={navigation.open}
           aria-label={`Read ${post.title || "Untitled post"}`}
         >
-          <time dateTime={post.created_at}>{dateLabel(post.created_at)}</time>
+          <PostTime date={post.created_at} />
         </ReaderLink>
       ) : (
-        <time className="x-post-timestamp" dateTime={post.created_at}>
-          {dateLabel(post.created_at)}
-        </time>
+        <PostTime className="x-post-timestamp" date={post.created_at} />
       )}
     </header>
   );

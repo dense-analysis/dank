@@ -27,7 +27,10 @@ export function XEngagement({
   ];
 
   return (
-    <fieldset className="x-engagement" aria-label="Engagement when collected">
+    <fieldset
+      className="x-engagement social-engagement"
+      aria-label="Engagement when collected"
+    >
       {metrics.map(({ label, count, Icon }, index) => {
         const title =
           count == null
@@ -45,7 +48,7 @@ export function XEngagement({
         return index === 0 && navigation ? (
           <ReaderLink
             key={label}
-            className="x-metric"
+            className="x-metric social-metric"
             title={title}
             href={navigation.href}
             onNavigate={navigation.open}
@@ -58,7 +61,7 @@ export function XEngagement({
             {contents}
           </ReaderLink>
         ) : (
-          <span key={label} className="x-metric" title={title}>
+          <span key={label} className="x-metric social-metric" title={title}>
             {contents}
           </span>
         );

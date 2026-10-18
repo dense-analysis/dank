@@ -50,20 +50,22 @@ export function RedditFlair({
 
 export function RedditMetadata({ reddit }: { reddit: RedditPost }) {
   return (
-    <span className="reddit-metadata">
+    <span className="reddit-metadata social-engagement">
       {reddit.score !== null && (
-        <span className="reddit-score" title="Score when collected">
-          <ArrowUp size={13} aria-hidden="true" />
+        <span
+          className="reddit-score social-metric"
+          title="Score when collected"
+        >
+          <ArrowUp size={16} aria-hidden="true" />
           <span className="visually-hidden">Score: </span>
           <Count value={reddit.score} />
         </span>
       )}
       {reddit.comments !== null && (
-        <span title="Comment count when collected">
-          <MessageCircle size={13} aria-hidden="true" />
-          <span>
-            <Count value={reddit.comments} /> comments
-          </span>
+        <span className="social-metric" title="Comment count when collected">
+          <MessageCircle size={16} aria-hidden="true" />
+          <span className="visually-hidden">Comments: </span>
+          <Count value={reddit.comments} />
         </span>
       )}
     </span>

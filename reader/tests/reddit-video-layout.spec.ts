@@ -84,6 +84,7 @@ async function expectRatio(video: Locator, ratio: number) {
   await expect
     .poll(async () => {
       const box = await video.boundingBox();
+      expect(box?.height).toBeLessThanOrEqual(482);
       return box ? Math.abs(box.width / box.height - ratio) : 1;
     })
     .toBeLessThan(0.02);

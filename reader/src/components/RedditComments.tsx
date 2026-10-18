@@ -6,6 +6,7 @@ import type { RedditPost } from "../lib/types";
 import { ArticleBody } from "./ArticleBody";
 import { Count } from "./Count";
 import { dateLabel, safeUrl } from "./PostCard";
+import { PostTime } from "./PostTime";
 
 export function RedditComments({
   reddit,
@@ -102,15 +103,11 @@ export function RedditComments({
                       <span className="reddit-comment-op">OP</span>
                     )}
                     {comment.created_utc !== null && (
-                      <time
-                        dateTime={new Date(
+                      <PostTime
+                        date={new Date(
                           comment.created_utc * 1000,
                         ).toISOString()}
-                      >
-                        {dateLabel(
-                          new Date(comment.created_utc * 1000).toISOString(),
-                        )}
-                      </time>
+                      />
                     )}
                   </div>
                   {comment.depth > 0 && (

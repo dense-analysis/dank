@@ -10,7 +10,7 @@ import { AuthorLink } from "./AuthorLink";
 import { Count } from "./Count";
 import { HackerNewsMetrics, HackerNewsTimestamp } from "./HackerNewsFeed";
 import { PlatformIcon } from "./PlatformIcon";
-import { dateLabel } from "./PostCard";
+import { PostTime } from "./PostTime";
 
 export function HackerNewsDetail({
   post,
@@ -174,9 +174,7 @@ export function HackerNewsDetail({
                     <div className="hn-comment-meta">
                       <strong>{comment.author || "[deleted]"}</strong>
                       {comment.created_at && (
-                        <time dateTime={comment.created_at}>
-                          {dateLabel(comment.created_at)}
-                        </time>
+                        <PostTime date={comment.created_at} />
                       )}
                     </div>
                     {comment.depth > 0 && (

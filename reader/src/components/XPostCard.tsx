@@ -79,7 +79,7 @@ export function XPostCard({
       />
       <XParentLink post={post} params={params} openPost={openPost} />
       <XPostContent post={post} compact query={query} navigation={navigation} />
-      <footer className="post-bottom x-post-actions">
+      <footer className="post-bottom x-post-actions social-post-actions">
         <XEngagement post={post.x} navigation={navigation} />
         {(post.x?.replies_status === "captured" ||
           post.x?.replies_status === "partial") &&

@@ -13,7 +13,7 @@ import { AuthorLink } from "./AuthorLink";
 import { Count } from "./Count";
 import { HighlightedText } from "./HighlightedText";
 import { PlatformIcon } from "./PlatformIcon";
-import { dateLabel } from "./PostCard";
+import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
 
 export function HackerNewsFilters({
@@ -57,9 +57,7 @@ export function HackerNewsDay({ day }: { day: string }) {
 
 export function HackerNewsTimestamp({ story }: { story: HackerNewsPost }) {
   return story.submitted_at ? (
-    <time dateTime={story.submitted_at} title="Submitted to Hacker News">
-      {dateLabel(story.submitted_at)}
-    </time>
+    <PostTime date={story.submitted_at} title="Submitted to Hacker News" />
   ) : (
     <span>Submission time unavailable</span>
   );

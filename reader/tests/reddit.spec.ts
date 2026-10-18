@@ -257,7 +257,9 @@ test("keeps Blogs separate and exposes configured Reddit communities with access
   await expect(
     page.locator(".reddit-score").filter({ hasText: "128" }),
   ).toBeVisible();
-  await expect(page.getByText("42 comments", { exact: true })).toBeVisible();
+  await expect(
+    page.getByTitle("Comment count when collected", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Discussion", { exact: true })).toBeVisible();
   await noOverflow(page);
   await page.screenshot({
@@ -338,7 +340,9 @@ test("retains community, search, author and article navigation in Reddit", async
   await expect(
     article.getByRole("heading", { name: redditPost.title }),
   ).toBeVisible();
-  await expect(article.getByText("42 comments", { exact: true })).toBeVisible();
+  await expect(
+    article.getByTitle("Comment count when collected", { exact: true }),
+  ).toBeVisible();
   await page.reload();
   await article
     .getByRole("button", { name: "Back to stories", exact: true })

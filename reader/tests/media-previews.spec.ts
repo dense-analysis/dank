@@ -122,6 +122,9 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
 
 async function expectRatio(element: Locator, ratio: number) {
   await element.scrollIntoViewIfNeeded();
+  expect(
+    await element.evaluate((node) => node.getBoundingClientRect().height),
+  ).toBeLessThanOrEqual(482);
   await expect
     .poll(async () => {
       return element.evaluate((node, expected) => {
@@ -264,3 +267,74 @@ test("image and video fitting can be changed independently and persist through n
   await expect(videos).toBeChecked();
   expect(requests()).toBe(0);
 });
+
+for (const width of [1440, 390, 320]) {
+  test(`social media stays compact and footers adapt at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 1400 });
+    const requests = await mockMedia(page);
+    await page.goto("/reader/");
+
+    for (const selector of [".x-attachment video", ".reddit-card video"]) {
+      await expectRatio(page.locator(selector), 9 / 16);
+    }
+
+    for (const selector of [".x-post-card", ".reddit-card"]) {
+      const card = page.locator(selector).first();
+      const metrics = card.locator(".social-engagement");
+      await metrics.scrollIntoViewIfNeeded();
+      const layout = await metrics.evaluate((element) => {
+        const parent = element.closest(".post-card");
+        if (!parent) throw new Error("Missing post card");
+        const card = parent.getBoundingClientRect();
+        const items = Array.from(element.children).map((child) =>
+          child.getBoundingClientRect(),
+        );
+        const group = element.getBoundingClientRect();
+        return {
+          inset: items[0].left - card.left,
+          width: card.width,
+          coverage: group.width / card.width,
+          gaps: items
+            .slice(1)
+            .map((item, index) => item.left - items[index].right),
+          labelsClipped: Array.from(
+            element.querySelectorAll(".visually-hidden"),
+          ).every((label) => getComputedStyle(label).clipPath === "inset(50%)"),
+        };
+      });
+      expect(layout.labelsClipped).toBe(true);
+
+      if (width > 600) {
+        expect(layout.inset).toBeGreaterThan(layout.width / 2);
+        expect(Math.max(...layout.gaps)).toBeLessThanOrEqual(25);
+      } else {
+        expect(layout.coverage).toBeGreaterThan(0.6);
+        expect(
+          Math.max(...layout.gaps) - Math.min(...layout.gaps),
+        ).toBeLessThan(2);
+      }
+    }
+
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(requests()).toBe(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`social-layout-${width}.png`),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width, height: 600 });
+
+    for (const selector of [".x-attachment video", ".reddit-card video"]) {
+      expect(
+        await page
+          .locator(selector)
+          .evaluate((element) => element.getBoundingClientRect().height),
+      ).toBeLessThanOrEqual(362);
+    }
+  });
+}

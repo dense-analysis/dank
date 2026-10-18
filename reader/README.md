@@ -90,6 +90,13 @@ browser channel. No live collection is needed for the fixture tests.
   URLs and video URLs on Reddit and X, including YouTube video previews in X posts.
   Both hiding options are on by default. Turn either off to show those links
   alongside previews; the choices stay in this browser.
+- Social images and videos fit within 480px or 60% of the viewport height,
+  whichever is smaller, with the full attachment visible. Reddit and X footers
+  use icons and counts, aligned right on desktop and spread out on phones.
+- Posts and articles show minutes or hours ago for today, then the local date
+  and time from yesterday onward. Hover a timestamp for its exact time.
+  YouTube's dedicated view keeps the relative publication labels from YouTube;
+  the mixed All feed uses the shared post date style.
 - Reopening an article resumes where you left off.
 - Code blocks use their declared language for syntax highlighting, with copy
   controls and horizontal scrolling. Unsupported or unlabelled code stays plain.

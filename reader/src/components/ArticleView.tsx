@@ -311,10 +311,7 @@ export function ArticleView({
               select={selectAuthor}
             />
             {post.reddit ? (
-              <>
-                <RedditMetadata reddit={post.reddit} />
-                <RedditFlair reddit={post.reddit} selectFlair={selectFlair} />
-              </>
+              <RedditFlair reddit={post.reddit} selectFlair={selectFlair} />
             ) : (
               hasContent && <span> {readingTime(post)} min read</span>
             )}
@@ -438,6 +435,11 @@ export function ArticleView({
                 ),
               )}
             </section>
+          )}
+          {post.reddit && (
+            <footer className="post-bottom social-post-actions">
+              <RedditMetadata reddit={post.reddit} />
+            </footer>
           )}
           {post.reddit && !isPlaceholderData && (
             <RedditComments

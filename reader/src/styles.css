@@ -25,6 +25,8 @@
   --collection-line: #4b4232;
   --reading-font: "DM Sans Variable", sans-serif;
   --reading-size: 19px;
+  /* Keep social attachments below the surrounding post context, even on tall screens. */
+  --social-media-max-height: min(60svh, 480px);
 }
 * {
   box-sizing: border-box;
@@ -1969,16 +1971,6 @@ input[type="checkbox"] {
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
-.reddit-metadata,
-.reddit-metadata > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.reddit-metadata {
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
 .reddit-flair {
   display: block;
   min-height: 24px;
@@ -1996,16 +1988,6 @@ input[type="checkbox"] {
 .reddit-flair:focus-visible {
   color: var(--green);
   text-decoration: underline;
-}
-
-@media (max-width: 600px) {
-  .reddit-card .post-bottom {
-    flex-wrap: wrap;
-  }
-  .reddit-card .reddit-metadata {
-    flex-basis: 100%;
-    order: 1;
-  }
 }
 
 .identity-avatar {
@@ -2047,7 +2029,7 @@ input[type="checkbox"] {
 }
 
 .reddit-video {
-  --reddit-video-max-height: min(70vh, 720px);
+  --reddit-video-max-height: var(--social-media-max-height);
   margin: 4px 0 28px;
 }
 .reddit-video-frame {
@@ -2060,7 +2042,7 @@ input[type="checkbox"] {
 .reddit-video video {
   display: block;
   width: 100%;
-  min-height: 220px;
+  min-height: min(220px, var(--reddit-video-max-height));
   max-height: var(--reddit-video-max-height);
   object-fit: contain;
 }
@@ -2377,7 +2359,6 @@ html:has(.x-text-expanding:not([hidden] *)) {
   gap: 12px;
 }
 .x-original-link {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2389,7 +2370,7 @@ html:has(.x-text-expanding:not([hidden] *)) {
   color: var(--green);
 }
 .x-attachments {
-  --x-video-max-height: min(70vh, 640px);
+  --x-video-max-height: var(--social-media-max-height);
   display: grid;
   align-items: start;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
@@ -2414,10 +2395,7 @@ html:has(.x-text-expanding:not([hidden] *)) {
 }
 .x-attachment img {
   width: 100%;
-  max-height: 560px;
-}
-.x-content-compact .x-attachment img {
-  max-height: 380px;
+  max-height: var(--social-media-max-height);
 }
 .x-attachment video {
   width: auto;
@@ -2459,7 +2437,7 @@ html:has(.x-text-expanding:not([hidden] *)) {
   max-height: var(--thumbnail-height);
 }
 [data-source="reddit"] .article-body img {
-  max-height: min(70vh, 720px);
+  max-height: var(--social-media-max-height);
   object-fit: contain;
 }
 [data-fit-image-previews="false"] [data-source="reddit"] .article-body img {
@@ -2672,12 +2650,8 @@ html:has(.x-text-expanding:not([hidden] *)) {
 .x-conversation-entry .x-post-content {
   margin-top: 12px;
 }
-.x-conversation-entry .x-attachments {
-  --x-video-max-height: min(60vh, 480px);
-}
 .x-conversation-entry .x-attachment img {
-  aspect-ratio: 16 / 9;
-  max-height: 320px;
+  max-height: min(var(--social-media-max-height), 320px);
   object-fit: contain;
 }
 .x-reply-context {
@@ -2749,22 +2723,30 @@ html:has(.x-text-expanding:not([hidden] *)) {
   user-select: text;
   -webkit-user-drag: none;
 }
-.x-engagement {
+.social-post-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 24px;
+}
+.reddit-post-actions > .social-post-actions {
+  margin-left: auto;
+}
+.social-engagement {
   padding: 0;
   margin: 0;
   border: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex: 1;
+  justify-content: flex-end;
+  gap: 24px;
   min-width: 0;
   color: var(--muted);
 }
 .x-reader > .x-engagement {
   margin-top: 24px;
 }
-.x-metric {
+.social-metric {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2777,15 +2759,38 @@ a.x-metric:hover {
   color: var(--green);
 }
 @media (max-width: 600px) {
-  .x-engagement {
-    gap: 8px;
+  .social-post-actions {
+    gap: 0;
   }
-  .x-metric {
+  .social-engagement {
+    flex: 2;
+    gap: 0;
+  }
+  .social-engagement > .social-metric,
+  .social-post-actions > .icon-button {
+    flex: 1;
+    justify-content: center;
+  }
+  .social-post-actions > .icon-button {
+    padding-inline: 0;
+  }
+  .x-post-actions > .x-engagement {
+    flex: 4;
+  }
+  .x-post-actions > .x-conversation-summary {
+    order: 1;
+    flex-basis: 100%;
+    text-align: right;
+  }
+  .reddit-post-actions {
+    flex-wrap: wrap;
+  }
+  .reddit-post-actions > .social-post-actions {
+    flex-basis: 100%;
+  }
+  .social-metric {
     gap: 4px;
     font-size: 11px;
-  }
-  .x-post-actions {
-    gap: 8px;
   }
 }
 
