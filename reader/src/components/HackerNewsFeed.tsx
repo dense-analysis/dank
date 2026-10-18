@@ -1,4 +1,4 @@
-import { ArrowUp, Check, ExternalLink, MessageCircle } from "lucide-react";
+import { ArrowUp, MessageCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { calendarDate } from "../lib/dateRanges";
 import { hackerNewsExcerpt, hackerNewsFilters } from "../lib/hackerNews";
@@ -14,6 +14,7 @@ import { Count } from "./Count";
 import { HighlightedText } from "./HighlightedText";
 import { NavigableCard } from "./NavigableCard";
 import { PlatformIcon } from "./PlatformIcon";
+import { PostFooter } from "./PostFooter";
 import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
 
@@ -64,19 +65,43 @@ export function HackerNewsTimestamp({ story }: { story: HackerNewsPost }) {
   );
 }
 
-export function HackerNewsMetrics({ story }: { story: HackerNewsPost }) {
+export function HackerNewsMetrics({
+  story,
+  navigation,
+}: {
+  story: HackerNewsPost;
+  navigation?: { href: string; open: () => void; label: string };
+}) {
+  const comments = (
+    <>
+      <MessageCircle size={16} aria-hidden="true" />
+      <Count value={story.comments} />
+      <span className="visually-hidden"> comments</span>
+    </>
+  );
+
   return (
-    <span className="hn-metrics">
-      <span title="Points at collection">
-        <ArrowUp size={13} aria-hidden="true" />
+    <span className="hn-metrics social-engagement">
+      <span className="social-metric" title="Points at collection">
+        <ArrowUp size={16} aria-hidden="true" />
         <Count value={story.points} />
         <span className="visually-hidden"> points</span>
       </span>
-      <span title="Comments reported at collection">
-        <MessageCircle size={13} aria-hidden="true" />
-        <Count value={story.comments} />
-        <span className="visually-hidden"> comments</span>
-      </span>
+      {navigation ? (
+        <ReaderLink
+          className="social-metric"
+          href={navigation.href}
+          onNavigate={navigation.open}
+          aria-label={navigation.label}
+          title="Comments reported at collection"
+        >
+          {comments}
+        </ReaderLink>
+      ) : (
+        <span className="social-metric" title="Comments reported at collection">
+          {comments}
+        </span>
+      )}
     </span>
   );
 }
@@ -119,6 +144,7 @@ export function HackerNewsCard({
   if (!story) return null;
   const externalUrl = story.external_url && safeUrl(story.external_url);
   const discussionUrl = safeUrl(story.discussion_url);
+  const originalUrl = externalUrl || discussionUrl;
   const excerpt = hackerNewsExcerpt(
     post.excerpt,
     story.external_url,
@@ -157,41 +183,38 @@ export function HackerNewsCard({
           </p>
         )}
       </ReaderLink>
-      <div className="post-bottom hn-card-footer">
-        <AuthorLink
-          author={post.author}
-          fallback="Hacker News"
-          filters={filters}
-          select={selectAuthor}
+      <PostFooter
+        read={read}
+        byline={
+          <AuthorLink
+            author={post.author}
+            fallback="Hacker News"
+            filters={filters}
+            select={selectAuthor}
+          />
+        }
+        source={
+          originalUrl
+            ? {
+                url: originalUrl,
+                label: `Read original: ${post.title}`,
+              }
+            : undefined
+        }
+      >
+        <HackerNewsMetrics
+          story={story}
+          navigation={
+            discussionUrl
+              ? {
+                  href: discussionHref,
+                  open: openDiscussion,
+                  label: `Discussion on Hacker News: ${post.title}`,
+                }
+              : undefined
+          }
         />
-        <HackerNewsMetrics story={story} />
-        {read && (
-          <span className="read-indicator">
-            <Check size={12} /> Read
-          </span>
-        )}
-        <div className="hn-card-links">
-          {discussionUrl && (
-            <ReaderLink
-              href={discussionHref}
-              onNavigate={openDiscussion}
-              aria-label={`Discussion on Hacker News: ${post.title}`}
-            >
-              Discussion
-            </ReaderLink>
-          )}
-          {externalUrl && (
-            <a
-              href={externalUrl}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Read original: ${post.title}`}
-            >
-              Original <ExternalLink size={12} aria-hidden="true" />
-            </a>
-          )}
-        </div>
-      </div>
+      </PostFooter>
       {links}
     </NavigableCard>
   );

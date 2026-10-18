@@ -1,9 +1,8 @@
-import { Check, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
 import { Count } from "./Count";
 import { NavigableCard } from "./NavigableCard";
-import { safeUrl } from "./PostCard";
+import { PostFooter } from "./PostFooter";
 import { XEngagement } from "./XEngagement";
 import { XParentLink } from "./XParentLink";
 import { XPostContent } from "./XPostContent";
@@ -47,35 +46,26 @@ export function XPostCard({
         query={query}
         navigation={navigation}
       />
-      <footer className="post-bottom x-post-actions social-post-actions">
-        <XEngagement post={post.x} navigation={navigation} />
-        {(post.x?.replies_status === "captured" ||
-          post.x?.replies_status === "partial") &&
+      <PostFooter
+        read={read}
+        source={{
+          url: post.url,
+          label: `Open original: ${post.title}`,
+          title: "View on X",
+        }}
+        summary={
+          (post.x?.replies_status === "captured" ||
+            post.x?.replies_status === "partial") &&
           post.x.replies_captured_count != null && (
-            <span className="x-conversation-summary">
+            <>
               <Count value={post.x.replies_captured_count} /> saved
               {post.x.replies_status === "partial" ? " · partial" : ""}
-            </span>
-          )}
-        <div className="x-post-utilities">
-          {read && (
-            <span className="read-indicator" title="Read">
-              <Check size={13} />
-              <span className="visually-hidden">Read</span>
-            </span>
-          )}
-          <a
-            className="x-original-link icon-button"
-            href={safeUrl(post.url)}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Open original: ${post.title}`}
-            title="View on X"
-          >
-            <ExternalLink size={16} />
-          </a>
-        </div>
-      </footer>
+            </>
+          )
+        }
+      >
+        <XEngagement post={post.x} navigation={navigation} />
+      </PostFooter>
       {links}
     </NavigableCard>
   );

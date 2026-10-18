@@ -96,9 +96,10 @@ browser channel. No live collection is needed for the fixture tests.
   Both hiding options are on by default. Turn either off to show those links
   alongside previews; the choices stay in this browser.
 - Social images and videos fit within 480px or 60% of the viewport height,
-  whichever is smaller, with the full attachment visible. Reddit and X footers
-  keep icons and counts on the left and the original-source link on the right
-  in wide reading columns. At 760px or narrower, metrics spread from the content’s
+  whichever is smaller, with the full attachment visible.
+- Footers share sizing and spacing across All and source feeds. Wide columns
+  keep metrics or article details on the left and read/source icons on the right.
+  At 760px or narrower, metrics spread from the content’s
   left edge with larger labels and icons; the read marker and source link stay
   compact at the right. This also applies beside the sidebar and in split windows.
 - Posts and articles show minutes or hours ago for today, then the local date
@@ -285,7 +286,7 @@ navigation stay in the URL.
 
 Cards show the submitter, captured points and comment counts, plus separate original-article and
 Hacker News discussion links. Story titles open the collected original article when
-available; **Discussion** opens saved Hacker News comments. The discussion also
+available; the comment count opens saved Hacker News comments. The discussion also
 links back to the collected article. Timestamps show the original Hacker News submission time;
 the day headings continue to group front-page arrivals. Opening a story shows any saved post text and comments
 from a detailed scrape, with replies indented. Full saved discussions have no reader comment cap. Normal collection skips comments;

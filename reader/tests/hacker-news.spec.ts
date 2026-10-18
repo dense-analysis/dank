@@ -172,11 +172,11 @@ for (const width of [390, 1280]) {
     await expect(
       firstCard.locator('time[datetime="2026-10-15T11:25:00Z"]'),
     ).toBeVisible();
-    await expect(firstCard.locator(".post-bottom > :first-child")).toHaveText(
+    await expect(firstCard.locator(".post-footer-byline")).toHaveText(
       "builder",
     );
     const metricColors = await firstCard
-      .locator(".hn-metrics > span")
+      .locator(".hn-metrics > .social-metric")
       .evaluateAll((metrics) =>
         metrics.map((metric) => getComputedStyle(metric).color),
       );

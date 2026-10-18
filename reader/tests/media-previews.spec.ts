@@ -82,6 +82,35 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
       },
     },
   ];
+  const blog: Post = {
+    ...posts[1],
+    id: "blog",
+    domain: "example.com",
+    source: "rss",
+    url: "https://example.com/story",
+    title: "A blog article",
+    html: "<p>Article text.</p>",
+    excerpt: "Article text.",
+    thumbnail: null,
+    reddit: undefined,
+  };
+  posts.push(blog, {
+    ...blog,
+    id: "hn",
+    domain: "news.ycombinator.com",
+    source: "hacker_news",
+    url: "https://news.ycombinator.com/item?id=1",
+    title: "A Hacker News story",
+    hacker_news: {
+      submitted_at: blog.created_at,
+      points: 200,
+      comments: 20,
+      day: "2026-10-17",
+      rank: 1,
+      discussion_url: "https://news.ycombinator.com/item?id=1",
+      external_url: "https://example.com/original",
+    },
+  });
   let videoRequests = 0;
   await page.route("**/assets/preview-video.mp4", (route) => {
     videoRequests++;
@@ -104,6 +133,20 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
       json: url.pathname.endsWith("/sources")
         ? {
             sources: [
+              {
+                domain: "example.com",
+                name: "Example",
+                kind: "rss",
+                count: 1,
+                tags: [],
+              },
+              {
+                domain: "news.ycombinator.com",
+                name: "Hacker News",
+                kind: "hacker_news",
+                count: 1,
+                tags: [],
+              },
               { domain: "x.com", name: "X", kind: "x", count: 1, tags: [] },
               {
                 domain: "reddit.com",
@@ -117,7 +160,18 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
           }
         : url.pathname.endsWith("/post")
           ? posts.find((post) => post.id === url.searchParams.get("id"))
-          : { posts, next_cursor: null, limited: false },
+          : {
+              posts: posts.filter((post) => {
+                const kind = url.searchParams.get("kind");
+                return (
+                  !kind ||
+                  kind === "all" ||
+                  post.source === (kind === "stories" ? "rss" : kind)
+                );
+              }),
+              next_cursor: null,
+              limited: false,
+            },
     });
   });
 
@@ -316,7 +370,7 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
           iconWidth: element.querySelector("svg")?.getBoundingClientRect()
             .width,
           utilitiesWidth: parent
-            .querySelector(".x-post-utilities")
+            .querySelector(".post-utilities")
             ?.getBoundingClientRect().width,
           coverage: group.width / card.width,
           gaps: items
@@ -367,6 +421,90 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
           .locator(selector)
           .evaluate((element) => element.getBoundingClientRect().height),
       ).toBeLessThanOrEqual(362);
+    }
+  });
+}
+
+for (const width of [1440, 653, 390, 320]) {
+  test(`All and source feeds share footer sizing, source links and read status at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "dank-reader:read:v1",
+        JSON.stringify(
+          [
+            ["x.com", "x-media"],
+            ["reddit.com", "reddit-image"],
+            ["reddit.com", "reddit-video"],
+            ["example.com", "blog"],
+            ["news.ycombinator.com", "hn"],
+          ].map((identity) => JSON.stringify(identity)),
+        ),
+      );
+    });
+    await mockMedia(page);
+
+    for (const [view, expected] of [
+      ["all", 5],
+      ["reddit", 2],
+      ["x", 1],
+      ["stories", 1],
+      ["hacker_news", 1],
+    ] as const) {
+      await page.goto(`/reader/?view=${view}`);
+      const cards = page.locator(".post-card");
+      await expect(cards).toHaveCount(expected);
+
+      for (const card of await cards.all()) {
+        const footer = card.locator(".post-footer");
+        await footer.scrollIntoViewIfNeeded();
+        await expect(
+          footer.locator(".post-utilities .read-indicator"),
+        ).toHaveCount(1);
+        await expect(footer.locator(".post-utilities a")).toHaveAttribute(
+          "target",
+          "_blank",
+        );
+        const layout = await footer.evaluate((element) => {
+          const parent = element.closest(".post-card");
+          if (!parent) throw new Error("Missing card");
+          const card = parent.getBoundingClientRect();
+          const row = element.querySelector(".social-post-actions");
+          const source = element.querySelector(".post-utilities a");
+          const first = element.querySelector(
+            ".social-metric, .post-footer-details",
+          );
+          if (!row || !source || !first)
+            throw new Error("Missing footer contents");
+          const content = element.previousElementSibling;
+          return {
+            width: card.width,
+            font: getComputedStyle(first).fontSize,
+            icon: source.querySelector("svg")?.getBoundingClientRect().width,
+            firstInset: first.getBoundingClientRect().left - card.left,
+            rightInset: card.right - source.getBoundingClientRect().right,
+            rowHeight: row.getBoundingClientRect().height,
+            gap: content
+              ? element.getBoundingClientRect().top -
+                content.getBoundingClientRect().bottom
+              : 0,
+          };
+        });
+        const narrow = layout.width <= 760;
+        expect(layout.font).toBe(narrow ? "13px" : "12px");
+        expect(layout.icon).toBe(narrow ? 18 : 16);
+        expect(layout.firstInset).toBeLessThan(2);
+        expect(layout.rightInset).toBeLessThan(2);
+        expect(layout.rowHeight).toBeGreaterThanOrEqual(32);
+        expect(Math.abs(layout.gap - (narrow ? 8 : 18))).toBeLessThan(2);
+      }
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
     }
   });
 }

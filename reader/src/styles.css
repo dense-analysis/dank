@@ -755,11 +755,6 @@ input[type="checkbox"] {
 .article-byline .author {
   max-width: 100%;
 }
-.post-actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
 .icon-button {
   height: 32px;
   min-width: 32px;
@@ -2366,31 +2361,6 @@ html:has(.x-text-expanding:not([hidden] *)) {
   color: var(--muted);
   font-size: 12px;
 }
-.x-post-actions {
-  flex-wrap: wrap;
-  margin-top: 18px;
-  gap: 12px;
-}
-.x-post-utilities {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-.x-post-utilities .read-indicator {
-  margin-left: 0;
-}
-.x-original-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 11px;
-}
-.x-original-link:hover {
-  color: var(--green);
-}
 .x-attachments {
   --x-video-max-height: var(--social-media-max-height);
   display: grid;
@@ -2717,12 +2687,7 @@ html:has(.x-text-expanding:not([hidden] *)) {
   border-left: 2px solid var(--green);
   padding-left: 12px;
 }
-.x-conversation-summary {
-  order: 1;
-  flex-basis: 100%;
-  font-size: 11px;
-  color: var(--muted);
-}
+
 @media (max-width: 600px) {
   .x-conversation-entry {
     margin-left: calc(var(--reply-depth, 0) * 8px);
@@ -2746,24 +2711,53 @@ html:has(.x-text-expanding:not([hidden] *)) {
   -webkit-user-drag: none;
 }
 /* Base footer spacing on the reading column, including beside an open sidebar. */
-.x-post-card,
-.reddit-card,
+.post-card,
 .article-page[data-source="x"],
-.article-page[data-source="reddit"] {
+.article-page[data-source="reddit"],
+.article-page[data-source="hacker_news"] {
   container: social-post / inline-size;
+}
+.post-footer {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.post-footer > .post-bottom {
+  margin-top: 0;
+  font-size: inherit;
+}
+.post-footer-byline {
+  margin-bottom: 8px;
+}
+.post-footer-details {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+}
+.post-footer-summary {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.post-utilities {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.post-utilities .read-indicator {
+  margin-left: 0;
+}
+.reddit-card > .reddit-video:has(+ .post-footer) {
+  margin-bottom: 0;
 }
 .social-post-actions {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 24px;
-}
-.social-post-actions > .icon-button {
-  margin-left: auto;
-}
-.reddit-post-actions > .social-post-actions {
-  flex: 1;
-  min-width: 0;
 }
 .social-engagement {
   padding: 0;
@@ -2788,15 +2782,16 @@ html:has(.x-text-expanding:not([hidden] *)) {
   text-decoration: none;
   white-space: nowrap;
 }
-a.x-metric:hover {
+a.social-metric:hover {
   color: var(--green);
 }
 @container social-post (max-width: 760px) {
   .social-post-actions {
     gap: clamp(12px, 8cqw, 64px);
   }
-  .x-post-actions {
+  .post-footer {
     margin-top: 8px;
+    font-size: 13px;
   }
   .social-engagement {
     flex: 1;
@@ -2811,21 +2806,10 @@ a.x-metric:hover {
     margin-left: 0;
     padding: 7px;
   }
-  .x-post-utilities {
+  .post-utilities {
     flex: 0 0 64px;
     justify-content: flex-end;
     margin-left: 0;
-  }
-  .x-post-actions > .x-conversation-summary {
-    order: 1;
-    flex-basis: 100%;
-    text-align: left;
-  }
-  .reddit-post-actions {
-    flex-wrap: wrap;
-  }
-  .reddit-post-actions > .social-post-actions {
-    flex-basis: 100%;
   }
   .social-metric {
     gap: 5px;
@@ -2843,7 +2827,7 @@ a.x-metric:hover {
   .social-post-actions {
     gap: 12px;
   }
-  .x-post-utilities {
+  .post-utilities {
     flex-basis: 52px;
     gap: 4px;
   }

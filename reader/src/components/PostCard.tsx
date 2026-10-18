@@ -1,4 +1,4 @@
-import { Check, ExternalLink, ImageOff } from "lucide-react";
+import { ImageOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
@@ -17,6 +17,7 @@ import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HighlightedText } from "./HighlightedText";
 import { NavigableCard } from "./NavigableCard";
+import { PostFooter } from "./PostFooter";
 import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
 import {
@@ -215,40 +216,39 @@ export function PostCard({
           onUnavailable={onUnavailable}
         />
       ))}
-      <div
-        className={`post-bottom${post.reddit ? " reddit-post-actions" : ""}`}
+      <PostFooter
+        read={read}
+        source={{ url: post.url, label: `Open original: ${post.title}` }}
+        byline={
+          post.reddit && (
+            <AuthorLink
+              author={post.author}
+              fallback={post.domain}
+              filters={filters}
+              select={selectAuthor}
+            />
+          )
+        }
       >
-        <AuthorLink
-          author={post.author}
-          fallback={post.domain}
-          filters={filters}
-          select={selectAuthor}
-        />
-        {!post.reddit && hasContent && (
-          <>
-            <span className="meta-dot">·</span>
-            <span>{readingTime(post)} min read</span>
-          </>
+        {post.reddit ? (
+          <RedditMetadata reddit={post.reddit} />
+        ) : (
+          <div className="post-footer-details">
+            <AuthorLink
+              author={post.author}
+              fallback={post.domain}
+              filters={filters}
+              select={selectAuthor}
+            />
+            {hasContent && (
+              <>
+                <span className="meta-dot">·</span>
+                <span>{readingTime(post)} min read</span>
+              </>
+            )}
+          </div>
         )}
-        {read && (
-          <span className="read-indicator">
-            <Check size={12} /> Read
-          </span>
-        )}
-        <div className={post.reddit ? "social-post-actions" : "post-actions"}>
-          {post.reddit && <RedditMetadata reddit={post.reddit} />}
-          <a
-            href={safeUrl(post.url)}
-            target="_blank"
-            rel="noreferrer"
-            className="icon-button"
-            aria-label={`Open original: ${post.title}`}
-            title="Open original"
-          >
-            <ExternalLink size={15} />
-          </a>
-        </div>
-      </div>
+      </PostFooter>
       {links}
     </NavigableCard>
   );

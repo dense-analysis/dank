@@ -70,39 +70,6 @@
   font-size: 18px;
   line-height: 1.45;
 }
-.hn-card-footer {
-  flex-wrap: wrap;
-  row-gap: 10px;
-}
-.hn-metrics {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 15px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.hn-metrics > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.hn-card-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-left: auto;
-}
-.hn-card-links a {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.hn-card-links a:hover {
-  color: var(--text);
-}
 .hn-detail-links {
   display: flex;
   flex-wrap: wrap;
@@ -179,10 +146,6 @@
   }
   .hn-card .post-open h2 {
     font-size: 17px;
-  }
-  .hn-card-links {
-    margin-left: 0;
-    flex-basis: 100%;
   }
   .hn-comment {
     margin-left: calc(var(--comment-depth) * 10px);
