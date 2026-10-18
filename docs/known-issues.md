@@ -756,3 +756,17 @@ row only for a distinct problem. Keep proposed or unmerged fixes visibly
 separate from shipped handling, and retain useful resolved cases so the
 reason for a workaround is not lost. Keep credentials and full raw payloads
 out of this document; link to code/tests and summarize dated observations.
+
+
+### X saved reply relationships
+
+X feeds default to Posts; Posts & replies keeps strict date ordering while
+showing parent links. Independently saved posts are connected in the opened
+reader without requiring a discussion capture. This does not collect missing
+replies: profile timelines can omit them, and a saved parent or child does not
+prove complete coverage. Unknown reply metadata remains visible in Posts.
+Related lookups use displayed raw versions and are bounded to 200 posts and 20
+ancestor levels; gaps and limits are explicit. Archive dates and capture counts
+retain their original meaning. Covered by
+[relationship tests](../tests/web/test_reader_x_saved.py) and
+[reader acceptance tests](../reader/tests/x-saved-replies.spec.ts).

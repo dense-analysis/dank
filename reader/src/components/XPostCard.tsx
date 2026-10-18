@@ -4,6 +4,7 @@ import type { Post } from "../lib/types";
 import { Count } from "./Count";
 import { safeUrl } from "./PostCard";
 import { XEngagement } from "./XEngagement";
+import { XParentLink } from "./XParentLink";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -15,6 +16,8 @@ export function XPostCard({
   open,
   selectAccount,
   query,
+  params,
+  openPost,
 }: {
   post: Post;
   links?: ReactNode;
@@ -23,6 +26,8 @@ export function XPostCard({
   open: () => void;
   selectAccount: (handle: string) => void;
   query: string;
+  params: URLSearchParams;
+  openPost: (post: Pick<Post, "id" | "domain">) => void;
 }) {
   const navigation = { href, open };
 
@@ -72,6 +77,7 @@ export function XPostCard({
         selectAccount={selectAccount}
         navigation={navigation}
       />
+      <XParentLink post={post} params={params} openPost={openPost} />
       <XPostContent post={post} compact query={query} navigation={navigation} />
       <footer className="post-bottom x-post-actions">
         <XEngagement post={post.x} navigation={navigation} />

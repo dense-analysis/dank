@@ -241,6 +241,8 @@ export function ArticleView({
       )}
       {post && xPost && (
         <XPostDetail
+          params={params}
+          openPost={openPost}
           post={post}
           links={postLinks}
           selectAccount={selectAccount}

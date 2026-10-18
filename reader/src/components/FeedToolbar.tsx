@@ -111,6 +111,26 @@ export function FeedToolbar({
           Search
         </button>
       </form>
+      {filters.kind === "x" && (
+        <fieldset className="x-feed-selection" aria-label="X post selection">
+          <legend className="visually-hidden">X post selection</legend>
+          {(
+            [
+              ["posts", "Posts"],
+              ["replies", "Posts & replies"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={filters.xView === value}
+              onClick={() => change({ ...filters, xView: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+      )}
       <div className="filter-row">
         <button
           type="button"

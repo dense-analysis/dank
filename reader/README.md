@@ -142,6 +142,20 @@ from the saved profile, not a live count; hover the pill for exact numbers.
 When no total was captured, only the collected count appears. Search and filters
 do not change these account-wide counts.
 
+X feeds default to **Posts**, excluding known replies, including self-replies.
+Choose **Posts & replies** to include all collected posts and replies. Both
+use the selected date/search order; latest first remains the default. The
+selection stays in the URL through search, article navigation and browser Back.
+Unknown reply metadata does not hide a post, and account counts still cover all
+collected posts. The mixed All feed continues to include collected replies.
+
+Replies link to their saved parent, or to X when the parent is not collected.
+Opening a post connects independently saved parent context and replies, even
+without a separate discussion capture. Short corrections are included. These
+local relationships do not imply complete conversation coverage; archived
+capture status, counts and dates remain separate. Related posts are deduplicated
+by identity and retain their actual reply branches.
+
 X cards and opened posts show the account's avatar, display name and handle,
 with the post text once. Feed previews show about 300 characters, preserving
 paragraphs and links. **Show more** expands ordinary posts completely. Posts of

@@ -4,6 +4,7 @@ import { isRecord } from "./validation";
 export const defaultFilters: Filters = {
   kind: "all",
   hnFilter: "top50",
+  xView: "posts",
   community: "",
   account: "",
   q: "",

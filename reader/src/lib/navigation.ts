@@ -61,6 +61,8 @@ export function parseFilters(params: URLSearchParams): Filters {
   return {
     ...defaultFilters,
     kind,
+    xView:
+      kind === "x" && params.get("x_view") === "replies" ? "replies" : "posts",
     hnFilter:
       kind === "hacker_news"
         ? parseHackerNewsFilter(params.get("hn_filter"))
@@ -94,6 +96,8 @@ export function parseFilters(params: URLSearchParams): Filters {
 export function filterParams(filters: Filters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.kind !== "all") params.set("view", filters.kind);
+  if (filters.kind === "x" && filters.xView === "replies")
+    params.set("x_view", "replies");
   if (filters.kind === "hacker_news") params.set("hn_filter", filters.hnFilter);
   if (filters.kind === "x" && filters.account.trim()) {
     params.set(

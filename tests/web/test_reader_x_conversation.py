@@ -142,7 +142,7 @@ async def test_detail_orders_context_and_replies_and_reuses_saved_media(
     assert not first["x"]["media"][0]["remote"]
     assert "conversation" not in first["x"]
     assert first["created_at"] == "2026-10-07T10:00:00+00:00"
-    assert len(fake.calls) == 5
+    assert len(fake.calls) == 7
     assert "x_related_keys" in fake.calls[-2][1]
     assert "link_post_keys" in fake.calls[-1][1]
 
@@ -247,7 +247,7 @@ async def test_latest_partial_archive_is_not_replaced_by_older_capture(
     assert capture["captured_at"] == DATE
     assert [node["id"] for node in capture["replies"]] == ["102"]
     assert "latest_attempt_status" not in capture
-    assert len(fake.calls) == 5
+    assert len(fake.calls) == 6
     assert "x_related_keys" in fake.calls[-2][1]
     assert "link_post_keys" in fake.calls[-1][1]
 

@@ -43,6 +43,7 @@ class ReaderFilters(NamedTuple):
     flairs: tuple[str, ...] = ()
     account: str = ""
     hn_filter: str = ""
+    x_view: str = "posts"
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -59,7 +60,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
-        "account", "hn_filter",
+        "account", "hn_filter", "x_view",
     }
 
     if unknown:
@@ -74,6 +75,9 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         or query["hn_filter"] not in HackerNewsFilter
     ):
         raise ValueError("hn_filter requires a valid Hacker News ranking")
+
+    if "x_view" in query and query.get("kind") != "x":
+        raise ValueError("x_view requires kind=x")
 
     filters = ReaderFilters(
         q=query.get("q", "").strip(),
@@ -90,6 +94,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         kind=query.get("kind", ""),
         community=query.get("community", "").strip().lower(),
         flairs=_flair_choices(query.getall("flair", [])),
+        x_view=query.get("x_view", "posts"),
         account=query.get("account", "").strip().removeprefix("@").lower(),
         hn_filter=query.get(
             "hn_filter", "top50" if query.get("kind") == "hacker_news" else "",
@@ -189,6 +194,9 @@ def _validate_collection_filters(filters: ReaderFilters) -> None:
             "hn_filter requires kind=hacker_news and "
             "top10, top20, top50 or all",
         )
+
+    if filters.x_view not in {"posts", "replies"}:
+        raise ValueError("x_view must be posts or replies")
 
     if filters.account and (
         filters.kind != "x"
@@ -410,6 +418,18 @@ def _conditions(
     filters: ReaderFilters, sources: tuple[SourceConfig, ...],
 ) -> tuple[list[str], dict[str, Any]]:
     conditions, params = _collection_conditions(filters)
+
+    if filters.kind == "x" and filters.x_view == "posts":
+        # Missing metadata is not proof of a reply.
+        conditions.append(
+            "(domain, post_id, toUnixTimestamp64Milli(updated_at)) NOT IN "
+            "(SELECT domain, post_id, toUnixTimestamp64Milli(scraped_at) "
+            "FROM raw_posts WHERE domain IN %(x_domains)s "
+            "AND match(JSONExtractString(payload, 'legacy', "
+            "'in_reply_to_status_id_str'), '^[0-9]{1,20}$') "
+            "AND JSONExtractString(payload, 'legacy', "
+            "'in_reply_to_status_id_str') != post_id)",
+        )
 
     if filters.domains:
         conditions.append("domain IN %(domains)s")

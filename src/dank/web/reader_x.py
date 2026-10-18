@@ -23,10 +23,12 @@ from dank.web.reader_accounts import (
 )
 from dank.web.reader_x_conversation import (
     MAX_CONVERSATION_POSTS,
+    connect_saved_posts,
     conversation_capture,
     identifier,
 )
 from dank.web.reader_x_history import preserve_x_archives
+from dank.web.reader_x_saved import reply_metadata, saved_parents, saved_thread
 from dank.x_content import object_value, post_links, post_media
 
 
@@ -70,8 +72,18 @@ async def post_x_content(
     }
 
     archives = await preserve_x_archives(client, rows, snapshots)
+    parents = await saved_parents(client, snapshots)
+    saved: dict[tuple[str, str], tuple[list[dict[str, Any]], bool]] = {}
+
+    if include_discussion:
+        for post in rows:
+            key = (post.domain, post.post_id)
+            saved[key] = await saved_thread(
+                client, post, snapshots.get(key, {}),
+            )
+
     related_assets = await _conversation_assets(
-        client, archives,
+        client, archives, saved,
     ) if include_discussion else {}
 
     return {
@@ -82,6 +94,8 @@ async def post_x_content(
             + related_assets.get(post.domain, []),
             assets_dir, archives.get((post.domain, post.post_id), {}),
             include_discussion=include_discussion,
+            parents=parents,
+            saved=saved.get((post.domain, post.post_id), ([], False)),
         )
         for post in rows
     }
@@ -104,6 +118,8 @@ def _content(
     assets_dir: pathlib.Path,
     conversation_payload: dict[str, Any],
     *, include_discussion: bool,
+    parents: dict[tuple[str, str], str],
+    saved: tuple[list[dict[str, Any]], bool],
 ) -> dict[str, Any]:
     match = re.match(X_ACCOUNT_PATTERN, post.url.lower())
     handle = match[1] if match and match[1] != "i" else ""
@@ -142,10 +158,24 @@ def _content(
     }
 
     if include_discussion:
+        connect_saved_posts(
+            conversation, post, payload, saved[0], local_urls,
+            limited=saved[1],
+        )
         summary["conversation"] = conversation
 
+    relationship = reply_metadata(payload)
+    reply = relationship.get("reply_to")
+
+    if reply:
+        reply["domain"] = post.domain
+        parent_url = parents.get((post.domain, reply["id"]))
+
+        if parent_url:
+            reply.update(collected=True, url=parent_url)
+
     return {
-        **summary, "handle": handle,
+        **summary, **relationship, "handle": handle,
         "name": name,
         "icon_url": icon,
         "links": post_links(payload, local_urls),
@@ -164,8 +194,13 @@ def _content(
 async def _conversation_assets(
     client: ClickHouseClient,
     snapshots: dict[tuple[str, str], dict[str, Any]],
+    saved: dict[tuple[str, str], tuple[list[dict[str, Any]], bool]],
 ) -> dict[str, list[AssetRow]]:
-    keys: set[tuple[str, str]] = set()
+    keys = {
+        (domain, node_id)
+        for (domain, _), (nodes, _) in saved.items()
+        for node in nodes if (node_id := identifier(node.get("rest_id")))
+    }
 
     for (domain, _), payload in snapshots.items():
         capture = object_value(payload.get("conversation_capture"))

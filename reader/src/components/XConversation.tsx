@@ -1,5 +1,6 @@
 import { ExternalLink, MessageCircle } from "lucide-react";
 import type { CSSProperties } from "react";
+import { articleParams } from "../lib/navigation";
 import type {
   XConversation as Capture,
   Post,
@@ -7,6 +8,7 @@ import type {
 } from "../lib/types";
 import { Count } from "./Count";
 import { dateLabel, safeUrl } from "./PostCard";
+import { ReaderLink } from "./ReaderLink";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -30,9 +32,13 @@ const reasons: Record<string, string> = {
 export function XThreadContext({
   capture,
   selectAccount,
+  params,
+  openPost,
 }: {
   capture?: Capture;
   selectAccount: (handle: string) => void;
+  params: URLSearchParams;
+  openPost: (post: Pick<Post, "id" | "domain">) => void;
 }) {
   if (!capture?.context.length) return null;
 
@@ -40,6 +46,8 @@ export function XThreadContext({
     <section className="x-thread-context" aria-label="Thread context">
       <h2>Thread context</h2>
       <ConversationPosts
+        params={params}
+        openPost={openPost}
         posts={capture.context}
         selectAccount={selectAccount}
         context
@@ -51,11 +59,15 @@ export function XThreadContext({
 export function XConversation({
   post,
   selectAccount,
+  params,
+  openPost,
   pending = false,
   loadError = false,
 }: {
   post: Post;
   selectAccount: (handle: string) => void;
+  params: URLSearchParams;
+  openPost: (post: Pick<Post, "id" | "domain">) => void;
   pending?: boolean;
   loadError?: boolean;
 }) {
@@ -64,6 +76,7 @@ export function XConversation({
   const archived = status === "captured" || status === "partial";
   const partial = status === "partial" || capture?.has_more;
   const replies = capture?.replies ?? [];
+  const locallyLinked = (capture?.local_posts_count ?? 0) > 0;
   const reported = capture?.reported_replies ?? post.x?.reply_count;
   const capturedAt = capture?.captured_at ?? post.x?.captured_at;
   const unavailable = loadError && !capture;
@@ -75,11 +88,13 @@ export function XConversation({
         ? partial
           ? "Partial conversation"
           : "Captured replies"
-        : status === "failed"
-          ? "Conversation unavailable"
-          : status === "disabled"
-            ? "Conversation capture disabled"
-            : "Replies not collected";
+        : locallyLinked && replies.length > 0
+          ? "Saved replies"
+          : status === "failed"
+            ? "Conversation unavailable"
+            : status === "disabled"
+              ? "Conversation capture disabled"
+              : "Replies not collected";
 
   return (
     <section className="x-conversation" aria-label="Conversation">
@@ -117,7 +132,7 @@ export function XConversation({
                 )}
               </p>
             )}
-            {archived && (
+            {(archived || replies.length > 0) && (
               <p className="x-captured-total">
                 <Count value={replies.length} />{" "}
                 {replies.length === 1 ? "reply" : "replies"} saved.
@@ -128,6 +143,14 @@ export function XConversation({
                 <Count value={reported} />{" "}
                 {reported === 1 ? "reply" : "replies"} reported when collected.
               </p>
+            )}
+            {locallyLinked && archived && (
+              <p>
+                Also includes related posts saved elsewhere in your collection.
+              </p>
+            )}
+            {capture?.local_posts_limited && (
+              <p>Some saved context or replies could not be included.</p>
             )}
             {archived ? (
               partial ? (
@@ -148,10 +171,12 @@ export function XConversation({
                   : status === "failed"
                     ? reasons[capture?.reason ?? ""] ||
                       "The conversation could not be collected."
-                    : "Replies haven’t been saved for this post. View the conversation on X to read them."}
+                    : locallyLinked
+                      ? "Showing related posts from your collection. More replies may be available on X."
+                      : "Replies haven’t been saved for this post. View the conversation on X to read them."}
               </p>
             )}
-            {capturedAt && (
+            {capturedAt && (archived || !locallyLinked) && (
               <p className="x-capture-date">
                 Captured{" "}
                 <time dateTime={capturedAt}>{dateLabel(capturedAt)}</time>
@@ -168,8 +193,13 @@ export function XConversation({
           View conversation on X <ExternalLink size={14} />
         </a>
       </section>
-      {!pending && archived && replies.length > 0 && (
-        <ConversationPosts posts={replies} selectAccount={selectAccount} />
+      {!pending && replies.length > 0 && (
+        <ConversationPosts
+          posts={replies}
+          selectAccount={selectAccount}
+          params={params}
+          openPost={openPost}
+        />
       )}
     </section>
   );
@@ -178,10 +208,14 @@ export function XConversation({
 function ConversationPosts({
   posts,
   selectAccount,
+  params,
+  openPost,
   context = false,
 }: {
   posts: XConversationNode[];
   selectAccount: (handle: string) => void;
+  params: URLSearchParams;
+  openPost: (post: Pick<Post, "id" | "domain">) => void;
   context?: boolean;
 }) {
   return (
@@ -209,16 +243,38 @@ function ConversationPosts({
                 </span>
               )}
             </div>
-            <XPostContent post={post} compact />
-            <a
-              className="x-conversation-original"
-              href={safeUrl(post.url)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {context ? "View post on X" : "View reply on X"}{" "}
-              <ExternalLink size={12} />
-            </a>
+            <XPostContent
+              post={post}
+              compact
+              navigation={
+                post.collected
+                  ? {
+                      href: `/reader/?${articleParams(params, post)}`,
+                      open: () => openPost(post),
+                    }
+                  : undefined
+              }
+            />
+            <div className="x-conversation-actions">
+              {post.collected && (
+                <ReaderLink
+                  className="x-conversation-original"
+                  href={`/reader/?${articleParams(params, post)}`}
+                  onNavigate={() => openPost(post)}
+                >
+                  Open saved post
+                </ReaderLink>
+              )}
+              <a
+                className="x-conversation-original"
+                href={safeUrl(post.url)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {context ? "View post on X" : "View reply on X"}{" "}
+                <ExternalLink size={12} />
+              </a>
+            </div>
           </article>
         </li>
       ))}

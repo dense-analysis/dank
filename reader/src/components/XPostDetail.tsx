@@ -3,6 +3,7 @@ import type { Post } from "../lib/types";
 import { hasXContent, xProfile } from "../lib/x";
 import { XConversation, XThreadContext } from "./XConversation";
 import { XEngagement } from "./XEngagement";
+import { XParentLink } from "./XParentLink";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -13,6 +14,8 @@ export function XPostDetail({
   pending = false,
   loadError = false,
   referenceUrl,
+  params,
+  openPost,
 }: {
   post: Post;
   links?: ReactNode;
@@ -20,6 +23,8 @@ export function XPostDetail({
   pending?: boolean;
   loadError?: boolean;
   referenceUrl?: string;
+  params: URLSearchParams;
+  openPost: (post: Pick<Post, "id" | "domain">) => void;
 }) {
   const account = xProfile(post);
 
@@ -29,11 +34,14 @@ export function XPostDetail({
         Post by {account?.name || post.author || "unknown account"}
       </h1>
       <XThreadContext
+        params={params}
+        openPost={openPost}
         capture={post.x?.conversation}
         selectAccount={selectAccount}
       />
       <div className="x-focused-post">
         <XPostHeader post={post} selectAccount={selectAccount} />
+        <XParentLink post={post} params={params} openPost={openPost} />
         <XPostContent post={post} referenceUrl={referenceUrl} />
       </div>
       {!hasXContent(post) && (
@@ -44,6 +52,8 @@ export function XPostDetail({
       <XEngagement post={post.x} />
       {links}
       <XConversation
+        params={params}
+        openPost={openPost}
         post={post}
         selectAccount={selectAccount}
         pending={pending}

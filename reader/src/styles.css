@@ -2697,6 +2697,11 @@ html:has(.x-text-expanding:not([hidden] *)) {
   border-radius: 4px;
   background: var(--selected);
 }
+.x-conversation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
 .x-conversation-original {
   display: inline-flex;
   align-items: center;
@@ -2872,4 +2877,28 @@ a.x-metric:hover {
 }
 .article-inner > .post-links {
   margin: 0 0 24px;
+}
+
+.x-feed-selection {
+  display: flex;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  margin: 18px 0 0;
+}
+.x-feed-selection button {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.x-feed-selection button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--green);
+}
+.x-parent-link {
+  display: block;
+  color: var(--green);
+  font-size: 13px;
+  margin: 10px 0 14px;
 }

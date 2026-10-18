@@ -677,6 +677,8 @@ export function App() {
                           </Fragment>
                         ) : isXPost(post) ? (
                           <XPostCard
+                            params={params}
+                            openPost={openPost}
                             key={postKey(post)}
                             post={post}
                             links={

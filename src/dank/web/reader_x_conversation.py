@@ -380,3 +380,136 @@ def _created_at(value: object, node_id: str) -> str:
     milliseconds = (int(node_id) >> 22) + 1288834974657
 
     return dt.datetime.fromtimestamp(milliseconds / 1000, dt.UTC).isoformat()
+
+
+def connect_saved_posts(
+    result: dict[str, Any], post: PostRow, payload: dict[str, Any],
+    saved: list[dict[str, Any]], local_urls: dict[str, str], *, limited: bool,
+) -> None:
+    """Merge verified local relationships; retain archive status and dates."""
+    conversation = identifier(object_value(payload.get("legacy")).get(
+        "conversation_id_str",
+    ))
+
+    if not conversation or not saved:
+        if limited:
+            result["local_posts_limited"] = True
+
+        return
+
+    nodes = {node["id"]: dict(node) for node in (
+        result["context"] + result["replies"]
+    )}
+    original_ids = set(nodes)
+    local_ids: set[str] = set()
+
+    for raw in saved[:MAX_CONVERSATION_POSTS]:
+        node = _node(raw, conversation)
+
+        if not node or node["rest_id"] == post.post_id:
+            continue
+
+        node_id = node["rest_id"]
+        local_ids.add(node_id)
+        nodes.setdefault(node_id, _post(
+            node, post, _handle(payload), local_urls, depth=0,
+            missing_parent=False,
+        ))
+        nodes[node_id]["collected"] = True
+
+    context, seen, missing = _saved_context(post.post_id, payload, nodes)
+    replies, truncated = _saved_replies(
+        post.post_id, nodes, seen, original_ids,
+        include_orphans=post.post_id == conversation,
+    )
+    limited = limited or missing or truncated
+
+    # Keep explicitly marked gaps from the archived root conversation.
+    for node in result["replies"]:
+        if node["id"] not in seen:
+            replies.append(nodes[node["id"]])
+            seen.add(node["id"])
+
+    result["context"] = list(reversed(context))
+    result["replies"] = replies[:MAX_CONVERSATION_POSTS]
+    visible = {node["id"] for node in result["context"] + result["replies"]}
+    result["local_posts_count"] = len((local_ids - original_ids) & visible)
+    result["local_posts_limited"] = (
+        limited or len(replies) > MAX_CONVERSATION_POSTS
+    )
+
+
+def _saved_context(
+    target: str, payload: dict[str, Any], nodes: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], set[str], bool]:
+    context: list[dict[str, Any]] = []
+    seen = {target}
+    parent = _parent(payload)
+    limited = False
+
+    while parent:
+        if parent in seen or len(context) >= MAX_CONVERSATION_DEPTH:
+            limited = True
+            break
+
+        seen.add(parent)
+        node = nodes.get(parent)
+
+        if not node:
+            limited = True
+            break
+
+        context.append(node)
+        parent = node["parent_id"]
+
+    return context, seen, limited
+
+
+def _saved_replies(
+    target: str, nodes: dict[str, dict[str, Any]], seen: set[str],
+    original_ids: set[str], *, include_orphans: bool,
+) -> tuple[list[dict[str, Any]], bool]:
+    limited = False
+    children: dict[str, list[dict[str, Any]]] = {}
+
+    for node in nodes.values():
+        if node["id"] not in seen:
+            children.setdefault(node["parent_id"], []).append(node)
+
+    # Keep archive order; new saved siblings use publication order.
+    for siblings in children.values():
+        siblings.sort(key=lambda node: (
+            node["id"] not in original_ids,
+            "" if node["id"] in original_ids else node["created_at"],
+            "" if node["id"] in original_ids else node["id"],
+        ))
+
+    roots = list(children.get(target, []))
+
+    if include_orphans:
+        roots.extend(node for node in nodes.values() if (
+            node["parent_id"] and node["parent_id"] not in nodes
+            and node["parent_id"] not in seen
+        ))
+        limited = len(roots) > len(children.get(target, []))
+
+    pending = [(node, 0) for node in reversed(roots)]
+    replies: list[dict[str, Any]] = []
+
+    while pending:
+        node, depth = pending.pop()
+
+        if node["id"] in seen or depth >= MAX_CONVERSATION_DEPTH:
+            limited = True
+            continue
+
+        seen.add(node["id"])
+        replies.append({
+            **node, "depth": depth,
+            "missing_parent": depth == 0 and node["parent_id"] != target,
+        })
+        pending.extend((child, depth + 1) for child in reversed(
+            children.get(node["id"], []),
+        ))
+
+    return replies, limited or (include_orphans and bool(set(nodes) - seen))

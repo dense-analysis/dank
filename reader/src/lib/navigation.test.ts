@@ -176,3 +176,24 @@ it("normal article navigation clears every reference target and previous graph m
   expect(next.has("connections")).toBe(false);
   expect(params.get("reference_id")).toBe("123");
 });
+
+it("keeps X post selection through filters and article navigation", () => {
+  const filters = {
+    ...defaultFilters,
+    kind: "x" as const,
+    account: "author",
+    xView: "replies" as const,
+    sort: "oldest" as const,
+    q: "notes",
+  };
+  const params = filterParams(filters);
+  expect(params.get("x_view")).toBe("replies");
+  expect(
+    parseFilters(articleParams(params, { domain: "x.com", id: "123" })),
+  ).toEqual(filters);
+  expect(parseFilters(new URLSearchParams("view=x")).xView).toBe("posts");
+  expect(
+    parseFilters(new URLSearchParams("view=reddit&x_view=replies")).xView,
+  ).toBe("posts");
+  expect(filterParams({ ...filters, kind: "all" }).has("x_view")).toBe(false);
+});

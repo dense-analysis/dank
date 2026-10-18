@@ -257,6 +257,21 @@ Docker users can pass the same options to `docker compose run --rm dank scrape`
 and `docker compose run --rm dank process`. No new source or login is needed
 when the saved X session remains valid.
 
+## Reader relationships
+
+The X reader defaults to **Posts**; **Posts & replies** includes saved replies
+in the same chronological order. Reply IDs from the displayed capture connect
+saved parents and children without another scrape. Only known replies are
+excluded from Posts. The reader links up to 200 related saved posts and 20
+ancestor levels, with explicit missing-context or limit notices. Saved links
+supplement discussion archives without claiming a new or complete capture.
+
+Future X reader improvements may include configurable timeline reply previews
+(for example, the top 10 collected replies, with an explicit ranking and limit)
+and a bundled Threads view. These are deferred options, not current collection
+or display guarantees. Reply collection coverage must remain visible separately
+from how the reader chooses to display saved replies.
+
 ## Rebuild saved posts
 
 Previously saved X posts can be rebuilt without collecting them again:

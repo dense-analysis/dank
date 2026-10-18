@@ -137,7 +137,17 @@ export interface XMedia {
   aspect_ratio?: number;
 }
 
+export interface XReplyTo {
+  id: string;
+  domain: string;
+  url: string;
+  is_self: boolean | null;
+  collected: boolean;
+}
+
 export interface XPost extends XProfile {
+  reply_to?: XReplyTo;
+  conversation_id?: string;
   links?: XLink[];
   media?: XMedia[];
   reply_count?: number | null;
@@ -162,6 +172,7 @@ export interface XConversationNode extends Post {
   depth: number;
   is_author: boolean;
   missing_parent: boolean;
+  collected?: boolean;
 }
 
 export interface XConversation {
@@ -173,6 +184,8 @@ export interface XConversation {
   limit: number;
   context: XConversationNode[];
   replies: XConversationNode[];
+  local_posts_count?: number;
+  local_posts_limited?: boolean;
   latest_attempt_status?: XConversationStatus;
   latest_attempt_at?: string | null;
 }
@@ -215,6 +228,7 @@ export type Section = FeedKind | "sources" | "settings";
 export interface Filters {
   kind: FeedKind;
   hnFilter: HackerNewsFilter;
+  xView: "posts" | "replies";
   community: string;
   account: string;
   q: string;

@@ -36,7 +36,8 @@ class FakeClickHouse:
     ) -> QueryResult:
         self.calls.append((query, params or {}))
 
-        if params and ({"link_post_keys", "hn_link_keys"} & params.keys()):
+        if params and ({"link_post_keys", "hn_link_keys",
+                        "x_parent_keys", "x_thread_domain"} & params.keys()):
             return QueryResult([])
 
         return QueryResult(self.results.pop(0))

@@ -219,6 +219,18 @@ function validPost(value: unknown, allowConversation: boolean): value is Post {
     (value.linked_post === undefined ||
       value.linked_post === null ||
       isPostReference(value.linked_post)) &&
+    (value.conversation_id === undefined ||
+      (typeof value.conversation_id === "string" &&
+        /^[0-9]{1,20}$/.test(value.conversation_id))) &&
+    (value.reply_to === undefined ||
+      (isRecord(value.reply_to) &&
+        typeof value.reply_to.id === "string" &&
+        /^[0-9]{1,20}$/.test(value.reply_to.id) &&
+        ["x.com", "twitter.com"].includes(String(value.reply_to.domain)) &&
+        typeof value.reply_to.url === "string" &&
+        typeof value.reply_to.collected === "boolean" &&
+        (value.reply_to.is_self === null ||
+          typeof value.reply_to.is_self === "boolean"))) &&
     (value.links === undefined ||
       (Array.isArray(value.links) && value.links.every(isPostReference))) &&
     (value.links_count === undefined || isCount(value.links_count)) &&
@@ -263,7 +275,8 @@ function isConversationNode(value: unknown): boolean {
     isCount(value.depth) &&
     value.depth <= 20 &&
     typeof value.is_author === "boolean" &&
-    typeof value.missing_parent === "boolean"
+    typeof value.missing_parent === "boolean" &&
+    (value.collected === undefined || typeof value.collected === "boolean")
   );
 }
 
@@ -284,6 +297,10 @@ function isConversation(value: unknown): boolean {
     value.replies.every(isConversationNode) &&
     (value.latest_attempt_status === undefined ||
       isConversationStatus(value.latest_attempt_status)) &&
+    (value.local_posts_count === undefined ||
+      isCount(value.local_posts_count)) &&
+    (value.local_posts_limited === undefined ||
+      typeof value.local_posts_limited === "boolean") &&
     isOptionalIcon(value.latest_attempt_at)
   );
 }
@@ -295,6 +312,18 @@ function isXPost(value: unknown, allowConversation: boolean): boolean {
       (value.handle === "" &&
         typeof value.name === "string" &&
         isOptionalIcon(value.icon_url))) &&
+    (value.conversation_id === undefined ||
+      (typeof value.conversation_id === "string" &&
+        /^[0-9]{1,20}$/.test(value.conversation_id))) &&
+    (value.reply_to === undefined ||
+      (isRecord(value.reply_to) &&
+        typeof value.reply_to.id === "string" &&
+        /^[0-9]{1,20}$/.test(value.reply_to.id) &&
+        ["x.com", "twitter.com"].includes(String(value.reply_to.domain)) &&
+        typeof value.reply_to.url === "string" &&
+        typeof value.reply_to.collected === "boolean" &&
+        (value.reply_to.is_self === null ||
+          typeof value.reply_to.is_self === "boolean"))) &&
     (value.links === undefined ||
       (Array.isArray(value.links) &&
         value.links.every(
