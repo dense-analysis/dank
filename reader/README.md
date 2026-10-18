@@ -188,7 +188,8 @@ Raw photo and video references are hidden while their attachments are shown
 and return if the image or player fails. Raw URLs represented by clickable preview cards, including
 YouTube cards, are also hidden. Descriptive links and links without previews
 remain available. YouTube previews play inline when selected, with a separate
-**Watch on YouTube** link for videos that cannot be embedded. Closing the video
+YouTube source icon beside **Remote video - YouTube** for opening the video
+on its own site. Closing the video
 or navigating to another view stops playback. X, YouTube and Reddit videos pause
 when scrolled fully out of view or when another video starts. Their position is
 preserved; scrolling back does not automatically resume them. Opening a post and
@@ -252,7 +253,10 @@ opened posts; descriptive links remain. Failed players restore the raw link.
 Raw image and gallery links are hidden when a clickable image preview represents
 them. Missing or failed images keep their original links available.
 Portrait players use poster proportions before playback and the video's actual
-dimensions once loaded. If a stream becomes unavailable, use **Watch on Reddit**.
+dimensions once loaded. Captions use **Remote video - Reddit**, with the globe
+icon. Native videos share the post’s original-source link; a video from another
+site keeps its own source icon beside the caption. If playback fails, the post’s
+source link and restored raw video link remain available.
 
 Settings can hide captured comments or remote video labels in this browser.
 Collection options, including video downloads and comment limits/sort, remain

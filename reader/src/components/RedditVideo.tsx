@@ -1,12 +1,12 @@
 import type Hls from "hls.js";
-import { ExternalLink, Globe2, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { observeVideoPlayback } from "../lib/playback";
 import { redditVideoKey } from "../lib/redditText";
 import type { RedditVideo as Video } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { videoPositionKey } from "../lib/videoPositions";
+import { VideoSource } from "./VideoSource";
 
 export function RedditVideo({
   video,
@@ -19,7 +19,6 @@ export function RedditVideo({
   onUnavailable?: (url: string) => void;
   positionScope: string;
 }) {
-  const { preferences } = useReaderPreferences();
   const positionKey = videoPositionKey(
     positionScope,
     "reddit",
@@ -178,21 +177,16 @@ export function RedditVideo({
           </button>
         )}
       </div>
-      <figcaption>
-        {video.remote && preferences.showRemoteContentLabels && (
-          <span className="remote-content-label">
-            <Globe2 size={13} aria-hidden="true" /> Remote video · streams from
-            Reddit
-          </span>
-        )}
-        <a href={safeUrl(originalUrl)} target="_blank" rel="noreferrer">
-          Watch on Reddit <ExternalLink size={12} aria-hidden="true" />
-        </a>
+      <figcaption className="video-caption">
+        <VideoSource
+          url={video.source_url || video.hls_url || video.url}
+          postUrl={originalUrl}
+          remote={video.remote}
+        />
       </figcaption>
       {(failed || !url) && (
         <p className="reddit-video-error" role="status">
-          This video couldn’t be played here. Watch on Reddit to try the
-          original.
+          This video couldn’t be played here. Open the source to watch it.
         </p>
       )}
     </figure>

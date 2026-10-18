@@ -2086,6 +2086,19 @@ input[type="checkbox"] {
   font-size: 11px;
   color: var(--muted);
 }
+.video-caption:empty {
+  display: none;
+}
+.video-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.video-source-link {
+  flex-shrink: 0;
+}
 .remote-content-label,
 .reddit-video figcaption a,
 .reddit-comments a,

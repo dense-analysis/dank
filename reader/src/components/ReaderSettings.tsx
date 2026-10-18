@@ -209,8 +209,8 @@ export function ReaderSettings() {
             Show remote content labels
           </label>
           <p className="settings-help" id="show-remote-content-labels-help">
-            Mark videos that stream from Reddit and haven’t been saved for
-            offline viewing.
+            Mark videos that stream from an external source, such as Reddit,
+            X.com or YouTube.
           </p>
         </div>
         <p className="settings-help">

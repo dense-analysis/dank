@@ -212,8 +212,13 @@ for (const width of [1440, 390, 320]) {
         ),
       ).toBe(true);
       await expect(
-        content.getByRole("link", { name: "Watch on YouTube" }),
-      ).toHaveAttribute("href", videoUrl);
+        content.getByText("Remote video - YouTube", { exact: true }),
+      ).toBeVisible();
+      const sourceLink = content.getByRole("link", {
+        name: "Watch on YouTube",
+      });
+      await expect(sourceLink).toHaveAttribute("href", videoUrl);
+      await expect(sourceLink).toHaveText("");
       if (query.includes("article=")) {
         const resize = page.getByRole("button", { name: "Larger post text" });
         await resize.click();

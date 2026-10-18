@@ -53,6 +53,7 @@ const capture: RedditCommentCapture = {
   ],
 };
 const remoteVideo: RedditVideo = {
+  source_url: "https://v.redd.it/landing",
   url: "https://video.reddit.test/playlist.m3u8",
   hls_url: "https://video.reddit.test/playlist.m3u8",
   poster_url: null,
@@ -155,9 +156,7 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const streams = await mockArchive(page);
     await openPost(page);
-    await expect(
-      page.getByText("Remote video · streams from Reddit"),
-    ).toBeVisible();
+    await expect(page.getByText("Remote video - Reddit")).toBeVisible();
     await expect(page.getByText("Best · saved snapshot")).toBeVisible();
     await expect(
       page.getByText("3 saved of 298", { exact: false }),
@@ -235,9 +234,8 @@ test("plays archived video locally without duplicate media or a remote label", a
   });
   await openPost(page);
   await expect(page.locator("video")).toHaveCount(1);
-  await expect(
-    page.getByText("Remote video · streams from Reddit"),
-  ).toHaveCount(0);
+  await expect(page.getByText("Remote video - Reddit")).toHaveCount(0);
+  await expect(page.locator(".reddit-video figcaption")).toBeHidden();
   await page.locator("video").evaluate((element: HTMLVideoElement) => {
     element.volume = 0;
   });
@@ -265,7 +263,7 @@ test("offers the original when a stream fails", async ({ page }) => {
       .filter({ hasText: "This video couldn’t be played here" }),
   ).toBeVisible({ timeout: 15000 });
   await expect(
-    page.getByRole("link", { name: "Watch on Reddit" }),
+    page.getByRole("link", { name: "Read original", exact: true }),
   ).toHaveAttribute("href", post.url);
 });
 
@@ -387,9 +385,8 @@ test("persists display preferences without implying collection settings changed"
     page.getByRole("checkbox", { name: "Show remote content labels" }),
   ).not.toBeChecked();
   await openPost(page);
-  await expect(
-    page.getByText("Remote video · streams from Reddit"),
-  ).toHaveCount(0);
+  await expect(page.getByText("Remote video - Reddit")).toHaveCount(0);
+  await expect(page.locator(".reddit-video figcaption")).toBeHidden();
   await expect(page.locator(".reddit-comment")).toHaveCount(0);
   await expect(
     page.getByText("Comments are hidden in your reading preferences."),

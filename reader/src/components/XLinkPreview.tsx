@@ -5,14 +5,17 @@ import { videoPositionKey } from "../lib/videoPositions";
 import { xMediaUrl } from "../lib/x";
 import { previewReferenceKey } from "../lib/xText";
 import { youtubeEmbedUrl } from "../lib/youtube";
+import { VideoSource } from "./VideoSource";
 import { YouTubePlayer } from "./YouTubePlayer";
 
 export function XLinkPreview({
   link,
+  originalUrl,
   positionScope,
   highlighted = false,
 }: {
   link: XLink;
+  originalUrl: string;
   positionScope: string;
   highlighted?: boolean;
 }) {
@@ -122,9 +125,7 @@ export function XLinkPreview({
         </button>
       )}
       <div className="x-youtube-actions">
-        <a href={url} target="_blank" rel="noreferrer">
-          Watch on YouTube <ExternalLink size={13} aria-hidden="true" />
-        </a>
+        <VideoSource url={url} postUrl={originalUrl} remote />
         {playing && (
           <button
             type="button"

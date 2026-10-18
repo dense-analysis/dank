@@ -197,7 +197,10 @@ for (const detail of [false, true]) {
       ).toBeVisible();
     else await expect(scope.locator(".post-open p")).toContainText(raw);
     await expect(
-      scope.getByRole("link", { name: "Watch on Reddit" }),
+      scope.getByRole("link", {
+        name: detail ? "Read original" : `Open original: ${post().title}`,
+        exact: true,
+      }),
     ).toHaveAttribute("href", post().url);
     expect(state.requests).toBe(1);
   });
@@ -230,4 +233,59 @@ test("URL-only feed excerpts leave the title and player without placeholder text
   await expect(page.locator(".reddit-card video")).toBeVisible();
   await expect(page.locator(".post-open p")).toHaveCount(0);
   await expect(page.locator(".post-open h2")).toHaveText("A portrait clip");
+});
+
+for (const width of [1440, 390]) {
+  test(`native Reddit captions keep only the post source link at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mock(context, post({ ...asset, remote: true }));
+
+    for (const query of [
+      "",
+      "view=reddit&community=videos",
+      "article=portrait&article_source=reddit.com",
+    ]) {
+      await page.goto(`/reader/?${query}`);
+      const detail = query.includes("article=");
+      const scope = page.locator(detail ? ".article-page" : ".reddit-card");
+      await expect(scope.locator(".video-caption")).toHaveText(
+        "Remote video - Reddit",
+      );
+      await expect(
+        scope.locator(".video-caption .remote-content-label svg"),
+      ).toHaveCount(1);
+      await expect(scope.locator(".video-caption a")).toHaveCount(0);
+      await expect(
+        scope.getByRole("link", {
+          name: detail ? "Read original" : `Open original: ${post().title}`,
+          exact: true,
+        }),
+      ).toHaveAttribute("href", post().url);
+    }
+  });
+}
+
+test("a Reddit video from another site retains its own caption source link", async ({
+  page,
+  context,
+}) => {
+  const external = "https://media.example.com/clip.mp4";
+  await mock(context, post({ ...asset, source_url: external, remote: true }));
+  await page.goto("/reader/?view=reddit");
+  const card = page.locator(".reddit-card");
+  await expect(card.locator(".video-caption")).toHaveText(
+    "Remote video - media.example.com",
+  );
+  await expect(
+    card.getByRole("link", { name: "Watch on media.example.com", exact: true }),
+  ).toHaveAttribute("href", external);
+  await expect(
+    card.getByRole("link", {
+      name: `Open original: ${post().title}`,
+      exact: true,
+    }),
+  ).toHaveAttribute("href", post().url);
 });

@@ -16,6 +16,7 @@ import {
 import { youtubeEmbedUrl } from "../lib/youtube";
 import { ArticleBody } from "./ArticleBody";
 import { safeUrl } from "./PostCard";
+import { VideoSource } from "./VideoSource";
 import { XLinkPreview } from "./XLinkPreview";
 import { XPostPreview } from "./XPostPreview";
 
@@ -141,6 +142,7 @@ export function XPostContent({
         <XLinkPreview
           key={link.url}
           link={link}
+          originalUrl={post.url}
           highlighted={!!referenceUrl && matchesLinkUrl(link.url, referenceUrl)}
           positionScope={postKey(post)}
         />
@@ -228,9 +230,15 @@ function XAttachment({
           <track kind="captions" />
         </video>
       )}
-      {asset.remote && (
-        <figcaption>
-          {asset.type === "image" ? "Image" : "Video"} from X
+      {asset.type === "image" ? (
+        asset.remote && <figcaption>Image from X</figcaption>
+      ) : (
+        <figcaption className="video-caption">
+          <VideoSource
+            url={asset.source_url || asset.url}
+            postUrl={original}
+            remote={asset.remote}
+          />
         </figcaption>
       )}
     </figure>
