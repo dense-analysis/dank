@@ -2,6 +2,7 @@ import { Check, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
 import { Count } from "./Count";
+import { NavigableCard } from "./NavigableCard";
 import { safeUrl } from "./PostCard";
 import { XEngagement } from "./XEngagement";
 import { XParentLink } from "./XParentLink";
@@ -32,46 +33,7 @@ export function XPostCard({
   const navigation = { href, open };
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Existing post links provide keyboard access; the card adds a pointer shortcut.
-    <article
-      className={`post-card x-post-card ${read ? "is-read" : ""}`}
-      onClick={(event) => {
-        if (
-          event.defaultPrevented ||
-          event.button !== 0 ||
-          event.shiftKey ||
-          event.altKey ||
-          !(event.target instanceof Element) ||
-          event.target.closest(
-            "a, button, input, select, textarea, summary, video, audio, [role='button'], [role='link'], [contenteditable]",
-          )
-        )
-          return;
-
-        const selection = window.getSelection();
-
-        if (
-          selection &&
-          !selection.isCollapsed &&
-          selection.rangeCount > 0 &&
-          selection.getRangeAt(0).intersectsNode(event.currentTarget)
-        )
-          return;
-
-        if (event.metaKey || event.ctrlKey) {
-          event.preventDefault();
-          window.open(href, "_blank", "noopener,noreferrer");
-
-          return;
-        }
-
-        // Back navigation should restore focus to this post's keyboard link.
-        event.currentTarget
-          .querySelector<HTMLAnchorElement>(".x-post-timestamp")
-          ?.focus({ preventScroll: true });
-        open();
-      }}
-    >
+    <NavigableCard className={`post-card x-post-card ${read ? "is-read" : ""}`}>
       <XPostHeader
         post={post}
         selectAccount={selectAccount}
@@ -107,6 +69,6 @@ export function XPostCard({
         </a>
       </footer>
       {links}
-    </article>
+    </NavigableCard>
   );
 }

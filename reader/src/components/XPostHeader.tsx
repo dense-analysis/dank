@@ -25,6 +25,7 @@ export function XPostHeader({
       {navigation ? (
         <ReaderLink
           className="x-post-timestamp post-open"
+          data-card-link
           href={navigation.href}
           onNavigate={navigation.open}
           aria-label={`Read ${post.title || "Untitled post"}`}

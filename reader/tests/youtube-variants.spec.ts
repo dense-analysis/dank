@@ -156,7 +156,7 @@ test("keyboard focus previews versions and details retain one video with dated t
     page.locator(".yt-thumbnail-versions .is-current"),
   ).toHaveAttribute("src", /thumbnail-old/);
   await page
-    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .getByRole("link", { name: `Discovery details for ${video.title}` })
     .click();
   await expect(page.locator(".yt-card")).toHaveCount(1);
   const titles = page.getByRole("region", { name: "Observed titles" });
@@ -187,7 +187,7 @@ test("reduced motion keeps the preview static but preserves explicit history acc
     "0s",
   );
   await page
-    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .getByRole("link", { name: `Discovery details for ${video.title}` })
     .click();
   await expect(
     page.getByRole("region", { name: "Saved thumbnails" }).getByRole("link"),
@@ -223,7 +223,7 @@ test("a broken alternate is excluded instead of fading to an empty image", async
     page.locator(".yt-thumbnail-versions .is-current"),
   ).toHaveAttribute("src", /thumbnail-new/);
   await page
-    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .getByRole("link", { name: `Discovery details for ${video.title}` })
     .click();
   const history = page.getByRole("region", { name: "Saved thumbnails" });
   await expect(history.getByText("Thumbnail unavailable")).toBeVisible();
@@ -236,7 +236,7 @@ for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await fixture(page);
     await page
-      .getByRole("button", { name: `Discovery details for ${video.title}` })
+      .getByRole("link", { name: `Discovery details for ${video.title}` })
       .click();
     await expect(
       page.getByRole("region", { name: "Observed titles" }),
@@ -294,7 +294,7 @@ test("each image shows only its paired title and combination dates", async ({
 }) => {
   await fixture(page);
   await page
-    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .getByRole("link", { name: `Discovery details for ${video.title}` })
     .click();
   const figures = page
     .getByRole("region", { name: "Saved thumbnails" })
@@ -323,7 +323,7 @@ test("one thumbnail can retain two separately dated title combinations", async (
   };
   await fixture(page, item);
   await page
-    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .getByRole("link", { name: `Discovery details for ${video.title}` })
     .click();
   const history = page.getByRole("region", { name: "Saved thumbnails" });
   await expect(history.locator("figure")).toHaveCount(1);
@@ -341,7 +341,7 @@ test("unpaired images do not invent a title association", async ({ page }) => {
   };
   await fixture(page, item);
   await page
-    .getByRole("button", { name: `Discovery details for ${video.title}` })
+    .getByRole("link", { name: `Discovery details for ${video.title}` })
     .click();
   const history = page.getByRole("region", { name: "Saved thumbnails" });
   await expect(history.locator(".yt-pair-unknown")).toHaveCount(2);

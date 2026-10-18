@@ -12,6 +12,7 @@ export function ReaderLink({
 }) {
   return (
     <a
+      rel="noopener"
       {...props}
       href={href}
       onClick={(event) => {

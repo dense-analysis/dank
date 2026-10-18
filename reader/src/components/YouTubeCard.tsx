@@ -12,6 +12,8 @@ import {
   youtubeThumbnailSources,
 } from "../lib/youtubeCollection";
 import { Count } from "./Count";
+import { NavigableCard } from "./NavigableCard";
+import { ReaderLink } from "./ReaderLink";
 import { YouTubeLocalVideo } from "./YouTubeLocalVideo";
 import { YouTubePlayer } from "./YouTubePlayer";
 import { YouTubeThumbnail } from "./YouTubeThumbnail";
@@ -54,7 +56,8 @@ export function YouTubeCard({
     item.title || (item.kind === "post" ? "Community post" : "YouTube video");
 
   return (
-    <article
+    <NavigableCard
+      enabled={!detailed}
       className={`yt-card yt-${item.kind} ${detailed ? "yt-card-detailed" : ""}`}
     >
       {item.kind === "post" ? (
@@ -171,23 +174,15 @@ export function YouTubeCard({
             </div>
           )}
           <h3>
-            <a
+            <ReaderLink
               href={href}
-              onClick={(event) => {
-                if (
-                  event.button ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey
-                )
-                  return;
-                event.preventDefault();
-                open();
-              }}
+              onNavigate={open}
+              data-card-link
+              preserveTextSelection
+              draggable={false}
             >
               {title}
-            </a>
+            </ReaderLink>
           </h3>
           {item.channel.name && (
             <p className="yt-channel">{item.channel.name}</p>
@@ -243,14 +238,15 @@ export function YouTubeCard({
           </span>
         )}
         {!detailed && (
-          <button
-            type="button"
+          <ReaderLink
+            href={href}
+            onNavigate={open}
+            data-card-link={item.kind === "post" ? true : undefined}
             className="icon-button yt-context-button"
             aria-label={`Discovery details for ${title}`}
-            onClick={open}
           >
             <Info size={15} />
-          </button>
+          </ReaderLink>
         )}
         {original && (
           <a
@@ -269,6 +265,6 @@ export function YouTubeCard({
           </a>
         )}
       </div>
-    </article>
+    </NavigableCard>
   );
 }

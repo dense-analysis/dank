@@ -12,6 +12,7 @@ import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
 import { Count } from "./Count";
 import { HighlightedText } from "./HighlightedText";
+import { NavigableCard } from "./NavigableCard";
 import { PlatformIcon } from "./PlatformIcon";
 import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
@@ -125,7 +126,7 @@ export function HackerNewsCard({
   );
 
   return (
-    <article className={`post-card hn-card ${read ? "is-read" : ""}`}>
+    <NavigableCard className={`post-card hn-card ${read ? "is-read" : ""}`}>
       <div className="post-meta">
         <PlatformIcon platform="hacker_news" size={16} />
         <span>Hacker News</span>
@@ -141,6 +142,9 @@ export function HackerNewsCard({
       <ReaderLink
         href={href}
         className="post-open"
+        data-card-link
+        preserveTextSelection
+        draggable={false}
         onNavigate={open}
         aria-label={`Read ${post.title || "Untitled post"}`}
       >
@@ -189,6 +193,6 @@ export function HackerNewsCard({
         </div>
       </div>
       {links}
-    </article>
+    </NavigableCard>
   );
 }

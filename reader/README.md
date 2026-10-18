@@ -74,7 +74,12 @@ browser channel. No live collection is needed for the fixture tests.
 - Stories with available text but a failed article-page fetch have an
   “Incomplete scrape” badge and notice: text, formatting or media may be missing.
   The badge clears after a successful page retry is processed.
-- Article titles support opening new tabs. Source names filter to that source;
+- Feed cards open their primary article or post from the surrounding space as
+  well as their title. Cmd-click (Ctrl-click on Windows/Linux) and middle-click
+  open background tabs, keeping the feed and its filters in place. Clickable
+  areas keep the hand cursor; text selection and nested controls stay independent.
+  This applies in All, Blogs, X, Reddit, Hacker News and YouTube.
+  Source names filter to that source;
   unlinked article images open at full size in a new tab.
 - Transparent article images offer a **Light background** toggle on hover or
   keyboard focus, always visible on touch screens. Toggle it again to restore
@@ -192,7 +197,7 @@ in this open reader tab; reloading the page clears them.
 
 Remote media is labelled and video plays only on demand. Click anywhere on a post
 card to open it, or use its text or timestamp link. Cmd-click (Ctrl-click on
-Windows/Linux) opens the post in a new tab with the current feed filters.
+Windows/Linux) opens the post in a background tab with the current feed filters.
 Clickable card areas keep the hand cursor. Account links, inline links, Show more
 and media controls work independently; selecting text keeps the feed open.
 The footer shows captured comments, reposts, likes and views, with a dash for
@@ -299,7 +304,7 @@ that specific combination. Older pairings are labelled when matched from saved
 captures; uncertain or recovered-image pairings remain unspecified. The card keeps the title from the selected feed snapshot.
 
 Landscape videos, portrait Shorts and community posts have distinct layouts.
-Select a title or its information button to inspect the captured shelf, rank,
+Select a card, title or its information link to inspect the captured shelf, rank,
 region, playlist and collection time. **Feed snapshot** means the feed entry is
 saved; it does not claim transcripts or comments were collected. The collector
 configuration controls feed selection, Shorts and video downloads.

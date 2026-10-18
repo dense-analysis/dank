@@ -16,6 +16,7 @@ import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HighlightedText } from "./HighlightedText";
+import { NavigableCard } from "./NavigableCard";
 import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
 import {
@@ -115,7 +116,7 @@ export function PostCard({
     !!filters.community &&
     post.reddit?.community.toLowerCase() === filters.community.toLowerCase();
   return (
-    <article
+    <NavigableCard
       className={`post-card ${post.reddit ? "reddit-card" : ""} ${read ? "is-read" : ""}`}
     >
       <div className="post-meta">
@@ -166,6 +167,9 @@ export function PostCard({
         <ReaderLink
           href={href}
           className="post-open"
+          data-card-link
+          preserveTextSelection
+          draggable={false}
           onNavigate={open}
           aria-label={`Read ${post.title || "Untitled post"}`}
         >
@@ -246,6 +250,6 @@ export function PostCard({
         </div>
       </div>
       {links}
-    </article>
+    </NavigableCard>
   );
 }
