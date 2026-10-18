@@ -20,6 +20,10 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
       x: {
         handle: "photographer",
         name: "Photographer",
+        reply_count: 191,
+        repost_count: 232,
+        like_count: 2700,
+        view_count: 217500,
         media: [
           {
             type: "image",
@@ -268,11 +272,17 @@ test("image and video fitting can be changed independently and persist through n
   expect(requests()).toBe(0);
 });
 
-for (const width of [1440, 390, 320]) {
+for (const width of [1440, 1100, 816, 653, 390, 320]) {
   test(`social media stays compact and footers adapt at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 1400 });
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "dank-reader:read:v1",
+        JSON.stringify([JSON.stringify(["x.com", "x-media"])]),
+      );
+    });
     const requests = await mockMedia(page);
     await page.goto("/reader/");
 
@@ -302,6 +312,14 @@ for (const width of [1440, 390, 320]) {
           inset: items[0].left - card.left,
           width: card.width,
           originalRightInset: card.right - originalBox.right,
+          centers: Array.from(
+            parent.querySelectorAll(
+              ".social-metric, .x-post-actions > .read-indicator, .social-post-actions > .icon-button",
+            ),
+          ).map((node) => {
+            const box = node.getBoundingClientRect();
+            return box.left + box.width / 2;
+          }),
           coverage: group.width / card.width,
           gaps: items
             .slice(1)
@@ -313,12 +331,18 @@ for (const width of [1440, 390, 320]) {
       });
       expect(layout.labelsClipped).toBe(true);
 
-      if (width > 600) {
+      if (layout.width > 760) {
         expect(layout.inset).toBeLessThan(layout.width / 4);
         expect(layout.originalRightInset).toBeLessThan(2);
         expect(Math.max(...layout.gaps)).toBeLessThanOrEqual(25);
       } else {
         expect(layout.coverage).toBeGreaterThan(0.6);
+        const centerGaps = layout.centers
+          .slice(1)
+          .map((center, index) => center - layout.centers[index]);
+        expect(Math.max(...centerGaps) - Math.min(...centerGaps)).toBeLessThan(
+          2,
+        );
         expect(
           Math.max(...layout.gaps) - Math.min(...layout.gaps),
         ).toBeLessThan(2);

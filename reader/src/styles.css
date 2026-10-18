@@ -2736,6 +2736,13 @@ html:has(.x-text-expanding:not([hidden] *)) {
   user-select: text;
   -webkit-user-drag: none;
 }
+/* Base footer spacing on the reading column, including beside an open sidebar. */
+.x-post-card,
+.reddit-card,
+.article-page[data-source="x"],
+.article-page[data-source="reddit"] {
+  container: social-post / inline-size;
+}
 .social-post-actions {
   display: flex;
   align-items: center;
@@ -2775,7 +2782,7 @@ html:has(.x-text-expanding:not([hidden] *)) {
 a.x-metric:hover {
   color: var(--green);
 }
-@media (max-width: 600px) {
+@container social-post (max-width: 760px) {
   .social-post-actions {
     gap: 0;
   }
@@ -2784,9 +2791,13 @@ a.x-metric:hover {
     gap: 0;
   }
   .social-engagement > .social-metric,
-  .social-post-actions > .icon-button {
+  .social-post-actions > .icon-button,
+  .x-post-actions > .read-indicator {
     flex: 1;
     justify-content: center;
+  }
+  .x-post-actions > .read-indicator {
+    margin-left: 0;
   }
   .social-post-actions > .icon-button {
     margin-left: 0;
