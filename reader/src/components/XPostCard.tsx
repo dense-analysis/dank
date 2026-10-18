@@ -51,22 +51,24 @@ export function XPostCard({
               {post.x.replies_status === "partial" ? " · partial" : ""}
             </span>
           )}
-        {read && (
-          <span className="read-indicator" title="Read">
-            <Check size={13} />
-            <span className="visually-hidden">Read</span>
-          </span>
-        )}
-        <a
-          className="x-original-link icon-button"
-          href={safeUrl(post.url)}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={`Open original: ${post.title}`}
-          title="View on X"
-        >
-          <ExternalLink size={16} />
-        </a>
+        <div className="x-post-utilities">
+          {read && (
+            <span className="read-indicator" title="Read">
+              <Check size={13} />
+              <span className="visually-hidden">Read</span>
+            </span>
+          )}
+          <a
+            className="x-original-link icon-button"
+            href={safeUrl(post.url)}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open original: ${post.title}`}
+            title="View on X"
+          >
+            <ExternalLink size={16} />
+          </a>
+        </div>
       </footer>
       {links}
     </NavigableCard>

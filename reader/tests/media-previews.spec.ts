@@ -303,7 +303,7 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
         );
         const group = element.getBoundingClientRect();
         const original = parent.querySelector(
-          ".social-post-actions > .icon-button",
+          ".social-post-actions .icon-button",
         );
         if (!original) throw new Error("Missing original-source link");
         const originalBox = original.getBoundingClientRect();
@@ -312,14 +312,12 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
           inset: items[0].left - card.left,
           width: card.width,
           originalRightInset: card.right - originalBox.right,
-          centers: Array.from(
-            parent.querySelectorAll(
-              ".social-metric, .x-post-actions > .read-indicator, .social-post-actions > .icon-button",
-            ),
-          ).map((node) => {
-            const box = node.getBoundingClientRect();
-            return box.left + box.width / 2;
-          }),
+          fontSize: getComputedStyle(element.children[0]).fontSize,
+          iconWidth: element.querySelector("svg")?.getBoundingClientRect()
+            .width,
+          utilitiesWidth: parent
+            .querySelector(".x-post-utilities")
+            ?.getBoundingClientRect().width,
           coverage: group.width / card.width,
           gaps: items
             .slice(1)
@@ -337,12 +335,14 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
         expect(Math.max(...layout.gaps)).toBeLessThanOrEqual(25);
       } else {
         expect(layout.coverage).toBeGreaterThan(0.6);
-        const centerGaps = layout.centers
-          .slice(1)
-          .map((center, index) => center - layout.centers[index]);
-        expect(Math.max(...centerGaps) - Math.min(...centerGaps)).toBeLessThan(
-          2,
-        );
+        expect(layout.inset).toBeLessThan(2);
+        expect(layout.originalRightInset).toBeLessThan(2);
+        expect(layout.fontSize).toBe("13px");
+        expect(layout.iconWidth).toBe(18);
+
+        if (layout.utilitiesWidth !== undefined)
+          expect(layout.utilitiesWidth).toBeLessThanOrEqual(64);
+
         expect(
           Math.max(...layout.gaps) - Math.min(...layout.gaps),
         ).toBeLessThan(2);

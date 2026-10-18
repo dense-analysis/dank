@@ -2371,6 +2371,15 @@ html:has(.x-text-expanding:not([hidden] *)) {
   margin-top: 18px;
   gap: 12px;
 }
+.x-post-utilities {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.x-post-utilities .read-indicator {
+  margin-left: 0;
+}
 .x-original-link {
   display: inline-flex;
   align-items: center;
@@ -2784,27 +2793,28 @@ a.x-metric:hover {
 }
 @container social-post (max-width: 760px) {
   .social-post-actions {
-    gap: 0;
+    gap: clamp(12px, 8cqw, 64px);
+  }
+  .x-post-actions {
+    margin-top: 8px;
   }
   .social-engagement {
-    flex: 2;
-    gap: 0;
-  }
-  .social-engagement > .social-metric,
-  .social-post-actions > .icon-button,
-  .x-post-actions > .read-indicator {
     flex: 1;
-    justify-content: center;
+    justify-content: space-between;
+    gap: 8px;
   }
-  .x-post-actions > .read-indicator {
+  .social-post-actions .icon-button {
+    flex: 0 0 32px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
     margin-left: 0;
+    padding: 7px;
   }
-  .social-post-actions > .icon-button {
+  .x-post-utilities {
+    flex: 0 0 64px;
+    justify-content: flex-end;
     margin-left: 0;
-    padding-inline: 0;
-  }
-  .x-post-actions > .x-engagement {
-    flex: 4;
   }
   .x-post-actions > .x-conversation-summary {
     order: 1;
@@ -2818,8 +2828,24 @@ a.x-metric:hover {
     flex-basis: 100%;
   }
   .social-metric {
+    gap: 5px;
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .social-metric > svg,
+  .social-post-actions .icon-button > svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+  }
+}
+@container social-post (max-width: 400px) {
+  .social-post-actions {
+    gap: 12px;
+  }
+  .x-post-utilities {
+    flex-basis: 52px;
     gap: 4px;
-    font-size: 11px;
   }
 }
 
