@@ -2285,9 +2285,6 @@ input[type="checkbox"] {
 .x-post-card {
   cursor: pointer;
 }
-.x-post-card .article-body {
-  cursor: text;
-}
 .x-post-header {
   display: flex;
   flex-wrap: wrap;

@@ -34,8 +34,6 @@ export function XPostCard({
         if (
           event.defaultPrevented ||
           event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
           event.shiftKey ||
           event.altKey ||
           !(event.target instanceof Element) ||
@@ -54,6 +52,13 @@ export function XPostCard({
           selection.getRangeAt(0).intersectsNode(event.currentTarget)
         )
           return;
+
+        if (event.metaKey || event.ctrlKey) {
+          event.preventDefault();
+          window.open(href, "_blank", "noopener,noreferrer");
+
+          return;
+        }
 
         // Back navigation should restore focus to this post's keyboard link.
         event.currentTarget

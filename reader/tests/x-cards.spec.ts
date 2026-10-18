@@ -52,7 +52,7 @@ const posts: Post[] = [
 ];
 
 async function mockCards(page: Page) {
-  await page.route("https://pbs.twimg.com/**", (route) =>
+  await page.context().route("https://pbs.twimg.com/**", (route) =>
     route.fulfill(
       route.request().url().endsWith("broken.jpg")
         ? { status: 404 }
@@ -62,7 +62,7 @@ async function mockCards(page: Page) {
           },
     ),
   );
-  await page.route("**/api/reader/**", async (route) => {
+  await page.context().route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
     const params = url.searchParams;
 
@@ -229,6 +229,17 @@ for (const width of [1440, 390, 320]) {
         exact: true,
       });
       await expect(post).toBeVisible();
+
+      for (const target of [
+        post,
+        post.locator(".article-body"),
+        post.locator(".article-body p"),
+        post.locator(".x-post-text-link"),
+        post.getByTitle("Likes not captured", { exact: true }),
+      ]) {
+        await expect(target).toHaveCSS("cursor", "pointer");
+      }
+
       await post.click({ position: { x: 8, y: 8 } });
       await expect(
         page.getByRole("main", { name: "X post reader" }),
@@ -286,4 +297,48 @@ test("dragging text selection into card space keeps the feed open", async ({
   await expect(page.getByRole("main", { name: "X post reader" })).toHaveCount(
     0,
   );
+});
+
+test("Cmd/Ctrl-clicking card space and engagement opens a separate reader tab", async ({
+  page,
+  context,
+}) => {
+  await mockCards(page);
+  await page.goto(
+    "/reader/?view=x&account=long_handle_123&q=dispatch&sort=oldest&after=2026-10-01",
+  );
+  const originalUrl = page.url();
+  const post = card(page, dispatch.title);
+
+  for (const target of ["space", "engagement"] as const) {
+    const [tab] = await Promise.all([
+      context.waitForEvent("page"),
+      target === "space"
+        ? post.click({ position: { x: 8, y: 8 }, modifiers: ["ControlOrMeta"] })
+        : post
+            .getByTitle("Likes not captured", { exact: true })
+            .locator("svg")
+            .click({ modifiers: ["ControlOrMeta"] }),
+    ]);
+    await expect(
+      tab.getByRole("main", { name: "X post reader" }),
+    ).toBeVisible();
+    expect(Object.fromEntries(new URL(tab.url()).searchParams)).toMatchObject({
+      view: "x",
+      account: "long_handle_123",
+      q: "dispatch",
+      sort: "oldest",
+      after: "2026-10-01",
+      article: dispatch.id,
+      article_source: dispatch.domain,
+    });
+    expect(await tab.evaluate(() => window.opener === null)).toBe(true);
+    await tab.close();
+    await expect(page).toHaveURL(originalUrl);
+    await expect(post).toBeVisible();
+    await expect(page.getByRole("main", { name: "X post reader" })).toHaveCount(
+      0,
+    );
+    expect(context.pages()).toHaveLength(1);
+  }
 });
