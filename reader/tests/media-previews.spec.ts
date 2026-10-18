@@ -292,9 +292,16 @@ for (const width of [1440, 390, 320]) {
           child.getBoundingClientRect(),
         );
         const group = element.getBoundingClientRect();
+        const original = parent.querySelector(
+          ".social-post-actions > .icon-button",
+        );
+        if (!original) throw new Error("Missing original-source link");
+        const originalBox = original.getBoundingClientRect();
+
         return {
           inset: items[0].left - card.left,
           width: card.width,
+          originalRightInset: card.right - originalBox.right,
           coverage: group.width / card.width,
           gaps: items
             .slice(1)
@@ -307,7 +314,8 @@ for (const width of [1440, 390, 320]) {
       expect(layout.labelsClipped).toBe(true);
 
       if (width > 600) {
-        expect(layout.inset).toBeGreaterThan(layout.width / 2);
+        expect(layout.inset).toBeLessThan(layout.width / 4);
+        expect(layout.originalRightInset).toBeLessThan(2);
         expect(Math.max(...layout.gaps)).toBeLessThanOrEqual(25);
       } else {
         expect(layout.coverage).toBeGreaterThan(0.6);

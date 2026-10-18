@@ -97,7 +97,8 @@ browser channel. No live collection is needed for the fixture tests.
   alongside previews; the choices stay in this browser.
 - Social images and videos fit within 480px or 60% of the viewport height,
   whichever is smaller, with the full attachment visible. Reddit and X footers
-  use icons and counts, aligned right on desktop and spread out on phones.
+  keep icons and counts on the left and the original-source link on the right
+  on desktop; actions are evenly spaced on phones.
 - Posts and articles show minutes or hours ago for today, then the local date
   and time from yesterday onward. Hover a timestamp for its exact time.
   YouTube's dedicated view keeps the relative publication labels from YouTube;
