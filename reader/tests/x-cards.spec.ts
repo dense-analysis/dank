@@ -212,3 +212,78 @@ test("card identity supports keyboard and new-tab navigation without confusing d
   await expect(page).toHaveURL(origin);
   await expect(card(page, dispatch.title)).toBeVisible();
 });
+
+for (const width of [1440, 390, 320]) {
+  test(`X card space opens the post in every feed at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockCards(page);
+
+    for (const query of ["", "view=x", "view=x&account=long_handle_123"]) {
+      await page.goto(`/reader/?${query}`);
+      const originalUrl = page.url();
+      const post = card(page, dispatch.title);
+      const timestamp = post.getByRole("link", {
+        name: `Read ${dispatch.title}`,
+        exact: true,
+      });
+      await expect(post).toBeVisible();
+      await post.click({ position: { x: 8, y: 8 } });
+      await expect(
+        page.getByRole("main", { name: "X post reader" }),
+      ).toBeVisible();
+      await expect(page).toHaveURL(/article=one(?:&|$)/);
+      await page
+        .getByRole("button", { name: "Back to stories", exact: true })
+        .click();
+      await expect(page).toHaveURL(originalUrl);
+      await expect(timestamp).toBeFocused();
+    }
+  });
+}
+
+test("non-link engagement metrics open the post once", async ({ page }) => {
+  await mockCards(page);
+  await page.goto("/reader/?view=x");
+  const post = card(page, dispatch.title);
+  await post
+    .getByTitle("Likes not captured", { exact: true })
+    .locator("svg")
+    .click();
+  await expect(page.getByRole("main", { name: "X post reader" })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/view=x$/);
+  await expect(post).toBeVisible();
+});
+
+test("dragging text selection into card space keeps the feed open", async ({
+  page,
+}) => {
+  await mockCards(page);
+  await page.goto("/reader/?view=x");
+  const originalUrl = page.url();
+  const post = card(page, dispatch.title);
+  const start = await post.locator(".article-body p").evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const box = range.getBoundingClientRect();
+
+    return { x: box.x + 2, y: box.y + box.height / 2 };
+  });
+  const box = await post.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("Missing card bounds");
+
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 8, box.y + box.height - 8, { steps: 12 });
+  await page.mouse.up();
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+    .toContain("captured dispatch");
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.getByRole("main", { name: "X post reader" })).toHaveCount(
+    0,
+  );
+});

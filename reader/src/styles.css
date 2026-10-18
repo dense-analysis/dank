@@ -2282,6 +2282,12 @@ input[type="checkbox"] {
 }
 
 /* X posts share content and identity between the feed and the opened post. */
+.x-post-card {
+  cursor: pointer;
+}
+.x-post-card .article-body {
+  cursor: text;
+}
 .x-post-header {
   display: flex;
   flex-wrap: wrap;

@@ -169,8 +169,9 @@ returning to the feed keep the latest position for each video, including a
 backward seek. Press **Play** to continue from that point. Video positions stay
 in this open reader tab; reloading the page clears them.
 
-Remote media is labelled and video plays only on demand. Select the post text
-or timestamp to open it; inline links and media controls work independently.
+Remote media is labelled and video plays only on demand. Click anywhere on a post
+card to open it, or use its text or timestamp link. Account links, inline links,
+Show more and media controls work independently; selecting text keeps the feed open.
 The footer shows captured comments, reposts, likes and views, with a dash for
 unavailable counts. Opening a post shows full content, saved parent context,
 and captured replies in thread order.

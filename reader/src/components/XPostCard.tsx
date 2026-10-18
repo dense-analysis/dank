@@ -27,7 +27,41 @@ export function XPostCard({
   const navigation = { href, open };
 
   return (
-    <article className={`post-card x-post-card ${read ? "is-read" : ""}`}>
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Existing post links provide keyboard access; the card adds a pointer shortcut.
+    <article
+      className={`post-card x-post-card ${read ? "is-read" : ""}`}
+      onClick={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          !(event.target instanceof Element) ||
+          event.target.closest(
+            "a, button, input, select, textarea, summary, video, audio, [role='button'], [role='link'], [contenteditable]",
+          )
+        )
+          return;
+
+        const selection = window.getSelection();
+
+        if (
+          selection &&
+          !selection.isCollapsed &&
+          selection.rangeCount > 0 &&
+          selection.getRangeAt(0).intersectsNode(event.currentTarget)
+        )
+          return;
+
+        // Back navigation should restore focus to this post's keyboard link.
+        event.currentTarget
+          .querySelector<HTMLAnchorElement>(".x-post-timestamp")
+          ?.focus({ preventScroll: true });
+        open();
+      }}
+    >
       <XPostHeader
         post={post}
         selectAccount={selectAccount}
