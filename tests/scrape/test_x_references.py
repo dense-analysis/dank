@@ -171,3 +171,36 @@ async def test_retry_keeps_reference_and_later_content_once(
     assert sum(b.post_count for b in saved) == 1
     assert sum(b.reference_count for b in saved) == 1
     assert "posts=1 references=1 attempts=2" in caplog.text
+
+
+def test_quoted_posts_and_media_are_saved_under_their_own_identity():
+    child = {
+        "__typename": "Tweet", "rest_id": "456",
+        "core": {"user_results": {"result": {
+            "core": {"screen_name": "quoted"},
+        }}},
+        "legacy": {"full_text": "Quoted post", "extended_entities": {
+            "media": [{
+                "type": "video",
+                "media_url_https": "https://pbs.twimg.com/media/quote.jpg",
+                "video_info": {"variants": [{
+                    "url": "https://video.twimg.com/vid/720x720/quote.mp4",
+                    "content_type": "video/mp4", "bitrate": 500,
+                }]},
+            }],
+        }},
+    }
+    parent = {
+        **FULL, "quoted_status_result": {"result": {
+            "__typename": "TweetWithVisibilityResults", "tweet": child,
+        }},
+    }
+    posts, assets = extract_posts_and_assets(
+        [response(parent)], set(), set(), set(),
+    )
+    assert {post.post_id for post in posts} == {"123", "456"}
+    quote = next(post for post in posts if post.post_id == "456")
+    assert quote.url == "https://x.com/quoted/status/456"
+    assert json.loads(quote.payload) == child
+    assert {asset.post_id for asset in assets} == {"456"}
+    assert {asset.asset_type for asset in assets} == {"photo", "video"}

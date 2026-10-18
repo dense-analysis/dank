@@ -2,6 +2,7 @@ import { ExternalLink, ImageOff } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
+import { sanitizeArticle } from "../lib/article";
 import { matchesLinkUrl } from "../lib/linkIdentity";
 import { postKey } from "../lib/storage";
 import type { Post, XMedia } from "../lib/types";
@@ -12,6 +13,7 @@ import {
   previewReferenceKey,
   videoReferenceKey,
   withoutDisplayedLinks,
+  xPostReferenceId,
 } from "../lib/xText";
 import { youtubeEmbedUrl } from "../lib/youtube";
 import { ArticleBody } from "./ArticleBody";
@@ -19,6 +21,7 @@ import { safeUrl } from "./PostCard";
 import { VideoSource } from "./VideoSource";
 import { XLinkPreview } from "./XLinkPreview";
 import { XPostPreview } from "./XPostPreview";
+import { XQuoteCard, type XQuoteNavigation } from "./XQuoteCard";
 
 export function XPostContent({
   post,
@@ -26,14 +29,17 @@ export function XPostContent({
   query = "",
   navigation,
   referenceUrl,
+  quoteNavigation,
 }: {
   post: Post;
+  quoteNavigation?: XQuoteNavigation;
   compact?: boolean;
   query?: string;
   referenceUrl?: string;
   navigation?: { href: string; open: () => void };
 }) {
   const { preferences } = useReaderPreferences();
+  const quote = quoteNavigation ? post.x?.quote : undefined;
   const { hideRawImageLinks, hideRawVideoLinks } = preferences;
   const [failedMedia, setFailedMedia] = useState<Set<string>>(() => new Set());
   const media = useMemo(() => xMedia(post), [post]);
@@ -68,10 +74,11 @@ export function XPostContent({
     () =>
       (post.x?.links ?? []).filter(
         (link) =>
+          (!quote || xPostReferenceId(link.url) !== quote.id) &&
           previewReferenceKey(link.url) &&
           !representedMedia.displayed.has(videoReferenceKey(link.url) ?? ""),
       ),
-    [post.x?.links, representedMedia.displayed],
+    [post.x?.links, representedMedia.displayed, quote],
   );
   const displayedPreviews = useMemo(
     () =>
@@ -93,14 +100,29 @@ export function XPostContent({
       ),
     [previews, hideRawImageLinks, hideRawVideoLinks, referenceUrl],
   );
+  const quoteLinks = useMemo(() => {
+    const represented = new Set(displayedPreviews);
+
+    if (quote) {
+      // Only remove raw quote URLs, retaining descriptive links and source focus.
+      const document = sanitizeArticle(post.html);
+      for (const anchor of document.querySelectorAll("a[href]")) {
+        const href = anchor.getAttribute("href") ?? "";
+        if (
+          xPostReferenceId(href) === quote.id &&
+          !(referenceUrl && matchesLinkUrl(href, referenceUrl))
+        ) {
+          const key = previewReferenceKey(href);
+          if (key) represented.add(key);
+        }
+      }
+    }
+
+    return represented;
+  }, [displayedPreviews, post.html, quote, referenceUrl]);
   const html = useMemo(
-    () =>
-      withoutDisplayedLinks(
-        post.html,
-        representedMedia.hidden,
-        displayedPreviews,
-      ),
-    [post.html, representedMedia.hidden, displayedPreviews],
+    () => withoutDisplayedLinks(post.html, representedMedia.hidden, quoteLinks),
+    [post.html, representedMedia.hidden, quoteLinks],
   );
 
   return (
@@ -137,6 +159,9 @@ export function XPostContent({
             />
           ))}
         </section>
+      )}
+      {quote && quoteNavigation && (
+        <XQuoteCard quote={quote} navigation={quoteNavigation} />
       )}
       {previews.map((link) => (
         <XLinkPreview

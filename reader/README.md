@@ -183,6 +183,11 @@ retain their playback position. Replies
 without a separate reader destination can still expand completely. Identity
 links open the account's collected posts, with initials when an avatar is unavailable.
 
+Quoted posts appear inside a bordered card with the original account, text and
+attachments. Select the embedded card to open its saved post; media controls and
+text expansion work independently. Quotes without a standalone saved post link
+to X, and missing content is explicit. Quotes also appear in captured replies.
+
 Captured links retain their destinations and preview cards. Photos, native
 videos and GIFs appear as attachments, preferring local files when available.
 Portrait videos keep their natural proportions within the available space.

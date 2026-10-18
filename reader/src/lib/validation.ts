@@ -199,7 +199,11 @@ function isPostReference(value: unknown): boolean {
   );
 }
 
-function validPost(value: unknown, allowConversation: boolean): value is Post {
+function validPost(
+  value: unknown,
+  allowConversation: boolean,
+  allowQuote = true,
+): value is Post {
   return (
     isRecord(value) &&
     [
@@ -242,7 +246,7 @@ function validPost(value: unknown, allowConversation: boolean): value is Post {
       isHackerNewsPost(value.hacker_news)) &&
     (value.x === undefined ||
       value.x === null ||
-      isXPost(value.x, allowConversation)) &&
+      isXPost(value.x, allowConversation, allowQuote)) &&
     (value.collection_incomplete === undefined ||
       typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&
@@ -305,7 +309,27 @@ function isConversation(value: unknown): boolean {
   );
 }
 
-function isXPost(value: unknown, allowConversation: boolean): boolean {
+function isXQuote(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    /^[0-9]{1,20}$/.test(value.id) &&
+    ["x.com", "twitter.com"].includes(String(value.domain)) &&
+    typeof value.url === "string" &&
+    typeof value.collected === "boolean" &&
+    (value.post === undefined ||
+      (validPost(value.post, false, false) &&
+        value.post.id === value.id &&
+        value.post.domain === value.domain &&
+        value.post.source === "x"))
+  );
+}
+
+function isXPost(
+  value: unknown,
+  allowConversation: boolean,
+  allowQuote: boolean,
+): boolean {
   return (
     isRecord(value) &&
     (isXProfile(value) ||
@@ -360,6 +384,7 @@ function isXPost(value: unknown, allowConversation: boolean): boolean {
     (value.replies_captured_count === undefined ||
       isCount(value.replies_captured_count)) &&
     isOptionalIcon(value.captured_at) &&
+    (value.quote === undefined || (allowQuote && isXQuote(value.quote))) &&
     (value.conversation === undefined ||
       (allowConversation && isConversation(value.conversation)))
   );
