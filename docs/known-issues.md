@@ -8,6 +8,28 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Linked collection and discovery timing
+
+Optional Reddit publisher collection is controlled by
+`[reddit].collect_linked_articles` (default `false`). It reuses readable saved
+articles, saves Reddit discoveries before publisher requests and retains
+explicit origin metadata for new fetches. Backfill is bounded by configured
+community post limits. A failed or unsupported publisher page remains unavailable.
+
+Collection info reports first observed article/link times independently of
+successful page collection, and does not infer missing legacy collector routes.
+Processed-version cutoffs prevent a pending raw capture from upgrading an older
+displayed article. Edited posts compare the current link's first observation,
+not the post identity's original timestamp. Polling and selection bias remain;
+these observations do not establish publication priority or copying.
+
+Connections scopes referencing posts to the active source/community; All and
+Blogs support broader exploration. Article-first layout is conceptual, not a
+chronological or causal claim. See [feature details and future analysis](
+features/collection-provenance.md), [collection tests](
+../tests/scrape/test_reddit_linked_articles.py), and [provenance tests](
+../tests/web/test_reader_provenance.py).
+
 ## Publisher excerpts across feeds
 
 Reddit link posts with only a URL and preview image now use a matching saved

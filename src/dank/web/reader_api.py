@@ -39,6 +39,7 @@ from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_flairs import reddit_flairs
 from dank.web.reader_hacker_news import add_hacker_news_metadata
 from dank.web.reader_links import add_post_links
+from dank.web.reader_provenance import add_collection_info
 from dank.web.reader_query import (
     REDDIT_COMMUNITY_SQL,
     build_query,
@@ -293,6 +294,7 @@ async def _post_payloads(
     )
 
     await add_post_links(client, payloads, query)
+    await add_collection_info(client, payloads, posts)
 
     return payloads
 
@@ -345,6 +347,12 @@ async def _add_reddit_metadata(
             "comments": _reddit_count(snapshot.get("num_comments"), minimum=0),
             "flair": flair.strip() if isinstance(flair, str) else None,
         }
+        external_url = _http_url(str(snapshot.get("url") or ""))
+
+        if (external_url and snapshot.get("is_self") is not True
+                and external_url.rstrip("/") != str(post["url"]).rstrip("/")):
+            post["reddit"]["external_url"] = external_url
+
         _add_reddit_archive(
             post, snapshot, assets.get(("reddit.com", post["id"]), []),
             assets_dir, include_discussion=include_discussion,

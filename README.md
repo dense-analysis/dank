@@ -18,6 +18,7 @@ perception and evolving narratives.
 - [YouTube feeds](docs/features/youtube.md) — save recommendations and their context.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
+- [Collection provenance](docs/features/collection-provenance.md) — trace saved articles, discovery order and contextual connections.
 - [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
 - [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.

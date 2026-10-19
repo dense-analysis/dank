@@ -85,7 +85,10 @@ async def test_mixed_feed_batches_x_profiles_without_cross_domain_collisions(
     }
     assert posts[3]["reddit"]["community"] == "python"
     assert all("x" not in post for post in posts[3:])
-    assert len(fake.calls) == 7
+    assert len([
+        call for call in fake.calls
+        if not any(key.startswith("provenance_") for key in call[1])
+    ]) == 7
     query, params = fake.calls[3]
     assert "toUnixTimestamp64Milli(scraped_at)" in query
     assert "LIMIT 1 BY domain, post_id" in query
