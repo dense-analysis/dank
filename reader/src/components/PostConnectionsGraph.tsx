@@ -32,6 +32,7 @@ export default function PostConnectionsGraph({
     targetsByNode,
     rootNodeId,
     discoveryNodeId,
+    timing,
   } = useMemo(
     () => postConnectionsGraph(data, direction, collectionInfo),
     [data, direction, collectionInfo],
@@ -129,24 +130,44 @@ export default function PostConnectionsGraph({
                   ) && (
                     <p>This post is among the first recorded discoveries.</p>
                   )}
-                  {collectionInfo.post_published_at && (
-                    <p>
-                      This post published:{" "}
-                      <time
-                        dateTime={collectionInfo.post_published_at}
-                        title={collectionInfo.post_published_at}
-                      >
-                        {dateLabel(collectionInfo.post_published_at)}
-                      </time>
-                      .
-                    </p>
-                  )}
                   <p>
                     Discovery records when DANK noticed the link or article, not
                     when the publisher page was saved or originally published.
                   </p>
                 </div>
               )}
+              {(selected.id === rootNodeId ||
+                selected.id === discoveryNodeId) &&
+                timing && (
+                  <div className="post-connections-publication">
+                    <p>
+                      This post published:{" "}
+                      {timing.publishedAt ? (
+                        <time
+                          dateTime={timing.publishedAt}
+                          title={timing.publishedAt}
+                        >
+                          {dateLabel(timing.publishedAt)}
+                        </time>
+                      ) : (
+                        "Publication time unavailable"
+                      )}
+                      .
+                    </p>
+                    {discoveryNodeId && (
+                      <>
+                        <p>
+                          <strong>{timing.gapLabel}</strong>.
+                        </p>
+                        <p>
+                          The gap compares this post’s publication with DANK’s
+                          first recorded discovery. Post collection and
+                          publisher-page download times are separate.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
               {target && selected.id !== rootNodeId && (
                 <div className="post-connection-actions post-connection-explore">
                   <ExploreConnection target={target} {...navigation} />

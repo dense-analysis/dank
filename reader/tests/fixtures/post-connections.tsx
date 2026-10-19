@@ -37,6 +37,8 @@ function targetHref(target: PostConnectionTarget) {
 function Fixture() {
   const scoped = new URLSearchParams(location.search).has("reddit");
   const discovery = new URLSearchParams(location.search).get("discovery");
+  const info = discovery ? discoveryFixture(discovery === "reddit") : undefined;
+  if (info && discovery === "unknown") info.post_published_at = null;
   const root = scoped ? connectionDiscussion : connectionRoot;
   const [mode, setMode] = useState<ConnectionsMode>(null);
   const [direction, setDirection] = useState<ConnectionDirection>("all");
@@ -55,9 +57,7 @@ function Fixture() {
           <PostConnections
             post={{
               ...root,
-              collection_info: discovery
-                ? discoveryFixture(discovery === "reddit")
-                : undefined,
+              collection_info: info,
             }}
             context={scoped ? { source: "reddit", community: "kernel" } : {}}
             mode={mode}

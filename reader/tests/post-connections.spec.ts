@@ -515,6 +515,27 @@ for (const width of [1210, 390]) {
           .map((node) => node.label),
       ).toEqual(["r/kernel"]);
       expect(snapshot.nodes).toHaveLength(5);
+      const root = snapshot.nodes.find((node) => node.kind === "root");
+      expect(root?.displayLabel).toContain("Published");
+      expect(root?.displayLabel).toContain(
+        throughReddit
+          ? "2h before first discovery"
+          : "1d 1h after first discovery",
+      );
+      await page.getByLabel("Explore nodes").selectOption(root.id);
+      await expect(
+        page.getByRole("region", { name: "Selected connection" }),
+      ).toContainText(
+        throughReddit
+          ? "2h before first discovery"
+          : "1d 1h after first discovery",
+      );
+      await expect(
+        page
+          .getByRole("region", { name: "Selected connection" })
+          .locator("time")
+          .first(),
+      ).toHaveAttribute("datetime", "2026-10-17T10:00:00Z");
       await expect(
         page.getByText(/0 incoming · 1 outgoing references/),
       ).toContainText("1 shared-article references");
@@ -557,3 +578,57 @@ for (const width of [1210, 390]) {
     });
   }
 }
+
+test("graph keeps missing publication and gaps explicit without using collection times", async ({
+  page,
+}) => {
+  await page.route("**/api/reader/connections?*", (route) =>
+    route.fulfill({ json: redditConnectionsFixture }),
+  );
+  await page.goto(
+    "/reader/tests/fixtures/post-connections.html?reddit&discovery=unknown",
+  );
+  await page.getByRole("button", { name: "Graph view" }).click();
+  await expect(page.locator(".relationship-graph")).toHaveAttribute(
+    "data-status",
+    "ready",
+  );
+  const rootId = connectionNodeId(
+    "post",
+    redditConnectionsFixture.root.domain,
+    redditConnectionsFixture.root.id,
+  );
+  await page.getByLabel("Explore nodes").selectOption(rootId);
+  const details = page.getByRole("region", { name: "Selected connection" });
+  await expect(details).toContainText("Publication time unavailable");
+  await expect(details).toContainText("Gap unavailable");
+  await expect(
+    details.locator(".post-connections-publication time"),
+  ).toHaveCount(0);
+});
+
+test("exploring a publisher keeps its known publication time in discovery details", async ({
+  page,
+}) => {
+  await page.route("**/api/reader/connections?*", (route) =>
+    route.fulfill({ json: connectionsFixture }),
+  );
+  await page.goto("/reader/tests/fixtures/post-connections.html?discovery=rss");
+  await page.getByRole("button", { name: "Graph view" }).click();
+  await expect(page.locator(".relationship-graph")).toHaveAttribute(
+    "data-status",
+    "ready",
+  );
+  const rootId = connectionNodeId(
+    "post",
+    connectionsFixture.root.domain,
+    connectionsFixture.root.id,
+  );
+  await page
+    .getByLabel("Explore nodes")
+    .selectOption(connectionNodeId("discovery", rootId));
+  const details = page.getByRole("region", { name: "Selected connection" });
+  await expect(
+    details.locator(".post-connections-publication time"),
+  ).toHaveAttribute("datetime", "2026-10-17T10:00:00Z");
+});

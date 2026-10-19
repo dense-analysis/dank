@@ -35,7 +35,7 @@ const styles: StylesheetStyle[] = [
       label: "data(displayLabel)",
       shape: "round-rectangle",
       width: 176,
-      height: 112,
+      height: "data(height)",
       "background-color": "#202528",
       "border-color": "#697681",
       "border-width": 1.5,
@@ -52,8 +52,8 @@ const styles: StylesheetStyle[] = [
     },
   },
   {
-    selector: 'node[kind = "discovery"]',
-    style: { height: 136, "font-size": 13 },
+    selector: 'node[kind = "discovery"], node[kind = "root"][detail]',
+    style: { "font-size": 13 },
   },
   {
     selector: 'node[kind = "external"]',
@@ -135,10 +135,11 @@ function elements(graph: RelationshipGraphData): ElementDefinition[] {
       group: "nodes" as const,
       data: {
         ...node,
+        height: node.height ?? 112,
         displayLabel: [
           node.kindLabel.toUpperCase(),
           compactGraphLabel(node.label),
-          node.detail,
+          node.detail ? `\n${node.detail}` : undefined,
         ]
           .filter(Boolean)
           .join("\n"),

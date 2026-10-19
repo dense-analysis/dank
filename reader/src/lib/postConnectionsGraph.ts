@@ -1,3 +1,4 @@
+import { discoveryTiming } from "./discoveryTiming";
 import {
   connectionTargetLabel,
   type PostConnection,
@@ -42,6 +43,7 @@ export function postConnectionsGraph(
   graph: RelationshipGraphData;
   rootNodeId: string;
   discoveryNodeId: string | null;
+  timing: ReturnType<typeof discoveryTiming> | null;
   connectionsByNode: ReadonlyMap<string, readonly PostConnection[]>;
   targetsByNode: ReadonlyMap<string, PostConnectionTarget>;
 } {
@@ -255,6 +257,7 @@ export function postConnectionsGraph(
       id: discoveryNodeId,
       kind: "discovery",
       kindLabel: "First discovered",
+      height: 136,
       label: labels.join(" and ") || "Source not recorded",
       detail: collectionInfo.first_seen_at
         ? dateLabel(collectionInfo.first_seen_at)
@@ -263,6 +266,22 @@ export function postConnectionsGraph(
       layer: (nodes.get(targetId)?.layer ?? 0) - 1,
     });
     connect(discoveryNodeId, targetId, "discovery", "first observed");
+  }
+
+  const timing = collectionInfo ? discoveryTiming(collectionInfo) : null;
+  const root = nodes.get(rootNodeId);
+
+  if (root && timing && articleContext) {
+    nodes.set(rootNodeId, {
+      ...root,
+      detail: [
+        timing.publishedAt
+          ? `Published\n${dateLabel(timing.publishedAt)}`
+          : "Publication time unavailable",
+        ...(discoveryNodeId ? [timing.gapLabel] : []),
+      ].join("\n"),
+      height: 208,
+    });
   }
 
   // Filtered graphs omit whole stages; close those gaps so a small graph stays legible.
@@ -287,6 +306,7 @@ export function postConnectionsGraph(
     },
     rootNodeId,
     discoveryNodeId,
+    timing,
     connectionsByNode: new Map(
       [...connectionsByNode].map(([id, entries]) => [
         id,

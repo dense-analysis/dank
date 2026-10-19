@@ -409,9 +409,10 @@ it("omits discovery when direction filtering removes its article without changin
     "incoming",
     discoveryInfo,
   );
-  expect(incoming.graph).toEqual(
-    postConnectionsGraph(redditConnectionsFixture, "incoming").graph,
-  );
+  expect(incoming.graph.nodes).toHaveLength(1);
+  expect(incoming.graph.edges).toEqual([]);
+  expect(incoming.graph.nodes[0].detail).toContain("Published");
+  expect(incoming.graph.nodes[0].detail).not.toContain("first discovery");
   const outgoing = postConnectionsGraph(
     redditConnectionsFixture,
     "outgoing",
@@ -436,6 +437,10 @@ it("retains the saved article's own discovery when exploring it as the graph roo
   );
   const discovery = graph.nodes.find((node) => node.kind === "discovery");
   expect(discovery?.label).toBe("example.com");
+  expect(
+    postConnectionsGraph(connectionsFixture, "incoming", discoveryInfo).timing
+      ?.publishedAt,
+  ).toBe(discoveryInfo.post_published_at);
   expect(graph.edges.filter((edge) => edge.kind === "discovery")).toEqual([
     expect.objectContaining({ source: discovery?.id, target: rootNodeId }),
   ]);
@@ -460,4 +465,56 @@ it("attaches unavailable publisher discovery only to its exact visible destinati
   expect(mismatched.graph.nodes.some((node) => node.kind === "discovery")).toBe(
     false,
   );
+});
+
+it("puts publication and the gap only on the current social post, with collection dates excluded", () => {
+  const result = postConnectionsGraph(
+    redditConnectionsFixture,
+    "all",
+    discoveryInfo,
+  );
+  const root = result.graph.nodes.find((node) => node.id === result.rootNodeId);
+  expect(root?.detail).toBe(
+    `Published\n${dateLabel("2026-10-17T08:00:00Z")}\n10h 35m after first discovery`,
+  );
+  expect(
+    result.graph.nodes
+      .filter((node) => node.kind === "post")
+      .every((node) => node.detail === undefined),
+  ).toBe(true);
+  const changedCollectionTimes = postConnectionsGraph(
+    redditConnectionsFixture,
+    "all",
+    {
+      ...discoveryInfo,
+      post_first_seen_at: "2026-10-20T01:00:00Z",
+      link_first_seen_at: "2026-10-21T01:00:00Z",
+      article_collected_at: "2026-10-22T01:00:00Z",
+    },
+  );
+  expect(changedCollectionTimes.graph).toEqual(result.graph);
+  const mismatch = postConnectionsGraph(redditConnectionsFixture, "all", {
+    ...discoveryInfo,
+    article: null,
+  });
+  expect(
+    mismatch.graph.nodes.find((node) => node.kind === "root")?.detail,
+  ).not.toContain("first discovery");
+});
+
+it("keeps unknown publication visible rather than substituting collection or reference timestamps", () => {
+  const result = postConnectionsGraph(redditConnectionsFixture, "all", {
+    ...discoveryInfo,
+    post_published_at: null,
+  });
+  expect(
+    result.graph.nodes.find((node) => node.id === result.rootNodeId)?.detail,
+  ).toBe("Publication time unavailable\nGap unavailable");
+  expect(
+    postConnectionsGraph(
+      connectionsFixture,
+      "all",
+      discoveryInfo,
+    ).graph.nodes.find((node) => node.kind === "root")?.detail,
+  ).toBeUndefined();
 });

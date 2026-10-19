@@ -104,6 +104,20 @@ without expanding that source's other posts or links. Selecting it shows the
 exact timestamp and keeps the linking post's publication time separate. Tied
 first sources remain ties; unknown sources or times remain explicit.
 
+The current social post also shows its verified **Published** timestamp and the
+gap from first discovery, for example **9h 44m after first discovery**. A post
+published before DANK noticed the destination says **before first discovery**;
+that is a comparison with DANK's observation, not proof the community was the
+first reporter. Exact ties and unavailable dates are explicit. Gaps use elapsed
+time across time zones, shown to two units and rounded down to minutes; gaps
+under a minute retain their before/after direction.
+
+The gap uses only the verified publication and first-discovery timestamps.
+Post collection and publisher-page download dates do not substitute for either.
+When the graph direction
+hides the matching article, publication remains visible but its gap is omitted.
+Other related posts do not inherit the current post's publication timestamp.
+
 This history annotation uses the same saved provenance as Collection info. It
 appears only while its matching destination is visible in the selected graph
 direction, and adds no incoming/outgoing reference counts. Article discovery

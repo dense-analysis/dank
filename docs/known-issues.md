@@ -34,7 +34,9 @@ Blogs support broader exploration. Article-first layout is conceptual, not a
 chronological or causal claim. The graph's First discovered annotation shows
 saved source/time history without expanding that source's other references;
 its dashed connection is distinct from hyperlink arrows and reference counts.
-Unknowns and tied first observations remain explicit. See [feature details and future analysis](
+The current social post shows verified publication and its gap from discovery,
+using neither post collection nor article download time as a publication fallback.
+Before/after, exact ties and unavailable timing remain explicit. See [feature details and future analysis](
 features/collection-provenance.md), [collection tests](
 ../tests/scrape/test_reddit_linked_articles.py), and [provenance tests](
 ../tests/web/test_reader_provenance.py).
