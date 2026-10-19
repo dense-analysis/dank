@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 import {
+  connectionDiscussion,
+  connectionRoot,
   connectionsFixture,
   externalConnection,
   incomingConnection,
@@ -10,6 +12,8 @@ import {
 } from "./postConnections.fixture";
 import { connectionNodeId, postConnectionsGraph } from "./postConnectionsGraph";
 import { graphTopology } from "./relationshipGraph";
+import { dateLabel } from "./timestamps";
+import type { CollectionInfo } from "./types";
 
 it("draws incoming source-post-comment evidence into the root and outgoing links to their exact targets", () => {
   const { graph, rootNodeId, connectionsByNode } =
@@ -250,4 +254,210 @@ it("keeps Reddit communities distinct and normalizes X source aliases", () => {
   expect(
     all.nodes.filter((node) => node.kind === "source" && node.label === "X"),
   ).toHaveLength(1);
+});
+
+const discoveryInfo: CollectionInfo = {
+  article_url: connectionRoot.url,
+  article: connectionRoot,
+  article_status: "collected",
+  post_first_seen_at: "2026-10-17T12:00:00Z",
+  link_first_seen_at: "2026-10-17T12:00:00Z",
+  first_seen_at: "2026-10-16T21:25:00Z",
+  first_seen_from: [
+    {
+      ...connectionRoot,
+      label: "example.com",
+      observed_at: "2026-10-16T21:25:00Z",
+      kind: "article",
+    },
+  ],
+  article_collected_at: "2026-10-17T17:00:00Z",
+  collected_via: null,
+  seen_before_post: true,
+  post_published_at: "2026-10-17T08:00:00Z",
+  discovered_before_publication: true,
+  earlier_discovered_at: "2026-10-16T21:25:00Z",
+  earlier_discovered_from: [],
+  coverage: "saved_history",
+};
+
+it("shows first discovery outside the community without expanding that source or changing link evidence", () => {
+  const data = structuredClone(redditConnectionsFixture);
+  const original = structuredClone(data);
+  const base = postConnectionsGraph(data);
+  const result = postConnectionsGraph(data, "all", discoveryInfo);
+  const discovery = result.graph.nodes.find(
+    (node) => node.kind === "discovery",
+  );
+  expect(discovery).toMatchObject({
+    kindLabel: "First discovered",
+    label: "example.com",
+    detail: dateLabel("2026-10-16T21:25:00Z"),
+    tone: "neutral",
+  });
+  expect(result.graph.nodes).toHaveLength(base.graph.nodes.length + 1);
+  expect(
+    result.graph.nodes
+      .filter((node) => node.kind === "source")
+      .map((node) => node.label),
+  ).toEqual(["r/kernel"]);
+  expect(
+    result.graph.edges.filter((edge) => edge.kind === "discovery"),
+  ).toEqual([
+    expect.objectContaining({
+      source: discovery?.id,
+      target: connectionNodeId(
+        "post",
+        connectionRoot.domain,
+        connectionRoot.id,
+      ),
+      label: "first observed",
+    }),
+  ]);
+  expect(
+    result.graph.edges.filter((edge) => edge.kind !== "discovery"),
+  ).toEqual(base.graph.edges);
+  expect(result.connectionsByNode).toEqual(base.connectionsByNode);
+  expect(result.targetsByNode).toEqual(base.targetsByNode);
+  expect(data).toEqual(original);
+});
+
+it("shows the current Reddit community and its observation time when Reddit discovered the article first", () => {
+  const firstSeen = "2026-10-17T12:00:00Z";
+  const { graph } = postConnectionsGraph(redditConnectionsFixture, "all", {
+    ...discoveryInfo,
+    first_seen_at: firstSeen,
+    first_seen_from: [
+      {
+        ...connectionDiscussion,
+        label: "r/kernel",
+        observed_at: firstSeen,
+        kind: "reference",
+      },
+    ],
+    discovered_before_publication: false,
+    earlier_discovered_at: null,
+    earlier_discovered_from: [],
+    seen_before_post: false,
+  });
+  expect(graph.nodes.filter((node) => node.kind === "discovery")).toEqual([
+    expect.objectContaining({
+      label: "r/kernel",
+      detail: dateLabel(firstSeen),
+      tone: "neutral",
+    }),
+  ]);
+  expect(graph.nodes.filter((node) => node.kind === "source")).toHaveLength(1);
+});
+
+it("keeps tied discovery sources in one annotation and deduplicates repeated source labels", () => {
+  const firstSource = discoveryInfo.first_seen_from[0];
+  const { graph } = postConnectionsGraph(redditConnectionsFixture, "all", {
+    ...discoveryInfo,
+    first_seen_from: [
+      firstSource,
+      {
+        ...connectionDiscussion,
+        label: "r/kernel",
+        observed_at: firstSource.observed_at,
+        kind: "reference",
+      },
+      { ...firstSource, id: "another-capture" },
+    ],
+  });
+  expect(graph.nodes.filter((node) => node.kind === "discovery")).toEqual([
+    expect.objectContaining({ label: "example.com and r/kernel" }),
+  ]);
+  expect(graph.edges.filter((edge) => edge.kind === "discovery")).toHaveLength(
+    1,
+  );
+});
+
+it("labels missing discovery source and timestamp explicitly", () => {
+  const { graph } = postConnectionsGraph(redditConnectionsFixture, "all", {
+    ...discoveryInfo,
+    first_seen_from: [],
+    first_seen_at: null,
+  });
+  expect(graph.nodes.find((node) => node.kind === "discovery")).toMatchObject({
+    label: "Source not recorded",
+    detail: "Time not recorded",
+  });
+});
+
+it("does not attach another article's provenance to a saved target that happens to share its URL", () => {
+  for (const article of [
+    null,
+    { ...connectionRoot, domain: "other.example", id: "different-article" },
+  ]) {
+    const result = postConnectionsGraph(redditConnectionsFixture, "all", {
+      ...discoveryInfo,
+      article,
+    });
+    expect(result.graph.nodes.some((node) => node.kind === "discovery")).toBe(
+      false,
+    );
+    expect(result.graph.edges.some((edge) => edge.kind === "discovery")).toBe(
+      false,
+    );
+  }
+});
+
+it("omits discovery when direction filtering removes its article without changing other graph state", () => {
+  const incoming = postConnectionsGraph(
+    redditConnectionsFixture,
+    "incoming",
+    discoveryInfo,
+  );
+  expect(incoming.graph).toEqual(
+    postConnectionsGraph(redditConnectionsFixture, "incoming").graph,
+  );
+  const outgoing = postConnectionsGraph(
+    redditConnectionsFixture,
+    "outgoing",
+    discoveryInfo,
+  );
+  expect(
+    outgoing.graph.nodes.filter((node) => node.kind === "discovery"),
+  ).toHaveLength(1);
+  expect(
+    outgoing.graph.nodes.some((node) => node.id.includes("second-discussion")),
+  ).toBe(false);
+  expect(postConnectionsGraph(redditConnectionsFixture, "all", null)).toEqual(
+    postConnectionsGraph(redditConnectionsFixture),
+  );
+});
+
+it("retains the saved article's own discovery when exploring it as the graph root", () => {
+  const { graph, rootNodeId } = postConnectionsGraph(
+    connectionsFixture,
+    "incoming",
+    discoveryInfo,
+  );
+  const discovery = graph.nodes.find((node) => node.kind === "discovery");
+  expect(discovery?.label).toBe("example.com");
+  expect(graph.edges.filter((edge) => edge.kind === "discovery")).toEqual([
+    expect.objectContaining({ source: discovery?.id, target: rootNodeId }),
+  ]);
+});
+
+it("attaches unavailable publisher discovery only to its exact visible destination", () => {
+  const info: CollectionInfo = {
+    ...discoveryInfo,
+    article: null,
+    article_url: externalConnection.target.url,
+    article_status: "unavailable",
+  };
+  const { graph } = postConnectionsGraph(connectionsFixture, "outgoing", info);
+  const external = graph.nodes.find((node) => node.kind === "external");
+  expect(graph.edges.filter((edge) => edge.kind === "discovery")).toEqual([
+    expect.objectContaining({ target: external?.id }),
+  ]);
+  const mismatched = postConnectionsGraph(connectionsFixture, "outgoing", {
+    ...info,
+    article_url: `${info.article_url}-different`,
+  });
+  expect(mismatched.graph.nodes.some((node) => node.kind === "discovery")).toBe(
+    false,
+  );
 });
