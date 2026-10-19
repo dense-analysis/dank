@@ -112,3 +112,46 @@ export const connectionsFixture: PostConnectionsData = {
   limit: 100,
   coverage: "saved_evidence",
 };
+
+export const redditLinkConnection: PostConnection = {
+  ...incomingConnection,
+  id: "reddit-link",
+  direction: "outgoing",
+  evidence: {
+    ...incomingConnection.evidence,
+    kind: "post",
+    reference_id: "",
+    reference_url: connectionDiscussion.url,
+  },
+};
+
+export const sharedArticleConnection: PostConnection = {
+  ...redditLinkConnection,
+  id: "shared-article",
+  direction: "related",
+  origin: {
+    ...connectionDiscussion,
+    id: "second-discussion",
+    title: "Another look at the same kernel article",
+    url: "https://reddit.com/r/kernel/comments/second-discussion/",
+  },
+  evidence: {
+    ...redditLinkConnection.evidence,
+    post_id: "second-discussion",
+    reference_url: "https://reddit.com/r/kernel/comments/second-discussion/",
+    excerpt: "A second saved post linking to the same article.",
+  },
+};
+
+export const redditConnectionsFixture: PostConnectionsData = {
+  root: connectionDiscussion,
+  context: { source: "reddit", community: "kernel" },
+  incoming: [],
+  outgoing: [redditLinkConnection],
+  related: [sharedArticleConnection],
+  incoming_count: 0,
+  outgoing_count: 1,
+  related_count: 1,
+  limit: 100,
+  coverage: "saved_evidence",
+};

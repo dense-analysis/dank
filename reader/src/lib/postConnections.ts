@@ -1,5 +1,5 @@
 import { request } from "./api";
-import type { PostReference } from "./types";
+import type { Filters, PostReference } from "./types";
 import { isRecord } from "./validation";
 
 export interface PostConnectionEvidence {
@@ -23,14 +23,51 @@ export interface PostConnectionTarget {
 
 export interface PostConnection {
   id: string;
-  direction: "incoming" | "outgoing";
+  direction: "incoming" | "outgoing" | "related";
   origin: PostReference;
   target: PostConnectionTarget;
   evidence: PostConnectionEvidence;
 }
 
+export interface ConnectionsContext {
+  source?: "reddit" | "hacker_news" | "x" | "youtube" | "rss";
+  community?: string;
+}
+
+export function connectionContext(
+  filters: Pick<Filters, "kind" | "community">,
+): ConnectionsContext {
+  if (filters.kind === "all" || filters.kind === "stories") return {};
+  if (filters.kind === "reddit" && filters.community)
+    return { source: "reddit", community: filters.community.toLowerCase() };
+
+  return { source: filters.kind };
+}
+
+export function connectionContextLabel(context: ConnectionsContext): string {
+  if (context.community) return `r/${context.community}`;
+
+  switch (context.source) {
+    case "reddit":
+      return "Reddit";
+    case "hacker_news":
+      return "Hacker News";
+    case "x":
+      return "X";
+    case "youtube":
+      return "YouTube";
+    case "rss":
+      return "Blogs";
+    default:
+      return "All sources";
+  }
+}
+
 export interface PostConnectionsData {
   root: PostReference;
+  context?: ConnectionsContext;
+  related?: PostConnection[];
+  related_count?: number;
   incoming: PostConnection[];
   outgoing: PostConnection[];
   incoming_count: number;
@@ -75,7 +112,9 @@ function isConnection(value: unknown): value is PostConnection {
     isRecord(value) &&
     typeof value.id === "string" &&
     value.id !== "" &&
-    (value.direction === "incoming" || value.direction === "outgoing") &&
+    (value.direction === "incoming" ||
+      value.direction === "outgoing" ||
+      value.direction === "related") &&
     isPostReference(value.origin) &&
     isRecord(value.target) &&
     typeof value.target.url === "string" &&
@@ -136,6 +175,67 @@ export function isPostConnections(
       return false;
   }
 
+  if (value.context !== undefined) {
+    const context = value.context;
+
+    if (
+      !isRecord(context) ||
+      Object.keys(context).some(
+        (key) => key !== "source" && key !== "community",
+      ) ||
+      (context.source !== undefined &&
+        !["reddit", "hacker_news", "x", "youtube", "rss"].includes(
+          String(context.source),
+        )) ||
+      (context.community !== undefined &&
+        (context.source !== "reddit" ||
+          typeof context.community !== "string" ||
+          !/^[a-z0-9_]{2,21}$/.test(context.community)))
+    )
+      return false;
+  }
+
+  if (value.related !== undefined || value.related_count !== undefined) {
+    const related = value.related;
+    const outgoing = value.outgoing as PostConnection[];
+    const targets = new Set(
+      outgoing.flatMap((connection) =>
+        connection.evidence.kind === "post" && connection.target.post
+          ? [
+              JSON.stringify([
+                connection.target.post.domain,
+                connection.target.post.id,
+              ]),
+            ]
+          : [],
+      ),
+    );
+
+    if (
+      !Array.isArray(related) ||
+      !isCount(value.related_count) ||
+      related.length > value.limit ||
+      related.length > value.related_count ||
+      new Set(related.map((connection) => connection?.id)).size !==
+        related.length ||
+      !related.every(
+        (connection) =>
+          isConnection(connection) &&
+          connection.direction === "related" &&
+          (connection.origin.domain !== root.domain ||
+            connection.origin.id !== root.id) &&
+          connection.target.post &&
+          targets.has(
+            JSON.stringify([
+              connection.target.post.domain,
+              connection.target.post.id,
+            ]),
+          ),
+      )
+    )
+      return false;
+  }
+
   return true;
 }
 
@@ -143,16 +243,20 @@ export async function fetchPostConnections(
   domain: string,
   id: string,
   signal?: AbortSignal,
+  context: ConnectionsContext = {},
 ): Promise<PostConnectionsData> {
-  const body = await request(
-    `/connections?${new URLSearchParams({ domain, id })}`,
-    signal,
-  );
+  const params = new URLSearchParams({ domain, id });
+  if (context.source) params.set("source", context.source);
+  if (context.community) params.set("community", context.community);
+  const body = await request(`/connections?${params}`, signal);
 
   if (
     !isPostConnections(body) ||
     body.root.domain !== domain ||
-    body.root.id !== id
+    body.root.id !== id ||
+    (body.context !== undefined &&
+      (body.context.source !== context.source ||
+        body.context.community !== context.community))
   )
     throw new Error(
       "The reader received unexpected connections. Please try again.",
@@ -165,7 +269,7 @@ export async function fetchPostConnections(
 export function connectionNeighbor(
   connection: PostConnection,
 ): PostConnectionTarget {
-  return connection.direction === "incoming"
+  return connection.direction !== "outgoing"
     ? {
         url: connection.origin.url,
         post: connection.origin,

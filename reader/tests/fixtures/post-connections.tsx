@@ -11,7 +11,10 @@ import type {
 } from "../../src/lib/postConnections";
 import type { ConnectionDirection } from "../../src/lib/postConnectionsGraph";
 import "../../src/styles.css";
-import { connectionRoot } from "../../src/lib/postConnections.fixture";
+import {
+  connectionDiscussion,
+  connectionRoot,
+} from "../../src/lib/postConnections.fixture";
 
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false } },
@@ -31,6 +34,8 @@ function targetHref(target: PostConnectionTarget) {
 }
 
 function Fixture() {
+  const scoped = new URLSearchParams(location.search).has("reddit");
+  const root = scoped ? connectionDiscussion : connectionRoot;
   const [mode, setMode] = useState<ConnectionsMode>(null);
   const [direction, setDirection] = useState<ConnectionDirection>("all");
   const [shown, setShown] = useState(true);
@@ -39,14 +44,15 @@ function Fixture() {
   return (
     <QueryClientProvider client={client}>
       <div style={{ maxWidth: 1040, margin: "32px auto", padding: "0 16px" }}>
-        <h1>{connectionRoot.title}</h1>
+        <h1>{root.title}</h1>
         <button type="button" onClick={() => setShown(!shown)}>
           Toggle connections
         </button>
         <output aria-label="Opened destination">{opened}</output>
         {shown && (
           <PostConnections
-            post={connectionRoot}
+            post={root}
+            context={scoped ? { source: "reddit", community: "kernel" } : {}}
             mode={mode}
             onModeChange={setMode}
             direction={direction}

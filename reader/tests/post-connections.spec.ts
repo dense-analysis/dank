@@ -4,6 +4,7 @@ import type { Core } from "cytoscape";
 import {
   connectionsFixture,
   outgoingConnection,
+  redditConnectionsFixture,
 } from "../src/lib/postConnections.fixture";
 import { connectionNodeId } from "../src/lib/postConnectionsGraph";
 
@@ -392,3 +393,78 @@ test("a crowded mobile graph opens at readable scale and reveals selected destin
   await cy.dispose();
   await restored.dispose();
 });
+
+for (const width of [1210, 390]) {
+  test(`contextual Reddit graph keeps a publisher-first layout with exact evidence at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 958 });
+    const requests: string[] = [];
+    await page.route("**/api/reader/connections?*", (route) => {
+      requests.push(route.request().url());
+      return route.fulfill({ json: redditConnectionsFixture });
+    });
+    await page.goto("/reader/tests/fixtures/post-connections.html?reddit");
+    await page.getByRole("button", { name: "Graph view" }).click();
+    const graph = page.locator(".relationship-graph");
+    await expect(graph).toHaveAttribute("data-status", "ready");
+    expect(requests[0]).toContain("source=reddit&community=kernel");
+    await expect(page.getByText(/r\/kernel: saved links/)).toBeVisible();
+    await expect(page.getByText(/This layout is not a timeline/)).toBeVisible();
+    const selector = page.getByLabel("Explore nodes");
+    await expect(
+      selector.getByRole("option", { name: "Source: r/kernel" }),
+    ).toHaveCount(1);
+    const cy = await page
+      .locator(".relationship-graph-canvas")
+      .evaluateHandle(
+        (element) =>
+          (element as HTMLDivElement & { _cyreg: { cy: Core } })._cyreg.cy,
+      );
+    const layout = await cy.evaluate((instance) =>
+      instance.nodes().map((node) => ({
+        kind: node.data("kind"),
+        point: node.position(),
+        label: node.data("label"),
+      })),
+    );
+    const axis = width < 760 ? "y" : "x";
+    const article = layout.find((node) => node.kind === "article");
+    const source = layout.find((node) => node.kind === "source");
+    const root = layout.find((node) => node.kind === "root");
+    expect(article?.point[axis]).toBeLessThan(source?.point[axis] ?? 0);
+    expect(source?.point[axis]).toBeLessThan(root?.point[axis] ?? 0);
+    await selector.selectOption(
+      connectionNodeId("post", "reddit.com", "second-discussion"),
+    );
+    await expect(
+      page.getByRole("region", { name: "Selected connection" }),
+    ).toContainText("Shared article · Post link");
+    await page.getByRole("button", { name: "List view" }).click();
+    const related = page.getByRole("region", {
+      name: "Other posts linking to the same article",
+    });
+    await expect(related).toContainText("A second saved post");
+    await related.getByRole("link", { name: "Explore this post" }).click();
+    await expect(page.getByLabel("Opened destination")).toHaveText(
+      "explore:reddit.com:second-discussion",
+    );
+    await page.getByRole("button", { name: "Graph view" }).click();
+    await expect(graph).toHaveAttribute("data-status", "ready");
+    await page.getByRole("button", { name: "Fit", exact: true }).click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    expect(
+      (await new AxeBuilder({ page }).include(".post-connections").analyze())
+        .violations,
+    ).toEqual([]);
+    await page.screenshot({
+      path: testInfo.outputPath(`reddit-context-${width}.png`),
+      fullPage: true,
+    });
+    await cy.dispose();
+  });
+}

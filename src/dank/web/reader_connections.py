@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from aiohttp import web
@@ -15,6 +16,30 @@ from dank.youtube import canonical_video_id
 
 MAX_CONNECTIONS = 100
 POST_FIELDS = "domain, post_id AS id, url, title, source"
+CONNECTION_SOURCES = {"reddit", "hacker_news", "x", "youtube", "rss"}
+SOURCE_ALIASES = {
+    "twitter": "x", "twitter.com": "x", "x.com": "x", "reddit.com": "reddit",
+    "news.ycombinator.com": "hacker_news", "hckrnews.com": "hacker_news",
+    "youtube.com": "youtube",
+}
+
+
+def _context(query: MultiMapping[str]) -> dict[str, str]:
+    source = query.get("source", "").strip().lower().removeprefix("www.")
+    source = SOURCE_ALIASES.get(source, source)
+    community = query.get("community", "").strip().lower()
+
+    if source and source not in CONNECTION_SOURCES:
+        raise ValueError("Invalid connection source")
+
+    if community and (source != "reddit"
+                      or not re.fullmatch(r"[a-z0-9_]{2,21}", community)):
+        raise ValueError(
+            "community requires source=reddit and a community name",
+        )
+
+    return {key: value for key, value in (("source", source),
+                                         ("community", community)) if value}
 
 
 def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
@@ -22,6 +47,8 @@ def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
 
     if single:
         allowed |= {"target", "kind", "reference_id", "observed_at"}
+    else:
+        allowed |= {"source", "community"}
 
     if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
         raise ValueError("Unknown or repeated connection parameter")
@@ -35,6 +62,8 @@ def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
         )
 
     if not single:
+        params.update(_context(query))
+
         return params
 
     target = query.get("target", "")
@@ -63,10 +92,33 @@ def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
 
 
 def connection_query(*, incoming: bool = False, single: bool = False,
-                     observed: bool = False) -> str:
+                     observed: bool = False, related: bool = False,
+                     source: bool = False, community: bool = False) -> str:
     conditions = ["e.observed_at <= origin.updated_at"]
+    target_join = ""
+    target_columns = ""
 
-    if incoming:
+    if related:
+        # One bounded expansion from collected publisher articles. Their saved
+        # aliases establish shared identity; never infer a match from titles.
+        target_join = (
+            "INNER JOIN (SELECT u.url AS related_url, "
+            "p.domain AS related_domain, "
+            "p.post_id AS related_id, p.url AS related_post_url, "
+            "p.title AS related_title, p.source AS related_source "
+            "FROM post_urls AS u FINAL INNER JOIN (SELECT domain, post_id, "
+            "url, title, source, updated_at FROM posts FINAL) AS p "
+            "ON p.domain = u.domain AND p.post_id = u.post_id "
+            "WHERE (p.domain, p.post_id) IN %(related_targets)s "
+            "AND u.observed_at <= p.updated_at ORDER BY p.domain, p.post_id "
+            "LIMIT 1 BY u.url) AS linked ON linked.related_url = e.target_url "
+        )
+        target_columns = ", linked.* "
+        conditions += [
+            "(e.domain, e.post_id) != (%(domain)s, %(id)s)",
+            "(e.domain, e.post_id) NOT IN %(related_targets)s",
+        ]
+    elif incoming:
         conditions += [
             "e.target_url IN (SELECT u.url FROM post_urls AS u FINAL "
             "INNER JOIN (SELECT domain, post_id, updated_at FROM posts FINAL) "
@@ -87,6 +139,21 @@ def connection_query(*, incoming: bool = False, single: bool = False,
             "AND post_id = %(id)s LIMIT 1)))",
         ]
 
+    if source:
+        conditions.append(
+            "(origin.source = %(source)s OR "
+            "(%(source)s = 'rss' AND origin.source = 'linked_article') OR "
+            "(%(source)s = 'x' AND (origin.source = 'twitter' OR "
+            "replaceRegexpOne(lowerUTF8(origin.domain), '^www[.]', '') "
+            "IN ('x.com', 'twitter.com'))))",
+        )
+
+    if community:
+        conditions.append(
+            "lowerUTF8(extract(origin.url, '/r/([^/]+)/comments/')) "
+            "= %(community)s",
+        )
+
     if single:
         conditions += ["e.target_url = %(target)s", "e.kind = %(kind)s",
                        "e.reference_id = %(reference_id)s"]
@@ -98,12 +165,18 @@ def connection_query(*, incoming: bool = False, single: bool = False,
 
     return (
         "SELECT *, count() OVER () AS connection_count FROM ("
-        "SELECT e.*, origin.url AS origin_url, origin.title AS origin_title, "
-        "origin.source AS origin_source "
+        "SELECT e.domain AS domain, e.post_id AS post_id, "
+        "e.target_url AS target_url, e.kind AS kind, "
+        "e.reference_id AS reference_id, e.reference_url AS reference_url, "
+        "e.author AS author, e.matched_url AS matched_url, "
+        "e.excerpt AS excerpt, e.observed_at AS observed_at, "
+        "origin.url AS origin_url, origin.title AS origin_title, "
+        "origin.source AS origin_source " + target_columns +
         "FROM post_reference_evidence AS e FINAL "
         "INNER JOIN (SELECT domain, post_id, url, title, source, updated_at "
         "FROM posts FINAL) AS origin ON origin.domain = e.domain "
-        "AND origin.post_id = e.post_id WHERE " + " AND ".join(conditions)
+        "AND origin.post_id = e.post_id " + target_join + "WHERE "
+        + " AND ".join(conditions)
         + " ORDER BY e.observed_at DESC, e.excerpt DESC "
         "LIMIT 1 BY e.domain, e.post_id, e.target_url, e.kind, "
         "e.reference_id) "
@@ -132,10 +205,11 @@ async def _targets(client: ClickHouseClient,
         "SELECT u.url AS matched_target, p.domain AS domain, "
         "p.post_id AS id, p.url AS url, p.title AS title, p.source AS source "
         "FROM post_urls AS u FINAL INNER JOIN (SELECT domain, post_id, "
-        "url, title, source, updated_at FROM posts FINAL) AS p "
+        "url, title, source, html, updated_at FROM posts FINAL) AS p "
         "ON p.domain = u.domain AND p.post_id = u.post_id "
         "WHERE u.url IN %(urls)s AND u.observed_at <= p.updated_at "
         "AND (p.domain, p.post_id) != %(origin)s "
+        "AND (p.source NOT IN ('rss', 'linked_article') OR notEmpty(p.html)) "
         "ORDER BY (replaceRegexpOne(p.domain, '^www[.]', '') "
         "= domainWithoutWWW(p.url)) DESC, "
         "(p.source != 'linked_article') DESC, p.domain, p.post_id "
@@ -214,14 +288,42 @@ async def connections(client: ClickHouseClient,
         return None
 
     params = {**params, "limit": MAX_CONNECTIONS}
-    incoming = await client.fetch_json(connection_query(incoming=True), params)
+    scope = {"source": bool(params.get("source")),
+             "community": bool(params.get("community"))}
+    incoming = await client.fetch_json(
+        connection_query(incoming=True, **scope), params,
+    )
     outgoing = await client.fetch_json(connection_query(), params)
     urls = sorted({str(row["target_url"]) for row in outgoing.rows})
     targets = await _targets(
         client, urls, (params["domain"], params["id"]),
     )
     videos = await _videos(client, urls)
+    related_targets = sorted({
+        (target["domain"], target["id"])
+        for row in outgoing.rows
+        if row["kind"] == "post"
+        and (target := targets.get(str(row["target_url"])))
+        and target["source"] in {"rss", "linked_article"}
+    })
+    related_rows: list[dict[str, Any]] = []
 
+    if related_targets:
+        related_result = await client.fetch_json(
+            connection_query(related=True, **scope),
+            {**params, "related_targets": related_targets},
+        )
+        related_rows = related_result.rows
+
+    related: list[dict[str, Any]] = []
+
+    for row in related_rows:
+        target = {key: str(row["related_" + key])
+                  for key in ("domain", "id", "title", "source")}
+        target["url"] = str(row["related_post_url"])
+        connection = _connection(row, incoming=False, target=target, videos={})
+        connection["direction"] = "related"
+        related.append(connection)
 
     return {
         "root": root,
@@ -231,6 +333,11 @@ async def connections(client: ClickHouseClient,
             row, incoming=False, target=targets.get(str(row["target_url"])),
             videos=videos,
         ) for row in outgoing.rows],
+        "context": {key: params[key] for key in ("source", "community")
+                    if key in params},
+        "related": related,
+        "related_count": (int(related_rows[0]["connection_count"])
+                          if related_rows else 0),
         "incoming_count": (
             int(incoming.rows[0]["connection_count"]) if incoming.rows else 0
         ),

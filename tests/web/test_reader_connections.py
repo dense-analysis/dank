@@ -289,3 +289,99 @@ async def test_backfill_reuses_identical_content_but_preserves_capture_dates(
                     for row in call.args[1]]
     assert observations == [STAMP, later]
     assert extract.call_count == 1
+
+
+@pytest.mark.parametrize("query", [
+    "domain=a&id=b&source=unknown", "domain=a&id=b&community=kernel",
+    "domain=a&id=b&source=x&community=kernel",
+    "domain=a&id=b&source=reddit&community=bad/name",
+    "domain=a&id=b&source=reddit&source=x",
+])
+async def test_invalid_context_is_rejected_without_storage(query: str):
+    app = web.Application()
+    app["clickhouse"] = AsyncMock()
+    response = await handle_connections(make_mocked_request(
+        "GET", "/api/reader/connections?" + query, app=app,
+    ))
+    assert response.status == 400
+    app["clickhouse"].fetch_json.assert_not_called()
+
+
+@pytest.mark.parametrize("alias,source", [
+    ("Twitter", "x"), ("www.twitter.com", "x"),
+    ("www.Reddit.com", "reddit"), ("hckrnews.com", "hacker_news"),
+])
+def test_context_normalizes_platform_aliases(alias: str, source: str):
+    params = _parameters(
+        MultiDict(domain="a", id="b", source=alias), single=False,
+    )
+    assert params["source"] == source
+
+
+async def test_context_limits_related_publishers_before_counts_and_limit():
+    root = {**ROOT, "domain": "reddit.com", "source": "reddit",
+            "url": "https://reddit.com/r/kernel/comments/123/"}
+    target = {"matched_target": "https://target.test/article",
+              "domain": "target.test", "id": "canonical", "title": "Original",
+              "url": "https://target.test/canonical",
+              "source": "linked_article"}
+    outgoing = evidence(domain="reddit.com", origin_source="reddit",
+                        origin_url=root["url"], kind="post", reference_id="")
+    related = evidence(
+        "https://target.test/observed-alias", domain="www.reddit.com",
+        post_id="456", origin_source="reddit",
+        origin_url="https://www.reddit.com/r/kernel/comments/456/",
+        related_domain="target.test", related_id="canonical",
+        related_post_url=target["url"], related_title="Original",
+        related_source="linked_article", connection_count=135,
+    )
+    mock = client([root], [], [outgoing], [target], [related])
+    params = {"domain": root["domain"], "id": root["id"],
+              "source": "reddit", "community": "kernel"}
+    data = await connections(mock, params)
+    assert data is not None
+    assert data["context"] == {"source": "reddit", "community": "kernel"}
+    assert data["related_count"] == 135
+    assert len(data["related"]) == 1
+    sibling = data["related"][0]
+    assert sibling["direction"] == "related"
+    assert sibling["origin"]["id"] == "456"
+    assert sibling["target"]["post"]["id"] == "canonical"
+    assert sibling["target"]["url"] == "https://target.test/observed-alias"
+    assert sibling["evidence"]["matched_url"].endswith("#exact")
+    query, bound = mock.fetch_json.call_args.args
+    assert bound["related_targets"] == [("target.test", "canonical")]
+    assert bound["limit"] == 100
+    assert "origin.source = %(source)s" in query
+    assert "lowerUTF8(extract(origin.url" in query
+    assert query.index("%(community)s") < query.index("LIMIT 1 BY e.domain")
+    assert "u.observed_at <= p.updated_at" in query
+    # ClickHouse qualifies wildcard fields in this three-way join; explicit
+    # evidence aliases keep outer ordering and response columns unambiguous.
+    assert "SELECT e.domain AS domain, e.post_id AS post_id" in query
+    assert "(e.domain, e.post_id) NOT IN %(related_targets)s" in query
+    sql, _ = bind_query(query, bound)
+    assert "%(" not in sql
+    incoming_query = mock.fetch_json.call_args_list[1].args[0]
+    assert "origin.source = %(source)s" in incoming_query
+    outgoing_query = mock.fetch_json.call_args_list[2].args[0]
+    assert "%(source)s" not in outgoing_query
+
+
+async def test_all_context_keeps_cross_source_related_evidence():
+    target = {"matched_target": "https://target.test/article",
+              "domain": "target.test", "id": "article", "title": "Original",
+              "url": "https://target.test/article", "source": "rss"}
+    mock = client([ROOT], [], [evidence(kind="post", reference_id="")],
+                  [target], [])
+    data = await connections(
+        mock, {"domain": ROOT["domain"], "id": ROOT["id"]},
+    )
+    assert data is not None
+    assert data["context"] == {}
+    assert data["related"] == []
+    query = mock.fetch_json.call_args.args[0]
+    assert "%(source)s" not in query
+    assert "%(community)s" not in query
+    target_query = mock.fetch_json.call_args_list[3].args[0]
+    assert "OR notEmpty(p.html)" in target_query

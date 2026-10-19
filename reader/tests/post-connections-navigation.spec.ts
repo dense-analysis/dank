@@ -535,3 +535,52 @@ test("a post with no collected body still opens and focuses its connections grap
     )
     .toBe(true);
 });
+
+test("publisher exploration retains Reddit community context while All requests stay broad", async ({
+  page,
+}) => {
+  const { requests, neighbor } = await fixtures(page);
+  const params = new URLSearchParams(rootQuery);
+  params.set("view", "reddit");
+  params.set("community", "kernel");
+  params.set("connections", "list");
+  await page.goto(`/reader/?${params}`);
+  const outgoing = page
+    .getByRole("region", { name: "Links from this post" })
+    .locator(".post-connection-evidence")
+    .filter({
+      has: page.getByRole("heading", { name: neighbor.title, exact: true }),
+    });
+  await expect(outgoing).toBeVisible();
+  expect(
+    requests.some(
+      (url) =>
+        url.includes("/connections?") &&
+        url.includes("source=reddit&community=kernel"),
+    ),
+  ).toBe(true);
+  await outgoing
+    .getByRole("link", { name: "Explore this post", exact: true })
+    .click();
+  await expect(page.locator(".post-connections")).toContainText(
+    "No verified links found",
+  );
+  const location = new URL(page.url());
+  expect(location.searchParams.get("view")).toBe("reddit");
+  expect(location.searchParams.get("community")).toBe("kernel");
+  expect(
+    requests.some((url) =>
+      url.includes(`id=${neighbor.id}&source=reddit&community=kernel`),
+    ),
+  ).toBe(true);
+  params.set("view", "all");
+  params.delete("community");
+  await page.goto(`/reader/?${params}`);
+  await expect(
+    page.getByRole("region", { name: "Links to this post" }),
+  ).toBeVisible();
+  const latest = requests.filter((url) => url.includes("/connections?")).at(-1);
+  expect(
+    new URL(latest ?? "http://test.invalid").searchParams.has("source"),
+  ).toBe(false);
+});

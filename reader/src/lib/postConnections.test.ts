@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  connectionContext,
   connectionNeighbor,
   connectionTargetLabel,
   fetchPostConnections,
@@ -9,6 +10,8 @@ import {
   connectionsFixture,
   incomingConnection,
   outgoingConnection,
+  redditConnectionsFixture,
+  sharedArticleConnection,
   videoConnection,
 } from "./postConnections.fixture";
 
@@ -179,4 +182,78 @@ it("uses a video's authoritative title and never borrows the linking headline", 
       youtube_item_id: null,
     }),
   ).toBe("https://example.com/unknown");
+});
+
+it("carries source and community context while keeping All and Blogs broad", async () => {
+  expect(connectionContext({ kind: "all", community: "kernel" })).toEqual({});
+  expect(connectionContext({ kind: "stories", community: "" })).toEqual({});
+  expect(connectionContext({ kind: "reddit", community: "Kernel" })).toEqual({
+    source: "reddit",
+    community: "kernel",
+  });
+  expect(connectionContext({ kind: "hacker_news", community: "" })).toEqual({
+    source: "hacker_news",
+  });
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify(redditConnectionsFixture)));
+  vi.stubGlobal("fetch", fetch);
+  await fetchPostConnections("reddit.com", "discussion", undefined, {
+    source: "reddit",
+    community: "kernel",
+  });
+  expect(fetch.mock.calls[0][0]).toBe(
+    "/api/reader/connections?domain=reddit.com&id=discussion&source=reddit&community=kernel",
+  );
+});
+
+it("validates related evidence against a saved publisher reached by the root", () => {
+  expect(isPostConnections(redditConnectionsFixture)).toBe(true);
+  expect(connectionNeighbor(sharedArticleConnection).post).toEqual(
+    sharedArticleConnection.origin,
+  );
+  expect(
+    isPostConnections({ ...redditConnectionsFixture, related_count: 0 }),
+  ).toBe(false);
+  expect(
+    isPostConnections({
+      ...redditConnectionsFixture,
+      related: [sharedArticleConnection, sharedArticleConnection],
+      related_count: 2,
+    }),
+  ).toBe(false);
+  expect(
+    isPostConnections({ ...redditConnectionsFixture, related: [null] }),
+  ).toBe(false);
+  expect(
+    isPostConnections({
+      ...redditConnectionsFixture,
+      context: { source: "x", community: "kernel" },
+    }),
+  ).toBe(false);
+  expect(
+    isPostConnections({
+      ...redditConnectionsFixture,
+      related: [
+        { ...sharedArticleConnection, target: outgoingConnection.target },
+      ],
+    }),
+  ).toBe(false);
+});
+
+it("rejects responses from another source context", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify(redditConnectionsFixture)),
+      ),
+  );
+  await expect(
+    fetchPostConnections("reddit.com", "discussion", undefined, {
+      source: "reddit",
+      community: "other",
+    }),
+  ).rejects.toThrow("unexpected connections");
 });

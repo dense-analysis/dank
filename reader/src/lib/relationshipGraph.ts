@@ -14,6 +14,7 @@ export interface RelationshipEdge {
   target: string;
   kind: string;
   label: string;
+  bend?: number;
 }
 
 export interface RelationshipGraphData {

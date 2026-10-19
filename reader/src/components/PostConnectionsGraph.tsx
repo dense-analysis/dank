@@ -62,6 +62,14 @@ export default function PostConnectionsGraph({
           </button>
         ))}
       </fieldset>
+      {graph.nodes.some((node) => node.kind === "article") && (
+        <p className="post-connections-scope">
+          The saved article appears first, followed by feeds and posts. This
+          layout is not a timeline: arrows still follow the saved links.
+          Collection times describe when DANK observed content, not who reported
+          it first.
+        </p>
+      )}
       <RelationshipGraph
         graph={graph}
         initialFocusNodeId={rootNodeId}

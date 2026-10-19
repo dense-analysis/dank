@@ -52,6 +52,10 @@ const styles: StylesheetStyle[] = [
     },
   },
   {
+    selector: 'node[kind = "external"]',
+    style: { "text-overflow-wrap": "anywhere" },
+  },
+  {
     selector: 'node[tone = "blue"]',
     style: { "background-color": "#1d2c3b", "border-color": "#82a9d0" },
   },
@@ -90,6 +94,14 @@ const styles: StylesheetStyle[] = [
     },
   },
   {
+    selector: "edge[bend]",
+    style: {
+      "curve-style": "unbundled-bezier",
+      "control-point-distances": "data(bend)",
+      "control-point-weights": 0.5,
+    },
+  },
+  {
     selector: "node.selected",
     style: { "border-width": 3, "border-color": "#eff8f1" },
   },
@@ -111,7 +123,7 @@ function elements(graph: RelationshipGraphData): ElementDefinition[] {
       group: "nodes" as const,
       data: {
         ...node,
-        displayLabel: `${node.kindLabel.toUpperCase()}\n${compactGraphLabel(node.label).replace(/(\S{12})(?=\S)/g, "$1\u200b")}`,
+        displayLabel: `${node.kindLabel.toUpperCase()}\n${compactGraphLabel(node.label)}`,
       },
     })),
     ...graph.edges.map((edge) => ({

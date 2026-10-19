@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, List, Network } from "lucide-react";
 import { lazy, Suspense, useId, useState } from "react";
 import {
+  type ConnectionsContext,
+  connectionContextLabel,
   fetchPostConnections,
   type PostConnection,
   type PostConnectionsData,
@@ -24,6 +26,7 @@ export type ConnectionsMode = "list" | "graph" | null;
 
 export function PostConnections({
   post,
+  context = {},
   mode,
   onModeChange,
   direction,
@@ -31,6 +34,7 @@ export function PostConnections({
   ...navigation
 }: ConnectionNavigation & {
   post: Pick<PostReference, "domain" | "id">;
+  context?: ConnectionsContext;
   mode: ConnectionsMode;
   onModeChange: (mode: ConnectionsMode) => void;
   direction?: ConnectionDirection;
@@ -41,8 +45,9 @@ export function PostConnections({
   const contentId = useId();
   const headingId = useId();
   const { data, error, isPending, refetch } = useQuery({
-    queryKey: ["post-connections", post.domain, post.id],
-    queryFn: ({ signal }) => fetchPostConnections(post.domain, post.id, signal),
+    queryKey: ["post-connections", post.domain, post.id, context],
+    queryFn: ({ signal }) =>
+      fetchPostConnections(post.domain, post.id, signal, context),
     enabled: mode !== null,
     staleTime: 60_000,
   });
@@ -95,9 +100,12 @@ export function PostConnections({
         {mode !== null && (
           <>
             <p className="post-connections-scope">
-              Follow saved links to and from this post, including comment
-              mentions. Only collected evidence is shown; missing captures may
-              hide connections.
+              {connectionContextLabel(context)}: saved links and comment
+              mentions, including other posts linking to the same saved article.
+              {context.source &&
+                " Other feeds are excluded; linked articles stay visible for context."}{" "}
+              Only collected evidence is shown; missing captures may hide
+              connections.
             </p>
             {isPending ? (
               <p role="status" className="post-connections-status">
@@ -126,8 +134,8 @@ export function PostConnections({
                     }
                   >
                     <PostConnectionsGraph
-                      key={JSON.stringify([post.domain, post.id])}
-                      data={data}
+                      key={JSON.stringify([post.domain, post.id, context])}
+                      data={{ ...data, context }}
                       direction={direction ?? localDirection}
                       onDirectionChange={onDirectionChange ?? setLocalDirection}
                       {...navigation}
@@ -138,6 +146,11 @@ export function PostConnections({
                     <ConnectionGroup
                       label="Links to this post"
                       connections={data.incoming}
+                      {...navigation}
+                    />
+                    <ConnectionGroup
+                      label="Other posts linking to the same article"
+                      connections={data.related ?? []}
                       {...navigation}
                     />
                     <ConnectionGroup
@@ -162,7 +175,21 @@ function ConnectionCounts({ data }: { data: PostConnectionsData }) {
       <p>
         <Count value={data.incoming_count} /> incoming ·{" "}
         <Count value={data.outgoing_count} /> outgoing references
+        {(data.related_count ?? 0) > 0 && (
+          <>
+            {" "}
+            · <Count value={data.related_count ?? 0} /> shared-article
+            references
+          </>
+        )}
       </p>
+      {(data.related?.length ?? 0) < (data.related_count ?? 0) && (
+        <p className="post-connections-limit" role="status">
+          Showing {data.related?.length.toLocaleString()} of{" "}
+          {data.related_count?.toLocaleString()} references to shared articles,
+          within this source context.
+        </p>
+      )}
       {(data.incoming.length < data.incoming_count ||
         data.outgoing.length < data.outgoing_count) && (
         <p className="post-connections-limit" role="status">

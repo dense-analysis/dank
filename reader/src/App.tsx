@@ -57,7 +57,10 @@ import {
   connectionTargetParams,
 } from "./lib/connectionNavigation";
 import { articleParams, filterParams, parseFilters } from "./lib/navigation";
-import type { PostConnectionTarget } from "./lib/postConnections";
+import {
+  connectionContext,
+  type PostConnectionTarget,
+} from "./lib/postConnections";
 import type { ConnectionDirection } from "./lib/postConnectionsGraph";
 import { readingFonts } from "./lib/preferences";
 import {
@@ -483,6 +486,7 @@ export function App() {
               <PostConnections
                 key={postKey(post)}
                 post={post}
+                context={connectionContext(filters)}
                 mode={
                   connectionsMode === "graph" || connectionsMode === "list"
                     ? connectionsMode

@@ -64,13 +64,17 @@ export function ConnectionEvidence({
   return (
     <article className="post-connection-evidence">
       <p className="post-connection-kind">
-        {direction === "incoming" ? "Incoming" : "Outgoing"} ·{" "}
-        {evidence.kind === "comment" ? "Comment mention" : "Post link"}
+        {direction === "incoming"
+          ? "Incoming"
+          : direction === "related"
+            ? "Shared article"
+            : "Outgoing"}{" "}
+        · {evidence.kind === "comment" ? "Comment mention" : "Post link"}
         {evidence.author && ` · ${evidence.author}`}
       </p>
       <h4>{connectionTargetLabel(neighbor)}</h4>
       <p className="post-connection-source">
-        {direction === "incoming"
+        {direction !== "outgoing"
           ? connectionSourceLabel(origin)
           : `From ${connectionSourceLabel(origin)}`}
         {!neighbor.post && (

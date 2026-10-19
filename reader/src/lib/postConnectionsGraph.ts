@@ -48,10 +48,29 @@ export function postConnectionsGraph(
   const targetsByNode = new Map<string, PostConnectionTarget>();
   const rootNodeId = connectionNodeId("post", data.root.domain, data.root.id);
   const connections = (
-    direction === "all" ? [...data.incoming, ...data.outgoing] : data[direction]
+    direction === "all"
+      ? [...data.incoming, ...data.outgoing, ...(data.related ?? [])]
+      : data[direction]
   )
     .slice()
     .sort((a, b) => a.id.localeCompare(b.id));
+
+  const articleContext = ["reddit", "hacker_news", "x", "twitter"].includes(
+    data.root.source,
+  );
+  const articleIds = new Set(
+    connections.flatMap((connection) => {
+      const post = connection.target.post;
+
+      return articleContext &&
+        connection.direction === "outgoing" &&
+        connection.evidence.kind === "post" &&
+        post &&
+        ["rss", "linked_article"].includes(post.source)
+        ? [connectionNodeId("post", post.domain, post.id)]
+        : [];
+    }),
+  );
 
   function attach(id: string, connection: PostConnection) {
     const entries = connectionsByNode.get(id) ?? new Map();
@@ -64,9 +83,17 @@ export function postConnectionsGraph(
     target: string,
     kind: string,
     label: string,
+    bend?: number,
   ) {
     const id = connectionNodeId("edge", kind, source, target);
-    edges.set(id, { id, source, target, kind, label });
+    edges.set(id, {
+      id,
+      source,
+      target,
+      kind,
+      label,
+      ...(bend === undefined ? {} : { bend }),
+    });
   }
 
   function postNode(post: PostReference, layer: number) {
@@ -76,11 +103,19 @@ export function postConnectionsGraph(
     const previous = nodes.get(id);
     nodes.set(id, {
       id,
-      kind: root ? "root" : "post",
-      kindLabel: root ? "This post" : "Saved post",
+      kind: root ? "root" : articleIds.has(id) ? "article" : "post",
+      kindLabel: root
+        ? "This post"
+        : articleIds.has(id)
+          ? "Saved article"
+          : "Saved post",
       label: identity.title || identity.url,
       tone: root ? "accent" : "blue",
-      layer: root ? 3 : Math.min(layer, previous?.layer ?? layer),
+      layer: root
+        ? 3
+        : articleIds.has(id)
+          ? 0
+          : Math.min(layer, previous?.layer ?? layer),
     });
     targetsByNode.set(id, { url: post.url, post, youtube_item_id: null });
 
@@ -92,14 +127,27 @@ export function postConnectionsGraph(
     postId: string,
     connection: PostConnection,
   ) {
-    const id = connectionNodeId("source", post.domain);
+    // An article is the context anchor, not a claim that its publisher was the
+    // collection adapter or that it was discovered before these social posts.
+    if (articleIds.has(postId)) return;
+    const community =
+      post.source === "reddit"
+        ? /\/r\/([^/]+)\/comments\//i.exec(post.url)?.[1].toLowerCase()
+        : undefined;
+    const domain = post.domain.toLowerCase().replace(/^www\./, "");
+    const sourceDomain = ["twitter.com", "x.com"].includes(domain)
+      ? "x.com"
+      : domain;
+    const id = community
+      ? connectionNodeId("source", sourceDomain, community)
+      : connectionNodeId("source", sourceDomain);
     nodes.set(id, {
       id,
       kind: "source",
       kindLabel: "Source",
-      label: connectionSourceLabel(post),
+      label: community ? `r/${community}` : connectionSourceLabel(post),
       tone: "neutral",
-      layer: 0,
+      layer: articleIds.size ? 1 : 0,
     });
     connect(id, postId, "collected", "collected");
     attach(id, connection);
@@ -109,7 +157,10 @@ export function postConnectionsGraph(
 
   for (const connection of connections) {
     const incoming = connection.direction === "incoming";
-    const originId = postNode(connection.origin, incoming ? 1 : 3);
+    const originId = postNode(
+      connection.origin,
+      articleIds.size ? 3 : incoming ? 1 : 3,
+    );
     publisher(connection.origin, originId, connection);
     attach(originId, connection);
     let targetId: string;
@@ -159,9 +210,23 @@ export function postConnectionsGraph(
       });
       attach(commentId, connection);
       connect(originId, commentId, "has_comment", "has comment");
-      connect(commentId, targetId, "mentions", "links to");
+      connect(
+        commentId,
+        targetId,
+        "mentions",
+        "links to",
+        articleIds.has(targetId) ? 220 : undefined,
+      );
     } else {
-      connect(originId, targetId, "links", "links to");
+      // Curve returning publisher links around the middle source layer, so
+      // their truthful arrow direction and label stay visible on phones too.
+      connect(
+        originId,
+        targetId,
+        "links",
+        "links to",
+        articleIds.has(targetId) ? 220 : undefined,
+      );
     }
   }
 
@@ -177,6 +242,8 @@ export function postConnectionsGraph(
         data.root.domain,
         data.root.id,
         direction,
+        data.context?.source ?? "",
+        data.context?.community ?? "",
       ),
       nodes: [...nodes.values()]
         .map((node) => ({ ...node, layer: layers.indexOf(node.layer) }))

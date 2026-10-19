@@ -4,6 +4,8 @@ import {
   externalConnection,
   incomingConnection,
   outgoingConnection,
+  redditConnectionsFixture,
+  sharedArticleConnection,
   videoConnection,
 } from "./postConnections.fixture";
 import { connectionNodeId, postConnectionsGraph } from "./postConnectionsGraph";
@@ -161,4 +163,91 @@ it("describes an aggregator source as collection provenance without claiming aut
     label: "collected",
   });
   expect(graph.edges.some((edge) => edge.label === "published")).toBe(false);
+});
+
+it("places saved publisher context before communities and posts without reversing hyperlinks", () => {
+  const { graph, rootNodeId, connectionsByNode } = postConnectionsGraph(
+    redditConnectionsFixture,
+  );
+  const article = graph.nodes.find((node) => node.kind === "article");
+  const source = graph.nodes.find((node) => node.kind === "source");
+  const root = graph.nodes.find((node) => node.id === rootNodeId);
+  expect(article?.layer).toBeLessThan(source?.layer ?? 0);
+  expect(source?.layer).toBeLessThan(root?.layer ?? 0);
+  expect(source?.label).toBe("r/kernel");
+  expect(graph.edges).toContainEqual(
+    expect.objectContaining({
+      source: rootNodeId,
+      target: article?.id,
+      kind: "links",
+    }),
+  );
+  expect(graph.edges).toContainEqual(
+    expect.objectContaining({
+      source: connectionNodeId("post", "reddit.com", "second-discussion"),
+      target: article?.id,
+      kind: "links",
+    }),
+  );
+  expect(connectionsByNode.get(article?.id ?? "")).toContainEqual(
+    sharedArticleConnection,
+  );
+  expect(
+    graph.edges.some(
+      (edge) => edge.source === article?.id && edge.target === source?.id,
+    ),
+  ).toBe(false);
+  expect(
+    postConnectionsGraph({ ...redditConnectionsFixture, context: {} }).graph.id,
+  ).not.toBe(graph.id);
+  const outgoing = postConnectionsGraph(
+    redditConnectionsFixture,
+    "outgoing",
+  ).graph;
+  expect(
+    outgoing.nodes.some((node) => node.id.includes("second-discussion")),
+  ).toBe(false);
+});
+
+it("keeps Reddit communities distinct and normalizes X source aliases", () => {
+  const anotherCommunity = {
+    ...sharedArticleConnection,
+    origin: {
+      ...sharedArticleConnection.origin,
+      url: "https://www.reddit.com/r/other/comments/second-discussion/",
+    },
+  };
+  const graph = postConnectionsGraph({
+    ...redditConnectionsFixture,
+    context: {},
+    related: [anotherCommunity],
+  }).graph;
+  expect(
+    graph.nodes
+      .filter((node) => node.kind === "source")
+      .map((node) => node.label),
+  ).toEqual(["r/kernel", "r/other"]);
+  const xReferences = ["x.com", "www.twitter.com"].map((domain, index) => ({
+    ...sharedArticleConnection,
+    id: `x-${index}`,
+    origin: {
+      ...sharedArticleConnection.origin,
+      source: "x",
+      domain,
+      id: `x-${index}`,
+    },
+    evidence: {
+      ...sharedArticleConnection.evidence,
+      domain,
+      post_id: `x-${index}`,
+    },
+  }));
+  const all = postConnectionsGraph({
+    ...redditConnectionsFixture,
+    context: {},
+    related: xReferences,
+  }).graph;
+  expect(
+    all.nodes.filter((node) => node.kind === "source" && node.label === "X"),
+  ).toHaveLength(1);
 });
