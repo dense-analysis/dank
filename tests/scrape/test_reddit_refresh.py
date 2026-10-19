@@ -39,7 +39,7 @@ def raw() -> RawPost:
 
 
 @pytest.mark.parametrize("partial", [False, True])
-async def test_only_initial_rate_limits_retry_without_duplicating_saved_posts(
+async def test_rate_limits_defer_without_duplicating_saved_posts(
     monkeypatch: pytest.MonkeyPatch,
     *,
     partial: bool,
@@ -70,16 +70,12 @@ async def test_only_initial_rate_limits_retry_without_duplicating_saved_posts(
     )
     saved: list[RawPost] = []
 
-    if partial:
-        with pytest.raises(RedditRateLimitError):
-            async for batch in batches:
-                saved.extend(batch.posts)
-    else:
+    with pytest.raises(RedditRateLimitError):
         async for batch in batches:
             saved.extend(batch.posts)
 
-    assert len(saved) == 1
-    assert calls == (1 if partial else 2)
+    assert len(saved) == int(partial)
+    assert calls == 1
 
 
 async def test_refresh_query_is_recent_bounded_and_uses_latest_post_state():

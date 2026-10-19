@@ -100,7 +100,7 @@ def test_access_denial_is_not_reported_as_an_empty_listing() -> None:
         ], URL)
 
 
-async def test_reddit_cooldown_wait_releases_other_http_slots(
+async def test_long_reddit_cooldown_is_deferred_without_holding_http_slots(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from dank.scrape.reddit.access import request_slot
@@ -125,9 +125,13 @@ async def test_reddit_cooldown_wait_releases_other_http_slots(
     token = current_limiter.set(limiter)
 
     try:
-        async with request_slot(URL):
-            assert now[0] == 300
+        with pytest.raises(HostCooldownError):
+            async with request_slot(URL):
+                pytest.fail("Reddit cooldown should be deferred")
+
+        async with limiter.slot('https://other.test/feed'):
+            pass
     finally:
         current_limiter.reset(token)
 
-    assert delays == [300]
+    assert delays == []

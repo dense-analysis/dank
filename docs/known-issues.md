@@ -8,6 +8,35 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Blocked Reddit collection and cancellation
+
+The 2026-10-19 run `c01507f1` saved 3,044 posts, but spent its last 33 minutes
+waiting on repeated Reddit network-security blocks after the other 56 sources
+finished. Five-minute cooldowns and a fresh retry for each community compounded
+the delay. Ctrl+C reached cleanup, but browser-driver shutdown did not finish.
+
+An explicit Reddit network-security block or HTTP 429 now defers further Reddit
+requests for the current run, including later Reddit source entries. Saved posts
+are retained and queued media can finish; other sources and final enrichment
+continue. The source remains partial or failed. Other shared cooldowns have a
+30-second wait ceiling. An unusable initial listing still gets one ten-second
+retry; ordinary community restrictions do not stop unrelated communities.
+This bounds the failure without bypassing Reddit's access restrictions.
+
+Browser shutdown bounds the graceful close, transport close and driver cleanup
+to five seconds each, with a final kill of the owned process if necessary.
+Cancellation never enters the native browser's keep-open debugging mode.
+Final run history is written after cleanup; already interrupted historical runs
+can still show `running` when their final row was never saved. See
+[Reddit recovery tests](../tests/scrape/test_reddit_recovery.py) and
+[browser shutdown tests](../tests/scrape/test_browser_session.py).
+
+Controlled Docker verification on 2026-10-19 used real Chromium and an isolated
+ClickHouse database with simulated sources. The blocked run finished partial
+in 1.0 seconds with both saved posts retained and the other source completed.
+Real Ctrl+C removed both normal and deliberately stalled-browser containers;
+both runs recorded `cancelled`, preserving their two saved posts.
+
 ## Linked collection and discovery timing
 
 Optional Reddit publisher collection is controlled by
@@ -617,11 +646,10 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   Detail refreshes use inert HTML documents and cursor-based comment fragments,
   with rendered visits as a fallback. Live checks retained the same 35- and
   27-comment discussions in 2.3 and 4.0 seconds respectively.
-  Reddit requests start two seconds apart and double their interval after a 429,
-  up to 60 seconds. A shared five-minute cooldown honors longer Retry-After
-  values, with a ten-minute wait budget that does not hold HTTP capacity. An
-  initially limited community gets one retry; partially saved listings are not
-  restarted and duplicated.
+  Reddit requests start two seconds apart. A security block or HTTP 429 now
+  defers further Reddit requests for the run, rather than waiting through a
+  five-minute cooldown for every community. Already-saved listings are retained.
+  See the blocked-collection update above; the following checks predate it.
 
   **Docker verification, 2026-10-17:** run
   `05b39a46-62e9-4d54-b521-e2886f438a12` attempted all 15 configured communities
@@ -639,8 +667,8 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   block. Fresh checks with the same Docker profile and Top/day URL returned posts,
   so neither a permanent ban nor a credential problem was established.
   The collector now retries an unusable first page once (ten-second delay),
-  recognizes the matching unavailable-community response, and applies the shared
-  cooldown to network-security blocks before one retry. A header without posts
+  recognizes the matching unavailable-community response, and defers further
+  Reddit requests after a network-security block. A header without posts
   no longer masquerades as an empty successful listing. Already-saved posts are
   never restarted by these retries; private/login restrictions and persistent
   failures remain visible. The Docker run `ff77e843` completed all 15 communities

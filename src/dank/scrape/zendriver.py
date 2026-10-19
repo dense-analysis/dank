@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Zendriver 0.17.1 sends SIGTERM immediately after CDP Browser.close.
 # Let Chromium finish profile cleanup before handing control back to it.
 BROWSER_SHUTDOWN_TIMEOUT_SECONDS = 5
+BROWSER_DRIVER_TIMEOUT_SECONDS = 5
 BROWSER_SHUTDOWN_POLL_SECONDS = 0.1
 
 
@@ -96,7 +97,7 @@ class BrowserSession:
         tb: object,
     ) -> None:
         try:
-            if exc_type is not None and self._config.keep_open:
+            if isinstance(exc, Exception) and self._config.keep_open:
                 await self.hold_open()
         finally:
             await self.close()
@@ -178,17 +179,10 @@ class BrowserSession:
                     # Zendriver exposes process exit only as a polled property.
                     while not browser.stopped:  # noqa: ASYNC110
                         await asyncio.sleep(BROWSER_SHUTDOWN_POLL_SECONDS)
-
-                    # Avoid a second Browser.close against the exited process.
-                    await connection.aclose()
         except TimeoutError:
             logger.debug(
                 "Browser graceful shutdown timed out; stopping driver",
             )
-
-            if connection is not None:
-                # Do not let driver cleanup resend the same stalled command.
-                await connection.aclose()
         except Exception:
             logger.debug(
                 "Browser graceful shutdown unavailable; stopping driver",
@@ -196,10 +190,41 @@ class BrowserSession:
             )
         finally:
             try:
-                await browser.stop()
+                await self._stop_browser(browser)
             finally:
                 self._browser = None
                 self._release_profile()
+
+    async def _stop_browser(self, browser: zendriver.Browser) -> None:
+        # Zendriver 0.17.1 exposes no public forced-stop operation. Keep the
+        # owned process handle before driver cleanup can clear it.
+        process = browser._process  # pyright: ignore[reportPrivateUsage]
+
+        try:
+            try:
+                async with asyncio.timeout(BROWSER_DRIVER_TIMEOUT_SECONDS):
+                    if browser.connection is not None:
+                        # Detach targets before stop() can send more CDP calls.
+                        await browser.connection.aclose()
+            finally:
+                # stop() also unregisters the driver's asynchronous exit hook.
+                async with asyncio.timeout(BROWSER_DRIVER_TIMEOUT_SECONDS):
+                    await browser.stop()
+        except Exception:
+            logger.warning(
+                "Browser driver cleanup failed; stopping owned process",
+                exc_info=True,
+            )
+        finally:
+            if process is not None and process.poll() is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+
+                await asyncio.to_thread(
+                    process.wait, timeout=BROWSER_DRIVER_TIMEOUT_SECONDS,
+                )
 
     def _release_profile(self) -> None:
         if self._profile_lock is not None:

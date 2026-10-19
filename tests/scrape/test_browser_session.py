@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import sys
+from subprocess import DEVNULL, Popen
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -49,6 +51,7 @@ def _browser() -> MagicMock:
     browser.connection.send = AsyncMock()
     browser.connection.aclose = AsyncMock()
     browser.stop = AsyncMock()
+    browser._process = None
 
     return browser
 
@@ -242,6 +245,66 @@ async def test_profile_lock_prevents_overlapping_login_and_scrape(
 
     assert start.await_count == 2
     assert (tmp_path / "browser-profile").stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.parametrize("hang", ["connection", "driver"])
+async def test_stalled_cleanup_kills_owned_process_and_releases_profile(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, hang: str,
+) -> None:
+    process = await asyncio.to_thread(
+        Popen,
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL,
+    )
+    browser = _browser()
+    browser.stopped = True
+    browser._process = process
+
+    async def stalled() -> None:
+        await asyncio.Event().wait()
+
+    target = (
+        browser.connection.aclose if hang == "connection" else browser.stop
+    )
+    target.side_effect = stalled
+    monkeypatch.setattr(browser_module, "BROWSER_DRIVER_TIMEOUT_SECONDS", 0.02)
+    monkeypatch.setattr(
+        browser_module.zendriver, "start", AsyncMock(return_value=browser),
+    )
+    config = BrowserConfig(profile_dir=tmp_path / "profile")
+
+    try:
+        async with asyncio.timeout(2):
+            async with BrowserSession(config) as session:
+                await session.get_browser()
+
+        assert process.poll() is not None
+        browser.stop.assert_awaited_once()
+        browser._process = None
+        target.side_effect = None
+
+        async with BrowserSession(config) as next_session:
+            await next_session.get_browser()
+    finally:
+        if process.poll() is None:
+            process.kill()
+
+        await asyncio.to_thread(process.wait, timeout=2)
+
+
+async def test_cancelled_native_scrape_does_not_hold_browser_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = _browser()
+    browser.stopped = True
+    session = await _session(monkeypatch, browser, keep_open=True)
+    hold = AsyncMock()
+    monkeypatch.setattr(session, "hold_open", hold)
+    error = asyncio.CancelledError()
+    await session.__aexit__(type(error), error, None)
+
+    hold.assert_not_awaited()
+    browser.stop.assert_awaited_once()
 
 
 @pytest.mark.parametrize("headless", [False, True])

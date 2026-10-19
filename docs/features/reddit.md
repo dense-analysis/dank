@@ -155,9 +155,9 @@ stays available. Without a valid saved estimate, only the collected count appear
 ## Pacing and saved details
 
 DANK spaces Reddit document requests, navigation and pagination by at least
-`request_interval_seconds` (default **2 seconds**, allowed 1–60). After a 429,
-the interval doubles for the rest of that run, up to 60 seconds, in addition to
-the host cooldown. This is a conservative DANK setting, not a published Reddit quota. The
+`request_interval_seconds` (default **2 seconds**, allowed 1–60). A 429 or
+network-security block defers further Reddit requests to a later run.
+This is a conservative DANK setting, not a published Reddit quota. The
 clock is shared across Reddit sources in a run. Browser subrequests still
 belong to Reddit's pages, so spacing cannot guarantee access or eliminate 429s.
 Normal collection makes no individual thread requests. During a detail pass,
@@ -200,20 +200,18 @@ idle in a background tab; restoring the listing after detail visits lets
 pagination continue instead of stopping at the initial few cards.
 
 HTTP failures from listings, pagination and thread requests retain their status
-instead of being reported as empty pages. A 429 starts a shared Reddit host
-cooldown of at least five minutes, extended by `Retry-After` when supplied.
-Reddit requests can wait up to ten minutes without occupying a shared HTTP
-slot. Longer cooldowns are deferred without early requests. An initially
-limited community is retried once after that cooldown; a community that already
-yielded posts is not restarted and duplicated. Saved posts remain
-available and failed/deferred captures make the outcome partial.
-A network-security block is recorded separately from a 429 and uses the same
-shared cooldown before one initial-page retry. Blank or unavailable first pages
+instead of being reported as empty pages. A 429 or explicit network-security
+block stops further Reddit requests for the current run, including later
+Reddit source entries. Other sources continue, saved posts remain available,
+and queued media is drained. The Reddit result is partial when records were
+saved, otherwise failed. Network-security blocks are recorded separately from
+429s. Shared host cooldowns are still respected; waits longer than 30 seconds
+are deferred without early requests. Blank or unavailable first pages
 (including Reddit's HTTP-200 community-not-found dialog) get one retry after ten
 seconds. Private, banned, login and verification restrictions remain failures.
 A header or icon alone cannot prove an empty listing; only an explicit empty
-state is accepted. Persistent failures remain visible, and a failed community
-does not prevent collection from continuing.
+state is accepted. Ordinary community-specific failures remain visible and
+do not prevent collection of other communities.
 
 If a detail visit is rate limited or access-blocked, the remaining details are
 deferred to a later run. Their listing posts are still saved, with an explicit

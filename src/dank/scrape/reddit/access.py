@@ -9,13 +9,17 @@ from contextvars import ContextVar
 from urllib.parse import parse_qs, urlsplit
 
 from dank.html_utils import html_text
-from dank.scrape.http import current_limiter, retry_after_seconds
+from dank.scrape.http import (
+    HostCooldownError,
+    current_limiter,
+    retry_after_seconds,
+)
 from dank.scrape.metrics import count
 from dank.scrape.zendriver import NetworkResponse
 
 # Avoid immediately repeating browser requests when Reddit omits Retry-After.
 DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 300.0
-MAX_REDDIT_COOLDOWN_WAIT_SECONDS = 600.0
+MAX_REDDIT_COOLDOWN_WAIT_SECONDS = 30.0
 # A single re-navigation can recover an incomplete page without a retry loop.
 UNAVAILABLE_PAGE_RETRY_SECONDS = 10.0
 NETWORK_BLOCK_MESSAGE = "you've been blocked by network security"
@@ -34,6 +38,7 @@ class RedditRequests:
         self._next_request = 0.0
         self._lock = asyncio.Lock()
         self.requests = 0
+        self.unavailable: RedditScrapeError | HostCooldownError | None = None
 
     async def wait(self) -> None:
         async with self._lock:
@@ -53,6 +58,11 @@ current_requests: ContextVar[RedditRequests | None] = ContextVar(
 
 @asynccontextmanager
 async def request_slot(url: str) -> AsyncGenerator[None]:
+    requests = current_requests.get()
+
+    if requests is not None and requests.unavailable is not None:
+        raise requests.unavailable
+
     limiter = current_limiter.get()
     slot = limiter.slot(
         url, max_cooldown_wait=MAX_REDDIT_COOLDOWN_WAIT_SECONDS,
@@ -101,10 +111,16 @@ def check_network_block(
     if limiter is not None:
         limiter.cool_down(url, delay)
 
-    raise RedditAccessBlockedError(
+    error = RedditAccessBlockedError(
         f"Reddit access requires attention: network-security block for "
         f"{urlsplit(url).path}; shared cooldown {delay:.0f}s",
     )
+    requests = current_requests.get()
+
+    if requests is not None:
+        requests.unavailable = error
+
+    raise error
 
 
 def check_listing_dialogs(
@@ -173,10 +189,15 @@ def check_response_status(
         if limiter is not None:
             limiter.cool_down(url, delay)
 
-        raise RedditRateLimitError(
+        error = RedditRateLimitError(
             f"Reddit HTTP 429 (rate limited); host cooldown {delay:.0f}s. "
             "This is not an empty listing.",
         )
+
+        if requests is not None:
+            requests.unavailable = error
+
+        raise error
 
     if status >= 400:
         raise RedditScrapeError(

@@ -102,6 +102,11 @@ fail Make. Ctrl+C records exit 130; an uncatchable kill or power loss can
 leave a partial log without a final status. Output streams remain separate
 in the terminal and are combined in the archive.
 
+Ctrl+C cancels collection and closes owned browsers with bounded cleanup;
+native runs do not keep a debugging browser open after cancellation. Saved
+posts remain available. Media still buffered when cancelled may need a later
+run, and abrupt termination can leave the database's run status unfinished.
+
 Logs are ignored by Git and kept until you delete them. The application still
 writes its configured `dank.log`; direct `uv run` or `docker compose run`
 commands do not create these per-run archives. The recorded checkout revision

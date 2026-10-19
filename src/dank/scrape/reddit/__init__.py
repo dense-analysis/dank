@@ -19,6 +19,7 @@ from dank.config import (
     RedditTimeFilter,
 )
 from dank.model import AssetDiscovery, RawPost, RedditCommunityDiscovery
+from dank.scrape.http import HostCooldownError
 from dank.scrape.metrics import count, current_source, retry_sleep
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.zendriver import (
@@ -36,6 +37,7 @@ from .access import (
     check_listing_dialogs,
     check_network_block,
     check_page_responses,
+    current_requests,
     request_slot,
 )
 from .cache import DetailSnapshot, reuse_detail
@@ -166,6 +168,22 @@ async def scrape_reddit_communities(
                 if stats is not None:
                     stats.error_type = type(error).__name__
 
+                if isinstance(error, (
+                    RedditAccessBlockedError, RedditRateLimitError,
+                    HostCooldownError,
+                )):
+                    requests = current_requests.get()
+
+                    if requests is not None and requests.unavailable is None:
+                        requests.unavailable = error
+
+                    logger.warning(
+                        "Reddit r/%s blocked (%s): %s; deferring remaining "
+                        "Reddit communities to a later run",
+                        community, type(error).__name__, error,
+                    )
+                    return
+
                 logger.warning(
                     "Reddit r/%s failed (%s): %s; continuing with the next "
                     "community",
@@ -279,10 +297,7 @@ async def _retry_community(
                 yield batch
 
             return
-        except (
-            RedditRateLimitError, RedditAccessBlockedError,
-            RedditListingUnavailableError,
-        ) as error:
+        except RedditListingUnavailableError as error:
             if attempt or collected:
                 raise
 
@@ -292,8 +307,7 @@ async def _retry_community(
                 "retrying once: %s", community, type(error).__name__, error,
             )
 
-            if isinstance(error, RedditListingUnavailableError):
-                await retry_sleep(UNAVAILABLE_PAGE_RETRY_SECONDS)
+            await retry_sleep(UNAVAILABLE_PAGE_RETRY_SECONDS)
 
 
 async def _scrape_community(
