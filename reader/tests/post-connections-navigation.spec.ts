@@ -539,7 +539,9 @@ test("a post with no collected body still opens and focuses its connections grap
 test("publisher exploration retains Reddit community context while All requests stay broad", async ({
   page,
 }) => {
-  const { requests, neighbor } = await fixtures(page);
+  const { neighbor } = await fixtures(page);
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(request.url()));
   const params = new URLSearchParams(rootQuery);
   params.set("view", "reddit");
   params.set("community", "kernel");
