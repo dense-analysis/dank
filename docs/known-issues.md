@@ -39,7 +39,12 @@ Original publisher dates/bylines are extracted when present. Readable existing
 original-source captures are reused, rather than overwritten by an aggregator’s title or body.
 
 Resolved HN links open the collected destination; All shows its original source
-with incoming Links. RSS aggregator copies, including existing Lobsters records,
+with incoming Links. HN cards without submission content now reuse the saved
+publisher excerpt; submissions with their own text keep it. This is a display
+fallback and does not replace stored HN content or fetch missing articles.
+Empty or unavailable publisher content still has no excerpt.
+[Reader link tests](../tests/web/test_reader_links.py) and
+[browser tests](../reader/tests/linked-posts.spec.ts) cover this behavior. RSS aggregator copies, including existing Lobsters records,
 remain references to a separately collected publisher record. Ask/Tell HN
 citations do not replace their containing post.
 Known platform post IDs and observed redirects resolve aliases; ambiguous URLs

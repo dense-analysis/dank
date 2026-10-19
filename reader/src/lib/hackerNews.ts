@@ -46,9 +46,14 @@ export function hackerNewsExcerpt(
   text: string,
   externalUrl: string | null,
   html = "",
+  publisherExcerpt = "",
 ): string {
-  // Feed excerpts can truncate URLs; the full saved body identifies link-only posts.
-  if (html.trim() && !hasHackerNewsBody(html, externalUrl)) return "";
+  // The full body distinguishes a truncated URL from real submission content.
+  const hasBody = html.trim()
+    ? hasHackerNewsBody(html, externalUrl)
+    : Boolean(text.trim() && !isOriginalLink(text, externalUrl));
+
+  if (!hasBody) return publisherExcerpt;
 
   return isOriginalLink(text, externalUrl) ? "" : text;
 }

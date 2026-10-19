@@ -292,7 +292,7 @@ async def _post_payloads(
         client, payloads, posts, include_discussion=include_discussion,
     )
 
-    await add_post_links(client, payloads)
+    await add_post_links(client, payloads, query)
 
     return payloads
 

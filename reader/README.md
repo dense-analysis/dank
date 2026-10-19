@@ -51,6 +51,10 @@ browser channel. No live collection is needed for the fixture tests.
 
 ## Behaviour
 
+Presentation should be consistent across sources even when collection methods
+such as RSS, APIs and browser scraping differ. Equivalent content uses shared
+preview rules, while source identity and unavailable content remain explicit.
+
 - Source tags select publishers, not article topics. Choices within a source or
   tag group are OR; groups, author, dates and search combine with AND.
 - Search combines word matches with related ideas. Relevance puts stories
@@ -285,7 +289,11 @@ older stories as you scroll. Search, dates, the daily selection and article Back
 navigation stay in the URL.
 
 Cards show the submitter, captured points and comment counts, plus separate original-article and
-Hacker News discussion links. Story titles open the collected original article when
+Hacker News discussion links. When a submission has no body, its card uses an
+excerpt from the saved publisher article, with the same formatting and search
+preview rules as blog cards. HN's own text takes precedence; unavailable or empty
+publisher content leaves the excerpt absent. Reading the feed makes no new
+publisher requests. Story titles open the collected original article when
 available; the comment count opens saved Hacker News comments. The discussion also
 links back to the collected article. Timestamps show the original Hacker News submission time;
 the day headings continue to group front-page arrivals. Opening a story shows any saved post text and comments

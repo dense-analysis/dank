@@ -8,6 +8,11 @@ from typing import Any
 
 from dank.links import LinkPost, post_index_rows
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
+from dank.web.app import (
+    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
+    _summarize_html,  # pyright: ignore[reportPrivateUsage]
+)
+from dank.web.reader_excerpt import search_excerpt
 
 # Suppress aggregator records only after an original source is collected.
 RESOLVED_HN_POSTS_SQL = """
@@ -94,7 +99,7 @@ def _reference(row: dict[str, Any], prefix: str) -> dict[str, str]:
 
 
 async def add_post_links(
-    client: ClickHouseClient, posts: list[dict[str, Any]],
+    client: ClickHouseClient, posts: list[dict[str, Any]], query: str = "",
 ) -> None:
     if not posts:
         return
@@ -141,7 +146,7 @@ async def add_post_links(
         "SELECT l.domain AS origin_domain, l.post_id AS origin_id, "
         "target.domain AS target_domain, target.post_id AS target_id, "
         "target.url AS target_url, target.title AS target_title, "
-        "target.source AS target_source "
+        "target.source AS target_source, target.html AS target_html "
         "FROM post_links AS l FINAL "
         "INNER JOIN (SELECT domain, post_id, updated_at, "
         "hex(SHA256(html)) AS content_hash FROM posts FINAL) "
@@ -150,8 +155,8 @@ async def add_post_links(
         "AND origin.updated_at = l.observed_at "
         "AND origin.content_hash = l.content_hash "
         "INNER JOIN post_urls AS u FINAL ON u.url = l.target_url "
-        "INNER JOIN (SELECT domain, post_id, url, title, source, updated_at "
-        "FROM posts "
+        "INNER JOIN (SELECT domain, post_id, url, title, source, html, "
+        "updated_at FROM posts "
         "FINAL) AS target ON target.domain = u.domain "
         "AND target.post_id = u.post_id "
         "AND u.observed_at <= target.updated_at "
@@ -171,5 +176,14 @@ async def add_post_links(
         post = by_key.get((str(row["origin_domain"]), str(row["origin_id"])))
 
         if post is not None:
-            post["linked_post"] = _reference(row, "target_")
+            reference = _reference(row, "target_")
+
+            if row["target_source"] in {"rss", "linked_article"}:
+                body = _sanitize_html(str(row.get("target_html") or ""))
+                excerpt = search_excerpt(body, query) or _summarize_html(body)
+
+                if excerpt:
+                    reference["excerpt"] = excerpt
+
+            post["linked_post"] = reference
 

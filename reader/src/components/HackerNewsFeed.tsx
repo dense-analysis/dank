@@ -149,6 +149,7 @@ export function HackerNewsCard({
     post.excerpt,
     story.external_url,
     post.html,
+    post.linked_post?.excerpt,
   );
 
   return (

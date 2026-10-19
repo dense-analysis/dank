@@ -69,6 +69,7 @@ export interface RedditCommunity {
 }
 
 export interface PostReference {
+  excerpt?: string;
   id: string;
   domain: string;
   url: string;

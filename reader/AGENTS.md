@@ -8,6 +8,9 @@
 - Keep the HTTP contract in src/lib and source identity as (domain, post id).
 - Render collected HTML only through the article sanitizer. Do not add remote
   scripts, embed scraped iframes or silently replace API errors with demo data.
+- Keep presentation consistent across sources even when their collection
+  methods differ. Reuse saved content and shared display rules for equivalent
+  previews; preserve source identity and make unavailable content explicit.
 - Keep named feeds as queries over collected content, distinct from source
   collection settings. Briefings and delivery require real backend support.
 - Run npm run check and npm run test:e2e for behavioural changes. Run the root

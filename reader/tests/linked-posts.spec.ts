@@ -40,6 +40,7 @@ async function fixtures(
   page: Page,
   kind: "blog" | "x" | "reddit",
   overrides: Partial<Post> = {},
+  storyOverrides: Partial<Post> = {},
 ) {
   const original = { ...destination(kind), ...overrides };
   const story: Post = {
@@ -53,7 +54,10 @@ async function fixtures(
     html: `<p>${original.url}</p>`,
     excerpt: original.url,
     reddit: undefined,
-    linked_post: reference(original),
+    linked_post: {
+      ...reference(original),
+      ...(kind === "blog" ? { excerpt: original.excerpt } : {}),
+    },
     hacker_news: {
       submitted_at: "2026-10-16T09:00:00Z",
       day: "2026-10-17",
@@ -80,6 +84,7 @@ async function fixtures(
       ],
     },
   };
+  Object.assign(story, storyOverrides);
   original.links = [
     reference(story),
     {
@@ -192,6 +197,16 @@ for (const kind of ["blog", "x", "reddit"] as const) {
         "href",
         new RegExp(`article_source=${original.domain}`),
       );
+      const excerpt = page.locator(".hn-card .post-open p");
+      if (kind === "blog") {
+        await expect(excerpt).toHaveText(original.excerpt);
+        await page.screenshot({
+          path: testInfo.outputPath(`hn-publisher-excerpt-${width}.png`),
+          fullPage: true,
+        });
+      } else {
+        await expect(excerpt).toHaveCount(0);
+      }
       await title.click();
       await expect(page).toHaveURL(/view=hacker_news&hn_filter=top20/);
       await expect(page).toHaveURL(
@@ -346,6 +361,50 @@ for (const publishedAt of [null, "2026-10-14T12:30:00Z", undefined]) {
         "datetime",
         publishedAt ?? original.created_at,
       );
+    }
+  });
+}
+
+test("HN publisher previews highlight search terms without fetching each article", async ({
+  page,
+}) => {
+  const detailRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/reader/post") {
+      detailRequests.push(request.url());
+    }
+  });
+  await fixtures(page, "blog");
+  await page.goto("/reader/?view=hacker_news&q=research");
+  await expect(page.locator(".hn-card .post-open p mark")).toHaveText(
+    "research",
+  );
+  expect(detailRequests).toEqual([]);
+});
+
+for (const ownBody of [true, false]) {
+  test(`HN previews preserve own body or stay empty without publisher text: ${ownBody}`, async ({
+    page,
+  }) => {
+    await fixtures(
+      page,
+      "blog",
+      ownBody ? {} : { excerpt: "", html: "" },
+      ownBody
+        ? {
+            excerpt: "The HN submitter's own explanation.",
+            html: "<p>The HN submitter's own explanation.</p>",
+          }
+        : {},
+    );
+    await page.goto("/reader/?view=hacker_news");
+    const card = page.locator(".hn-card");
+    await expect(card).toBeVisible();
+    const excerpt = card.locator(".post-open p");
+    if (ownBody) {
+      await expect(excerpt).toHaveText("The HN submitter's own explanation.");
+    } else {
+      await expect(excerpt).toHaveCount(0);
     }
   });
 }

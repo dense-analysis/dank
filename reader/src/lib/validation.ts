@@ -195,7 +195,8 @@ function isPostReference(value: unknown): boolean {
     isRecord(value) &&
     ["id", "domain", "url", "title", "source"].every(
       (key) => typeof value[key] === "string",
-    )
+    ) &&
+    (value.excerpt === undefined || typeof value.excerpt === "string")
   );
 }
 

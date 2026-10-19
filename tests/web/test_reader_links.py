@@ -4,6 +4,8 @@ import datetime as dt
 import pathlib
 from typing import Any, cast
 
+import pytest
+
 from dank.storage.clickhouse import QueryResult
 from dank.web.app import PostRow
 from dank.web.reader_api import post_payload
@@ -195,3 +197,62 @@ def test_linked_article_does_not_claim_collection_time_as_publication(
     assert "published_at" not in post_payload(
         article._replace(source="rss"), [], tmp_path,
     )
+
+
+@pytest.mark.parametrize("source", ["rss", "linked_article"])
+@pytest.mark.parametrize("query", ["", "research"])
+async def test_hn_publisher_excerpt_matches_the_article_card(
+    tmp_path: pathlib.Path, source: str, query: str,
+) -> None:
+    body = (
+        "<script>hiddenScript()</script><p>" + "Introduction. " * 35
+        + "</p><p>Saved <b>research</b> &amp; evidence from the publisher.</p>"
+    )
+    target = _reference("target_", "publisher.test", "article") | {
+        "target_source": source, "target_html": body,
+    }
+    client = _Client([[], [{
+        "origin_domain": "news.ycombinator.com", "origin_id": "123",
+        **target,
+    }]])
+    hn_url = "https://publisher.test/article"
+    posts: list[dict[str, Any]] = [{
+        "domain": "news.ycombinator.com", "id": "123",
+        "html": hn_url, "excerpt": hn_url,
+    }]
+    await add_post_links(cast(Any, client), posts, query)
+    article = PostRow(
+        "publisher.test", "article", target["target_url"], "Writer",
+        "Article", body, NOW, NOW, source,
+    )
+    expected = post_payload(article, [], tmp_path, query)["excerpt"]
+    assert posts[0]["linked_post"]["excerpt"] == expected
+    assert "<" not in expected
+    assert "hiddenScript" not in expected
+    assert len(expected) <= 283
+    assert posts[0]["html"] == posts[0]["excerpt"] == hn_url
+    assert len(client.calls) == 2
+    assert "target.html AS target_html" in client.calls[1][0]
+
+    if query:
+        assert "research & evidence" in expected
+
+
+@pytest.mark.parametrize("source,body", [
+    ("linked_article", ""), ("rss", "<p> </p>"),
+    ("rss", "<script>hidden()</script>"),
+    ("x", "<p>A social post</p>"),
+])
+async def test_missing_publisher_text_has_no_fallback(
+    source: str, body: str,
+) -> None:
+    client = _Client([[], [{
+        "origin_domain": "news.ycombinator.com", "origin_id": "123",
+        **_reference("target_", "publisher.test", "article"),
+        "target_source": source, "target_html": body,
+    }]])
+    posts: list[dict[str, Any]] = [{
+        "domain": "news.ycombinator.com", "id": "123",
+    }]
+    await add_post_links(cast(Any, client), posts)
+    assert "excerpt" not in posts[0]["linked_post"]

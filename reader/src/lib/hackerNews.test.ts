@@ -246,6 +246,7 @@ it("validates collected destination identities and incoming references", () => {
   ).toBe(true);
   for (const invalid of [
     { linked_post: { ...linked, id: 1 } },
+    { linked_post: { ...linked, excerpt: 123 } },
     { linked_post: "https://example.com/article" },
     { links: [{ ...linked, domain: null }] },
     { links: [null] },
@@ -254,4 +255,31 @@ it("validates collected destination identities and incoming references", () => {
   ]) {
     expect(isPost({ ...post, ...invalid })).toBe(false);
   }
+});
+
+it("uses the saved publisher excerpt only when HN has no body", () => {
+  const url = "https://example.com/article";
+  const fallback = "The saved publisher explains the research.";
+  expect(hackerNewsExcerpt("", url, "", fallback)).toBe(fallback);
+  expect(hackerNewsExcerpt(url, url, `<p>${url}</p>`, fallback)).toBe(fallback);
+  expect(
+    hackerNewsExcerpt("https://example…", url, `<p>${url}</p>`, fallback),
+  ).toBe(fallback);
+  expect(
+    hackerNewsExcerpt(
+      "The submitter's own explanation.",
+      url,
+      "<p>The submitter's own explanation.</p>",
+      fallback,
+    ),
+  ).toBe("The submitter's own explanation.");
+  expect(
+    hackerNewsExcerpt(
+      url,
+      url,
+      `<p>${url}</p><img src="https://example.com/image.png">`,
+      fallback,
+    ),
+  ).toBe("");
+  expect(hackerNewsExcerpt(url, url, `<p>${url}</p>`)).toBe("");
 });
