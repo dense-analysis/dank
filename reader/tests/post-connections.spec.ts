@@ -468,3 +468,92 @@ for (const width of [1210, 390]) {
     await cy.dispose();
   });
 }
+
+for (const width of [1210, 390]) {
+  for (const throughReddit of [false, true]) {
+    test(`graph shows bounded ${throughReddit ? "Reddit" : "RSS"} first discovery at ${width}px`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 958 });
+      await page.route("**/api/reader/connections?*", (route) =>
+        route.fulfill({ json: redditConnectionsFixture }),
+      );
+      await page.goto(
+        `/reader/tests/fixtures/post-connections.html?reddit&discovery=${throughReddit ? "reddit" : "rss"}`,
+      );
+      await page.getByRole("button", { name: "Graph view" }).click();
+      await expect(page.locator(".relationship-graph")).toHaveAttribute(
+        "data-status",
+        "ready",
+      );
+      const cy = await page
+        .locator(".relationship-graph-canvas")
+        .evaluateHandle(
+          (element) =>
+            (element as HTMLDivElement & { _cyreg: { cy: Core } })._cyreg.cy,
+        );
+      const snapshot = await cy.evaluate((instance) => ({
+        nodes: instance.nodes().map((node) => node.data()),
+        discoveryEdges: instance.edges('[kind="discovery"]').map((edge) => ({
+          style: edge.style("line-style"),
+          arrow: edge.style("target-arrow-shape"),
+        })),
+      }));
+      const discovery = snapshot.nodes.find(
+        (node) => node.kind === "discovery",
+      );
+      expect(discovery?.label).toBe(throughReddit ? "r/kernel" : "example.com");
+      expect(discovery?.displayLabel).toContain("2026");
+      expect(discovery?.displayLabel).toContain(throughReddit ? "17" : "16");
+      expect(discovery?.displayLabel).not.toContain("19");
+      expect(snapshot.discoveryEdges).toEqual([
+        { style: "dashed", arrow: "none" },
+      ]);
+      expect(
+        snapshot.nodes
+          .filter((node) => node.kind === "source")
+          .map((node) => node.label),
+      ).toEqual(["r/kernel"]);
+      expect(snapshot.nodes).toHaveLength(5);
+      await expect(
+        page.getByText(/0 incoming · 1 outgoing references/),
+      ).toContainText("1 shared-article references");
+      await page.getByLabel("Explore nodes").selectOption(discovery.id);
+      const details = page.getByRole("region", { name: "Selected connection" });
+      await expect(details).toContainText("First observed by DANK");
+      await expect(details.locator("time").first()).toHaveAttribute(
+        "datetime",
+        throughReddit ? "2026-10-17T12:00:00Z" : "2026-10-16T09:00:00Z",
+      );
+      await expect(
+        details.getByText("This post is among the first recorded discoveries."),
+      ).toHaveCount(throughReddit ? 1 : 0);
+      await expect(details.locator("article")).toHaveCount(0);
+      await expect(
+        details.getByRole("link", { name: "Explore this post" }),
+      ).toHaveCount(0);
+      expect(
+        (await new AxeBuilder({ page }).include(".post-connections").analyze())
+          .violations,
+      ).toEqual([]);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      await page.getByRole("button", { name: "Fit", exact: true }).click();
+      await page
+        .locator(".relationship-graph-viewport")
+        .screenshot({ path: testInfo.outputPath("first-discovery.png") });
+      await page
+        .getByRole("button", { name: "Incoming links", exact: true })
+        .click();
+      await expect(
+        page
+          .getByLabel("Explore nodes")
+          .getByRole("option", { name: /First discovered/ }),
+      ).toHaveCount(0);
+      await cy.dispose();
+    });
+  }
+}

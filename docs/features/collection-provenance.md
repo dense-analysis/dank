@@ -97,9 +97,18 @@ sources do not flood a community's graph. Empty publisher captures remain
 unavailable rather than appearing as a successfully collected article.
 
 Graph layout expresses the article's relationship to its sources, not a
-timeline. Arrows retain the direction of observed links. Collection info supplies
-actual first-observed timing; a link does not imply copying, influence or
-causation. Counts reflect the selected scope and disclose bounded results.
+timeline. Arrows retain the direction of observed links. A **First discovered**
+node attached by a dashed line shows the earliest recorded source and local
+date/time for the article. It can name a source outside the current community
+without expanding that source's other posts or links. Selecting it shows the
+exact timestamp and keeps the linking post's publication time separate. Tied
+first sources remain ties; unknown sources or times remain explicit.
+
+This history annotation uses the same saved provenance as Collection info. It
+appears only while its matching destination is visible in the selected graph
+direction, and adds no incoming/outgoing reference counts. Article discovery
+and successful publisher-page collection can occur at different times. Neither
+links nor discovery order establish copying, influence or causation.
 
 ## Future analysis: source novelty and a repost index
 

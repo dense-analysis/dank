@@ -1,5 +1,5 @@
 import type { PostConnection, PostConnectionsData } from "./postConnections";
-import type { PostReference } from "./types";
+import type { CollectionInfo, PostReference } from "./types";
 
 export const connectionRoot: PostReference = {
   domain: "example.com",
@@ -155,3 +155,32 @@ export const redditConnectionsFixture: PostConnectionsData = {
   limit: 100,
   coverage: "saved_evidence",
 };
+
+export function discoveryFixture(throughReddit = false): CollectionInfo {
+  const observedAt = throughReddit
+    ? "2026-10-17T12:00:00Z"
+    : "2026-10-16T09:00:00Z";
+  const origin = throughReddit ? connectionDiscussion : connectionRoot;
+
+  return {
+    article_url: connectionRoot.url,
+    article: connectionRoot,
+    article_status: "collected",
+    first_seen_at: observedAt,
+    first_seen_from: [
+      {
+        ...origin,
+        label: throughReddit ? "r/kernel" : "example.com",
+        observed_at: observedAt,
+        kind: throughReddit ? "reference" : "article",
+      },
+    ],
+    post_first_seen_at: "2026-10-17T12:00:00Z",
+    post_published_at: "2026-10-17T10:00:00Z",
+    link_first_seen_at: "2026-10-17T12:00:00Z",
+    article_collected_at: "2026-10-19T09:00:00Z",
+    collected_via: null,
+    seen_before_post: !throughReddit,
+    coverage: "saved_history",
+  };
+}

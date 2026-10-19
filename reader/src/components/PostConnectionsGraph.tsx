@@ -5,6 +5,8 @@ import {
   postConnectionsGraph,
 } from "../lib/postConnectionsGraph";
 import { readGraphState } from "../lib/relationshipGraphState";
+import { dateLabel } from "../lib/timestamps";
+import type { CollectionInfo } from "../lib/types";
 import {
   ConnectionEvidence,
   type ConnectionNavigation,
@@ -14,17 +16,25 @@ import { RelationshipGraph } from "./RelationshipGraph";
 
 export default function PostConnectionsGraph({
   data,
+  collectionInfo,
   direction,
   onDirectionChange,
   ...navigation
 }: ConnectionNavigation & {
   data: PostConnectionsData;
+  collectionInfo?: CollectionInfo | null;
   direction: ConnectionDirection;
   onDirectionChange: (direction: ConnectionDirection) => void;
 }) {
-  const { graph, connectionsByNode, targetsByNode, rootNodeId } = useMemo(
-    () => postConnectionsGraph(data, direction),
-    [data, direction],
+  const {
+    graph,
+    connectionsByNode,
+    targetsByNode,
+    rootNodeId,
+    discoveryNodeId,
+  } = useMemo(
+    () => postConnectionsGraph(data, direction, collectionInfo),
+    [data, direction, collectionInfo],
   );
   const [selection, setSelection] = useState<{
     graph: string;
@@ -62,12 +72,16 @@ export default function PostConnectionsGraph({
           </button>
         ))}
       </fieldset>
-      {graph.nodes.some((node) => node.kind === "article") && (
+      {(graph.nodes.some((node) => node.kind === "article") ||
+        discoveryNodeId) && (
         <p className="post-connections-scope">
-          The saved article appears first, followed by feeds and posts. This
-          layout is not a timeline: arrows still follow the saved links.
-          Collection times describe when DANK observed content, not who reported
-          it first.
+          Arrows follow saved links. This layout is not a timeline.{" "}
+          {discoveryNodeId && (
+            <>
+              First discovered records DANK’s earliest observation; its dashed
+              line adds history without expanding other sources.
+            </>
+          )}
         </p>
       )}
       <RelationshipGraph
@@ -87,6 +101,52 @@ export default function PostConnectionsGraph({
                 {selected.kindLabel}
               </span>
               <h3>{selected.label}</h3>
+              {selected.id === discoveryNodeId && collectionInfo && (
+                <div className="post-connections-discovery">
+                  <p>
+                    First observed by DANK:{" "}
+                    {collectionInfo.first_seen_at ? (
+                      <time
+                        dateTime={collectionInfo.first_seen_at}
+                        title={collectionInfo.first_seen_at}
+                      >
+                        {dateLabel(collectionInfo.first_seen_at)}
+                      </time>
+                    ) : (
+                      "Time not recorded"
+                    )}
+                    .
+                  </p>
+                  {collectionInfo.first_seen_from.length > 1 && (
+                    <p>
+                      These sources share the earliest recorded observation.
+                    </p>
+                  )}
+                  {collectionInfo.first_seen_from.some(
+                    (origin) =>
+                      origin.domain === data.root.domain &&
+                      origin.id === data.root.id,
+                  ) && (
+                    <p>This post is among the first recorded discoveries.</p>
+                  )}
+                  {collectionInfo.post_published_at && (
+                    <p>
+                      This post published:{" "}
+                      <time
+                        dateTime={collectionInfo.post_published_at}
+                        title={collectionInfo.post_published_at}
+                      >
+                        {dateLabel(collectionInfo.post_published_at)}
+                      </time>
+                      .
+                    </p>
+                  )}
+                  <p>
+                    Discovery records when DANK noticed the link or article, not
+                    when the publisher page was saved or originally published.
+                  </p>
+                </div>
+              )}
               {target && selected.id !== rootNodeId && (
                 <div className="post-connection-actions post-connection-explore">
                   <ExploreConnection target={target} {...navigation} />

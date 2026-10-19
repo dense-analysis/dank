@@ -52,6 +52,10 @@ const styles: StylesheetStyle[] = [
     },
   },
   {
+    selector: 'node[kind = "discovery"]',
+    style: { height: 136, "font-size": 13 },
+  },
+  {
     selector: 'node[kind = "external"]',
     style: { "text-overflow-wrap": "anywhere" },
   },
@@ -94,6 +98,14 @@ const styles: StylesheetStyle[] = [
     },
   },
   {
+    selector: 'edge[kind = "discovery"], edge[kind = "collected"]',
+    style: { "text-rotation": "none", "text-margin-y": 0 },
+  },
+  {
+    selector: 'edge[kind = "discovery"]',
+    style: { "line-style": "dashed", "target-arrow-shape": "none" },
+  },
+  {
     selector: "edge[bend]",
     style: {
       "curve-style": "unbundled-bezier",
@@ -123,7 +135,13 @@ function elements(graph: RelationshipGraphData): ElementDefinition[] {
       group: "nodes" as const,
       data: {
         ...node,
-        displayLabel: `${node.kindLabel.toUpperCase()}\n${compactGraphLabel(node.label)}`,
+        displayLabel: [
+          node.kindLabel.toUpperCase(),
+          compactGraphLabel(node.label),
+          node.detail,
+        ]
+          .filter(Boolean)
+          .join("\n"),
       },
     })),
     ...graph.edges.map((edge) => ({
@@ -489,6 +507,7 @@ export function RelationshipGraph({
           {graph.nodes.map((node) => (
             <option key={node.id} value={node.id}>
               {node.kindLabel}: {node.label}
+              {node.detail ? ` · ${node.detail}` : ""}
             </option>
           ))}
         </select>

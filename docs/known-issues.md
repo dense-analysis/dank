@@ -31,7 +31,10 @@ these observations do not establish publication priority or copying.
 
 Connections scopes referencing posts to the active source/community; All and
 Blogs support broader exploration. Article-first layout is conceptual, not a
-chronological or causal claim. See [feature details and future analysis](
+chronological or causal claim. The graph's First discovered annotation shows
+saved source/time history without expanding that source's other references;
+its dashed connection is distinct from hyperlink arrows and reference counts.
+Unknowns and tied first observations remain explicit. See [feature details and future analysis](
 features/collection-provenance.md), [collection tests](
 ../tests/scrape/test_reddit_linked_articles.py), and [provenance tests](
 ../tests/web/test_reader_provenance.py).

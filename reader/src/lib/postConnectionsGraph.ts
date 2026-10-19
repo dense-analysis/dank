@@ -9,7 +9,8 @@ import type {
   RelationshipGraphData,
   RelationshipNode,
 } from "./relationshipGraph";
-import type { PostReference } from "./types";
+import { dateLabel } from "./timestamps";
+import type { CollectionInfo, PostReference } from "./types";
 
 export function connectionNodeId(kind: string, ...identity: string[]) {
   return JSON.stringify([kind, ...identity]);
@@ -36,9 +37,11 @@ export type ConnectionDirection = "all" | "incoming" | "outgoing";
 export function postConnectionsGraph(
   data: PostConnectionsData,
   direction: ConnectionDirection = "all",
+  collectionInfo?: CollectionInfo | null,
 ): {
   graph: RelationshipGraphData;
   rootNodeId: string;
+  discoveryNodeId: string | null;
   connectionsByNode: ReadonlyMap<string, readonly PostConnection[]>;
   targetsByNode: ReadonlyMap<string, PostConnectionTarget>;
 } {
@@ -230,6 +233,38 @@ export function postConnectionsGraph(
     }
   }
 
+  // History annotates only a destination already in view. It never expands
+  // the first source's other posts or counts as hyperlink evidence.
+  let discoveryNodeId: string | null = null;
+  const discoveryTarget =
+    collectionInfo &&
+    [...targetsByNode].find(([, target]) =>
+      target.post
+        ? target.post.domain === collectionInfo.article?.domain &&
+          target.post.id === collectionInfo.article.id
+        : target.url === collectionInfo.article_url,
+    );
+
+  if (collectionInfo && discoveryTarget) {
+    const [targetId] = discoveryTarget;
+    discoveryNodeId = connectionNodeId("discovery", targetId);
+    const labels = [
+      ...new Set(collectionInfo.first_seen_from.map((origin) => origin.label)),
+    ];
+    nodes.set(discoveryNodeId, {
+      id: discoveryNodeId,
+      kind: "discovery",
+      kindLabel: "First discovered",
+      label: labels.join(" and ") || "Source not recorded",
+      detail: collectionInfo.first_seen_at
+        ? dateLabel(collectionInfo.first_seen_at)
+        : "Time not recorded",
+      tone: "neutral",
+      layer: (nodes.get(targetId)?.layer ?? 0) - 1,
+    });
+    connect(discoveryNodeId, targetId, "discovery", "first observed");
+  }
+
   // Filtered graphs omit whole stages; close those gaps so a small graph stays legible.
   const layers = [
     ...new Set([...nodes.values()].map((node) => node.layer)),
@@ -251,6 +286,7 @@ export function postConnectionsGraph(
       edges: [...edges.values()].sort((a, b) => a.id.localeCompare(b.id)),
     },
     rootNodeId,
+    discoveryNodeId,
     connectionsByNode: new Map(
       [...connectionsByNode].map(([id, entries]) => [
         id,

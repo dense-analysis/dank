@@ -14,6 +14,7 @@ import "../../src/styles.css";
 import {
   connectionDiscussion,
   connectionRoot,
+  discoveryFixture,
 } from "../../src/lib/postConnections.fixture";
 
 const client = new QueryClient({
@@ -35,6 +36,7 @@ function targetHref(target: PostConnectionTarget) {
 
 function Fixture() {
   const scoped = new URLSearchParams(location.search).has("reddit");
+  const discovery = new URLSearchParams(location.search).get("discovery");
   const root = scoped ? connectionDiscussion : connectionRoot;
   const [mode, setMode] = useState<ConnectionsMode>(null);
   const [direction, setDirection] = useState<ConnectionDirection>("all");
@@ -51,7 +53,12 @@ function Fixture() {
         <output aria-label="Opened destination">{opened}</output>
         {shown && (
           <PostConnections
-            post={root}
+            post={{
+              ...root,
+              collection_info: discovery
+                ? discoveryFixture(discovery === "reddit")
+                : undefined,
+            }}
             context={scoped ? { source: "reddit", community: "kernel" } : {}}
             mode={mode}
             onModeChange={setMode}

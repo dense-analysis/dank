@@ -4,6 +4,7 @@ export interface RelationshipNode {
   kind: string;
   label: string;
   kindLabel: string;
+  detail?: string;
   tone: "neutral" | "blue" | "amber" | "accent";
   layer: number;
 }

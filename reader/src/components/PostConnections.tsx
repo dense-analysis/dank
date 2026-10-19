@@ -9,7 +9,7 @@ import {
   type PostConnectionsData,
 } from "../lib/postConnections";
 import type { ConnectionDirection } from "../lib/postConnectionsGraph";
-import type { PostReference } from "../lib/types";
+import type { Post } from "../lib/types";
 import {
   ConnectionEvidence,
   type ConnectionNavigation,
@@ -33,7 +33,7 @@ export function PostConnections({
   onDirectionChange,
   ...navigation
 }: ConnectionNavigation & {
-  post: Pick<PostReference, "domain" | "id">;
+  post: Pick<Post, "domain" | "id" | "collection_info">;
   context?: ConnectionsContext;
   mode: ConnectionsMode;
   onModeChange: (mode: ConnectionsMode) => void;
@@ -136,6 +136,7 @@ export function PostConnections({
                     <PostConnectionsGraph
                       key={JSON.stringify([post.domain, post.id, context])}
                       data={{ ...data, context }}
+                      collectionInfo={post.collection_info}
                       direction={direction ?? localDirection}
                       onDirectionChange={onDirectionChange ?? setLocalDirection}
                       {...navigation}
