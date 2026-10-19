@@ -8,6 +8,21 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Publisher excerpts across feeds
+
+Reddit link posts with only a URL and preview image now use a matching saved
+publisher excerpt. The same fallback applies to empty RSS aggregator entries
+and missing descriptions on link-only X previews. HN keeps its existing fallback;
+YouTube video cards have no publisher-article destination to borrow from.
+
+Matches use exact URL identities and observed redirects, with one batched lookup.
+Own post text, captions and captured X descriptions take precedence. Multiple
+unexplained links and quoted posts do not select an arbitrary article. Missing
+publisher captures remain missing; browsing does not trigger collection, and
+Reddit cards still open their discussions. See
+[publisher excerpt tests](../tests/web/test_reader_publisher_excerpts.py) and
+[cross-feed browser tests](../reader/tests/publisher-excerpts.spec.ts).
+
 ## Hacker News stories, articles and discussions
 
 Hacker News uses hckrnews’ UTC front-page history and daily score cutoffs, with

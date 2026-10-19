@@ -54,6 +54,11 @@ browser channel. No live collection is needed for the fixture tests.
 Presentation should be consistent across sources even when collection methods
 such as RSS, APIs and browser scraping differ. Equivalent content uses shared
 preview rules, while source identity and unavailable content remain explicit.
+Link-only Reddit posts, empty RSS aggregator entries and link-only X previews
+can reuse an already saved publisher excerpt. Exact URLs and observed redirects
+establish the match. A post's own text and captured X descriptions take priority;
+ambiguous links, quotes and unavailable publisher content keep their existing
+presentation. This does not fetch articles or change where Reddit cards open.
 
 - Source tags select publishers, not article topics. Choices within a source or
   tag group are OR; groups, author, dates and search combine with AND.

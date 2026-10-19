@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { hasArticleContent } from "../lib/article";
+import { savedPublisherExcerpt } from "../lib/postExcerpt";
 import {
   displayedRedditImages,
   redditImageKey,
@@ -106,9 +107,12 @@ export function PostCard({
     [post.reddit?.images, post.id, imageFailed, videos.length, thumbnail],
   );
   const summary =
-    (preferences.hideRawImageLinks
-      ? withoutRedditImageUrls(excerpt, imageKeys)
-      : excerpt) ||
+    savedPublisherExcerpt(
+      post,
+      preferences.hideRawImageLinks
+        ? withoutRedditImageUrls(excerpt, imageKeys)
+        : excerpt,
+    ) ||
     (!videos.length && (!post.reddit || !thumbnail) && hasContent
       ? "Open to read this story."
       : "");

@@ -6,7 +6,13 @@ import datetime as dt
 import pathlib
 from typing import Any
 
-from dank.links import LinkPost, post_index_rows
+from dank.html_utils import html_text
+from dank.links import (
+    LinkPost,
+    is_original_source,
+    normalized_url,
+    post_index_rows,
+)
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.web.app import (
     _sanitize_html,  # pyright: ignore[reportPrivateUsage]
@@ -137,6 +143,7 @@ async def add_post_links(
             post.setdefault("links", []).append(_reference(row, "origin_"))
             post["links_count"] = int(row["link_count"])
 
+    await _add_publisher_excerpts(client, posts, query)
     hn_keys = [key for key in keys if key[0] == "news.ycombinator.com"]
 
     if not hn_keys:
@@ -179,11 +186,120 @@ async def add_post_links(
             reference = _reference(row, "target_")
 
             if row["target_source"] in {"rss", "linked_article"}:
-                body = _sanitize_html(str(row.get("target_html") or ""))
-                excerpt = search_excerpt(body, query) or _summarize_html(body)
-
-                if excerpt:
-                    reference["excerpt"] = excerpt
+                _publisher_excerpt(reference, row.get("target_html"), query)
 
             post["linked_post"] = reference
 
+
+def _publisher_excerpt(
+    reference: dict[str, str], raw_html: object, query: str,
+) -> None:
+    body = _sanitize_html(str(raw_html or ""))
+    excerpt = search_excerpt(body, query) or _summarize_html(body)
+
+    if excerpt:
+        reference["excerpt"] = excerpt
+
+
+def _publisher_destination(post: dict[str, Any]) -> str | None:
+    """Borrow only for absent body text or a bare URL, never citations."""
+    source = post.get("source")
+
+    if source not in {"reddit", "x", "rss", "linked_article"}:
+        return None
+
+    text = html_text(str(post.get("html") or "")).strip()
+    destination = normalized_url(text)
+
+    if text and destination is None:
+        return None
+
+    if source == "x":
+        content: dict[str, Any] = post.get("x") or {}
+
+        if content.get("quote"):
+            return None
+
+        links = {url for link in content.get("links", [])
+                 if (url := normalized_url(str(link.get("url") or "")))}
+
+        if not destination and len(links) == 1:
+            destination = next(iter(links))
+
+    if source == "rss" and not text:
+        url = str(post.get("url") or "")
+
+        if not is_original_source(str(post["domain"]), url):
+            destination = normalized_url(url)
+
+    if destination == normalized_url(str(post.get("url") or "")):
+        return destination if source == "rss" else None
+
+    return destination
+
+
+async def _add_publisher_excerpts(
+    client: ClickHouseClient, posts: list[dict[str, Any]], query: str,
+) -> None:
+    candidates = [(post, destination) for post in posts
+                  if (destination := _publisher_destination(post))]
+
+    if not candidates:
+        return
+
+    result = await client.fetch_json(
+        "SELECT u.url AS lookup_url, target.domain AS domain, "
+        "target.post_id AS id, target.url AS url, target.title AS title, "
+        "target.source AS source, target.html AS html "
+        "FROM post_urls AS u FINAL "
+        "INNER JOIN (SELECT domain, post_id, url, title, source, html, "
+        "updated_at FROM posts FINAL "
+        "WHERE source IN ('rss', 'linked_article')) "
+        "AS target ON target.domain = u.domain AND target.post_id = u.post_id "
+        "AND u.observed_at <= target.updated_at "
+        "WHERE u.url IN %(publisher_excerpt_urls)s AND target.html != '' "
+        "AND replaceRegexpOne(target.domain, '^www[.]', '') "
+        "= domainWithoutWWW(target.url) "
+        "ORDER BY (target.source != 'linked_article') DESC, "
+        "target.domain, target.post_id LIMIT 1 BY u.url",
+        {"publisher_excerpt_urls": sorted({url for _, url in candidates})},
+    )
+    references: dict[str, dict[str, str]] = {}
+
+    for row in result.rows:
+        reference = _reference(row, "")
+        _publisher_excerpt(reference, row.get("html"), query)
+
+        if reference.get("excerpt"):
+            references[str(row["lookup_url"])] = reference
+
+    for post, destination in candidates:
+        reference = references.get(destination)
+
+        if reference is None or (
+            reference["domain"], reference["id"],
+        ) == (post["domain"], post["id"]):
+            continue
+
+        post["linked_post"] = reference
+
+        if post.get("source") == "x" and post.get("x"):
+            _fill_x_preview(post["x"], destination, reference)
+
+
+def _fill_x_preview(
+    content: dict[str, Any], destination: str, reference: dict[str, str],
+) -> None:
+    links = content.setdefault("links", [])
+    matches = [link for link in links
+               if normalized_url(str(link.get("url") or "")) == destination]
+
+    if not matches:
+        links.append({
+            "url": destination, "title": reference["title"],
+            "description": reference["excerpt"], "image_url": None,
+        })
+
+    for link in matches:
+        if not str(link.get("description") or "").strip():
+            link["description"] = reference["excerpt"]
