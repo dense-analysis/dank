@@ -221,6 +221,8 @@ export function PostCard({
         />
       ))}
       <PostFooter
+        post={post}
+        readerHref={href}
         read={read}
         source={{ url: post.url, label: `Open original: ${post.title}` }}
         byline={

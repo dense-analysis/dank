@@ -47,6 +47,8 @@ export function XPostCard({
         navigation={navigation}
       />
       <PostFooter
+        post={post}
+        readerHref={href}
         read={read}
         source={{
           url: post.url,

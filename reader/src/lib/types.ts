@@ -77,6 +77,30 @@ export interface PostReference {
   source: string;
 }
 
+export interface CollectionOrigin {
+  domain: string;
+  id: string;
+  source: string;
+  url: string;
+  label: string;
+  observed_at: string;
+  kind: "reference" | "article";
+}
+
+export interface CollectionInfo {
+  article_url: string;
+  article: PostReference | null;
+  article_status: "collected" | "incomplete" | "unavailable";
+  post_first_seen_at: string | null;
+  link_first_seen_at: string | null;
+  first_seen_at: string | null;
+  first_seen_from: CollectionOrigin[];
+  article_collected_at: string | null;
+  collected_via: CollectionOrigin | null;
+  seen_before_post: boolean | null;
+  coverage: "saved_history";
+}
+
 export interface Post {
   id: string;
   domain: string;
@@ -86,6 +110,7 @@ export interface Post {
   excerpt: string;
   html: string;
   collection_incomplete?: boolean;
+  collection_info?: CollectionInfo | null;
   published_at?: string | null;
   linked_post?: PostReference | null;
   links?: PostReference[];

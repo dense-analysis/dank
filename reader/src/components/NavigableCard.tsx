@@ -6,7 +6,7 @@ function activateCard(event: ReactMouseEvent<HTMLElement>) {
     (event.button !== 0 && event.button !== 1) ||
     !(event.target instanceof Element) ||
     event.target.closest(
-      "a, button, input, select, textarea, summary, video, audio, iframe, [role='button'], [role='link'], [contenteditable]",
+      "a, button, input, select, textarea, summary, video, audio, iframe, [role='button'], [role='link'], [contenteditable], [data-card-control]",
     )
   )
     return;

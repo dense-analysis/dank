@@ -200,6 +200,41 @@ function isPostReference(value: unknown): boolean {
   );
 }
 
+function isCollectionOrigin(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["domain", "id", "source", "url", "label"].every(
+      (key) => typeof value[key] === "string",
+    ) &&
+    isTimestamp(value.observed_at) &&
+    (value.kind === "reference" || value.kind === "article")
+  );
+}
+
+function isCollectionInfo(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.article_url === "string" &&
+    (value.article === null || isPostReference(value.article)) &&
+    ["collected", "incomplete", "unavailable"].includes(
+      String(value.article_status),
+    ) &&
+    [
+      "post_first_seen_at",
+      "link_first_seen_at",
+      "first_seen_at",
+      "article_collected_at",
+    ].every((key) => value[key] === null || isTimestamp(value[key])) &&
+    Array.isArray(value.first_seen_from) &&
+    value.first_seen_from.length <= 5 &&
+    value.first_seen_from.every(isCollectionOrigin) &&
+    (value.collected_via === null || isCollectionOrigin(value.collected_via)) &&
+    (value.seen_before_post === null ||
+      typeof value.seen_before_post === "boolean") &&
+    value.coverage === "saved_history"
+  );
+}
+
 function validPost(
   value: unknown,
   allowConversation: boolean,
@@ -248,6 +283,9 @@ function validPost(
     (value.x === undefined ||
       value.x === null ||
       isXPost(value.x, allowConversation, allowQuote)) &&
+    (value.collection_info === undefined ||
+      value.collection_info === null ||
+      isCollectionInfo(value.collection_info)) &&
     (value.collection_incomplete === undefined ||
       typeof value.collection_incomplete === "boolean") &&
     (value.thumbnail === null || typeof value.thumbnail === "string") &&

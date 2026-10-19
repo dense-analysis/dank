@@ -31,6 +31,7 @@ import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
+import { CollectionInfoDetails } from "./CollectionInfo";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HackerNewsDetail } from "./HackerNewsDetail";
 import { PostTimestamp, readingTime, SourceMark, safeUrl } from "./PostCard";
@@ -154,7 +155,16 @@ export function ArticleView({
       post.domain.toLowerCase().replace(/^www\./, "") &&
     matchesLinkUrl(post.url, referenceTarget.url)
   );
-  const postLinks = post && renderConnections(post);
+  const postLinks = post && (
+    <>
+      <CollectionInfoDetails
+        post={post}
+        readerHref={`/reader/?${params}`}
+        openPost={openPost}
+      />
+      {renderConnections(post)}
+    </>
+  );
 
   useEffect(() => {
     if (post && hasReadableContent) markRead(post);

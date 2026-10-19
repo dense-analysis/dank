@@ -185,6 +185,8 @@ export function HackerNewsCard({
         )}
       </ReaderLink>
       <PostFooter
+        post={post}
+        readerHref={href}
         read={read}
         byline={
           <AuthorLink
