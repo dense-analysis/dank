@@ -967,3 +967,59 @@
   margin-top: 5px;
   font-size: 11px;
 }
+
+.yt-transcript {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.yt-transcript .yt-shelf-heading {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.yt-transcript-language,
+.yt-transcript-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.yt-transcript-segments {
+  max-height: 28rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.yt-transcript-segments p {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.55rem 0;
+  line-height: 1.6;
+}
+
+.yt-transcript-segments a {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+  padding: 0.25rem;
+  align-self: start;
+}
+
+.yt-transcript-segments span {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .yt-transcript {
+    padding: 0.85rem;
+  }
+
+  .yt-transcript-segments p {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+}

@@ -86,8 +86,8 @@ reader preserves that display, and an unavailable total remains unknown.
 
 Videos use landscape cards, Shorts have a separate portrait section, and
 community posts retain their text and images. Opening an item shows its saved
-discovery context. Playback starts only when selected. Feed-only captures do
-not claim to contain transcripts, descriptions or comments.
+discovery context. Playback starts only when selected. Feed snapshots are separate from saved transcripts; descriptions and comments
+are not collected.
 
 **From your feeds** gathers verified YouTube links from collected posts and
 comments. Equivalent watch, short-link, embed and Shorts URLs share one video
@@ -113,6 +113,25 @@ requests wait one hour, and unavailable previews wait one day. Original provider
 responses and previous successful metadata are retained. A failed refresh leaves
 the last saved title available. Selected feed snapshots keep their captured titles;
 source post headlines are never used as video titles.
+
+## Transcripts
+
+After scraping, DANK checks up to 25 videos or Shorts encountered in that run
+for existing captions. Video downloads can stay off. It prefers English captions,
+then the original language, using creator captions before automatic captions
+within each language. Machine translations and live chat are excluded.
+
+Opening a video's details shows its saved transcript. If none has been checked,
+the local DANK server checks that video automatically and saves the result.
+Older videos are checked individually when opened; there is no bulk backfill.
+Timestamp links open the corresponding moment on YouTube.
+
+Saved transcripts are reused without refreshing. Missing captions are cached for
+one day; failed requests for one hour. Reopening after that delay checks again,
+or use **Try transcript again**. The reader distinguishes unavailable captions
+from failed retrieval. Caption collection is bounded to 40 seconds per video,
+and a failed request stops the remaining transcript checks for that scrape.
+It does not download audio, generate speech-to-text, or collect comments.
 
 ## Thumbnail and title history
 

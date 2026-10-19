@@ -79,6 +79,7 @@ from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
 from dank.scrape.youtube.metadata import fetch_video_metadata
+from dank.scrape.youtube.transcripts import fetch_video_transcript
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
@@ -90,6 +91,8 @@ logger = logging.getLogger(__name__)
 MAX_COMMUNITY_ICON_BYTES = 1024 * 1024
 # Bound the extra work after a feed run; subsequent runs drain the backlog.
 MAX_LINKED_METADATA_PER_RUN = 100
+# Limit extra watch-page requests; older items are checked when opened.
+MAX_TRANSCRIPTS_PER_RUN = 25
 
 
 async def run_scrape(
@@ -384,6 +387,9 @@ async def _collect_with_history(
 
         if not reddit_linked_articles:
             await collect_linked_youtube_metadata(client, http_client)
+            await collect_run_youtube_transcripts(
+                client, http_client, str(history.run_id),
+            )
     finally:
         progress.cancel()
         await asyncio.gather(progress, return_exceptions=True)
@@ -2143,3 +2149,67 @@ async def run_youtube_metadata(
             )
         finally:
             current_limiter.reset(token)
+
+
+async def collect_youtube_video_transcript(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    video_id: str,
+) -> dict[str, Any]:
+    """Reuse saved captions and negative caches; persist only in the runner."""
+    if not VIDEO_ID.fullmatch(video_id):
+        raise ValueError("Invalid YouTube video ID")
+
+    previous = await client.fetch_json(
+        "SELECT * FROM youtube_transcripts WHERE video_id = %(id)s "
+        "ORDER BY observed_at DESC LIMIT 1", {"id": video_id},
+    )
+
+    if previous.rows:
+        row = previous.rows[0]
+        retry_after = parse_datetime(row["retry_after"])
+
+        now = datetime.datetime.now(datetime.UTC)
+
+        if row["status"] == "captured" or (retry_after and retry_after > now):
+            return {**row, "cached": True}
+
+    row = await fetch_video_transcript(http_client, video_id)
+    await client.insert_rows("youtube_transcripts", [row])
+
+    return {**row, "cached": False}
+
+
+async def collect_run_youtube_transcripts(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession, run_id: str,
+) -> None:
+    """Only enrich this run's discoveries, never scan the old-video backlog."""
+    pending = await client.fetch_json(
+        "SELECT DISTINCT substring(d.item_id, 7) AS video_id "
+        "FROM youtube_discoveries AS d LEFT JOIN "
+        "(SELECT video_id, argMax(status, observed_at) AS status, "
+        "argMax(retry_after, observed_at) AS retry_after "
+        "FROM youtube_transcripts GROUP BY video_id) AS t "
+        "ON substring(d.item_id, 7) = t.video_id "
+        "WHERE d.run_id = %(run)s AND startsWith(d.item_id, 'video:') "
+        "AND (t.video_id = '' OR (t.status != 'captured' "
+        "AND t.retry_after <= now64(3))) ORDER BY video_id LIMIT %(limit)s",
+        {"run": run_id, "limit": MAX_TRANSCRIPTS_PER_RUN},
+    )
+
+    for item in pending.rows:
+        row = await collect_youtube_video_transcript(
+            client, http_client, str(item["video_id"]),
+        )
+        logger.info(
+            "YouTube transcript %s: %s", row["video_id"], row["status"],
+        )
+
+        if row["status"] == "failed":
+            # A blocked provider must not trigger a run of failed requests.
+            logger.warning(
+                "Stopping transcript collection after a failed request",
+            )
+            break
+
+        if not row["cached"]:
+            await asyncio.sleep(2)

@@ -204,7 +204,7 @@ export function YouTubeCard({
                 : metadataSaved
                   ? "Video preview details were collected from YouTube."
                   : item.discoveries.length
-                    ? "Feed information is saved. Video details, transcripts and comments are not part of this snapshot."
+                    ? "Feed information is saved. Open details to check for a transcript. Comments are not part of this snapshot."
                     : "Found in collected posts or comments. Video title and channel details have not been collected."
           }
         >

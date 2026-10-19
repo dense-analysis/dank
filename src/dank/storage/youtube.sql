@@ -138,3 +138,17 @@ SELECT arrayJoin(arrayDistinct(extractAll(
 FROM raw_posts
 WHERE domain != 'youtube.com' AND source != 'youtube'
 ;
+
+CREATE TABLE IF NOT EXISTS youtube_transcripts (
+    video_id String,
+    observed_at DateTime64(3, 'UTC'),
+    retry_after DateTime64(3, 'UTC'),
+    status LowCardinality(String),
+    error String,
+    track_payload String CODEC(ZSTD(3)),
+    provider_payload String CODEC(ZSTD(3)),
+    payload String CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(observed_at)
+ORDER BY (video_id, observed_at);

@@ -32,6 +32,7 @@ import { CountryFlag } from "./CountryFlag";
 import { YouTubeCard } from "./YouTubeCard";
 import { YouTubeMetadataStatus } from "./YouTubeMetadataStatus";
 import YouTubeReferenceGraph from "./YouTubeReferenceGraph";
+import { YouTubeTranscript } from "./YouTubeTranscript";
 import { YouTubeVersionHistory } from "./YouTubeVersionHistory";
 
 export function YouTubeCollection({
@@ -279,15 +280,21 @@ export function YouTubeCollection({
                     : selected.detail_capture.status === "captured"
                       ? "Additional video details have been collected. Playback connects to YouTube."
                       : selected.metadata_capture?.available
-                        ? "Playback connects to YouTube. YouTube transcripts and comments have not been collected."
+                        ? "Playback connects to YouTube. YouTube comments have not been collected."
                         : selected.discoveries.length
-                          ? "Feed information is saved. YouTube transcripts and comments have not been collected."
+                          ? "Feed information is saved. YouTube comments have not been collected."
                           : selected.metadata_capture
                             ? "Video playback connects to YouTube."
                             : "YouTube details have not been collected."}
                 </p>
               </aside>
             </div>
+            {selected.video_id && (
+              <YouTubeTranscript
+                key={selected.video_id}
+                videoId={selected.video_id}
+              />
+            )}
             {!!selected.references.length && (
               <section
                 className="yt-references"

@@ -116,8 +116,8 @@ video downloads off by default. Shelf headings, rank and playlist identity come
 from YouTube; country codes record the configured regional context and capture
 times record when DANK observed the listing.
 Separate discovery records preserve repeated appearances across feeds and runs.
-Watch-page details, transcripts and comments are deferred; the reader labels
-these as feed snapshots. Live and upcoming broadcasts are excluded.
+Descriptions and comments remain deferred; feed snapshots are separate from
+caption captures. Live and upcoming broadcasts are excluded.
 
 The browser follows Hype's regional **Top 100 → View all** link, expands News
 sections and uses bounded scrolling. The UK playlist fallback is used only for
@@ -235,6 +235,34 @@ Tests cover provider-payload retention, malicious URLs, malformed/oversized and
 unavailable responses, retry caching, duplicate requests, provenance preservation
 and source-title isolation in [collector tests](../tests/scrape/test_youtube_metadata.py)
 and [API tests](../tests/web/test_reader_youtube_metadata.py).
+
+### YouTube transcripts
+
+Existing public captions are collected for up to 25 videos encountered in the
+current scrape, and on first opening a known video without saved captions.
+No archive-wide transcript backfill runs. Successful captions are stored with
+original caption JSON, track metadata, language, origin and timing; successes
+are reused indefinitely. Missing tracks wait one day, failed retrieval waits one
+hour. Read-only transcript requests never contact YouTube. On-demand collection
+is serialized per local web process with a bounded wait; requests from separate
+scraper/server processes can still overlap.
+
+YouTube may block caption discovery or return empty/invalid caption responses.
+These are failures, not evidence that captions do not exist. Each attempt has a
+40-second deadline and size limits; the extractor subprocess is terminated on
+cancellation. A failed attempt stops further transcript collection in that scrape.
+Only JSON3 tracks are supported, preferring English then the original language,
+and creator-provided over automatic within each language. Machine translations
+are excluded. Automatic captions can contain errors; saved text is not a verified
+verbatim transcription. Saved captions are not yet included in semantic search.
+
+Validation includes track choice, parsing, negative caching, current-run scoping,
+read-only access, first-open collection and desktop/mobile rendering. A live
+2026-10-19 check retrieved 19 creator-caption segments for `L_6pAVHYoFM`; this
+establishes that sample, not universal availability. See
+[collector tests](../tests/scrape/test_youtube_transcripts.py),
+[API tests](../tests/web/test_reader_youtube_transcripts.py) and
+[reader tests](../reader/tests/youtube-transcripts.spec.ts).
 
 ### YouTube channel identity and totals
 
