@@ -254,3 +254,145 @@ async def test_edited_post_compares_the_current_link_observation():
     assert result["link_first_seen_at"] == T2.isoformat()
     assert result["first_seen_at"] == T1.isoformat()
     assert result["seen_before_post"] is True
+
+
+async def test_independent_discovery_before_publication_qualifies_for_eye():
+    client = Client(
+        articles=[article()],
+        captures=[own_capture(published_at=T1), capture()],
+        observations=[observation(), observation(
+            domain="reddit.com", post_id="123", source="reddit", url=REDDIT,
+            first_observed_at=T2,
+        )],
+    )
+    result = await info(client)
+    assert result is not None
+    assert result["post_published_at"] == T1.isoformat()
+    assert result["discovered_before_publication"] is True
+    assert result["earlier_discovered_at"] == T0.isoformat()
+    assert result["earlier_discovered_from"][0]["label"] == "Hacker News"
+    query = client.calls[-2][0]
+    assert "argMaxIf(post_created_at,scraped_at" in query
+
+
+async def test_collection_order_alone_does_not_qualify_for_eye():
+    client = Client(
+        articles=[article()],
+        captures=[own_capture(published_at=T0), capture()],
+        observations=[observation(first_observed_at=T1), observation(
+            domain="reddit.com", post_id="123", source="reddit", url=REDDIT,
+            first_observed_at=T2,
+        )],
+    )
+    result = await info(client)
+    assert result is not None
+    assert result["seen_before_post"] is True
+    assert result["discovered_before_publication"] is False
+    assert result["earlier_discovered_at"] is None
+    assert result["earlier_discovered_from"] == []
+
+
+@pytest.mark.parametrize("published", [
+    None, "invalid", T2 + dt.timedelta(days=1),
+])
+async def test_unknown_or_inconsistent_publication_never_uses_capture_time(
+    published: object,
+):
+    client = Client(captures=[own_capture(published_at=published)],
+                    observations=[observation()])
+    result = await info(client)
+    assert result is not None
+    assert result["post_published_at"] is None
+    assert result["discovered_before_publication"] is None
+    assert result["earlier_discovered_from"] == []
+
+
+async def test_current_post_and_its_article_capture_are_not_other_sources():
+    origin = json.dumps({
+        "domain": "reddit.com", "post_id": "123", "url": REDDIT,
+        "source": "reddit", "observed_at": T0.isoformat(),
+    })
+    client = Client(articles=[article(source="linked_article")], captures=[
+        own_capture(published_at=T1), capture(
+            first_source="linked_article", first_origin=origin,
+            collected_source="linked_article", collected_origin=origin,
+        ),
+    ], observations=[observation(
+        domain="reddit.com", post_id="123", url=REDDIT, source="reddit",
+        first_observed_at=T0,
+    )])
+    result = await info(client)
+    assert result is not None
+    assert result["discovered_before_publication"] is False
+
+
+async def test_unattributed_legacy_capture_does_not_invent_an_earlier_source():
+    client = Client(articles=[article(source="linked_article")], captures=[
+        own_capture(published_at=T2), capture(
+            first_source="linked_article", collected_source="linked_article",
+        ),
+    ])
+    result = await info(client)
+    assert result is not None
+    assert result["discovered_before_publication"] is False
+
+
+async def test_same_community_other_post_can_be_an_earlier_source():
+    client = Client(captures=[own_capture(published_at=T1)],
+                    observations=[observation(
+                        domain="reddit.com", post_id="earlier",
+                        source="reddit",
+                        url="https://reddit.com/r/science/comments/earlier/",
+                    )])
+    result = await info(client)
+    assert result is not None
+    assert result["discovered_before_publication"] is True
+    assert result["earlier_discovered_from"][0]["id"] == "earlier"
+
+
+async def test_discovery_equal_to_publication_is_not_earlier():
+    client = Client(captures=[own_capture(published_at=T0)],
+                    observations=[observation()])
+    result = await info(client)
+    assert result is not None
+    assert result["discovered_before_publication"] is False
+
+
+@pytest.mark.parametrize("observations, expected", [
+    ([], False), ([observation()], True),
+])
+async def test_media_needs_exact_independent_evidence(
+    observations: list[dict[str, Any]], *, expected: bool,
+):
+    video_url = "https://v.redd.it/exactvideo"
+    client = Client(captures=[own_capture(published_at=T1)],
+                    observations=[{**row, "target_url": video_url}
+                                  for row in observations])
+    payload: dict[str, Any] = {
+        "domain": "reddit.com", "id": "123", "source": "reddit",
+        "url": REDDIT,
+        "reddit": {"external_url": video_url},
+    }
+    row = PostRow("reddit.com", "123", REDDIT, "author", "Video", "",
+                  T1, T2, "reddit")
+    await add_collection_info(cast(ClickHouseClient, client), [payload], [row])
+    result = payload["collection_info"]
+    assert result["discovered_before_publication"] is expected
+
+
+async def test_hn_compares_submission_time_not_front_page_arrival():
+    payload: dict[str, Any] = {
+        "domain": "news.ycombinator.com", "id": "123",
+        "source": "hacker_news",
+        "url": "https://news.ycombinator.com/item?id=123",
+        "hacker_news": {"external_url": URL, "submitted_at": T0.isoformat()},
+    }
+    client = Client(captures=[capture(
+        "news.ycombinator.com", "123", first_at=T2, published_at=T2,
+    )], observations=[observation(first_observed_at=T1)])
+    row = PostRow("news.ycombinator.com", "123", payload["url"], "author",
+                  "Story", "", T2, T2, "hacker_news")
+    await add_collection_info(cast(ClickHouseClient, client), [payload], [row])
+    result = payload["collection_info"]
+    assert result["post_published_at"] == T0.isoformat()
+    assert result["discovered_before_publication"] is False

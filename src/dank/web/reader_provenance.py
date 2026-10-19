@@ -182,6 +182,8 @@ async def _captures(
         "SELECT domain, post_id, min(scraped_at) AS first_at, "
         "argMin(url,scraped_at) AS first_url, "
         "argMin(source,scraped_at) AS first_source, "
+        "argMaxIf(post_created_at,scraped_at,post_created_at IS NOT NULL) "
+        "AS published_at, "
         "argMin(JSONExtractRaw(payload,'collection_origin'),scraped_at) "
         "AS first_origin, countIf(" + success + ") AS successful_captures, "
         "minIf(scraped_at," + success + ") AS collected_at, "
@@ -245,6 +247,71 @@ async def _observations(
     return observations
 
 
+
+def _publication(
+    post: dict[str, Any], own: dict[str, Any],
+) -> dt.datetime | None:
+    match post.get("source"):
+        case "hacker_news":
+            value = payload_object(post.get("hacker_news")).get("submitted_at")
+        case "reddit" | "x":
+            # Raw dates stay nullable instead of falling back to capture time.
+            value = own.get("published_at")
+        case _:
+            value = post.get("published_at")
+
+    published = parse_datetime(value)
+    captured = parse_datetime(own.get("first_at"))
+
+    if published and captured and published > captured:
+        return None
+
+    return published
+
+
+def _independent_origin(
+    origin: dict[str, str], post: dict[str, Any],
+) -> bool:
+    if (origin["domain"], origin["id"]) == (post["domain"], post["id"]):
+        return False
+
+    origin_url = normalized_url(origin["url"])
+
+    if origin_url and origin_url == normalized_url(str(post.get("url") or "")):
+        return False
+
+    if (origin["source"] == post.get("source")
+            and origin["source"] in {"reddit", "x", "hacker_news", "youtube"}
+            and origin["id"] == post["id"]):
+        return False
+
+    # Unattributed legacy pages cannot name an independent discovering source.
+    return bool(origin["domain"] and origin["id"]) and origin["source"] in {
+        "rss", "reddit", "x", "hacker_news", "youtube",
+    }
+
+
+def _publication_discovery(
+    post: dict[str, Any], own: dict[str, Any],
+    origins: list[dict[str, str]],
+) -> dict[str, Any]:
+    published = _publication(post, own)
+    earlier = _earliest([
+        origin for origin in origins
+        if published and dt.datetime.fromisoformat(origin["observed_at"])
+        < published and _independent_origin(origin, post)
+    ])
+
+    return {
+        "post_published_at": published.isoformat() if published else None,
+        "discovered_before_publication": bool(earlier) if published else None,
+        "earlier_discovered_at": (
+            earlier[0]["observed_at"] if earlier else None
+        ),
+        "earlier_discovered_from": earlier,
+    }
+
+
 def _info(
     post: dict[str, Any], url: str, article: dict[str, Any] | None,
     origins: list[dict[str, str]],
@@ -300,6 +367,7 @@ def _info(
             if first_at and link_first else None
         ),
         "article_status": status, "coverage": "saved_history",
+        **_publication_discovery(post, own, origins),
     }
 
 

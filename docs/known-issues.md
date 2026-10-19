@@ -16,6 +16,12 @@ articles, saves Reddit discoveries before publisher requests and retains
 explicit origin metadata for new fetches. Backfill is bounded by configured
 community post limits. A failed or unsupported publisher page remains unavailable.
 
+The Info icon opens collection details regardless of earlier references. A
+separate eye requires independent discovery before the post's verified
+publication time. Earlier collection order alone does not qualify. Current-post
+origins, tied timestamps and unknown publication/collector data do not produce
+that signal. Native video playback alone also does not produce an eye.
+
 Collection info reports first observed article/link times independently of
 successful page collection, and does not infer missing legacy collector routes.
 Processed-version cutoffs prevent a pending raw capture from upgrading an older

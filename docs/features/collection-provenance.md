@@ -35,15 +35,28 @@ Blocked pages and unsupported documents retain explicit unavailable captures.
 
 ## What the collection indicator means
 
-The eye beside **Open original** opens **Collection info**. It is highlighted
-when DANK had already observed the article before observing this particular
-post's link to it. The tooltip names the earliest observed source and time.
-The same disclosure is available in the opened post.
+The **Info** icon beside **Open original** opens **Collection info**. It is
+available whenever saved collection metadata exists, even if this post is the
+first known discovery. The same disclosure is available in the opened post.
+
+A separate **eye** appears only when a different recorded source/post discovered
+the exact destination before the linking post's known publication time. Its
+tooltip says **Discovered at <source> on <time>**. The current post and an article
+capture attributed to it do not count as independent earlier discoveries.
+Unknown publication dates or unidentified legacy collectors do not qualify.
+
+This is stricter than collection order: another source collected after the
+Reddit post was published, but before DANK collected that Reddit post, does not
+produce an eye. That collection-order difference remains in the information
+panel. Native Reddit videos likewise need actual earlier evidence for the same
+video URL; being a saved or playable video alone does not produce an eye.
 
 The panel distinguishes:
 
 - **First observed:** the earliest saved post link or direct article capture
   known to DANK, including the referring community when recorded.
+- **This post published:** the source's known publication/submission timestamp,
+  kept separate from DANK's collection time. Missing dates stay unknown.
 - **This post first collected:** the first raw capture of this post identity.
 - **This link first observed:** the first saved observation of this post linking
   to this article. This can be later if the post was edited.
@@ -53,8 +66,11 @@ The panel distinguishes:
   fetched. New Reddit and HN fetches retain the referring post, community and
   observation time. Older linked captures without attribution remain unknown.
 
-These are collection timestamps, not publication timestamps or a claim about
-who reported a story first. An old article collected today does not become an
+The panel distinguishes recorded collection timestamps from the post's
+publication timestamp. The eye compares an independent discovery timestamp to
+that known publication timestamp; the collection-order note compares two
+collection timestamps. Neither comparison proves copying or who originally
+reported a story. An old article collected today does not become an
 early discovery merely because its publication date is old. Tied first
 observations are retained as ties. Earliest source labels are bounded to five;
 missing historical captures can leave timing unknown.
@@ -91,8 +107,12 @@ A future analysis view could compare how often communities or feeds introduce
 articles that DANK has not seen, and how quickly they reference already known
 articles. Useful candidates include:
 
-- The share of eligible article links already observed elsewhere before this
-  source's first observation of the same article: a possible **repost index**.
+- The share of links with independent discovery before their post's known
+  publication time, matching the eye indicator.
+- Separately, the share already observed elsewhere before DANK collected this
+  source's link: a possible **repost index** based on collection order. These
+  two comparisons must not be combined; only the first establishes that DANK
+  already knew the destination when the linking post was published.
 - Median observed delay from the first known source to this source, with ties
   reported separately.
 - New-to-DANK article share, repeated links within a community, and coverage by
