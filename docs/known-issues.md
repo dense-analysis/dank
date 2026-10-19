@@ -18,7 +18,9 @@ community post limits. A failed or unsupported publisher page remains unavailabl
 
 The Info icon opens collection details regardless of earlier references. A
 separate eye requires independent discovery before the post's verified
-publication time. Earlier collection order alone does not qualify. Current-post
+publication time. Its tooltip includes the gap from the displayed discovery to
+publication, using the graph’s duration format. Earlier collection order alone
+does not qualify. Current-post
 origins, tied timestamps and unknown publication/collector data do not produce
 that signal. Native video playback alone also does not produce an eye.
 

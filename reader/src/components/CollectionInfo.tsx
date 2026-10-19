@@ -1,4 +1,5 @@
 import { ChevronDown, Info } from "lucide-react";
+import { discoveryTiming } from "../lib/discoveryTiming";
 import { hackerNewsExcerpt, hasHackerNewsBody } from "../lib/hackerNews";
 import { articleParams } from "../lib/navigation";
 import { savedPublisherExcerpt } from "../lib/postExcerpt";
@@ -23,8 +24,13 @@ export function earlierDiscoveryTitle(info: CollectionInfo): string | null {
     ...new Set(info.earlier_discovered_from?.map((origin) => origin.label)),
   ];
 
+  const timing = discoveryTiming({
+    post_published_at: info.post_published_at,
+    first_seen_at: info.earlier_discovered_at,
+  });
+
   return labels.length
-    ? `Discovered at ${labels.join(" and ")} on ${dateLabel(info.earlier_discovered_at)}`
+    ? `Discovered at ${labels.join(" and ")} on ${dateLabel(info.earlier_discovered_at)} · Post published ${timing.gapLabel}`
     : null;
 }
 
@@ -191,7 +197,7 @@ export function CollectionInfoContent({
         <>
           <p className={discoveryTitle ? "collection-info-earlier" : undefined}>
             {discoveryTitle
-              ? `${discoveryTitle}, before this post was published.`
+              ? `${discoveryTitle}.`
               : !info.post_published_at
                 ? "This post’s publication time is unavailable, so earlier discovery cannot be confirmed."
                 : info.discovered_before_publication === false

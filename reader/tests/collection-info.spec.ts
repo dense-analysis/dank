@@ -130,7 +130,7 @@ for (const width of [390, 1280]) {
       await expect(toggle).not.toHaveClass(/has-earlier-discovery/);
       await expect(eye).toHaveAttribute(
         "title",
-        /^Discovered at Hacker News on /,
+        /^Discovered at Hacker News on .+ · Post published 30m after first discovery$/,
       );
       await expect(eye.locator("svg")).toHaveClass(/lucide-eye/);
       const toggleBox = await eye.boundingBox();
@@ -145,7 +145,9 @@ for (const width of [390, 1280]) {
       await expect(eye).toHaveAttribute("aria-expanded", "true");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
       const panel = card.getByRole("region", { name: "Collection info" });
-      await expect(panel).toContainText("before this post was published");
+      await expect(panel).toContainText(
+        "Post published 30m after first discovery",
+      );
       await expect(panel).toContainText(
         "The feed preview uses text from the saved publisher article",
       );
@@ -314,7 +316,7 @@ test("own post text is not attributed to the saved publisher", async ({
     .getByRole("button", { name: "Collection info", exact: true })
     .click();
   const panel = page.getByRole("region", { name: "Collection info" });
-  await expect(panel).toContainText("before this post was published");
+  await expect(panel).toContainText("Post published 30m after first discovery");
   await expect(panel).not.toContainText(
     "The feed preview uses text from the saved publisher article",
   );

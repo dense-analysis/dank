@@ -41,7 +41,10 @@ first known discovery. The same disclosure is available in the opened post.
 
 A separate **eye** appears only when a different recorded source/post discovered
 the exact destination before the linking post's known publication time. Its
-tooltip says **Discovered at <source> on <time>**. The current post and an article
+tooltip says **Discovered at <source> on <time> · Post published <gap> after first
+discovery**. The gap compares the displayed independent discovery with the post's
+verified publication time, using the same duration format as the graph; collection
+and download dates are excluded. The current post and an article
 capture attributed to it do not count as independent earlier discoveries.
 Unknown publication dates or unidentified legacy collectors do not qualify.
 

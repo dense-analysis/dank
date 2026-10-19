@@ -117,6 +117,17 @@ describe("collection information contract", () => {
     ).toBeNull();
   });
 
+  it("uses the discovery shown in the tooltip and publication, not collection time, for the gap", () => {
+    expect(
+      earlierDiscoveryTitle({
+        ...info,
+        first_seen_at: "2026-10-19T07:00:00Z",
+        post_first_seen_at: "2026-10-20T09:00:00Z",
+        article_collected_at: "2026-10-21T09:00:00Z",
+      }),
+    ).toMatch(/ · Post published 30m after first discovery$/);
+  });
+
   it("never turns collection order or incomplete history into an earlier-discovery eye", () => {
     for (const unknown of [
       { post_published_at: null },
