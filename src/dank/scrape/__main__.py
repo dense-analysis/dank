@@ -42,6 +42,10 @@ def main() -> None:
         help="Refresh pending Reddit details saved in the last 24 hours",
     )
     parser.add_argument(
+        "--reddit-linked-articles", action="store_true",
+        help="Save publisher pages from recent saved Reddit link posts",
+    )
+    parser.add_argument(
         "--hacker-news-details", action="store_true",
         help="Capture comments for saved Hacker News stories",
     )
@@ -85,6 +89,7 @@ def main() -> None:
         parser.error("--youtube-thumbnail-id must be an 11-character video ID")
 
     if sum((bool(args.x_post), args.x_details, args.reddit_details,
+            args.reddit_linked_articles,
             args.hacker_news_details, args.retry_failed_pages,
             args.retry_youtube_thumbnails, args.youtube_metadata)) > 1:
         parser.error(
@@ -112,6 +117,7 @@ def main() -> None:
         retry_failed_pages=args.retry_failed_pages,
         x_posts=tuple(args.x_post),
         reddit_details=args.reddit_details,
+        reddit_linked_articles=args.reddit_linked_articles,
         x_details=args.x_details,
         hacker_news_details=args.hacker_news_details,
         youtube_metadata_only=args.youtube_metadata,

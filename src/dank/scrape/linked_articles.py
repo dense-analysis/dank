@@ -35,6 +35,7 @@ class LinkedArticle(NamedTuple):
     url: str
     title: str = ""
     identity: tuple[str, str] | None = None
+    origin: dict[str, str] | None = None
 
 
 async def scrape_linked_articles(
@@ -136,6 +137,9 @@ def _build_capture(
             "status": status,
         },
     }
+
+    if article.origin:
+        payload["collection_origin"] = article.origin
 
     if page:
         payload["page_content_type"] = page.content_type

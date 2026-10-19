@@ -422,3 +422,30 @@ async def test_embeddings_use_readable_text_instead_of_page_code() -> None:
         embedder=cast(Any, _SpyEmbedder()),
     )
     assert calls == [["Title"], ["Readable article."]]
+
+
+@pytest.mark.parametrize("domain, expected", [
+    ("reddit.com", {"reddit-publisher.test"}),
+    ("news.ycombinator.com", {"hn-publisher.test", "legacy.test"}),
+    ("other.test", set[str]()),
+])
+async def test_source_processing_includes_its_linked_publishers_only(
+    domain: str, expected: set[str],
+) -> None:
+    from dank.process.runner import (
+        _with_linked_article_sources,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    client = AsyncMock()
+    client.fetch_json.return_value = _Result([
+        {"domain": "reddit-publisher.test", "origin_domain": "reddit.com"},
+        {"domain": "hn-publisher.test",
+         "origin_domain": "news.ycombinator.com"},
+        {"domain": "legacy.test", "origin_domain": ""},
+    ])
+    sources = await _with_linked_article_sources(
+        client, (SourceConfig(domain, ()),),
+        datetime.datetime(2026, 10, 19, tzinfo=datetime.UTC),
+        re.compile("^" + re.escape(domain) + "$"),
+    )
+    assert {item.domain for item in sources} == {domain, *expected}

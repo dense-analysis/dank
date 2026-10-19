@@ -623,16 +623,20 @@ async def _with_linked_article_sources(
     since: datetime.datetime, domain_regex: re.Pattern[str] | None,
 ) -> tuple[SourceConfig, ...]:
     result = await client.fetch_json(
-        "SELECT DISTINCT domain FROM raw_posts "
+        "SELECT DISTINCT domain, JSONExtractString(payload, "
+        "'collection_origin', 'domain') AS origin_domain FROM raw_posts "
         "WHERE source = 'linked_article' AND scraped_at >= %(since)s",
         {"since": since},
     )
     domains = {source.domain for source in sources}
-    include_linked = domain_regex is None or "news.ycombinator.com" in domains
+    include_linked = domain_regex is None
     additional = sorted({
         str(row["domain"]) for row in result.rows
         if str(row["domain"]) not in domains and (
-            include_linked or (domain_regex is not None
+            include_linked or str(row.get("origin_domain") or "") in domains
+            or (not row.get("origin_domain")
+                and "news.ycombinator.com" in domains)
+            or (domain_regex is not None
             and domain_regex.search(str(row["domain"])))
         )
     })

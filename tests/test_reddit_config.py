@@ -227,3 +227,24 @@ download_videos = true
     assert settings.comment_limit == 500
     assert settings.comment_sort == "new"
     assert settings.download_videos is True
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_linked_publisher_collection_can_be_enabled_or_disabled(
+    tmp_path: pathlib.Path, *, enabled: bool,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("[reddit]\ncollect_linked_articles = "
+                    + str(enabled).lower())
+    assert load_settings(path).reddit.collect_linked_articles is enabled
+
+
+@pytest.mark.parametrize("value", ['"true"', "1", "[]"])
+def test_linked_publisher_collection_requires_a_boolean(
+    tmp_path: pathlib.Path, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[reddit]\ncollect_linked_articles = {value}")
+
+    with pytest.raises(ConfigError, match=r"reddit\.collect_linked_articles"):
+        load_settings(path)

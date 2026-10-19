@@ -45,6 +45,8 @@ comment_limit = 50
 comment_sort = "best"
 # Also requires "video" in media.download_types; false keeps remote playback.
 download_videos = false
+# Save linked publisher articles, reusing readable articles already collected.
+collect_linked_articles = false
 
 [rss]
 feed_staleness_days = 14

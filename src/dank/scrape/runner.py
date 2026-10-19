@@ -100,11 +100,13 @@ async def run_scrape(
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
 ) -> None:
     settings = _detail_source_settings(
         settings, reddit_details=reddit_details, x_details=x_details,
+        reddit_linked_articles=reddit_linked_articles,
         hacker_news_details=hacker_news_details,
     )
 
@@ -192,6 +194,7 @@ async def run_scrape(
                     browser_config, reddit_config, youtube_config,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
+                    reddit_linked_articles=reddit_linked_articles,
                     hacker_news_details=hacker_news_details,
                 )
         except BaseException as error:
@@ -222,11 +225,13 @@ async def run_scrape(
 
 def _detail_source_settings(
     settings: Settings, *, reddit_details: bool, x_details: bool,
+    reddit_linked_articles: bool = False,
     hacker_news_details: bool,
 ) -> Settings:
     for enabled, domain in (
         (hacker_news_details, "news.ycombinator.com"),
-        (reddit_details, "reddit.com"), (x_details, "x.com"),
+        (reddit_details or reddit_linked_articles, "reddit.com"),
+        (x_details, "x.com"),
     ):
         if enabled:
             selected = filter_settings_sources(
@@ -248,6 +253,7 @@ async def _run_source_sessions(
     reddit_config: BrowserConfig, youtube_config: BrowserConfig,
     *, retry_failed_pages: bool, x_posts: tuple[str, ...],
     reddit_details: bool, x_details: bool, hacker_news_details: bool = False,
+    reddit_linked_articles: bool = False,
 ) -> None:
     async with (
         aiohttp.ClientSession(
@@ -270,6 +276,7 @@ async def _run_source_sessions(
                 youtube_profile=youtube_config.profile_dir or assets_dir,
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 reddit_details=reddit_details, x_details=x_details,
+                reddit_linked_articles=reddit_linked_articles,
                 hacker_news_details=hacker_news_details,
             )
         finally:
@@ -328,11 +335,13 @@ async def _collect_with_history(
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     totals_seen: set[str] = set()
+    seen_articles: set[str] = set()
     source_locks = {
         domain: asyncio.Lock()
         for domain in (
@@ -362,8 +371,9 @@ async def _collect_with_history(
                 source_locks.get(source.domain),
                 retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                 reddit_details=reddit_details, x_details=x_details,
+                reddit_linked_articles=reddit_linked_articles,
                 hacker_news_details=hacker_news_details,
-                totals_seen=totals_seen,
+                totals_seen=totals_seen, seen_articles=seen_articles,
             )
 
     try:
@@ -371,7 +381,9 @@ async def _collect_with_history(
             asyncio.create_task(worker())
             for _ in range(history.source_concurrency)
         )
-        await collect_linked_youtube_metadata(client, http_client)
+
+        if not reddit_linked_articles:
+            await collect_linked_youtube_metadata(client, http_client)
     finally:
         progress.cancel()
         await asyncio.gather(progress, return_exceptions=True)
@@ -400,9 +412,11 @@ async def _collect_source(
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
     totals_seen: set[str] | None = None,
+    seen_articles: set[str] | None = None,
 ) -> None:
     stats = SourceMetrics(index, source)
     history.sources[index] = stats
@@ -433,8 +447,9 @@ async def _collect_source(
                     batch_size=history.batch_size,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
+                    reddit_linked_articles=reddit_linked_articles,
                     hacker_news_details=hacker_news_details,
-                    totals_seen=totals_seen,
+                    totals_seen=totals_seen, seen_articles=seen_articles,
                 ):
                     stats.discovered(
                         batch.post_count, len(batch.assets),
@@ -510,23 +525,28 @@ async def _discover_source_batches(
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
     totals_seen: set[str] | None = None,
+    seen_articles: set[str] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
+    if seen_articles is None:
+        seen_articles = set()
+
     if (x_posts or retry_failed_pages or reddit_details or x_details
-            or hacker_news_details):
+            or reddit_linked_articles or hacker_news_details):
         async for batch in _retry_saved_posts(
             settings, source, clickhouse_client, http_client, session,
             x_posts=x_posts, batch_size=batch_size,
             reddit_details=reddit_details, x_details=x_details,
+            reddit_linked_articles=reddit_linked_articles,
             hacker_news_details=hacker_news_details,
+            seen_articles=seen_articles,
         ):
             yield batch
 
         return
-
-    seen_articles: set[str] = set()
 
     for adapter in source.collection_adapters:
         logger.info(
@@ -571,6 +591,9 @@ async def _discover_adapter_batches(
         case SourceAdapter.REDDIT:
             batches_iter = await _reddit_listing_batches(
                 settings, source, client, http_client, session, totals_seen,
+            )
+            batches_iter = _reddit_content_batches(
+                settings, client, http_client, batches_iter, seen_articles,
             )
         case SourceAdapter.X:
             batches_iter = scrape_x_accounts(
@@ -654,36 +677,122 @@ async def _hacker_news_content_batches(
         if not articles:
             continue
 
-        known = await _known_link_destinations(client, list(articles))
-        originals = {
-            url: row for url, row in known.items()
-            if is_original_source(str(row["domain"]), str(row["url"]))
-        }
-        pending = [
-            LinkedArticle(url, title, (
-                str(originals[url]["domain"]), str(originals[url]["post_id"]),
-            ) if url in originals else None)
-            for url, title in articles.items()
-            if not is_platform_url(url) and not (
-                url in originals
-                and str(originals[url].get("html") or "").strip()
-            )
-        ]
-
-        async for linked_batch in scrape_linked_articles(
-            http_client, pending, batch_size=10,
+        async for linked_batch in _linked_article_batches(
+            client, http_client, articles, seen,
         ):
-            seen.update(
-                url for post in linked_batch.posts
-                if (url := normalized_url(post.url))
-            )
             yield linked_batch
+
+
+async def _linked_article_batches(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    articles: dict[str, LinkedArticle], seen: set[str],
+) -> AsyncIterator[ScrapeBatch]:
+    if not articles:
+        return
+
+    known = await _known_link_destinations(client, list(articles))
+    originals = {
+        url: row for url, row in known.items()
+        if is_original_source(str(row["domain"]), str(row["url"]))
+    }
+    pending = [
+        article._replace(identity=(
+            str(originals[url]["domain"]), str(originals[url]["post_id"]),
+        ) if url in originals else None)
+        for url, article in articles.items()
+        if not is_platform_url(url) and not (
+            url in originals and str(originals[url].get("html") or "").strip()
+        )
+    ]
+    logger.info(
+        "Linked articles: selected=%d, reused=%d, pending=%d",
+        len(articles), sum(
+            bool(str(row.get("html") or "").strip())
+            for row in originals.values()
+        ), len(pending),
+    )
+
+    async for linked_batch in scrape_linked_articles(
+        http_client, pending, batch_size=10,
+    ):
+        seen.update(
+            url for post in linked_batch.posts
+            if (url := normalized_url(post.url))
+        )
+        yield linked_batch
+
+
+def _collection_origin(post: RawPost) -> dict[str, str]:
+    origin = {
+        "domain": post.domain, "post_id": post.post_id,
+        "source": post.source, "url": post.url,
+        "observed_at": post.scraped_at.isoformat(),
+    }
+    community = payload_object(post.payload).get("subreddit")
+
+    if isinstance(community, str) and community:
+        origin["community"] = community
+
+    return origin
+
+
+async def _reddit_content_batches(
+    settings: Settings, client: ClickHouseClient,
+    http_client: aiohttp.ClientSession, batches: AsyncIterator[ScrapeBatch],
+    seen: set[str],
+) -> AsyncIterator[ScrapeBatch]:
+    articles: dict[str, LinkedArticle] = {}
+
+    async for batch in batches:
+        # Persist every listing before slow pages can delay other communities.
+        yield batch
+
+        if settings.reddit.collect_linked_articles:
+            articles.update(_reddit_article_links(batch.posts, seen))
+
+    async for linked_batch in _linked_article_batches(
+        client, http_client, articles, seen,
+    ):
+        yield linked_batch
+
+
+def _reddit_article_links(
+    posts: list[RawPost], seen: set[str],
+) -> dict[str, LinkedArticle]:
+    links: dict[str, LinkedArticle] = {}
+
+    for post in posts:
+        payload = payload_object(post.payload)
+        value = payload.get("url")
+        url = normalized_url(value) if isinstance(value, str) else None
+
+        if (payload.get("is_self") is True or not url or url in seen
+                or url == normalized_url(post.url) or is_platform_url(url)):
+            continue
+
+        host = (urlsplit(url).hostname or "").lower()
+
+        if any(host == domain or host.endswith("." + domain) for domain in (
+            "reddit.com", "redd.it", "redditmedia.com", "redditstatic.com",
+            "youtube.com", "youtu.be", "youtube-nocookie.com", "vimeo.com",
+            "tiktok.com", "instagram.com", "facebook.com", "fb.watch",
+            "x.com", "twitter.com", "twitch.tv",
+        )):
+            continue
+
+        seen.add(url)
+        links[url] = LinkedArticle(
+            url, str(payload.get("title") or ""),
+            origin=_collection_origin(post),
+        )
+
+    return links
 
 
 def _hacker_news_article_links(
     posts: list[RawPost], seen: set[str],
-) -> dict[str, str]:
-    links: dict[str, str] = {}
+) -> dict[str, LinkedArticle]:
+    links: dict[str, LinkedArticle] = {}
 
     for post in posts:
         payload = payload_object(post.payload)
@@ -696,9 +805,10 @@ def _hacker_news_article_links(
 
         if url and url not in seen and url != normalized_url(post.url):
             seen.add(url)
-            links[url] = str(
-                listing.get("link_text") or story.get("title")
-                or rss.get("title") or "",
+            links[url] = LinkedArticle(
+                url, str(listing.get("link_text") or story.get("title")
+                         or rss.get("title") or ""),
+                origin=_collection_origin(post),
             )
 
     return links
@@ -717,6 +827,7 @@ async def _known_link_destinations(
         "AND u.observed_at <= p.updated_at "
         "WHERE u.url IN %(urls)s "
         "ORDER BY (p.domain = domainWithoutWWW(p.url)) DESC, "
+        "notEmpty(trimBoth(p.html)) DESC, "
         "(p.source != 'linked_article') DESC, p.domain, p.post_id "
         "LIMIT 1 BY lookup_url", {"urls": urls},
     )
@@ -729,6 +840,7 @@ async def _known_link_destinations(
             "SELECT domain, post_id, url, html, source FROM posts FINAL "
             "WHERE url IN %(urls)s ORDER BY "
             "(domain = domainWithoutWWW(url)) DESC, "
+            "notEmpty(trimBoth(html)) DESC, "
             "(source != 'linked_article') DESC, domain, post_id "
             "LIMIT 1 BY url",
             {"urls": missing},
@@ -823,10 +935,17 @@ async def _retry_saved_posts(
     http_client: aiohttp.ClientSession, session: BrowserSession,
     *, x_posts: tuple[str, ...], batch_size: int,
     reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
+    seen_articles: set[str] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
-    if hacker_news_details:
+    if reddit_linked_articles:
+        batches = _saved_reddit_article_batches(
+            settings, source, client, http_client,
+            seen_articles if seen_articles is not None else set(),
+        )
+    elif hacker_news_details:
         posts = await _load_pending_hacker_news_posts(
             client, settings.hacker_news,
         )
@@ -839,7 +958,11 @@ async def _retry_saved_posts(
             client, source, settings.reddit,
         )
         logger.info("Refreshing details for %d saved Reddit posts", len(posts))
-        batches = scrape_reddit_details(settings.reddit, posts, session)
+        batches = _reddit_content_batches(
+            settings, client, http_client,
+            scrape_reddit_details(settings.reddit, posts, session),
+            seen_articles if seen_articles is not None else set(),
+        )
     elif x_details:
         if not settings.x.conversation.enabled:
             logger.info("X discussion refresh is disabled in configuration")
@@ -988,6 +1111,51 @@ async def _load_pending_hacker_news_posts(
         ))
 
     return posts
+
+
+async def _saved_reddit_article_batches(
+    settings: Settings, source: SourceConfig, client: ClickHouseClient,
+    http_client: aiohttp.ClientSession, seen: set[str],
+) -> AsyncIterator[ScrapeBatch]:
+    if not settings.reddit.collect_linked_articles:
+        logger.info("Reddit publisher collection is disabled in configuration")
+
+        return
+
+    posts = await _load_reddit_link_posts(client, source, settings.reddit)
+    async for batch in _linked_article_batches(
+        client, http_client, _reddit_article_links(posts, seen), seen,
+    ):
+        yield batch
+
+
+async def _load_reddit_link_posts(
+    client: ClickHouseClient, source: SourceConfig, settings: RedditSettings,
+) -> list[RawPost]:
+    communities = [
+        urlsplit(url).path.split("/")[2].lower() for url in source.feed_urls
+    ]
+    result = await client.fetch_json(
+        "SELECT * FROM (SELECT domain, post_id, url, post_created_at, "
+        "scraped_at, source, request_url, payload, "
+        "lowerUTF8(JSONExtractString(payload, 'subreddit')) AS community "
+        "FROM raw_posts WHERE source = 'reddit' AND domain = 'reddit.com' "
+        "AND community IN %(communities)s "
+        "ORDER BY scraped_at DESC LIMIT 1 BY post_id) "
+        "WHERE NOT JSONExtractBool(payload, 'is_self') "
+        "AND JSONExtractString(payload, 'url') != '' "
+        "ORDER BY scraped_at DESC LIMIT %(limit)s BY community",
+        {"communities": communities, "limit": settings.scrape.max_posts},
+    )
+
+    return [RawPost(
+        domain=str(row["domain"]), post_id=str(row["post_id"]),
+        url=str(row["url"]),
+        post_created_at=parse_datetime(row["post_created_at"]),
+        scraped_at=datetime.datetime.fromisoformat(str(row["scraped_at"])),
+        source=str(row["source"]), request_url=str(row["request_url"]),
+        payload=str(row["payload"]),
+    ) for row in result.rows]
 
 
 async def _load_pending_reddit_posts(
@@ -1809,6 +1977,7 @@ def run_scrape_from_config(
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
     retry_youtube_thumbnails_only: bool = False,
@@ -1844,6 +2013,7 @@ def run_scrape_from_config(
     asyncio.run(run_scrape(
         settings, headless=headless, retry_failed_pages=retry_failed_pages,
         x_posts=x_posts, reddit_details=reddit_details, x_details=x_details,
+        reddit_linked_articles=reddit_linked_articles,
         hacker_news_details=hacker_news_details,
     ))
 

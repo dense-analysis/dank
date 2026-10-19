@@ -35,6 +35,7 @@ capture_comments = true
 comment_limit = 50
 comment_sort = "best"
 download_videos = false
+collect_linked_articles = false
 ```
 
 `reddit.com` and `www.reddit.com` also work as source domains. Community
@@ -68,6 +69,40 @@ Both settings must allow it. Native Reddit streams are assembled with their
 audio using yt-dlp; media size limits still apply. Remote links depend on
 Reddit remaining available and can expire. Existing [media controls](media.md)
 also apply to images and other media.
+
+## Linked publisher articles
+
+Set `[reddit].collect_linked_articles = true` to save the publisher pages linked
+by Reddit link posts. It defaults to `false`; disabling it stops future publisher
+fetches without removing saved articles or their excerpts.
+
+DANK saves the Reddit listings first, then collects the external pages with
+bounded requests and the existing publisher recovery/media settings. A readable
+saved publisher article is reused; an empty saved article can be repaired under
+its existing identity. Repeated destinations are fetched once per run. Reddit,
+social/video platform destinations and self-posts are excluded. Post/scroll
+limits still bound how many Reddit links are discovered.
+
+Publisher articles remain separate from their Reddit discussions. New captures
+record the Reddit community, referring post and its collection time as their
+collection origin. Reusing an article does not replace its original origin.
+Collection times are observations by your DANK instance, not proof of when a
+community first published or noticed a story. Blocked, paywalled and unsupported
+pages can remain unavailable; existing saved content remains usable.
+
+To fetch publisher pages for already saved Reddit link posts, without revisiting
+Reddit communities or discussions:
+
+```sh
+make scrape MODE=native ARGS='--headless --reddit-linked-articles'
+make process MODE=native ARGS='--age 24h --domains "^reddit\.com$"'
+```
+
+This mode also requires `collect_linked_articles = true`. It considers the latest
+saved link-post snapshots in configured communities, up to `max_posts` per
+community, and applies the same reuse and destination rules. It does not create
+new Reddit observations. Processing Reddit also prepares the publisher pages
+collected through it, so their excerpts and saved articles become available.
 
 ## Run
 

@@ -219,3 +219,24 @@ async def test_non_web_and_credential_links_are_not_requested(
 
     assert not batches
     fetch.assert_not_called()
+
+
+async def test_capture_keeps_collection_origin_separate_from_fetch_time(
+) -> None:
+    url = "https://publisher.test/article"
+    origin = {
+        "domain": "reddit.com", "post_id": "t3_abc", "source": "reddit",
+        "community": "python", "url": "https://reddit.com/comments/abc",
+        "observed_at": "2026-01-01T00:00:00+00:00",
+    }
+    client = _Client(_Response(url, "<article>Publisher body</article>"))
+    batches = [batch async for batch in scrape_linked_articles(
+        cast(Any, client), [LinkedArticle(url, "Story", origin=origin)],
+    )]
+    post, = batches[0].posts
+    payload = json.loads(post.payload)
+    assert payload["collection_origin"] == origin
+    assert post.source == "linked_article"
+    assert post.domain == "publisher.test"
+    assert post.scraped_at.isoformat() != origin["observed_at"]
+    assert post.post_created_at is None

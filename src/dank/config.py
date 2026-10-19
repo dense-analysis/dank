@@ -80,6 +80,7 @@ class RedditSettings(NamedTuple):
     download_videos: bool = False
     request_interval_seconds: float = 2.0
     detail_cache_hours: float = 24.0
+    collect_linked_articles: bool = False
 
 
 class RedditSort(StrEnum):
@@ -527,7 +528,9 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
     ):
         raise ConfigError("reddit.scroll_pause_seconds must be 0.25 to 60")
 
-    for key in ("capture_comments", "download_videos"):
+    for key in (
+        "capture_comments", "download_videos", "collect_linked_articles",
+    ):
         if not isinstance(data.get(key, getattr(defaults, key)), bool):
             raise ConfigError(f"reddit.{key} must be a boolean")
 
@@ -564,6 +567,9 @@ def _parse_reddit_settings(value: object) -> RedditSettings:
             "capture_comments", defaults.capture_comments,
         ),
         download_videos=data.get("download_videos", defaults.download_videos),
+        collect_linked_articles=data.get(
+            "collect_linked_articles", defaults.collect_linked_articles,
+        ),
         comment_limit=comment_limit,
         comment_sort=_parse_enum(
             RedditCommentSort, data.get("comment_sort", defaults.comment_sort),
