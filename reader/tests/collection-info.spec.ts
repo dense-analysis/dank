@@ -30,6 +30,10 @@ const info: CollectionInfo = {
   article_collected_at: "2026-10-19T08:01:00Z",
   collected_via: firstOrigin,
   seen_before_post: true,
+  post_published_at: "2026-10-19T08:30:00Z",
+  discovered_before_publication: true,
+  earlier_discovered_at: firstOrigin.observed_at,
+  earlier_discovered_from: [firstOrigin],
   coverage: "saved_history",
 };
 const reddit: Post = {
@@ -41,7 +45,7 @@ const reddit: Post = {
   author: "submitter",
   excerpt: publisher.url,
   html: `<p>${publisher.url}</p>`,
-  created_at: "2026-10-19T07:00:00Z",
+  created_at: "2026-10-19T08:30:00Z",
   thumbnail: null,
   media: [],
   reddit: { community: "science", score: 42, comments: 7, flair: null },
@@ -117,29 +121,37 @@ for (const width of [390, 1280]) {
       const original = card.getByRole("link", {
         name: `Open original: ${reddit.title}`,
       });
-      await expect(toggle).toHaveAttribute(
+      const eye = card.getByRole("button", {
+        name: "Previously discovered",
+        exact: true,
+      });
+      await expect(toggle).toHaveAttribute("title", "Collection info");
+      await expect(toggle.locator("svg")).toHaveClass(/lucide-info/);
+      await expect(toggle).not.toHaveClass(/has-earlier-discovery/);
+      await expect(eye).toHaveAttribute(
         "title",
-        /^First seen from Hacker News at /,
+        /^Discovered at Hacker News on /,
       );
-      await expect(toggle).toHaveClass(/has-earlier-discovery/);
-      const toggleBox = await toggle.boundingBox();
+      await expect(eye.locator("svg")).toHaveClass(/lucide-eye/);
+      const toggleBox = await eye.boundingBox();
       const originalBox = await original.boundingBox();
       expect(
         toggleBox &&
           originalBox &&
           toggleBox.x + toggleBox.width <= originalBox.x,
       ).toBeTruthy();
-      await toggle.focus();
+      await eye.focus();
       await page.keyboard.press("Enter");
+      await expect(eye).toHaveAttribute("aria-expanded", "true");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
       const panel = card.getByRole("region", { name: "Collection info" });
-      await expect(panel).toContainText(
-        "already known to DANK before this link was observed",
-      );
+      await expect(panel).toContainText("before this post was published");
       await expect(panel).toContainText(
         "The feed preview uses text from the saved publisher article",
       );
-      await expect(panel).toContainText("not publication times");
+      await expect(panel).toContainText(
+        "Collection order alone does not show which post came first",
+      );
       await panel.getByText("First observed by DANK", { exact: true }).click();
       await expect(page).not.toHaveURL(/article=/);
       await expect(
@@ -194,6 +206,10 @@ test("unknown, incomplete, tied and disabled history stays explicit", async ({
       article_collected_at: null,
       collected_via: null,
       seen_before_post: null,
+      post_published_at: null,
+      discovered_before_publication: null,
+      earlier_discovered_at: null,
+      earlier_discovered_from: [],
       first_seen_from: [
         firstOrigin,
         { ...firstOrigin, id: "another", label: "r/science" },
@@ -205,7 +221,9 @@ test("unknown, incomplete, tied and disabled history stays explicit", async ({
     name: "Collection info",
     exact: true,
   });
-  await expect(toggle).toHaveAttribute("title", /Hacker News and r\/science/);
+  await expect(
+    page.getByRole("button", { name: "Previously discovered" }),
+  ).toHaveCount(0);
   await expect(toggle).not.toHaveClass(/has-earlier-discovery/);
   await toggle.click();
   const panel = page.getByRole("region", { name: "Collection info" });
@@ -225,12 +243,17 @@ test("unknown, incomplete, tied and disabled history stays explicit", async ({
       article_collected_at: null,
       collected_via: null,
       seen_before_post: false,
+      discovered_before_publication: false,
+      earlier_discovered_at: null,
+      earlier_discovered_from: [],
     },
   });
   await page.reload();
   await toggle.click();
   await expect(panel).toContainText("Not collected");
-  await expect(panel).toContainText("No earlier discovery appears");
+  await expect(panel).toContainText(
+    "No independent discovery before this post was published",
+  );
   await expect(
     panel.getByRole("link", { name: "Read saved article" }),
   ).toHaveCount(0);
@@ -291,7 +314,7 @@ test("own post text is not attributed to the saved publisher", async ({
     .getByRole("button", { name: "Collection info", exact: true })
     .click();
   const panel = page.getByRole("region", { name: "Collection info" });
-  await expect(panel).toContainText("already known to DANK");
+  await expect(panel).toContainText("before this post was published");
   await expect(panel).not.toContainText(
     "The feed preview uses text from the saved publisher article",
   );
@@ -333,6 +356,10 @@ test("edited links keep post collection and link discovery times separate", asyn
       first_seen_at: "2026-10-19T08:00:00Z",
       link_first_seen_at: "2026-10-19T09:00:00Z",
       seen_before_post: true,
+      post_published_at: "2026-10-19T06:30:00Z",
+      discovered_before_publication: false,
+      earlier_discovered_at: null,
+      earlier_discovered_from: [],
     },
   });
   await page.goto("/reader/?view=reddit");
@@ -340,7 +367,10 @@ test("edited links keep post collection and link discovery times separate", asyn
     name: "Collection info",
     exact: true,
   });
-  await expect(toggle).toHaveClass(/has-earlier-discovery/);
+  await expect(toggle).not.toHaveClass(/has-earlier-discovery/);
+  await expect(
+    page.getByRole("button", { name: "Previously discovered" }),
+  ).toHaveCount(0);
   await toggle.click();
   const panel = page.getByRole("region", { name: "Collection info" });
   await expect(
@@ -356,6 +386,108 @@ test("edited links keep post collection and link discovery times separate", asyn
       .locator("time"),
   ).toHaveAttribute("datetime", "2026-10-19T09:00:00Z");
   await expect(panel).toContainText(
-    "already known to DANK before this link was observed",
+    "DANK observed this destination before collecting this link",
   );
+});
+
+test("Reddit-first links and native videos have information without an eye", async ({
+  page,
+}) => {
+  const ownOrigin = {
+    ...firstOrigin,
+    domain: reddit.domain,
+    source: reddit.source,
+    id: reddit.id,
+    url: reddit.url,
+    label: "r/science",
+    observed_at: "2026-10-19T09:00:00Z",
+  };
+  const redditFirst: CollectionInfo = {
+    ...info,
+    first_seen_at: info.post_first_seen_at,
+    first_seen_from: [ownOrigin],
+    collected_via: ownOrigin,
+    article_collected_at: "2026-10-19T09:01:00Z",
+    seen_before_post: false,
+    discovered_before_publication: false,
+    earlier_discovered_at: null,
+    earlier_discovered_from: [],
+  };
+  await fixtures(page, { ...reddit, collection_info: redditFirst });
+  await page.goto("/reader/?view=reddit");
+  const eye = page.getByRole("button", { name: "Previously discovered" });
+  const toggle = page.getByRole("button", {
+    name: "Collection info",
+    exact: true,
+  });
+  await expect(eye).toHaveCount(0);
+  await toggle.click();
+  const panel = page.getByRole("region", { name: "Collection info" });
+  await expect(panel).toContainText(
+    "No independent discovery before this post was published",
+  );
+  await expect(panel).toContainText("r/science");
+  await page.unroute("**/api/reader/**");
+  await fixtures(page, {
+    ...reddit,
+    title: "A native Reddit video",
+    linked_post: null,
+    excerpt: "https://v.redd.it/native-video",
+    html: "<p>https://v.redd.it/native-video</p>",
+    reddit: {
+      community: "science",
+      score: 42,
+      comments: 7,
+      flair: null,
+      video: {
+        url: "https://v.redd.it/native-video/DASH_720.mp4",
+        source_url: "https://v.redd.it/native-video",
+        remote: true,
+        poster_url: null,
+      },
+    },
+    collection_info: {
+      ...redditFirst,
+      article_url: "https://v.redd.it/native-video",
+      article: null,
+      article_status: "unavailable",
+      article_collected_at: null,
+      collected_via: null,
+    },
+  });
+  await page.reload();
+  await expect(eye).toHaveCount(0);
+  await toggle.click();
+  await expect(panel).toContainText("Linked Reddit video");
+  await expect(panel).not.toContainText("Publisher page");
+  await expect(panel).not.toContainText("Not collected");
+  await expect(panel.getByRole("link", { name: "Open video" })).toHaveAttribute(
+    "href",
+    "https://v.redd.it/native-video",
+  );
+});
+
+test("missing publication evidence keeps the eye hidden even for earlier collection", async ({
+  page,
+}) => {
+  await fixtures(page, {
+    ...reddit,
+    collection_info: {
+      ...info,
+      post_published_at: null,
+      discovered_before_publication: null,
+      earlier_discovered_at: null,
+      earlier_discovered_from: [],
+    },
+  });
+  await page.goto("/reader/?view=reddit");
+  await expect(
+    page.getByRole("button", { name: "Previously discovered" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Collection info", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Collection info" }),
+  ).toContainText("publication time is unavailable");
 });

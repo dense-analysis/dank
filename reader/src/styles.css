@@ -2996,7 +2996,7 @@ a.social-metric:hover {
 }
 
 /* Collection history is shared across publisher and discussion cards. */
-.collection-info-button.has-earlier-discovery {
+.earlier-discovery-button {
   color: var(--green);
 }
 .collection-info-card,

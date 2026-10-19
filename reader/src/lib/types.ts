@@ -98,6 +98,10 @@ export interface CollectionInfo {
   article_collected_at: string | null;
   collected_via: CollectionOrigin | null;
   seen_before_post: boolean | null;
+  post_published_at?: string | null;
+  discovered_before_publication?: boolean | null;
+  earlier_discovered_at?: string | null;
+  earlier_discovered_from?: CollectionOrigin[];
   coverage: "saved_history";
 }
 

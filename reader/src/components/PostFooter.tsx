@@ -1,8 +1,8 @@
-import { Check, ExternalLink, Eye } from "lucide-react";
+import { Check, ExternalLink, Eye, Info } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import type { Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
-import { CollectionInfoContent, collectionInfoTitle } from "./CollectionInfo";
+import { CollectionInfoContent, earlierDiscoveryTitle } from "./CollectionInfo";
 
 export function PostFooter({
   children,
@@ -25,6 +25,7 @@ export function PostFooter({
   const [infoOpen, setInfoOpen] = useState(false);
   const infoId = useId();
   const info = post?.collection_info;
+  const discoveryTitle = info && earlierDiscoveryTitle(info);
 
   return (
     <footer className="post-footer">
@@ -41,9 +42,22 @@ export function PostFooter({
           {info && (
             <button
               type="button"
-              className={`icon-button collection-info-button${info.seen_before_post ? " has-earlier-discovery" : ""}`}
+              className="icon-button collection-info-button"
               aria-label="Collection info"
-              title={collectionInfoTitle(info)}
+              title="Collection info"
+              aria-expanded={infoOpen}
+              aria-controls={infoId}
+              onClick={() => setInfoOpen(!infoOpen)}
+            >
+              <Info size={16} aria-hidden="true" />
+            </button>
+          )}
+          {discoveryTitle && (
+            <button
+              type="button"
+              className="icon-button earlier-discovery-button"
+              aria-label="Previously discovered"
+              title={discoveryTitle}
               aria-expanded={infoOpen}
               aria-controls={infoId}
               onClick={() => setInfoOpen(!infoOpen)}

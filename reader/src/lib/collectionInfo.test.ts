@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectionInfoTitle } from "../components/CollectionInfo";
+import { earlierDiscoveryTitle } from "../components/CollectionInfo";
 import type { CollectionInfo, Post } from "./types";
 import { isPost } from "./validation";
 
@@ -23,6 +23,10 @@ const info: CollectionInfo = {
   article_collected_at: null,
   collected_via: null,
   seen_before_post: true,
+  post_published_at: "2026-10-19T08:30:00Z",
+  discovered_before_publication: true,
+  earlier_discovered_at: origin.observed_at,
+  earlier_discovered_from: [origin],
   coverage: "saved_history",
 };
 const post: Post = {
@@ -34,7 +38,7 @@ const post: Post = {
   title: "A story",
   excerpt: "",
   html: "",
-  created_at: "2026-10-19T07:00:00Z",
+  created_at: "2026-10-19T08:30:00Z",
   thumbnail: null,
   media: [],
   collection_info: info,
@@ -43,6 +47,18 @@ const post: Post = {
 describe("collection information contract", () => {
   it("accepts unknown historical values and all article capture statuses", () => {
     expect(isPost(post)).toBe(true);
+    expect(
+      isPost({
+        ...post,
+        collection_info: {
+          ...info,
+          post_published_at: undefined,
+          discovered_before_publication: undefined,
+          earlier_discovered_at: undefined,
+          earlier_discovered_from: undefined,
+        },
+      }),
+    ).toBe(true);
     expect(isPost({ ...post, collection_info: undefined })).toBe(true);
     expect(isPost({ ...post, collection_info: null })).toBe(true);
     for (const article_status of ["collected", "incomplete", "unavailable"])
@@ -69,6 +85,11 @@ describe("collection information contract", () => {
       { link_first_seen_at: "not-a-date" },
       { article_collected_at: false },
       { seen_before_post: "true" },
+      { post_published_at: "2026-10-19" },
+      { earlier_discovered_at: "yesterday" },
+      { discovered_before_publication: "true" },
+      { earlier_discovered_from: Array(6).fill(origin) },
+      { earlier_discovered_from: [{ ...origin, observed_at: "yesterday" }] },
       { article_status: "success" },
       { coverage: "complete_history" },
       { first_seen_from: Array(6).fill(origin) },
@@ -81,18 +102,34 @@ describe("collection information contract", () => {
       ).toBe(false);
   });
 
-  it("keeps tied earliest sources in the tooltip and labels unavailable times", () => {
+  it("keeps tied independent sources in the tooltip and omits unavailable times", () => {
     expect(
-      collectionInfoTitle({
+      earlierDiscoveryTitle({
         ...info,
-        first_seen_from: [
+        earlier_discovered_from: [
           origin,
           { ...origin, id: "hn", source: "hacker_news", label: "Hacker News" },
         ],
       }),
-    ).toMatch(/^First seen from r\/science and Hacker News at /);
-    expect(collectionInfoTitle({ ...info, first_seen_at: null })).toContain(
-      "unavailable",
-    );
+    ).toMatch(/^Discovered at r\/science and Hacker News on /);
+    expect(
+      earlierDiscoveryTitle({ ...info, earlier_discovered_at: null }),
+    ).toBeNull();
+  });
+
+  it("never turns collection order or incomplete history into an earlier-discovery eye", () => {
+    for (const unknown of [
+      { post_published_at: null },
+      { post_published_at: undefined },
+      { discovered_before_publication: false },
+      { discovered_before_publication: null },
+      { discovered_before_publication: undefined },
+      { earlier_discovered_at: undefined },
+      { earlier_discovered_from: [] },
+      { earlier_discovered_from: undefined },
+      { earlier_discovered_at: info.post_published_at },
+      { earlier_discovered_at: "2026-10-19T08:45:00Z" },
+    ])
+      expect(earlierDiscoveryTitle({ ...info, ...unknown })).toBeNull();
   });
 });

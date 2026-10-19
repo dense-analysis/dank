@@ -231,6 +231,19 @@ function isCollectionInfo(value: unknown): boolean {
     (value.collected_via === null || isCollectionOrigin(value.collected_via)) &&
     (value.seen_before_post === null ||
       typeof value.seen_before_post === "boolean") &&
+    ["post_published_at", "earlier_discovered_at"].every(
+      (key) =>
+        value[key] === undefined ||
+        value[key] === null ||
+        isTimestamp(value[key]),
+    ) &&
+    (value.discovered_before_publication === undefined ||
+      value.discovered_before_publication === null ||
+      typeof value.discovered_before_publication === "boolean") &&
+    (value.earlier_discovered_from === undefined ||
+      (Array.isArray(value.earlier_discovered_from) &&
+        value.earlier_discovered_from.length <= 5 &&
+        value.earlier_discovered_from.every(isCollectionOrigin))) &&
     value.coverage === "saved_history"
   );
 }
