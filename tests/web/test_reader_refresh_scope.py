@@ -59,25 +59,44 @@ async def test_all_preserves_all_configured_collection_adapters():
     storage.fetch_json.assert_not_called()
 
 
-@pytest.mark.parametrize("kind,expected", [
-    ("rss", ["rss", "rss"]), ("hacker_news", ["hacker_news"]),
-])
-async def test_compound_source_runs_only_selected_adapter(
-    kind: str, expected: list[str],
-):
-    original = settings(SourceConfig("news.ycombinator.com", (), adapters=(
-        SourceAdapterConfig(SourceAdapter.HACKER_NEWS),
-        SourceAdapterConfig(SourceAdapter.RSS, ("https://a.test/rss",)),
-        SourceAdapterConfig(SourceAdapter.RSS, ("https://b.test/rss",)),
-    )))
-    plan = await resolve_scope(original, client(), {"kind": kind})
-    adapters = plan.settings.sources[0].collection_adapters
-    assert [adapter.kind for adapter in adapters] == expected
+async def test_hacker_news_refresh_preserves_compound_and_rss_only_sources():
+    original = settings(
+        SourceConfig("news.ycombinator.com", (), adapters=(
+            SourceAdapterConfig(SourceAdapter.HACKER_NEWS),
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://a.test/rss",)),
+        )),
+        SourceConfig("news.ycombinator.com", (), adapters=(
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://b.test/rss",)),
+        )),
+        SourceConfig("publisher.test", ()),
+    )
+    plan = await resolve_scope(original, client(), {"kind": "hacker_news"})
+    assert plan.settings.sources == original.sources[:2]
+    assert [adapter.kind for source in plan.settings.sources
+            for adapter in source.collection_adapters] == [
+        "hacker_news", "rss", "rss",
+    ]
 
-    if kind == "rss":
-        assert [adapter.feed_urls for adapter in adapters] == [
-            ("https://a.test/rss",), ("https://b.test/rss",),
-        ]
+
+async def test_blogs_refresh_excludes_platform_rss_and_keeps_publisher_feeds():
+    original = settings(
+        SourceConfig("news.ycombinator.com", (), adapters=(
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://a.test/rss",)),
+        )),
+        SourceConfig("publisher.test", (), adapters=(
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://b.test/rss",)),
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://c.test/rss",)),
+        )),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Python/",)),
+        SourceConfig("youtube.com", ()),
+        SourceConfig("x.com", ("alice",)),
+    )
+    plan = await resolve_scope(original, client(), {"kind": "rss"})
+    assert plan.settings.sources == (original.sources[1],)
+    assert [adapter.feed_urls for adapter in
+            plan.settings.sources[0].collection_adapters] == [
+        ("https://b.test/rss",), ("https://c.test/rss",),
+    ]
 
 
 async def test_domains_and_tags_are_union_within_and_intersection_across():
@@ -91,10 +110,7 @@ async def test_domains_and_tags_are_union_within_and_intersection_across():
         "kind": "all", "domains": ["b.test", "a.test", "a.test"],
         "tags": ["TECH", "games"],
     })
-    assert plan.settings.sources == tuple(
-        source._replace(adapters=source.collection_adapters)
-        for source in original.sources[:2]
-    )
+    assert plan.settings.sources == original.sources[:2]
     assert plan.scope == {
         "kind": "all", "domains": ["a.test", "b.test"],
         "tags": ["games", "tech"],

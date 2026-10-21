@@ -15,6 +15,7 @@ from dank.config import (
 from dank.scrape.youtube.feeds import configured_feeds
 from dank.scrape.youtube.payloads import YouTubeFeed
 from dank.storage.clickhouse import ClickHouseClient
+from dank.web.reader_accounts import source_kind
 from dank.youtube import VIDEO_ID
 
 LABELS = {
@@ -164,13 +165,11 @@ def _selected_sources(
         if tags and not tags.intersection(source.tags):
             continue
 
-        adapters = tuple(
-            adapter for adapter in source.collection_adapters
-            if scope["kind"] == "all" or adapter.kind == scope["kind"]
-        )
-
-        if adapters:
-            selected.append(source._replace(adapters=adapters))
+        # Reader sections identify platforms by domain. A Hacker News source
+        # still belongs to Hacker News when it uses RSS or several adapters.
+        if (scope["kind"] == "all"
+                or source_kind(source.domain) == scope["kind"]):
+            selected.append(source)
 
     return tuple(selected)
 
