@@ -1,6 +1,7 @@
 import { sourceKind } from "../lib/collections";
 import { filterParams } from "../lib/navigation";
 import { defaultFilters } from "../lib/storage";
+import type { FeedKind } from "../lib/types";
 import { ReaderLink } from "./ReaderLink";
 
 export function sourceName(domain: string) {
@@ -12,13 +13,15 @@ export function sourceName(domain: string) {
 export function SourceLink({
   domain,
   select,
+  kind = sourceKind(domain),
 }: {
   domain: string;
+  kind?: FeedKind;
   select: (domain: string) => void;
 }) {
   return (
     <ReaderLink
-      href={`/reader/?${filterParams({ ...defaultFilters, kind: sourceKind(domain), domains: [domain] })}`}
+      href={`/reader/?${filterParams({ ...defaultFilters, kind, domains: [domain] })}`}
       onNavigate={() => select(domain)}
       className="source-link"
       title={domain}

@@ -40,6 +40,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
 import { XPostCard } from "./components/XPostCard";
 import { YouTubeCollection } from "./components/YouTubeCollection";
+import { YouTubePostCard } from "./components/YouTubePostCard";
 import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
@@ -48,7 +49,7 @@ import {
   collectedAccounts,
   feedLabels,
   sectionFromView,
-  sourceKind,
+  sourceFeedKind,
   sourcesForFeed,
 } from "./lib/collections";
 import {
@@ -274,6 +275,12 @@ export function App() {
     const next = articleParams(params, post);
     navigate(next, false, params.toString());
   }
+  function videoParams(post: Post) {
+    const next = new URLSearchParams(params);
+    next.set("youtube_item", post.id);
+
+    return next;
+  }
   function closeArticle() {
     if (returnToConnections) backToConnection(returnToConnections);
     else backTo(connectionsClosedParams(params));
@@ -309,9 +316,7 @@ export function App() {
     if (next) navigate(next, false, params.toString());
   }
   function selectSource(domain: string) {
-    const kind = sourceKind(domain);
-    const source = allSources.find((item) => item.domain === domain);
-    select(kind === "stories" && source?.configured === false ? "all" : kind, {
+    select(sourceFeedKind(domain, allSources), {
       ...defaultFilters,
       domains: [domain],
     });
@@ -510,6 +515,7 @@ export function App() {
                 onExploreTarget={exploreTarget}
               />
             )}
+            sourceFeed={sourceFeedKind(articleDomain, allSources)}
             selectSource={selectSource}
             markRead={markRead}
             filters={filters}
@@ -699,6 +705,7 @@ export function App() {
                           </Fragment>
                         ) : isXPost(post) ? (
                           <XPostCard
+                            mixedFeed={section === "all"}
                             params={params}
                             openPost={openPost}
                             key={postKey(post)}
@@ -716,8 +723,33 @@ export function App() {
                             selectAccount={selectAccount}
                             query={filters.q}
                           />
+                        ) : post.source === "youtube" || post.youtube ? (
+                          <YouTubePostCard
+                            key={postKey(post)}
+                            post={post}
+                            read={readKeys.has(postKey(post))}
+                            href={`/reader/?${videoParams(post)}`}
+                            open={() =>
+                              navigate(
+                                videoParams(post),
+                                false,
+                                params.toString(),
+                              )
+                            }
+                            query={filters.q}
+                            filters={filters}
+                            selectAuthor={selectAuthor}
+                            links={
+                              <PostLinks
+                                post={post}
+                                params={params}
+                                open={openPost}
+                              />
+                            }
+                          />
                         ) : (
                           <PostCard
+                            sourceFeed={sourceFeedKind(post.domain, allSources)}
                             key={postKey(post)}
                             post={post}
                             links={

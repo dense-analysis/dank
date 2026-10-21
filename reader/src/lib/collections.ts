@@ -41,6 +41,13 @@ export function sourceKind(domain: string): Exclude<FeedKind, "all"> {
   }
 }
 
+export function sourceFeedKind(domain: string, sources: Source[]): FeedKind {
+  const kind = sourceKind(domain);
+  const source = sources.find((item) => item.domain === domain);
+
+  return kind === "stories" && source?.configured === false ? "all" : kind;
+}
+
 export function sourcesForFeed(sources: Source[], kind: FeedKind): Source[] {
   return sources.filter((source) => {
     const collection = source.kind === "rss" ? "stories" : source.kind;

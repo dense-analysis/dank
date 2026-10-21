@@ -11,7 +11,7 @@ import {
   withoutRedditImageUrls,
 } from "../lib/redditImages";
 import { postKey } from "../lib/storage";
-import type { Filters, Post } from "../lib/types";
+import type { FeedKind, Filters, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
@@ -70,6 +70,7 @@ export function PostCard({
   open,
   href,
   selectSource,
+  sourceFeed,
   query,
   filters,
   selectAuthor,
@@ -82,6 +83,7 @@ export function PostCard({
   open: () => void;
   href: string;
   selectSource: (domain: string) => void;
+  sourceFeed?: FeedKind;
   query: string;
   filters: Filters;
   selectAuthor: (author: string) => void;
@@ -146,7 +148,11 @@ export function PostCard({
             ) : (
               <>
                 <SourceMark domain={post.domain} />
-                <SourceLink domain={post.domain} select={selectSource} />
+                <SourceLink
+                  domain={post.domain}
+                  select={selectSource}
+                  kind={sourceFeed}
+                />
               </>
             )}
             <span className="meta-dot">·</span>
