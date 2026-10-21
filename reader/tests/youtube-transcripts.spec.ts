@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import type { RefreshJob } from "../src/lib/refresh";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
 import type { YouTubeTranscript } from "../src/lib/youtubeTranscript";
 
@@ -181,4 +182,70 @@ test("transport errors do not loop and allow an explicit retry", async ({
     page.getByText("Welcome to the saved transcript."),
   ).toBeVisible();
   expect(state.posts).toBe(2);
+});
+
+test("accepting a completed video refresh reloads saved captions without collecting them again", async ({
+  page,
+}) => {
+  const state = await fixture(page, {
+    ...blank,
+    status: "unavailable",
+    observed_at: "2026-10-19T12:00:00Z",
+    retry_after: "2099-01-01T00:00:00Z",
+  });
+  const jobs: RefreshJob[] = [];
+  await page.route("**/api/reader/refresh", async (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        scope: { kind: "post", domain: "youtube.com", post_id: `video:${id}` },
+      });
+      jobs[0] = {
+        id: "video-refresh",
+        scope: { kind: "post", domain: "youtube.com", post_id: `video:${id}` },
+        label: "This video",
+        status: "running",
+        message: "Refreshing video details.",
+        created_at: "2026-10-22T12:00:00Z",
+        finished_at: null,
+        posts_saved: 0,
+      };
+      return route.fulfill({ status: 202, json: { job: jobs[0] } });
+    }
+
+    return route.fulfill({ json: { jobs } });
+  });
+  await page.goto(detail);
+  const transcript = page.getByRole("region", { name: "Video transcript" });
+  await expect(
+    transcript.getByText(
+      "No supported captions were available when this video was checked.",
+    ),
+  ).toBeVisible();
+  const readsBefore = state.reads;
+  await page
+    .getByRole("button", { name: "Refresh this YouTube item", exact: true })
+    .click();
+  await expect.poll(() => jobs[0]?.status).toBe("running");
+  state.result = saved;
+  jobs[0] = {
+    ...jobs[0],
+    status: "completed",
+    message: "Video and captions saved.",
+    posts_saved: 1,
+  };
+  await expect(
+    page.getByRole("button", { name: "Show updates" }),
+  ).toBeVisible();
+  await expect(
+    transcript.getByText(
+      "No supported captions were available when this video was checked.",
+    ),
+  ).toBeVisible();
+  expect(state.reads).toBe(readsBefore);
+  await page.getByRole("button", { name: "Show updates" }).click();
+  await expect(
+    transcript.getByText("Welcome to the saved transcript."),
+  ).toBeVisible();
+  expect(state.reads).toBe(readsBefore + 1);
+  expect(state.posts).toBe(0);
 });

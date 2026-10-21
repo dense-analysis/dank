@@ -15,6 +15,7 @@ const contentQueries = new Set([
   "youtube",
   "youtube-item",
   "youtube-sources",
+  "youtube-transcript",
   "post-connections",
   "reference-evidence",
 ]);

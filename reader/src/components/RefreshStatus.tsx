@@ -25,7 +25,9 @@ export function RefreshStatus({
 }: {
   refresh: ReturnType<typeof useRefresh>;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    () => window.matchMedia("(max-width: 760px)").matches,
+  );
   const active = refresh.visible.filter(refreshActive);
   const ready = refresh.visible.some(
     (job) =>

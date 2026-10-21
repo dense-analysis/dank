@@ -323,6 +323,17 @@ for (const width of [320, 1280]) {
     await page
       .getByRole("button", { name: "Refresh r/LocalLLaMA", exact: true })
       .click();
+    if (width <= 760) {
+      await expect(
+        page.getByRole("button", { name: "Show refresh details" }),
+      ).toBeVisible();
+      await expect(page.locator(".refresh-notice")).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`refresh-${width}-compact.png`),
+      });
+      await page.getByRole("button", { name: "Show refresh details" }).click();
+    }
+
     await expect(page.locator(".refresh-notice .refresh-spinning")).toHaveCSS(
       "animation-name",
       "none",
