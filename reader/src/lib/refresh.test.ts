@@ -24,6 +24,24 @@ afterEach(() => vi.unstubAllGlobals());
 describe("contextual collection scope", () => {
   it.each([
     ["", { kind: "all" }],
+    ["platform=reddit", { kind: "all", platforms: ["reddit"] }],
+    [
+      "platform=youtube&platform=stories&platform=reddit",
+      { kind: "all", platforms: ["reddit", "rss", "youtube"] },
+    ],
+    [
+      "platform=reddit&domain=reddit.com&tag=news&q=llama",
+      {
+        kind: "all",
+        platforms: ["reddit"],
+        domains: ["reddit.com"],
+        tags: ["news"],
+      },
+    ],
+    [
+      "platform=youtube&youtube_item=video%3AdQw4w9WgXcQ",
+      { kind: "post", domain: "youtube.com", post_id: "video:dQw4w9WgXcQ" },
+    ],
     [
       "view=stories&domain=example.com",
       { kind: "rss", domains: ["example.com"] },
@@ -82,11 +100,28 @@ describe("contextual collection scope", () => {
       scope: { kind: "post", domain: "youtube.com", post_id: "post:Ugkx123" },
       disabled: expect.stringContaining("community posts cannot be refreshed"),
     });
+    expect(
+      refreshContext(
+        new URLSearchParams(
+          "article=post%3AUgkx123&article_source=youtube.com",
+        ),
+      )?.disabled,
+    ).toContain("community posts cannot be refreshed");
+    expect(
+      refreshContext(new URLSearchParams("youtube_item=post%3AUgkx123"))
+        ?.disabled,
+    ).toContain("community posts cannot be refreshed");
     expect(refreshContext(new URLSearchParams("view=settings"))).toBeNull();
     expect(refreshContext(new URLSearchParams("view=sources"))).toBeNull();
   });
 
   it("matches normalized server scopes for duplicate prevention", () => {
+    expect(
+      refreshScopeKey({ kind: "all", platforms: ["youtube", "reddit"] }),
+    ).toBe(refreshScopeKey({ kind: "all", platforms: ["reddit", "youtube"] }));
+    expect(refreshScopeKey({ kind: "all", platforms: ["reddit"] })).not.toBe(
+      refreshScopeKey({ kind: "all", platforms: ["youtube"] }),
+    );
     expect(
       refreshScopeKey({
         kind: "reddit",
@@ -107,6 +142,21 @@ describe("contextual collection scope", () => {
 describe("refresh API boundary", () => {
   it("validates status before displaying server jobs", () => {
     expect(isRefreshJob(job)).toBe(true);
+    expect(
+      isRefreshJob({
+        ...job,
+        scope: { kind: "all", platforms: ["rss", "youtube"] },
+      }),
+    ).toBe(true);
+    expect(
+      isRefreshJob({ ...job, scope: { kind: "all", platforms: ["stories"] } }),
+    ).toBe(false);
+    expect(
+      isRefreshJob({
+        ...job,
+        scope: { kind: "reddit", platforms: ["youtube"] },
+      }),
+    ).toBe(false);
     expect(isRefreshJob({ ...job, status: "unknown" })).toBe(false);
     expect(isRefreshJob({ ...job, posts_saved: -1 })).toBe(false);
     expect(isRefreshJob({ ...job, scope: { kind: "post", post_id: 22 } })).toBe(

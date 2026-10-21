@@ -1,10 +1,18 @@
 import { request } from "./api";
-import { sectionFromView } from "./collections";
+import { feedLabels, sectionFromView } from "./collections";
 import { parseFilters } from "./navigation";
 import { isRecord, isStringArray } from "./validation";
 
+export type RefreshPlatform =
+  | "rss"
+  | "x"
+  | "reddit"
+  | "hacker_news"
+  | "youtube";
+
 export interface RefreshScope {
   kind: "all" | "rss" | "reddit" | "x" | "hacker_news" | "youtube" | "post";
+  platforms?: RefreshPlatform[];
   domains?: string[];
   tags?: string[];
   community?: string;
@@ -46,18 +54,9 @@ export function refreshContext(params: URLSearchParams) {
   if (domain && post) {
     scope = { kind: "post", domain, post_id: post };
     label = "this post";
-  } else if (section === "youtube" && youtubeItem) {
+  } else if (youtubeItem) {
     scope = { kind: "post", domain: "youtube.com", post_id: youtubeItem };
     label = "this YouTube item";
-
-    if (!youtubeItem.startsWith("video:")) {
-      return {
-        scope,
-        label,
-        disabled:
-          "Individual YouTube community posts cannot be refreshed yet. Refresh the channel feed instead.",
-      };
-    }
   } else if (section === "settings" || section === "sources") {
     return null;
   } else if (section === "youtube") {
@@ -91,6 +90,15 @@ export function refreshContext(params: URLSearchParams) {
       hacker_news: "Hacker News",
     }[section];
 
+    if (section === "all" && filters.platforms.length) {
+      scope.platforms = filters.platforms
+        .map((platform) => (platform === "stories" ? "rss" : platform))
+        .sort();
+      label = filters.platforms
+        .map((platform) => feedLabels[platform])
+        .join(" + ");
+    }
+
     if (filters.community) {
       scope.community = filters.community;
       label = `r/${filters.community}`;
@@ -100,6 +108,19 @@ export function refreshContext(params: URLSearchParams) {
       scope.account = filters.account;
       label = `@${filters.account}`;
     }
+  }
+
+  if (
+    scope.kind === "post" &&
+    scope.domain === "youtube.com" &&
+    !scope.post_id?.startsWith("video:")
+  ) {
+    return {
+      scope,
+      label,
+      disabled:
+        "Individual YouTube community posts cannot be refreshed yet. Refresh the channel feed instead.",
+    };
   }
 
   if (scope.kind !== "post") {
@@ -123,6 +144,7 @@ export function refreshContext(params: URLSearchParams) {
 export function refreshScopeKey(scope: RefreshScope): string {
   return JSON.stringify([
     scope.kind,
+    [...(scope.platforms ?? [])].sort(),
     [...(scope.domains ?? [])].sort(),
     [...(scope.tags ?? [])].sort(),
     scope.community?.toLowerCase() ?? "",
@@ -144,6 +166,12 @@ function isScope(value: unknown): value is RefreshScope {
     ["all", "rss", "reddit", "x", "hacker_news", "youtube", "post"].includes(
       String(value.kind),
     ) &&
+    (value.platforms === undefined ||
+      (value.kind === "all" &&
+        isStringArray(value.platforms) &&
+        value.platforms.every((platform) =>
+          ["rss", "x", "reddit", "hacker_news", "youtube"].includes(platform),
+        ))) &&
     ["domains", "tags"].every(
       (key) => value[key] === undefined || isStringArray(value[key]),
     ) &&

@@ -370,6 +370,24 @@ test("linked videos explain their original source scope", async ({ page }) => {
 });
 
 for (const [url, scope] of [
+  ["platform=reddit", { kind: "all", platforms: ["reddit"] }],
+  [
+    "platform=youtube&platform=stories&platform=reddit",
+    { kind: "all", platforms: ["reddit", "rss", "youtube"] },
+  ],
+  [
+    "platform=reddit&domain=reddit.com&tag=news",
+    {
+      kind: "all",
+      platforms: ["reddit"],
+      domains: ["reddit.com"],
+      tags: ["news"],
+    },
+  ],
+  [
+    "platform=youtube&youtube_item=video%3AdQw4w9WgXcQ",
+    { kind: "post", domain: "youtube.com", post_id: "video:dQw4w9WgXcQ" },
+  ],
   ["view=reddit", { kind: "reddit" }],
   ["view=x&account=reporter", { kind: "x", account: "reporter" }],
   [
