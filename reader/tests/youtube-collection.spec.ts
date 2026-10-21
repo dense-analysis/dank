@@ -470,9 +470,8 @@ test("empty, failed and unconfigured collections are explicit", async ({
     }),
   ).toBeVisible();
   state.fail = true;
-  await page
-    .getByRole("button", { name: "Refresh YouTube collection" })
-    .click();
+  // Reloading the saved collection can fail independently of a background scrape.
+  await page.reload();
   await expect(page.getByRole("alert")).toContainText(
     "Collection temporarily unavailable",
   );

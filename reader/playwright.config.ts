@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = process.env.READER_TEST_PORT ?? "5174";
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
@@ -7,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
   use: {
-    baseURL: "http://127.0.0.1:5174",
+    baseURL: `http://127.0.0.1:${port}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -18,8 +20,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev -- --strictPort",
-    url: "http://127.0.0.1:5174/reader/",
+    command: `npm run dev -- --port ${port} --strictPort`,
+    url: `http://127.0.0.1:${port}/reader/`,
     reuseExistingServer: !process.env.CI,
   },
 });

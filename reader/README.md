@@ -51,6 +51,18 @@ browser channel. No live collection is needed for the fixture tests.
 
 ## Behaviour
 
+**Refresh** collects new content for the current view: All, a platform, selected
+sources or source tags, a Reddit community, X account, YouTube channel/feed, or
+an opened post. Search terms, dates, author, flair and reading filters only affect
+the display. The button’s tooltip identifies its collection scope. Linked YouTube
+videos are refreshed through their original sources.
+
+A small, collapsible notice tracks queued, running and completed collection while
+you keep reading. It survives navigation and reconnects after a page reload.
+**Show updates** loads newly saved content when you are ready; collection does not
+replace the content on screen automatically. Partial, failed and interrupted
+refreshes remain explicit, with saved content still available.
+
 Presentation should be consistent across sources even when collection methods
 such as RSS, APIs and browser scraping differ. Equivalent content uses shared
 preview rules, while source identity and unavailable content remain explicit.
@@ -282,7 +294,8 @@ image is unavailable.
 
 The reader orders stored posts by date or search relevance. Reddit collection
 defaults to Top for the past day; source configuration can change the sort
-and time window before scraping. Refreshing this view reloads collected posts.
+and time window before scraping. The header’s **Refresh** collects this community
+or the combined Reddit collection in the background.
 
 ## Hacker News
 

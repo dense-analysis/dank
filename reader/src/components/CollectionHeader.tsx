@@ -11,6 +11,7 @@ export function CollectionHeader({
   pageHeading,
   openNavigation,
   navigationOpen,
+  actions,
 }: {
   title: string;
   titleContent?: ReactNode;
@@ -21,6 +22,7 @@ export function CollectionHeader({
   pageHeading: boolean;
   openNavigation: () => void;
   navigationOpen: boolean;
+  actions?: ReactNode;
 }) {
   const Title = pageHeading ? "h1" : "span";
 
@@ -59,6 +61,7 @@ export function CollectionHeader({
         )}
       </div>
       {count}
+      {actions}
     </header>
   );
 }

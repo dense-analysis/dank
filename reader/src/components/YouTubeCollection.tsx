@@ -457,18 +457,6 @@ export function YouTubeCollection({
             <ArrowUpRight size={17} />
           </button>
         </form>
-        <button
-          type="button"
-          className="icon-button yt-refresh"
-          aria-label="Refresh YouTube collection"
-          disabled={query.isFetching}
-          onClick={() => {
-            void query.refetch();
-            retrySources();
-          }}
-        >
-          <RefreshCw size={17} />
-        </button>
       </div>
       <div className="yt-filter-row">
         <div className="yt-tabs">
@@ -513,9 +501,21 @@ export function YouTubeCollection({
           </button>
         </div>
       )}
+      {query.isError && query.data && !query.isFetchNextPageError && (
+        <div className="yt-source-error" role="alert">
+          Saved discoveries are still available. Updates could not be loaded.
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => void query.refetch()}
+          >
+            Try again
+          </button>
+        </div>
+      )}
       {query.isPending ? (
         <YouTubeLoading />
-      ) : query.isError && !query.isFetchNextPageError ? (
+      ) : query.isError && !query.data ? (
         <YouTubeError
           message={query.error.message}
           retry={() => void query.refetch()}

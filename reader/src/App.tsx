@@ -35,6 +35,7 @@ import {
 } from "./components/PostConnections";
 import { PostLinks } from "./components/PostLinks";
 import { ReaderSettings } from "./components/ReaderSettings";
+import { RefreshStatus } from "./components/RefreshStatus";
 import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
 import { XPostCard } from "./components/XPostCard";
@@ -42,6 +43,7 @@ import { YouTubeCollection } from "./components/YouTubeCollection";
 import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
+import { useRefresh } from "./hooks/useRefresh";
 import { fetchPosts, fetchSources } from "./lib/api";
 import {
   collectedAccounts,
@@ -68,6 +70,7 @@ import {
   referenceParams,
   type SourceReference,
 } from "./lib/referenceFocus";
+import { refreshActive, refreshContext, refreshScopeKey } from "./lib/refresh";
 import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
 import { isXPost } from "./lib/x";
@@ -76,6 +79,19 @@ import { fetchYouTubeSources } from "./lib/youtubeCollection";
 export function App() {
   const { params, navigate, backTo, backToConnection, positionError } =
     useLocation();
+  const refresh = useRefresh();
+  const refreshTarget = refreshContext(params);
+  const refreshingHere =
+    refreshTarget &&
+    (refresh.jobs.some(
+      (job) =>
+        refreshActive(job) &&
+        refreshScopeKey(job.scope) === refreshScopeKey(refreshTarget.scope),
+    ) ||
+      (refresh.starting &&
+        refresh.startingScope &&
+        refreshScopeKey(refresh.startingScope) ===
+          refreshScopeKey(refreshTarget.scope)));
   const returnToConnections = connectionReturn(params);
   const connectionsMode = params.get("connections");
   const connectionsDirection = params.get("connections_direction");
@@ -392,11 +408,37 @@ export function App() {
       ) : (
         sidebar
       )}
+      <RefreshStatus refresh={refresh} />
       <div
         className={`main-shell ${section === "youtube" ? "youtube-shell" : ""} ${collectionContext ? "collection-context" : ""}`}
       >
         <CollectionHeader
           title={title}
+          actions={
+            refreshTarget && (
+              <button
+                type="button"
+                className="refresh-button"
+                aria-label={`Refresh ${refreshTarget.label}`}
+                title={
+                  refreshTarget.disabled ??
+                  `Collect fresh content for ${refreshTarget.label}. Search, dates and reading filters do not limit collection.`
+                }
+                disabled={
+                  !!refreshTarget.disabled ||
+                  !!refreshingHere ||
+                  refresh.starting
+                }
+                onClick={() => refresh.start(refreshTarget.scope)}
+              >
+                <RefreshCw
+                  size={17}
+                  className={refreshingHere ? "refresh-spinning" : undefined}
+                />
+                <span>{refreshingHere ? "Refreshing…" : "Refresh"}</span>
+              </button>
+            )
+          }
           titleContent={headerTitle}
           pageHeading={
             (feedSection || section === "youtube") && !readingArticle
@@ -629,18 +671,25 @@ export function App() {
                         <span className="updating">Updating…</span>
                       )}
                     </span>
-                    <button
-                      type="button"
-                      className="text-button"
-                      onClick={() => void posts.refetch()}
-                      disabled={posts.isFetching}
-                    >
-                      <RefreshCw size={13} /> Refresh
-                    </button>
                   </div>
+                  {posts.isError &&
+                    posts.data &&
+                    !posts.isFetchNextPageError && (
+                      <div className="error-banner" role="alert">
+                        Saved stories are still available. Updates could not be
+                        loaded.
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => void posts.refetch()}
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
                   {posts.isPending ? (
                     <Loading />
-                  ) : posts.isError && !posts.isFetchNextPageError ? (
+                  ) : posts.isError && !posts.data ? (
                     <ErrorState
                       message={posts.error.message}
                       retry={() => void posts.refetch()}
