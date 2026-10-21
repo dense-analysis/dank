@@ -307,6 +307,7 @@ async def test_known_linked_article_is_refreshable_without_publisher_config():
         "kind": "post", "domain": "linked.test", "post_id": "article",
     })
     assert plan.target_post == ("linked.test", "article")
+    assert plan.settings.sources == (SourceConfig("linked.test", ()),)
     query, params = storage.fetch_json.call_args.args
     assert "raw_posts" in query
     assert "is_reference" not in query
@@ -319,6 +320,7 @@ async def test_known_linked_video_is_refreshable_without_source_config():
         "kind": "post", "domain": "youtube.com", "post_id": "video:" + VIDEO,
     })
     assert plan.target_post == ("youtube.com", "video:" + VIDEO)
+    assert plan.settings.sources == (SourceConfig("youtube.com", ()),)
     query, params = storage.fetch_json.call_args.args
     assert "youtube_reference_evidence" in query
     assert "youtube_discoveries" in query
@@ -337,3 +339,16 @@ async def test_unknown_post_never_becomes_arbitrary_collection(
         await resolve_scope(settings(), client(), {
             "kind": "post", "domain": domain, "post_id": post_id,
         })
+
+
+async def test_known_post_preserves_one_matching_configured_source():
+    original = settings(
+        SourceConfig("publisher.test", ()),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Python/",)),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Games/",)),
+    )
+    plan = await resolve_scope(original, client([{"post_id": "saved"}]), {
+        "kind": "post", "domain": "reddit.com", "post_id": "saved",
+    })
+    assert plan.settings.sources == (original.sources[1],)
+    assert plan.target_post == ("reddit.com", "saved")

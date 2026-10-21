@@ -332,4 +332,12 @@ async def _post_plan(
     if not result.rows:
         raise ValueError("This post has no saved collection target")
 
-    return RefreshPlan(scope, label, settings, (domain, post_id))
+    sources = tuple(source for source in settings.sources
+                    if source.domain == domain)
+    # Linked posts can be known without their publisher being configured.
+    # The exact-target collector still needs a source for run bookkeeping.
+    selected = settings._replace(sources=sources[:1] or (
+        SourceConfig(domain, ()),
+    ))
+
+    return RefreshPlan(scope, label, selected, (domain, post_id))
