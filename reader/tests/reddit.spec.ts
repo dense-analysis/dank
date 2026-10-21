@@ -289,7 +289,9 @@ test("hides Reddit navigation when it is not configured", async ({ page }) => {
     page.getByRole("heading", { name: blogPost.title }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Reddit", exact: true }),
+    page
+      .getByRole("navigation", { name: "Main navigation" })
+      .getByRole("button", { name: "Reddit", exact: true }),
   ).toHaveCount(0);
 });
 
