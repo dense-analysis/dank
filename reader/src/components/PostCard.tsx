@@ -16,6 +16,7 @@ import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
+import { FeedSourceBadge } from "./FeedSourceBadge";
 import { HighlightedText } from "./HighlightedText";
 import { NavigableCard } from "./NavigableCard";
 import { PostFooter } from "./PostFooter";
@@ -116,6 +117,10 @@ export function PostCard({
     (!videos.length && (!post.reddit || !thumbnail) && hasContent
       ? "Open to read this story."
       : "");
+  const fromHackerNews = post.links?.some(
+    (link) =>
+      link.source === "hacker_news" || link.domain === "news.ycombinator.com",
+  );
   const communityContext =
     filters.kind === "reddit" &&
     !!filters.community &&
@@ -155,13 +160,29 @@ export function PostCard({
           !hasReadableContent ||
           post.collection_incomplete) && (
           <span className="post-labels">
-            {!communityContext && (
-              <span className="source-kind">
-                {post.source === "x" || post.source === "reddit"
-                  ? "Post"
-                  : "Article"}
-              </span>
-            )}
+            {!communityContext &&
+              (filters.kind === "all" ? (
+                <FeedSourceBadge
+                  source={
+                    post.reddit
+                      ? "reddit"
+                      : fromHackerNews
+                        ? "hacker_news"
+                        : "stories"
+                  }
+                  label={
+                    fromHackerNews && !post.reddit
+                      ? "via Hacker News"
+                      : undefined
+                  }
+                />
+              ) : (
+                <span className="source-kind">
+                  {post.source === "x" || post.source === "reddit"
+                    ? "Post"
+                    : "Article"}
+                </span>
+              ))}
             {(!hasReadableContent || post.collection_incomplete) && (
               <CollectionBadge incomplete={hasContent} />
             )}

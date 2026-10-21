@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
 import { xProfile } from "../lib/x";
 import { PostTime } from "./PostTime";
@@ -8,8 +9,10 @@ export function XPostHeader({
   post,
   selectAccount,
   navigation,
+  badge,
 }: {
   post: Post;
+  badge?: ReactNode;
   selectAccount: (handle: string) => void;
   navigation?: { href: string; open: () => void };
 }) {
@@ -22,6 +25,7 @@ export function XPostHeader({
       ) : (
         <strong>{post.author || "X post"}</strong>
       )}
+      {badge}
       {navigation ? (
         <ReaderLink
           className="x-post-timestamp post-open"
