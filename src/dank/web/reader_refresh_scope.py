@@ -48,8 +48,12 @@ async def resolve_scope(
     sources = _selected_sources(settings, scope)
     label = LABELS[kind]
 
+    if platforms := scope.get("platforms"):
+        label = " + ".join(LABELS[platform] for platform in platforms)
+
     if kind == "all" and (scope.get("domains") or scope.get("tags")):
-        label = "Selected sources"
+        label = (f"{label} · selected sources" if platforms
+                 else "Selected sources")
 
     if community := scope.get("community"):
         sources = _community_sources(sources, community)
@@ -86,23 +90,13 @@ def _parse_scope(raw: object) -> dict[str, Any]:
     if kind != "post":
         allowed.update({"domains", "tags"})
 
+    if kind == "all":
+        allowed.add("platforms")
+
     if set(value) - allowed:
         raise ValueError("Refresh scope has fields that do not match its kind")
 
-    scope: dict[str, Any] = {"kind": kind}
-
-    for key in ("domains", "tags"):
-        if key in value:
-            values = value[key]
-
-            if not isinstance(values, list):
-                raise ValueError(f"Refresh {key} must be a list")
-
-            entries = [_text(item, key).lower()
-                       for item in cast(list[object], values)]
-
-            if entries:
-                scope[key] = sorted(set(entries))
+    scope: dict[str, Any] = {"kind": kind, **_filter_lists(value)}
 
     for key in DETAIL_FIELDS[kind].intersection(value):
         scope[key] = _text(value[key], key)
@@ -110,6 +104,27 @@ def _parse_scope(raw: object) -> dict[str, Any]:
     _normalize_details(scope)
 
     return scope
+
+
+def _filter_lists(value: dict[str, object]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+
+    for key in ("domains", "tags", "platforms"):
+        if key not in value:
+            continue
+
+        values = value[key]
+
+        if not isinstance(values, list):
+            raise ValueError(f"Refresh {key} must be a list")
+
+        entries = [_text(item, key).lower()
+                   for item in cast(list[object], values)]
+
+        if entries:
+            result[key] = sorted(set(entries))
+
+    return result
 
 
 def _text(value: object, field: str) -> str:
@@ -120,6 +135,11 @@ def _text(value: object, field: str) -> str:
 
 
 def _normalize_details(scope: dict[str, Any]) -> None:
+    platforms = set(cast(list[str], scope.get("platforms", [])))
+
+    if platforms - (LABELS.keys() - {"all"}):
+        raise ValueError("Refresh includes an unknown platform")
+
     if scope["kind"] == "post":
         if "domain" not in scope or "post_id" not in scope:
             raise ValueError("Post refresh needs domain and post_id")
@@ -147,6 +167,7 @@ def _selected_sources(
 ) -> tuple[SourceConfig, ...]:
     domains = set(cast(list[str], scope.get("domains", [])))
     tags = set(cast(list[str], scope.get("tags", [])))
+    platforms = set(cast(list[str], scope.get("platforms", [])))
 
     if domains - {source.domain for source in settings.sources}:
         raise ValueError(
@@ -165,6 +186,9 @@ def _selected_sources(
             continue
 
         if tags and source.domain not in tag_domains:
+            continue
+
+        if platforms and source_kind(source.domain) not in platforms:
             continue
 
         # Reader sections identify platforms by domain. A Hacker News source

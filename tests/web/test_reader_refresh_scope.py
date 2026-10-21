@@ -387,3 +387,98 @@ async def test_tagged_domain_still_limits_x_to_selected_account():
         "kind": "x", "tags": ["tech"], "account": "Bob",
     })
     assert plan.settings.sources == (original.sources[1],)
+
+
+@pytest.mark.parametrize("platforms,domains,label", [
+    (["reddit"], ["reddit.com"], "Reddit"),
+    (["youtube", "reddit", "reddit"], ["reddit.com", "youtube.com"],
+     "Reddit + YouTube"),
+    (["rss"], ["publisher.test"], "Blogs"),
+    (["hacker_news"], ["news.ycombinator.com"], "Hacker News"),
+])
+async def test_all_platform_filters_follow_reader_domains(
+    platforms: list[str], domains: list[str], label: str,
+):
+    original = settings(
+        SourceConfig("publisher.test", ()),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Python/",)),
+        SourceConfig("youtube.com", ()),
+        SourceConfig("news.ycombinator.com", (), adapters=(
+            SourceAdapterConfig(SourceAdapter.HACKER_NEWS),
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://hn.test/rss",)),
+        )),
+        SourceConfig("x.com", ("Alice",)),
+    )
+    plan = await resolve_scope(original, client(), {
+        "kind": "all", "platforms": platforms,
+    })
+    assert [source.domain for source in plan.settings.sources] == domains
+    assert plan.scope["platforms"] == sorted(set(platforms))
+    assert plan.label == label
+
+    if platforms == ["hacker_news"]:
+        assert plan.settings.sources[0].collection_adapters == (
+            original.sources[3].collection_adapters
+        )
+
+
+async def test_platforms_intersect_domain_and_tag_membership():
+    original = settings(
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Python/",),
+                     tags=("tech",)),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Games/",),
+                     tags=("games",)),
+        SourceConfig("youtube.com", (), tags=("tech",)),
+        SourceConfig("x.com", ("Alice",), tags=("tech",)),
+    )
+    plan = await resolve_scope(original, client(), {
+        "kind": "all", "platforms": ["reddit", "youtube"],
+        "domains": ["reddit.com", "x.com"], "tags": ["tech"],
+    })
+    assert plan.settings.sources == original.sources[:2]
+    assert plan.label == "Reddit + YouTube · selected sources"
+
+
+async def test_empty_platform_filter_is_omitted_without_narrowing_all():
+    original = settings(SourceConfig("publisher.test", ()))
+    plan = await resolve_scope(original, client(), {
+        "kind": "all", "platforms": [],
+    })
+    assert plan.scope == {"kind": "all"}
+    assert plan.settings.sources == original.sources
+    assert plan.label == "All sources"
+
+
+@pytest.mark.parametrize("scope", [
+    {"kind": "all", "platforms": "reddit"},
+    {"kind": "all", "platforms": [True]},
+    {"kind": "all", "platforms": ["stories"]},
+    {"kind": "all", "platforms": ["all"]},
+    {"kind": "all", "platforms": ["reddit", "unknown"]},
+    {"kind": "rss", "platforms": []},
+    {"kind": "reddit", "platforms": ["reddit"]},
+    {"kind": "post", "domain": "publisher.test", "post_id": "saved",
+     "platforms": ["rss"]},
+])
+async def test_invalid_platform_filter_fails_before_database(scope: object):
+    storage = client()
+
+    with pytest.raises(ValueError):
+        await resolve_scope(settings(), storage, scope)
+
+    storage.fetch_json.assert_not_called()
+
+
+@pytest.mark.parametrize("filters", [
+    {"platforms": ["youtube"]},
+    {"platforms": ["reddit"], "domains": ["publisher.test"]},
+    {"platforms": ["reddit"], "tags": ["publisher-tag"]},
+])
+async def test_empty_platform_intersection_never_broadens_scope(filters: Any):
+    original = settings(
+        SourceConfig("publisher.test", (), tags=("publisher-tag",)),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Python/",)),
+    )
+
+    with pytest.raises(ValueError, match="No configured sources"):
+        await resolve_scope(original, client(), {"kind": "all", **filters})
