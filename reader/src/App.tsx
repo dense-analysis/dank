@@ -27,6 +27,7 @@ import {
 } from "./components/HackerNewsFeed";
 import { IdentityAvatar } from "./components/IdentityAvatar";
 import { Modal } from "./components/Modal";
+import { PlatformFilters } from "./components/PlatformFilters";
 import { PlatformIcon } from "./components/PlatformIcon";
 import { PostCard } from "./components/PostCard";
 import {
@@ -40,6 +41,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
 import { XPostCard } from "./components/XPostCard";
 import { YouTubeCollection } from "./components/YouTubeCollection";
+import { YouTubePostCard } from "./components/YouTubePostCard";
 import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
@@ -49,7 +51,7 @@ import {
   collectedAccounts,
   feedLabels,
   sectionFromView,
-  sourceKind,
+  sourceFeedKind,
   sourcesForFeed,
 } from "./lib/collections";
 import {
@@ -115,6 +117,7 @@ export function App() {
   const feedSection =
     section !== "sources" && section !== "settings" && section !== "youtube";
   const filters = parseFilters(params);
+  const mixedVideoDetail = section === "all" && !!params.get("youtube_item");
   const articleId = params.get("article");
   const articleDomain = params.get("article_source");
   const readingArticle = Boolean(articleId && articleDomain);
@@ -288,6 +291,12 @@ export function App() {
     const next = articleParams(params, post);
     navigate(next, false, params.toString());
   }
+  function videoParams(post: Post) {
+    const next = new URLSearchParams(params);
+    next.set("youtube_item", post.id);
+
+    return next;
+  }
   function closeArticle() {
     if (returnToConnections) backToConnection(returnToConnections);
     else backTo(connectionsClosedParams(params));
@@ -323,7 +332,7 @@ export function App() {
     if (next) navigate(next, false, params.toString());
   }
   function selectSource(domain: string) {
-    select(sourceKind(domain), {
+    select(sourceFeedKind(domain, allSources), {
       ...defaultFilters,
       domains: [domain],
     });
@@ -548,6 +557,7 @@ export function App() {
                 onExploreTarget={exploreTarget}
               />
             )}
+            sourceFeed={sourceFeedKind(articleDomain, allSources)}
             selectSource={selectSource}
             markRead={markRead}
             filters={filters}
@@ -559,7 +569,7 @@ export function App() {
         )}
         <div hidden={readingArticle}>
           <div
-            className={`page-grid ${section === "youtube" ? "youtube-page" : ""} ${section === "settings" ? "settings-page" : ""}`}
+            className={`page-grid ${section === "youtube" || mixedVideoDetail ? "youtube-page" : ""} ${section === "settings" ? "settings-page" : ""}`}
           >
             <main
               id={readingArticle ? undefined : "main"}
@@ -570,7 +580,8 @@ export function App() {
             >
               {!accountContext &&
                 !communityContext &&
-                section !== "youtube" && (
+                section !== "youtube" &&
+                !mixedVideoDetail && (
                   <div className="page-heading">
                     {feedSection && <p className="eyebrow">{date}</p>}
                     {section === "hacker_news" && (
@@ -595,9 +606,10 @@ export function App() {
                     )}
                   </div>
                 )}
-              {section === "youtube" ? (
+              {section === "youtube" || mixedVideoDetail ? (
                 !readingArticle && (
                   <YouTubeCollection
+                    backLabel={mixedVideoDetail ? "Back to all" : undefined}
                     params={params}
                     navigate={navigate}
                     backTo={backTo}
@@ -645,11 +657,21 @@ export function App() {
                 )
               ) : (
                 <>
+                  {(section === "all" || section === "stories") && (
+                    <p className="feed-description">
+                      {section === "stories"
+                        ? "Articles from the blogs you follow."
+                        : "Your followed sources and discoveries, together."}
+                    </p>
+                  )}
                   <FeedToolbar
                     filters={filters}
                     sources={visibleSources}
                     change={changeFilters}
                   />
+                  {section === "all" && (
+                    <PlatformFilters filters={filters} change={changeFilters} />
+                  )}
                   {section === "hacker_news" && (
                     <HackerNewsFilters
                       value={filters.hnFilter}
@@ -695,7 +717,9 @@ export function App() {
                       retry={() => void posts.refetch()}
                     />
                   ) : timeline.length ? (
-                    <div className="post-list">
+                    <div
+                      className={`post-list ${section === "all" ? "universal-feed" : ""}`}
+                    >
                       {timeline.map((post, index) =>
                         post.hacker_news ? (
                           <Fragment key={postKey(post)}>
@@ -730,6 +754,7 @@ export function App() {
                           </Fragment>
                         ) : isXPost(post) ? (
                           <XPostCard
+                            mixedFeed={section === "all"}
                             params={params}
                             openPost={openPost}
                             key={postKey(post)}
@@ -747,8 +772,33 @@ export function App() {
                             selectAccount={selectAccount}
                             query={filters.q}
                           />
+                        ) : post.source === "youtube" || post.youtube ? (
+                          <YouTubePostCard
+                            key={postKey(post)}
+                            post={post}
+                            read={readKeys.has(postKey(post))}
+                            href={`/reader/?${videoParams(post)}`}
+                            open={() =>
+                              navigate(
+                                videoParams(post),
+                                false,
+                                params.toString(),
+                              )
+                            }
+                            query={filters.q}
+                            filters={filters}
+                            selectAuthor={selectAuthor}
+                            links={
+                              <PostLinks
+                                post={post}
+                                params={params}
+                                open={openPost}
+                              />
+                            }
+                          />
                         ) : (
                           <PostCard
+                            sourceFeed={sourceFeedKind(post.domain, allSources)}
                             key={postKey(post)}
                             post={post}
                             links={

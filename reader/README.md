@@ -138,7 +138,13 @@ presentation. This does not fetch articles or change where Reddit cards open.
 
 ## Collections
 
-**All** combines collected blogs, X posts, Reddit discussions and Hacker News.
+**All** combines followed blogs, discovered articles, X posts, Reddit discussions,
+Hacker News and YouTube. Sticky quick filters select any combination of **X**,
+**Reddit**, **Hacker News**, **YouTube** and **Blogs**; **All sources** clears that
+selection. Selected platforms match any of them and combine with the existing
+search, source, author and date filters. Selections stay in the URL through
+opening an item and returning to the feed. Videos and Shorts show their saved
+thumbnail, channel and duration, play on demand, and open YouTube discovery details.
 When a Hacker News story links to a collected article, All shows the original
 source once. **Links** on feed cards lists collected posts referencing
 that item. Open any article or post and choose **Connections → Graph** to explore
@@ -156,8 +162,10 @@ not inferred topic or semantic relationships.
 Collected linked articles show their publication date when available
 and explicitly label missing dates. Hacker News keeps its own daily listing and discussions.
 
-**Blogs**
-shows articles; **X** and **Reddit** each have their own feed and expandable
+**Blogs** shows articles only from blog domains in the configured `sources` list.
+Publishers discovered through Hacker News stay in All, including when its
+**Hacker News** quick filter is selected. Selecting a discovered publisher opens
+its articles within All. **X** and **Reddit** each have their own feed and expandable
 sidebar list. Search, source filters and dates apply within the selected view.
 
 Sidebar groups remember whether you expanded or collapsed them in this browser,

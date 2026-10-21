@@ -25,7 +25,7 @@ import { matchesLinkUrl, normalizedLinkUrl } from "../lib/linkIdentity";
 import { articleParams } from "../lib/navigation";
 import type { ReferenceTarget } from "../lib/referenceFocus";
 import { postKey } from "../lib/storage";
-import type { Filters, Post } from "../lib/types";
+import type { FeedKind, Filters, Post } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
 import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
@@ -55,6 +55,7 @@ export function ArticleView({
   openPost,
   close,
   selectSource,
+  sourceFeed,
   markRead,
   filters,
   selectAuthor,
@@ -75,6 +76,7 @@ export function ArticleView({
   openPost: (post: Pick<Post, "id" | "domain">) => void;
   close: () => void;
   selectSource: (domain: string) => void;
+  sourceFeed?: FeedKind;
   markRead: (post: Post) => void;
   filters: Filters;
   selectAuthor: (author: string) => void;
@@ -304,7 +306,11 @@ export function ArticleView({
                 select={selectCommunity}
               />
             ) : (
-              <SourceLink domain={post.domain} select={selectSource} />
+              <SourceLink
+                domain={post.domain}
+                select={selectSource}
+                kind={sourceFeed}
+              />
             )}
             <span className="meta-dot">·</span>
             <PostTimestamp post={post} />

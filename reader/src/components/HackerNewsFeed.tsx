@@ -11,6 +11,7 @@ import type {
 import { safeUrl } from "../lib/urls";
 import { AuthorLink } from "./AuthorLink";
 import { Count } from "./Count";
+import { FeedSourceBadge } from "./FeedSourceBadge";
 import { HighlightedText } from "./HighlightedText";
 import { NavigableCard } from "./NavigableCard";
 import { PlatformIcon } from "./PlatformIcon";
@@ -155,8 +156,14 @@ export function HackerNewsCard({
   return (
     <NavigableCard className={`post-card hn-card ${read ? "is-read" : ""}`}>
       <div className="post-meta">
-        <PlatformIcon platform="hacker_news" size={16} />
-        <span>Hacker News</span>
+        {filters.kind === "all" ? (
+          <FeedSourceBadge source="hacker_news" />
+        ) : (
+          <>
+            <PlatformIcon platform="hacker_news" size={16} />
+            <span>Hacker News</span>
+          </>
+        )}
         {linkedHost(story.external_url) && (
           <>
             <span className="meta-dot">·</span>

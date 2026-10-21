@@ -186,6 +186,22 @@ function isXProfile(value: unknown): value is XProfile {
   );
 }
 
+function isYouTubePost(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["video", "short", "post"].includes(String(value.kind)) &&
+    (value.video_id === null || typeof value.video_id === "string") &&
+    isRecord(value.channel) &&
+    typeof value.channel.id === "string" &&
+    typeof value.channel.name === "string" &&
+    typeof value.channel.url === "string" &&
+    typeof value.duration_text === "string" &&
+    typeof value.views_text === "string" &&
+    (value.thumbnail_url === null || typeof value.thumbnail_url === "string") &&
+    (value.video_url === null || typeof value.video_url === "string")
+  );
+}
+
 export function isPost(value: unknown): value is Post {
   return validPost(value, true);
 }
@@ -293,6 +309,9 @@ function validPost(
     (value.hacker_news === undefined ||
       value.hacker_news === null ||
       isHackerNewsPost(value.hacker_news)) &&
+    (value.youtube === undefined ||
+      value.youtube === null ||
+      isYouTubePost(value.youtube)) &&
     (value.x === undefined ||
       value.x === null ||
       isXPost(value.x, allowConversation, allowQuote)) &&
@@ -445,6 +464,7 @@ function isXPost(
 export function isSource(value: unknown): value is Source {
   return (
     isRecord(value) &&
+    (value.configured === undefined || typeof value.configured === "boolean") &&
     typeof value.domain === "string" &&
     typeof value.name === "string" &&
     isStringArray(value.tags) &&

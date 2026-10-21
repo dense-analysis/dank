@@ -97,8 +97,11 @@ def test_invalid_rankings_rejected(query: dict[str, str]):
 
 def test_hacker_news_is_a_separate_source_kind():
     assert source_kind(POST.domain) == "hacker_news"
-    query, _ = build_query(ReaderFilters(kind="stories"), ())
-    assert "domain != 'news.ycombinator.com'" in query
+    query, params = build_query(ReaderFilters(kind="stories"), (
+        SourceConfig(POST.domain, ()), SourceConfig("blog.test", ()),
+    ))
+    assert "domain IN %(blog_domains)s" in query
+    assert params["blog_domains"] == ["blog.test"]
 
 
 async def test_hacker_news_source_has_readable_name(tmp_path: pathlib.Path):

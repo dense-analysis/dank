@@ -105,6 +105,16 @@ export interface CollectionInfo {
   coverage: "saved_history";
 }
 
+export interface YouTubePost {
+  kind: "video" | "short" | "post";
+  video_id: string | null;
+  channel: { id: string; name: string; url: string };
+  duration_text: string;
+  views_text: string;
+  thumbnail_url: string | null;
+  video_url: string | null;
+}
+
 export interface Post {
   id: string;
   domain: string;
@@ -124,11 +134,13 @@ export interface Post {
   reddit?: RedditPost | null;
   hacker_news?: HackerNewsPost | null;
   x?: XPost | null;
+  youtube?: YouTubePost | null;
   thumbnail: string | null;
   media: { url: string; content_type: string }[];
 }
 
 export interface Source {
+  configured?: boolean;
   kind?: "rss" | "x" | "reddit" | "youtube" | "hacker_news";
   accounts?: XAccount[];
   communities?: RedditCommunity[];
@@ -262,10 +274,13 @@ export type FeedKind =
   | "reddit"
   | "youtube"
   | "hacker_news";
+export type FeedPlatform = Exclude<FeedKind, "all">;
+
 export type Section = FeedKind | "sources" | "settings";
 
 export interface Filters {
   kind: FeedKind;
+  platforms: FeedPlatform[];
   hnFilter: HackerNewsFilter;
   xView: "posts" | "replies";
   community: string;

@@ -36,6 +36,7 @@ import { YouTubeTranscript } from "./YouTubeTranscript";
 import { YouTubeVersionHistory } from "./YouTubeVersionHistory";
 
 export function YouTubeCollection({
+  backLabel,
   params,
   navigate,
   backTo,
@@ -46,6 +47,7 @@ export function YouTubeCollection({
   referenceHref,
   returnToConnections,
 }: {
+  backLabel?: string;
   params: URLSearchParams;
   navigate: (
     params: URLSearchParams,
@@ -87,6 +89,7 @@ export function YouTubeCollection({
       fetchYouTubeItems(filters, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
+    enabled: !selectedId,
   });
   const items = useMemo(
     () => [
@@ -181,7 +184,7 @@ export function YouTubeCollection({
           <ArrowLeft size={16} />{" "}
           {returnToConnections
             ? "Back to connections"
-            : `Back to ${title.toLowerCase()}`}
+            : (backLabel ?? `Back to ${title.toLowerCase()}`)}
         </button>
         {selected ? (
           <>

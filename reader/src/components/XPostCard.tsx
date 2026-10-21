@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Post } from "../lib/types";
 import { Count } from "./Count";
+import { FeedSourceBadge } from "./FeedSourceBadge";
 import { NavigableCard } from "./NavigableCard";
 import { PostFooter } from "./PostFooter";
 import { XEngagement } from "./XEngagement";
@@ -18,8 +19,10 @@ export function XPostCard({
   query,
   params,
   openPost,
+  mixedFeed = false,
 }: {
   post: Post;
+  mixedFeed?: boolean;
   links?: ReactNode;
   read: boolean;
   href: string;
@@ -37,6 +40,7 @@ export function XPostCard({
         post={post}
         selectAccount={selectAccount}
         navigation={navigation}
+        badge={mixedFeed ? <FeedSourceBadge source="x" /> : undefined}
       />
       <XParentLink post={post} params={params} openPost={openPost} />
       <XPostContent
