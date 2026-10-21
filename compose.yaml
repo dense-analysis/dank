@@ -38,6 +38,8 @@ services:
       - dank_data:/app/data
       - model_cache:/home/dank/.cache
     shm_size: 1gb
+    # Allow reader collection workers to close owned browser sessions.
+    stop_grace_period: 110s
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5).close()"]
       interval: 10s

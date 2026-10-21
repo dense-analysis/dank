@@ -908,3 +908,26 @@ Covered by
 [quote API tests](../tests/web/test_reader_x_quotes.py),
 [collection tests](../tests/scrape/test_x_references.py) and
 [reader tests](../reader/tests/x-reader.spec.ts).
+
+## Refresh from the reader
+
+Reader Refresh starts a collection for the current source context or saved post.
+Search text, dates, flairs and read markers remain display filters; they do not
+change a source's configured collection limits. Individual Reddit/X post refreshes
+request details and comments explicitly. YouTube video refreshes retry metadata
+and reuse saved successful transcripts; community-post detail refresh and the
+computed **From your feeds** view do not have a standalone collector.
+
+Jobs run serially in a child process, with a bounded queue and duplicate-click
+reuse. Collection shares a lock with command-line scrapes to protect browser
+profiles. Processing uses only the posts saved by that run. Partial collection
+and processing failures remain visible; saved content stays usable and the reader
+only reloads it after **Show updates**. Completion means the attempted collection
+finished, not that every post on a platform is archived.
+
+Recent job results persist locally. A server restart marks unfinished jobs as
+interrupted instead of replaying them. The queue and status are local to the
+running DANK installation; provider blocks, configured collection limits and
+unavailable original pages still apply. See [scope tests](
+../tests/web/test_reader_refresh_scope.py) and [job lifecycle tests](
+../tests/web/test_reader_refresh.py).

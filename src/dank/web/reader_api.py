@@ -53,6 +53,7 @@ from dank.web.reader_reddit import (
     without_video_posters,
 )
 from dank.web.reader_reddit_history import preserve_reddit_archives
+from dank.web.reader_refresh import add_refresh_routes
 from dank.web.reader_x import post_x_content
 from dank.web.reader_youtube import add_youtube_routes
 
@@ -63,6 +64,7 @@ READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
 def add_reader_routes(app: web.Application) -> None:
     app.middlewares.append(reader_errors)
     add_youtube_routes(app)
+    add_refresh_routes(app)
     app.router.add_get("/api/reader/connections", handle_connections)
     app.router.add_get("/api/reader/connection", handle_connection)
     app.router.add_get("/api/reader/sources", handle_sources)
