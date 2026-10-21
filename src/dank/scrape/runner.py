@@ -739,15 +739,50 @@ async def _refresh_target_post(
                 http_client, [post], batch_size=batch_size,
             )
 
+    async for batch in _checked_target_batches(batches):
+        yield batch
+
+
+async def _checked_target_batches(
+    batches: AsyncIterator[ScrapeBatch],
+) -> AsyncIterator[ScrapeBatch]:
     collected = False
+    stats = current_source.get()
+    failures = stats.counts["fetch_failures"] if stats else 0
 
     async for batch in batches:
         collected = collected or bool(batch.posts)
-        yield batch
 
-    if not collected:
-        # A provider can return no batches after a blocked or empty response.
+        if any(_incomplete_target_capture(post) for post in batch.posts) and (
+            stats is None or stats.counts["fetch_failures"] == failures
+        ):
+            # Some adapters retain failed/partial payloads without throwing.
+            count("fetch_failures")
+
+        yield batch
+        failures = stats.counts["fetch_failures"] if stats else 0
+
+    if not collected and (
+        stats is None or stats.counts["fetch_failures"] == failures
+    ):
         count("fetch_failures")
+
+
+def _incomplete_target_capture(post: RawPost) -> bool:
+    fields = {
+        "reddit.com": ("detail_capture", "comment_capture"),
+        "x.com": ("conversation_capture",),
+        "news.ycombinator.com": ("comment_capture",),
+    }.get(post.domain, ())
+    payload = payload_object(post.payload)
+
+    if fields:
+        return any(
+            payload_object(payload.get(field)).get("status") != "captured"
+            for field in fields
+        )
+
+    return payload.get("page_fetch_status") in {"failed", "unsupported"}
 
 
 async def _refresh_youtube_post(

@@ -222,3 +222,52 @@ async def test_single_video_refresh_has_no_feed_or_backlog_collection(
     assert metadata.call_args.args[2] == "abcdefghijk"
     assert transcript.call_args.args[2] == "abcdefghijk"
     assert len(client.queries) == 1
+
+
+@pytest.mark.parametrize(("domain", "collector", "capture_fields"), [
+    ("reddit.com", "scrape_reddit_details",
+     ("detail_capture", "comment_capture")),
+    ("x.com", "scrape_x_posts", ("conversation_capture",)),
+    ("news.ycombinator.com", "scrape_hacker_news_details",
+     ("comment_capture",)),
+])
+@pytest.mark.parametrize(("capture_status", "reported_failure", "expected"), [
+    ("captured", False, "completed"),
+    ("failed", False, "partial"),
+    ("partial", False, "partial"),
+    ("failed", True, "partial"),
+])
+async def test_target_payload_outcomes_determine_refresh_status(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    domain: str, collector: str, capture_fields: tuple[str, ...],
+    capture_status: str, *, reported_failure: bool, expected: str,
+) -> None:
+    client = Client()
+    saved = post(domain)
+    monkeypatch.setattr(runner, "ClickHouseClient", Mock(return_value=client))
+    monkeypatch.setattr(runner, "BrowserSession", Browser)
+    monkeypatch.setattr(runner, "_load_target_post", AsyncMock(
+        return_value=saved,
+    ))
+
+    async def collect(
+        *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        if reported_failure:
+            count("fetch_failures")
+
+        payload = {field: {"status": capture_status}
+                   for field in capture_fields}
+        yield ScrapeBatch([saved._replace(payload=json.dumps(payload))], [])
+
+    monkeypatch.setattr(runner, collector, collect)
+    metrics = await runner.run_scrape(
+        settings(tmp_path, domain), target_post=(domain, saved.post_id),
+    )
+
+    assert metrics.status == expected
+    assert metrics.sources[1].status == expected
+    assert metrics.counts()["fetch_failures"] == (
+        0 if capture_status == "captured" else 1
+    )
+    assert metrics.collected_posts == {(domain, saved.post_id)}
