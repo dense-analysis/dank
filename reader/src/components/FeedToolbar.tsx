@@ -165,6 +165,7 @@ export function FeedToolbar({
               onClick={() =>
                 change({
                   ...filters,
+                  platforms: [],
                   domains: [],
                   tags: [],
                   flairs: [],

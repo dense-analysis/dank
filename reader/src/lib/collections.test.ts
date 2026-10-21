@@ -65,3 +65,27 @@ it("keeps source filter choices scoped to each collection, including older sourc
     "reddit.com",
   ]);
 });
+
+it("keeps discovered publishers in All while Blogs only offers followed publishers", () => {
+  const followed: Source = {
+    domain: "followed.test",
+    name: "Followed",
+    kind: "rss",
+    configured: true,
+    tags: [],
+    count: 2,
+  };
+  const discovered: Source = {
+    domain: "discovered.test",
+    name: "Discovered",
+    kind: "rss",
+    configured: false,
+    tags: [],
+    count: 3,
+  };
+  expect(sourcesForFeed([followed, discovered], "stories")).toEqual([followed]);
+  expect(sourcesForFeed([followed, discovered], "all")).toEqual([
+    followed,
+    discovered,
+  ]);
+});

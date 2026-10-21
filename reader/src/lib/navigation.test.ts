@@ -197,3 +197,35 @@ it("keeps X post selection through filters and article navigation", () => {
   ).toBe("posts");
   expect(filterParams({ ...filters, kind: "all" }).has("x_view")).toBe(false);
 });
+
+it("keeps combined platform filters through search and article URLs, but scopes them to All", () => {
+  const filters: Filters = {
+    ...defaultFilters,
+    platforms: ["reddit", "hacker_news"],
+    q: "research",
+    after: "2026-10-01",
+    sort: "oldest",
+  };
+  const params = filterParams(filters);
+  expect(params.getAll("platform")).toEqual(["reddit", "hacker_news"]);
+  expect(parseFilters(params)).toEqual(filters);
+  expect(
+    parseFilters(articleParams(params, { domain: "example.com", id: "story" })),
+  ).toEqual(filters);
+  expect(
+    parseFilters(
+      new URLSearchParams(
+        "platform=reddit&platform=reddit&platform=unknown&platform=stories",
+      ),
+    ).platforms,
+  ).toEqual(["reddit", "stories"]);
+  expect(
+    parseFilters(new URLSearchParams("view=stories&platform=reddit")).platforms,
+  ).toEqual([]);
+  expect(
+    parseFilters(new URLSearchParams("view=youtube&platform=reddit")).platforms,
+  ).toEqual([]);
+  expect(filterParams({ ...filters, kind: "reddit" }).has("platform")).toBe(
+    false,
+  );
+});

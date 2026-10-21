@@ -3083,3 +3083,57 @@ a.social-metric:hover {
     gap: 2px;
   }
 }
+
+.feed-description {
+  color: var(--muted);
+  font-size: 14px;
+  margin: -10px 0 20px;
+}
+.platform-filters {
+  position: sticky;
+  top: var(--sticky-header-height);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 10px 0;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--header-glass);
+  -webkit-backdrop-filter: var(--header-blur);
+  backdrop-filter: var(--header-blur);
+}
+.platform-filters button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.platform-filters button:hover {
+  color: var(--text);
+  border-color: var(--green);
+}
+.platform-filters button[aria-pressed="true"] {
+  color: var(--green);
+  background: var(--selected);
+  border-color: var(--green);
+}
+@media (max-width: 760px) {
+  .platform-filters {
+    gap: 6px;
+  }
+  .platform-filters button {
+    min-height: 44px;
+    padding-inline: 10px;
+  }
+}

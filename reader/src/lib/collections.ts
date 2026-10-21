@@ -45,7 +45,11 @@ export function sourcesForFeed(sources: Source[], kind: FeedKind): Source[] {
   return sources.filter((source) => {
     const collection = source.kind === "rss" ? "stories" : source.kind;
 
-    return kind === "all" || (collection ?? sourceKind(source.domain)) === kind;
+    return (
+      kind === "all" ||
+      ((collection ?? sourceKind(source.domain)) === kind &&
+        (kind !== "stories" || source.configured !== false))
+    );
   });
 }
 

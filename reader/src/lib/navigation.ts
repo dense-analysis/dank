@@ -1,7 +1,7 @@
 import { sectionFromView } from "./collections";
 import { parseHackerNewsFilter } from "./hackerNews";
 import { defaultFilters } from "./storage";
-import type { Filters, Post } from "./types";
+import type { FeedPlatform, Filters, Post } from "./types";
 import { isDateFilter } from "./validation";
 
 export function clearReferenceParams(params: URLSearchParams) {
@@ -61,6 +61,15 @@ export function parseFilters(params: URLSearchParams): Filters {
   return {
     ...defaultFilters,
     kind,
+    platforms:
+      kind === "all" && section === "all"
+        ? selections(params, "platform").filter(
+            (value): value is FeedPlatform =>
+              ["x", "reddit", "hacker_news", "youtube", "stories"].includes(
+                value,
+              ),
+          )
+        : [],
     xView:
       kind === "x" && params.get("x_view") === "replies" ? "replies" : "posts",
     hnFilter:
@@ -95,6 +104,11 @@ export function parseFilters(params: URLSearchParams): Filters {
 
 export function filterParams(filters: Filters): URLSearchParams {
   const params = new URLSearchParams();
+  if (filters.kind === "all") {
+    for (const platform of new Set(filters.platforms)) {
+      params.append("platform", platform);
+    }
+  }
   if (filters.kind !== "all") params.set("view", filters.kind);
   if (filters.kind === "x" && filters.xView === "replies")
     params.set("x_view", "replies");
