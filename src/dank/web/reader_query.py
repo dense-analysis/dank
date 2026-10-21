@@ -12,14 +12,14 @@ from typing import Any, NamedTuple, cast
 from multidict import MultiMapping
 
 from dank.config import HackerNewsFilter, SourceConfig
-from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS
+from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS, source_kind
 from dank.web.reader_flairs import (
     FLAIR_WHITESPACE_PATTERN,
     LATEST_REDDIT_FLAIRS_SQL,
     MAX_FLAIR_LENGTH,
     REDDIT_COMMUNITY_SQL as REDDIT_COMMUNITY_SQL,
 )
-from dank.web.reader_links import RESOLVED_HN_POSTS_SQL
+from dank.web.reader_links import HN_LINKED_POSTS_SQL, RESOLVED_HN_POSTS_SQL
 
 POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, source"
@@ -44,6 +44,7 @@ class ReaderFilters(NamedTuple):
     account: str = ""
     hn_filter: str = ""
     x_view: str = "posts"
+    platforms: tuple[str, ...] = ()
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -60,13 +61,13 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
-        "account", "hn_filter", "x_view",
+        "account", "hn_filter", "x_view", "platform",
     }
 
     if unknown:
         raise ValueError("Unknown reader filter")
 
-    for key in set(query) - {"domain", "tag", "flair"}:
+    for key in set(query) - {"domain", "tag", "flair", "platform"}:
         if len(query.getall(key)) != 1:
             raise ValueError(f"{key} must appear only once")
 
@@ -85,6 +86,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         sort=query.get("sort", "newest"),
         domains=_choices(query.getall("domain", [])),
         tags=_choices(query.getall("tag", [])),
+        platforms=_choices(query.getall("platform", [])),
         author=query.get("author", "").strip(),
         author_match=query.get("author_match", "contains"),
         after=_date(query.get("after", "")),
@@ -184,6 +186,17 @@ def _validate_collection_filters(filters: ReaderFilters) -> None:
     }:
         raise ValueError(
             "kind must be all, stories, reddit, x, youtube or hacker_news",
+        )
+
+    if filters.platforms and (
+        filters.kind not in {"", "all"}
+        or set(filters.platforms) - {
+            "stories", "reddit", "x", "youtube", "hacker_news",
+        }
+    ):
+        raise ValueError(
+            "platform requires kind=all and stories, reddit, x, "
+            "youtube or hacker_news",
         )
 
     if filters.hn_filter and (
@@ -361,15 +374,13 @@ def _guarded_distance(lengths: list[str]) -> str:
 
 
 def _collection_conditions(
-    filters: ReaderFilters,
+    filters: ReaderFilters, sources: tuple[SourceConfig, ...],
 ) -> tuple[list[str], dict[str, Any]]:
     conditions: list[str] = []
     params: dict[str, Any] = {}
 
-    if filters.kind == "reddit":
-        conditions.append("domain = 'reddit.com'")
-    elif filters.kind == "youtube":
-        conditions.append("domain = 'youtube.com'")
+    if filters.kind in {"reddit", "youtube", "stories", "x"}:
+        conditions.append(_platform_condition(filters.kind, sources, params))
     elif filters.kind == "hacker_news":
         conditions.append("domain = 'news.ycombinator.com'")
         ranking = filters.hn_filter or "top50"
@@ -385,15 +396,12 @@ def _collection_conditions(
                 "'Array(String)'), %(hn_filter)s))",
             )
             params["hn_filter"] = ranking
-    elif filters.kind == "stories":
-        conditions.append(
-            "domain != 'reddit.com' AND domain NOT IN %(x_domains)s "
-            "AND domain != 'youtube.com' AND domain != 'news.ycombinator.com'",
-        )
-        params["x_domains"] = list(X_DOMAINS)
-    elif filters.kind == "x":
-        conditions.append("domain IN %(x_domains)s")
-        params["x_domains"] = list(X_DOMAINS)
+
+    if filters.platforms:
+        conditions.append("(" + " OR ".join(
+            _platform_condition(platform, sources, params)
+            for platform in filters.platforms
+        ) + ")")
 
     if filters.account:
         conditions.append(f"{X_ACCOUNT_SQL} = %(account)s")
@@ -414,10 +422,39 @@ def _collection_conditions(
     return conditions, params
 
 
+def _platform_condition(
+    platform: str, sources: tuple[SourceConfig, ...], params: dict[str, Any],
+) -> str:
+    if platform == "stories":
+        params["blog_domains"] = sorted({
+            source.domain for source in sources
+            if source_kind(source.domain) == "rss"
+        })
+
+        return "domain IN %(blog_domains)s" if params["blog_domains"] else "0"
+
+    if platform == "x":
+        params["x_domains"] = list(X_DOMAINS)
+
+        return "domain IN %(x_domains)s"
+
+    if platform == "hacker_news":
+        # All keeps one canonical item, including publishers discovered on HN.
+        return (
+            "(domain = 'news.ycombinator.com' OR (domain, post_id) IN ("
+            + HN_LINKED_POSTS_SQL + "))"
+        )
+
+    return {
+        "reddit": "domain = 'reddit.com'",
+        "youtube": "domain = 'youtube.com'",
+    }[platform]
+
+
 def _conditions(
     filters: ReaderFilters, sources: tuple[SourceConfig, ...],
 ) -> tuple[list[str], dict[str, Any]]:
-    conditions, params = _collection_conditions(filters)
+    conditions, params = _collection_conditions(filters, sources)
 
     if filters.kind == "x" and filters.x_view == "posts":
         # Missing metadata is not proof of a reply.

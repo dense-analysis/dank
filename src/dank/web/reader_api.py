@@ -55,6 +55,7 @@ from dank.web.reader_reddit import (
 from dank.web.reader_reddit_history import preserve_reddit_archives
 from dank.web.reader_x import post_x_content
 from dank.web.reader_youtube import add_youtube_routes
+from dank.web.reader_youtube_feed import add_youtube_post_metadata
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -114,6 +115,7 @@ async def handle_sources(request: web.Request) -> web.Response:
         {"domain": domain,
          "name": "Hacker News" if domain == "news.ycombinator.com" else domain,
          "kind": source_kind(domain),
+         "configured": domain in tags,
          "tags": sorted(tags.get(domain, [])),
          "count": counts.get(domain, 0)}
         for domain in sorted(counts.keys() | tags.keys())
@@ -293,6 +295,7 @@ async def _post_payloads(
         client, payloads, posts, include_discussion=include_discussion,
     )
 
+    await add_youtube_post_metadata(client, payloads, posts)
     await add_post_links(client, payloads, query)
     await add_collection_info(client, payloads, posts)
 

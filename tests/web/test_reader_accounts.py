@@ -30,16 +30,16 @@ def test_all_collections_keep_platforms_and_deduplicate_link_wrappers(
     assert "x_domains" not in params
 
 
-@pytest.mark.parametrize("kind,condition", [
-    ("stories", "domain != 'reddit.com' AND domain NOT IN %(x_domains)s"),
-    ("x", "domain IN %(x_domains)s"),
-])
-def test_stories_and_x_are_separate_collections(
-    kind: str, condition: str,
-) -> None:
-    query, params = build_query(parse_filters(MultiDict({"kind": kind})), ())
-    assert condition in query
+def test_stories_and_x_are_separate_collections() -> None:
+    query, params = build_query(
+        parse_filters(MultiDict({"kind": "x"})), (),
+    )
+    assert "domain IN %(x_domains)s" in query
     assert params["x_domains"] == ["x.com", "twitter.com"]
+    stories, _ = build_query(
+        parse_filters(MultiDict({"kind": "stories"})), (),
+    )
+    assert "WHERE 0" in stories
 
 
 @pytest.mark.parametrize("mode", ["words", "meaning", "combined"])

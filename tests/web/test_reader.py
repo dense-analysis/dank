@@ -274,8 +274,10 @@ async def test_sources_include_empty_configured_and_collected_sources(
     assert data["total_posts"] == 10
     assert data["sources"][0] == {
         "domain": "empty.example", "name": "empty.example",
-        "tags": ["culture"], "count": 0, "kind": "rss",
+        "tags": ["culture"], "count": 0, "kind": "rss", "configured": True,
     }
+    assert data["sources"][1]["configured"] is False
+    assert data["sources"][2]["configured"] is True
     assert data["sources"][1]["tags"] == []
     assert data["sources"][2]["tags"] == ["politics"]
 
@@ -379,7 +381,7 @@ def test_reddit_filters_are_separate_parameterized_and_case_insensitive():
     assert params["community"] == "localllama"
     assert "LocalLLaMA" not in query
     stories, _ = build_query(ReaderFilters(kind="stories"), ())
-    assert "domain != 'reddit.com'" in stories
+    assert "WHERE 0" in stories
 
 
 @pytest.mark.parametrize("query", [

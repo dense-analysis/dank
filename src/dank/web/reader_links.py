@@ -21,8 +21,7 @@ from dank.web.app import (
 from dank.web.reader_excerpt import search_excerpt
 
 # Suppress aggregator records only after an original source is collected.
-RESOLVED_HN_POSTS_SQL = """
-SELECT DISTINCT l.domain, l.post_id
+_RESOLVED_LINKS_SQL = """
 FROM post_links AS l FINAL
 INNER JOIN (SELECT domain, post_id, source, updated_at,
     hex(SHA256(html)) AS content_hash FROM posts FINAL) AS origin
@@ -40,6 +39,13 @@ WHERE origin.source IN ('hacker_news', 'rss') AND l.kind = 'primary'
             = domainWithoutWWW(target.url))
     AND (target.domain, target.post_id) != (l.domain, l.post_id)
 """.strip()
+RESOLVED_HN_POSTS_SQL = (
+    "SELECT DISTINCT l.domain, l.post_id " + _RESOLVED_LINKS_SQL
+)
+HN_LINKED_POSTS_SQL = (
+    "SELECT DISTINCT target.domain, target.post_id " + _RESOLVED_LINKS_SQL
+    + " AND l.domain = 'news.ycombinator.com'"
+)
 
 
 async def ensure_link_storage(client: ClickHouseClient) -> None:
