@@ -27,6 +27,8 @@ def collect_refresh(
 
     try:
         asyncio.run(_collect(settings, target_post, connection))
+    except asyncio.CancelledError:
+        logger.info("Reader refresh interrupted")
     except CollectionBusyError:
         connection.send({
             "status": "failed",

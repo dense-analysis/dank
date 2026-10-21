@@ -912,8 +912,9 @@ Covered by
 ## Refresh from the reader
 
 Reader Refresh starts a collection for the current source context or saved post.
-Search text, dates, flairs and read markers remain display filters; they do not
-change a source's configured collection limits. Individual Reddit/X post refreshes
+All-view platform choices and source/tag filters narrow collection. Search text,
+dates, flairs and read markers remain display filters; they do not change a
+source's configured collection limits. Individual Reddit/X post refreshes
 request details and comments explicitly. YouTube video refreshes retry metadata
 and reuse saved successful transcripts; community-post detail refresh and the
 computed **From your feeds** view do not have a standalone collector.
