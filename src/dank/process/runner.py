@@ -7,7 +7,7 @@ import logging
 import pathlib
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any, cast
 
 from dank.config import Settings, SourceConfig, load_settings
@@ -50,7 +50,9 @@ async def process_source_posts(
     batch_size: int = 250,
     embedder: EmbeddingModel,
     reprocess: bool = False,
+    post_ids: tuple[str, ...] | None = None,
 ) -> int:
+    selected = "AND post_id IN %(post_ids)s " if post_ids is not None else ""
     query = (
         "SELECT "
         "raw.domain AS domain, "
@@ -75,7 +77,7 @@ async def process_source_posts(
         "FROM raw_posts "
         "WHERE domain = %(domain)s "
         "AND NOT is_reference AND scraped_at >= %(since)s "
-        "ORDER BY scraped_at DESC "
+        + selected + "ORDER BY scraped_at DESC "
         "LIMIT 1 BY post_id"
         ") AS raw "
         "LEFT JOIN ("
@@ -90,10 +92,14 @@ async def process_source_posts(
         "ORDER BY raw.scraped_at DESC "
     )
     query_started_at = time.perf_counter()
-    result = await clickhouse_client.fetch_json(
-        query,
-        {"domain": domain, "since": since, "reprocess": reprocess},
-    )
+    parameters: dict[str, Any] = {
+        "domain": domain, "since": since, "reprocess": reprocess,
+    }
+
+    if post_ids is not None:
+        parameters["post_ids"] = list(post_ids)
+
+    result = await clickhouse_client.fetch_json(query, parameters)
     query_seconds = time.perf_counter() - query_started_at
     logger.info(
         "Loaded %d raw posts for domain=%s since=%s in %.3fs",
@@ -253,7 +259,9 @@ async def process_source_assets(
     *,
     since: datetime.datetime,
     batch_size: int = 500,
+    post_ids: tuple[str, ...] | None = None,
 ) -> int:
+    selected = "AND post_id IN %(post_ids)s " if post_ids is not None else ""
     query = (
         "SELECT "
         "raw.domain AS domain, "
@@ -275,7 +283,7 @@ async def process_source_assets(
         "FROM raw_assets "
         "WHERE domain = %(domain)s "
         "AND scraped_at >= %(since)s "
-        "ORDER BY scraped_at DESC "
+        + selected + "ORDER BY scraped_at DESC "
         "LIMIT 1 BY post_id, url"
         ") AS raw "
         "LEFT JOIN ("
@@ -297,10 +305,12 @@ async def process_source_assets(
         "ORDER BY raw.scraped_at DESC"
     )
     query_started_at = time.perf_counter()
-    result = await clickhouse_client.fetch_json(
-        query,
-        {"domain": domain, "since": since},
-    )
+    parameters: dict[str, Any] = {"domain": domain, "since": since}
+
+    if post_ids is not None:
+        parameters["post_ids"] = list(post_ids)
+
+    result = await clickhouse_client.fetch_json(query, parameters)
     query_seconds = time.perf_counter() - query_started_at
     logger.info(
         "Loaded %d unprocessed raw assets for domain=%s since=%s in %.3fs",
@@ -545,13 +555,20 @@ async def run_process(
     age: str = "24h",
     domain_regex: re.Pattern[str] | None = None,
     reprocess: bool = False,
+    since: datetime.datetime | None = None,
+    post_keys: Collection[tuple[str, str]] | None = None,
 ) -> int:
+    if post_keys is not None and not post_keys:
+        return 0
+
     # DateTime64 supports captures from 1900 onward; keep the query bounded.
-    since = (
+    since = since or (
         datetime.datetime(1900, 1, 1, tzinfo=datetime.UTC)
         if age.strip().lower() == "all"
         else datetime.datetime.now(datetime.UTC) - parse_age_window(age)
     )
+    # Captures are stored as DateTime64(3); include the starting millisecond.
+    since = since.replace(microsecond=since.microsecond // 1000 * 1000)
     total_posts = 0
     total_assets = 0
     # Collection can configure multiple listings per domain; process it once.
@@ -559,6 +576,12 @@ async def run_process(
         source.domain: source for source in settings.sources
         if domain_regex is None or domain_regex.search(source.domain)
     }.values())
+    if post_keys is not None:
+        sources = tuple(SourceConfig(domain, ()) for domain in sorted({
+            domain for domain, _ in post_keys
+            if domain_regex is None or domain_regex.search(domain)
+        }))
+
     embedder = get_embedding_model()
     logger.info(
         "Starting process run age=%s since=%s sources=%d reprocess=%s",
@@ -580,9 +603,10 @@ async def run_process(
                 if statement.strip():
                     await clickhouse_client.execute(statement)
 
-        sources = await _with_linked_article_sources(
-            clickhouse_client, sources, since, domain_regex,
-        )
+        if post_keys is None:
+            sources = await _with_linked_article_sources(
+                clickhouse_client, sources, since, domain_regex,
+            )
         for source in sources:
             converter = {
                 "x.com": convert_raw_x_post,
@@ -592,6 +616,12 @@ async def run_process(
             }.get(source.domain, convert_raw_rss_post)
             logger.info("Processing source domain=%s", source.domain)
 
+            selection: dict[str, Any] = (
+                {} if post_keys is None else {"post_ids": tuple(sorted(
+                    post_id for domain, post_id in post_keys
+                    if domain == source.domain
+                ))}
+            )
             total_posts += await process_source_posts(
                 clickhouse_client,
                 source.domain,
@@ -599,6 +629,7 @@ async def run_process(
                 since=since,
                 embedder=embedder,
                 reprocess=reprocess,
+                **selection,
             )
 
             total_assets += await process_source_assets(
@@ -606,6 +637,7 @@ async def run_process(
                 source.domain,
                 convert_raw_asset,
                 since=since,
+                **selection,
             )
 
     logger.info(

@@ -449,3 +449,63 @@ async def test_source_processing_includes_its_linked_publishers_only(
         re.compile("^" + re.escape(domain) + "$"),
     )
     assert {item.domain for item in sources} == {domain, *expected}
+
+
+async def test_context_process_uses_collected_posts_and_linked_domains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = MagicMock()
+    settings.sources = (SourceConfig("reddit.com", ()),)
+    since = datetime.datetime(2026, 10, 22, tzinfo=datetime.UTC)
+    posts = AsyncMock(return_value=1)
+    assets = AsyncMock(return_value=0)
+    linked_sources = AsyncMock()
+    monkeypatch.setattr(runner, "process_source_posts", posts)
+    monkeypatch.setattr(runner, "process_source_assets", assets)
+    monkeypatch.setattr(runner, "_with_linked_article_sources", linked_sources)
+    monkeypatch.setattr(runner, "ClickHouseClient", MagicMock())
+
+    assert await runner.run_process(settings, since=since, post_keys={
+        ("reddit.com", "selected-post"), ("publisher.test", "linked-story"),
+    }) == 2
+    assert {call.args[1]: call.kwargs["post_ids"]
+            for call in posts.call_args_list} == {
+        "reddit.com": ("selected-post",),
+        "publisher.test": ("linked-story",),
+    }
+
+    for call in posts.call_args_list + assets.call_args_list:
+        assert call.kwargs["since"] == since
+
+    linked_sources.assert_not_awaited()
+
+
+async def test_empty_context_process_never_loads_model_or_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = MagicMock()
+    client = MagicMock()
+    monkeypatch.setattr(runner, "get_embedding_model", model)
+    monkeypatch.setattr(runner, "ClickHouseClient", client)
+
+    assert await runner.run_process(MagicMock(), post_keys=set()) == 0
+    model.assert_not_called()
+    client.assert_not_called()
+
+
+async def test_context_queries_filter_posts_and_assets_by_exact_ids() -> None:
+    since = datetime.datetime(2026, 10, 22, tzinfo=datetime.UTC)
+    client = _DummyClient()
+    await process_source_posts(
+        cast(Any, client), "publisher.test", convert_raw_post,
+        since=since, embedder=cast(Any, _DummyEmbedder()), post_ids=("one",),
+    )
+    assert "AND post_id IN %(post_ids)s " in client.query
+    assert client.params["post_ids"] == ["one"]
+
+    await process_source_assets(
+        cast(Any, client), "publisher.test", runner.convert_raw_asset,
+        since=since, post_ids=("one",),
+    )
+    assert "AND post_id IN %(post_ids)s " in client.query
+    assert client.params["post_ids"] == ["one"]

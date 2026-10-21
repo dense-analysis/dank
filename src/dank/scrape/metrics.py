@@ -160,6 +160,8 @@ class RunMetrics:
         self.saved_sources: set[int] = set()
         self.sources: dict[int, SourceMetrics] = {}
         self.queue_size = 0
+        self.collected_posts: set[tuple[str, str]] = set()
+        self.linked_video_ids: set[str] = set()
 
     def counts(self) -> Counter[str]:
         result: Counter[str] = Counter()

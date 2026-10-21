@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import fcntl
 import json
 import logging
 import pathlib
@@ -95,6 +96,10 @@ MAX_LINKED_METADATA_PER_RUN = 100
 MAX_TRANSCRIPTS_PER_RUN = 25
 
 
+class CollectionBusyError(RuntimeError):
+    """Another collector owns the shared browser profiles."""
+
+
 async def run_scrape(
     settings: Settings,
     *,
@@ -106,17 +111,63 @@ async def run_scrape(
     reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
-) -> None:
+    target_post: tuple[str, str] | None = None,
+    scoped: bool = False,
+) -> RunMetrics:
+    if target_post is not None:
+        selected = tuple(source for source in settings.sources
+                         if source.domain == target_post[0])
+
+        if not selected:
+            raise ValueError(
+                "The target post must belong to the selected sources",
+            )
+
+        settings = settings._replace(sources=selected[:1])
+        scoped = True
+
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+    with (settings.data_dir / "collection.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise CollectionBusyError(
+                "Another collection is already running",
+            ) from error
+
+        try:
+            return await _run_scrape(
+                settings, headless=headless, batch_size=batch_size,
+                retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                reddit_details=reddit_details,
+                reddit_linked_articles=reddit_linked_articles,
+                x_details=x_details, hacker_news_details=hacker_news_details,
+                target_post=target_post, scoped=scoped,
+            )
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+async def _run_scrape(
+    settings: Settings,
+    *,
+    headless: bool = False,
+    batch_size: int = 50,
+    retry_failed_pages: bool = False,
+    x_posts: tuple[str, ...] = (),
+    reddit_details: bool = False,
+    reddit_linked_articles: bool = False,
+    x_details: bool = False,
+    hacker_news_details: bool = False,
+    target_post: tuple[str, str] | None = None,
+    scoped: bool = False,
+) -> RunMetrics:
     settings = _detail_source_settings(
         settings, reddit_details=reddit_details, x_details=x_details,
         reddit_linked_articles=reddit_linked_articles,
         hacker_news_details=hacker_news_details,
     )
-
-    if not settings.sources:
-        logger.warning("No sources selected; check sources and --domains.")
-
-        return
 
     batch_size = max(1, batch_size)
     history = RunMetrics(
@@ -130,6 +181,12 @@ async def run_scrape(
             settings.max_entries_per_feed, settings.media_download_types,
         ),
     )
+    if not settings.sources:
+        logger.warning("No sources selected; check sources and --domains.")
+        history.finish()
+
+        return history
+
     memory = history.runtime.memory_limit_bytes
     logger.info(
         "Starting scrape run %s: %d sources; code=%s",
@@ -199,6 +256,7 @@ async def run_scrape(
                     reddit_details=reddit_details, x_details=x_details,
                     reddit_linked_articles=reddit_linked_articles,
                     hacker_news_details=hacker_news_details,
+                    target_post=target_post, scoped=scoped,
                 )
         except BaseException as error:
             history.finish(error)
@@ -224,6 +282,8 @@ async def run_scrape(
         counts["files_cached"], counts["files_failed"],
         counts["media_skipped"], history.run_id,
     )
+
+    return history
 
 
 def _detail_source_settings(
@@ -257,6 +317,8 @@ async def _run_source_sessions(
     *, retry_failed_pages: bool, x_posts: tuple[str, ...],
     reddit_details: bool, x_details: bool, hacker_news_details: bool = False,
     reddit_linked_articles: bool = False,
+    target_post: tuple[str, str] | None = None,
+    scoped: bool = False,
 ) -> None:
     async with (
         aiohttp.ClientSession(
@@ -281,6 +343,7 @@ async def _run_source_sessions(
                 reddit_details=reddit_details, x_details=x_details,
                 reddit_linked_articles=reddit_linked_articles,
                 hacker_news_details=hacker_news_details,
+                target_post=target_post, scoped=scoped,
             )
         finally:
             current_page_recovery.reset(token)
@@ -341,6 +404,8 @@ async def _collect_with_history(
     reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
+    target_post: tuple[str, str] | None = None,
+    scoped: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
     totals_seen: set[str] = set()
@@ -377,6 +442,7 @@ async def _collect_with_history(
                 reddit_linked_articles=reddit_linked_articles,
                 hacker_news_details=hacker_news_details,
                 totals_seen=totals_seen, seen_articles=seen_articles,
+                target_post=target_post,
             )
 
     try:
@@ -385,8 +451,16 @@ async def _collect_with_history(
             for _ in range(history.source_concurrency)
         )
 
-        if not reddit_linked_articles:
-            await collect_linked_youtube_metadata(client, http_client)
+        if not reddit_linked_articles and target_post is None:
+            if not scoped or history.linked_video_ids:
+                await collect_linked_youtube_metadata(
+                    client, http_client,
+                    video_ids=(
+                        tuple(sorted(history.linked_video_ids))
+                        if scoped else ()
+                    ),
+                )
+
             await collect_run_youtube_transcripts(
                 client, http_client, str(history.run_id),
             )
@@ -421,6 +495,7 @@ async def _collect_source(
     reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
+    target_post: tuple[str, str] | None = None,
     totals_seen: set[str] | None = None,
     seen_articles: set[str] | None = None,
 ) -> None:
@@ -456,6 +531,7 @@ async def _collect_source(
                     reddit_linked_articles=reddit_linked_articles,
                     hacker_news_details=hacker_news_details,
                     totals_seen=totals_seen, seen_articles=seen_articles,
+                    target_post=target_post,
                 ):
                     stats.discovered(
                         batch.post_count, len(batch.assets),
@@ -466,6 +542,16 @@ async def _collect_source(
                     )
                     # Persist this batch before moving on to the next one.
                     saved = await _flush_posts(client, list(batch.posts))
+                    history.collected_posts.update(
+                        (post.domain, post.post_id) for post in batch.posts
+                        if not post.is_reference
+                    )
+                    history.linked_video_ids.update(
+                        str(evidence["video_id"]) for post in batch.posts
+                        for evidence in reference_rows(
+                            post._asdict(), raw=True,
+                        )
+                    )
                     await _persist_youtube_discoveries(
                         client, batch.posts, str(history.run_id),
                     )
@@ -534,9 +620,19 @@ async def _discover_source_batches(
     reddit_linked_articles: bool = False,
     x_details: bool = False,
     hacker_news_details: bool = False,
+    target_post: tuple[str, str] | None = None,
     totals_seen: set[str] | None = None,
     seen_articles: set[str] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
+    if target_post is not None:
+        async for batch in _refresh_target_post(
+            settings, source, clickhouse_client, http_client, session,
+            target_post, batch_size=batch_size,
+        ):
+            yield batch
+
+        return
+
     if seen_articles is None:
         seen_articles = set()
 
@@ -576,6 +672,134 @@ async def _discover_source_batches(
             count("fetch_failures")
             logger.warning("%s: %s adapter failed: %s", source.domain,
                            adapter.kind, error)
+
+
+async def _load_target_post(
+    client: ClickHouseClient, target: tuple[str, str],
+) -> RawPost | None:
+    saved = await client.fetch_json(
+        "SELECT domain, post_id, url, post_created_at, scraped_at, source, "
+        "request_url, payload FROM raw_posts "
+        "WHERE domain = %(domain)s AND post_id = %(post_id)s "
+        "ORDER BY scraped_at DESC LIMIT 1",
+        {"domain": target[0], "post_id": target[1]},
+    )
+    if saved.rows:
+        row = saved.rows[0]
+        return RawPost(
+            domain=str(row["domain"]), post_id=str(row["post_id"]),
+            url=str(row["url"]),
+            post_created_at=parse_datetime(row.get("post_created_at")),
+            scraped_at=parse_datetime(row["scraped_at"])
+            or datetime.datetime.now(datetime.UTC),
+            source=str(row["source"]), request_url=str(row["request_url"]),
+            payload=str(row["payload"]),
+        )
+
+    return None
+
+
+async def _refresh_target_post(
+    settings: Settings, source: SourceConfig, client: ClickHouseClient,
+    http_client: aiohttp.ClientSession, session: BrowserSession,
+    target: tuple[str, str], *, batch_size: int,
+) -> AsyncIterator[ScrapeBatch]:
+    if target[0] != source.domain:
+        raise ValueError("The target post must belong to the selected source")
+
+    post = await _load_target_post(client, target)
+
+    if source.domain == "youtube.com":
+        async for batch in _refresh_youtube_post(
+            client, http_client, target[1], post,
+        ):
+            yield batch
+
+        return
+
+    if post is None:
+        raise ValueError("The target post must already be saved")
+
+    match source.domain:
+        case "reddit.com":
+            batches = scrape_reddit_details(
+                settings.reddit._replace(capture_comments=True),
+                [post], session,
+            )
+        case "x.com":
+            batches = scrape_x_posts(settings.x._replace(
+                conversation=settings.x.conversation._replace(enabled=True),
+            ), [post], session)
+        case "news.ycombinator.com":
+            batches = scrape_hacker_news_details(
+                settings.hacker_news, [post], http_client,
+            )
+        case _:
+            batches = retry_feed_pages(
+                http_client, [post], batch_size=batch_size,
+            )
+
+    collected = False
+
+    async for batch in batches:
+        collected = collected or bool(batch.posts)
+        yield batch
+
+    if not collected:
+        # A provider can return no batches after a blocked or empty response.
+        count("fetch_failures")
+
+
+async def _refresh_youtube_post(
+    client: ClickHouseClient, http_client: aiohttp.ClientSession,
+    post_id: str, post: RawPost | None,
+) -> AsyncIterator[ScrapeBatch]:
+    video_id = post_id.removeprefix("video:")
+
+    if not post_id.startswith("video:") or not VIDEO_ID.fullmatch(video_id):
+        raise ValueError("Only individual YouTube videos can be refreshed")
+
+    if post is None:
+        known = await client.fetch_json(
+            "SELECT video_id FROM youtube_reference_evidence "
+            "WHERE video_id = %(id)s UNION ALL "
+            "SELECT substring(item_id, 7) AS video_id "
+            "FROM youtube_discoveries "
+            "WHERE item_id = %(post_id)s LIMIT 1",
+            {"id": video_id, "post_id": post_id},
+        )
+
+        if not known.rows:
+            raise ValueError("The target video must already be saved")
+
+    metadata = await collect_youtube_video_metadata(
+        client, http_client, video_id, force=True,
+    )
+    transcript = await collect_youtube_video_transcript(
+        client, http_client, video_id, force=True,
+    )
+
+    if metadata["status"] != "captured":
+        count("fetch_failures")
+
+    if transcript["status"] == "failed":
+        count("fetch_failures")
+
+    if metadata["status"] != "captured":
+        return
+
+    payload = payload_object(post.payload) if post is not None else {}
+    payload.update(payload_object(metadata["payload"]))
+    payload.update(kind=payload.get("kind") or "video", video_id=video_id)
+    now = datetime.datetime.now(datetime.UTC)
+    refreshed = RawPost(
+        domain="youtube.com", post_id=post_id,
+        url=f"https://www.youtube.com/watch?v={video_id}",
+        post_created_at=post.post_created_at if post else None,
+        scraped_at=now, source="youtube",
+        request_url=str(metadata["request_url"]), payload=json.dumps(payload),
+    )
+    yield ScrapeBatch([refreshed], [])
 
 
 async def _discover_adapter_batches(
@@ -2046,7 +2270,7 @@ def filter_settings_sources(
 
 async def collect_youtube_video_metadata(
     client: ClickHouseClient, http_client: aiohttp.ClientSession,
-    video_id: str,
+    video_id: str, *, force: bool = False,
 ) -> dict[str, Any]:
     """Persist one provider observation, respecting success/failure caches."""
     if not VIDEO_ID.fullmatch(video_id):
@@ -2062,7 +2286,7 @@ async def collect_youtube_video_metadata(
         row = previous.rows[0]
         retry_after = parse_datetime(row["retry_after"])
 
-        if retry_after and retry_after > now:
+        if not force and retry_after and retry_after > now:
             return {**row, "cached": True}
 
     row = await fetch_video_metadata(http_client, video_id)
@@ -2153,7 +2377,7 @@ async def run_youtube_metadata(
 
 async def collect_youtube_video_transcript(
     client: ClickHouseClient, http_client: aiohttp.ClientSession,
-    video_id: str,
+    video_id: str, *, force: bool = False,
 ) -> dict[str, Any]:
     """Reuse saved captions and negative caches; persist only in the runner."""
     if not VIDEO_ID.fullmatch(video_id):
@@ -2170,7 +2394,9 @@ async def collect_youtube_video_transcript(
 
         now = datetime.datetime.now(datetime.UTC)
 
-        if row["status"] == "captured" or (retry_after and retry_after > now):
+        if row["status"] == "captured" or (
+            not force and retry_after and retry_after > now
+        ):
             return {**row, "cached": True}
 
     row = await fetch_video_transcript(http_client, video_id)
