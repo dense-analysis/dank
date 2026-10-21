@@ -156,13 +156,15 @@ def _selected_sources(
     if tags - {tag for source in settings.sources for tag in source.tags}:
         raise ValueError("Refresh includes a tag that is no longer configured")
 
+    tag_domains = {source.domain for source in settings.sources
+                   if tags.intersection(source.tags)}
     selected: list[SourceConfig] = []
 
     for source in settings.sources:
         if domains and source.domain not in domains:
             continue
 
-        if tags and not tags.intersection(source.tags):
+        if tags and source.domain not in tag_domains:
             continue
 
         # Reader sections identify platforms by domain. A Hacker News source

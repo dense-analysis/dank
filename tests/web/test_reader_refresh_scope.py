@@ -110,7 +110,9 @@ async def test_domains_and_tags_are_union_within_and_intersection_across():
         "kind": "all", "domains": ["b.test", "a.test", "a.test"],
         "tags": ["TECH", "games"],
     })
-    assert plan.settings.sources == original.sources[:2]
+    assert plan.settings.sources == (
+        original.sources[0], original.sources[1], original.sources[3],
+    )
     assert plan.scope == {
         "kind": "all", "domains": ["a.test", "b.test"],
         "tags": ["games", "tech"],
@@ -244,6 +246,7 @@ async def test_regional_hype_preserves_region_without_other_playlists():
     {"kind": "all", "tags": ["unknown"]},
     {"kind": "rss", "domains": ["reddit.com"]},
     {"kind": "rss", "tags": ["social"]},
+    {"kind": "all", "domains": ["publisher.test"], "tags": ["social"]},
 ])
 async def test_unknown_or_empty_context_never_falls_back_to_all(scope: object):
     original = settings(
@@ -352,3 +355,35 @@ async def test_known_post_preserves_one_matching_configured_source():
     })
     assert plan.settings.sources == (original.sources[1],)
     assert plan.target_post == ("reddit.com", "saved")
+
+
+async def test_tagged_domain_keeps_other_communities_visible_in_reader():
+    original = settings(
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Python/",),
+                     tags=("tech",)),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/Games/",),
+                     tags=("games",)),
+        SourceConfig("publisher.test", (), tags=("games",)),
+    )
+    broad = await resolve_scope(original, client(), {
+        "kind": "reddit", "tags": ["tech"],
+    })
+    assert broad.settings.sources == original.sources[:2]
+    narrow = await resolve_scope(original, client(), {
+        "kind": "reddit", "tags": ["tech"], "community": "Games",
+    })
+    assert len(narrow.settings.sources) == 1
+    assert narrow.settings.sources[0].feed_urls == (
+        "https://reddit.com/r/Games/",
+    )
+
+
+async def test_tagged_domain_still_limits_x_to_selected_account():
+    original = settings(
+        SourceConfig("x.com", ("Alice",), tags=("tech",)),
+        SourceConfig("x.com", ("Bob",), tags=("games",)),
+    )
+    plan = await resolve_scope(original, client(), {
+        "kind": "x", "tags": ["tech"], "account": "Bob",
+    })
+    assert plan.settings.sources == (original.sources[1],)
