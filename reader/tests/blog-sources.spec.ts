@@ -279,6 +279,32 @@ test("Blogs separates configured source feeds from externally discovered article
     .toBe(true);
 });
 
+test("external publisher filters keep the external feed selected without a full-source count", async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.goto("/reader/?view=stories&blog_feed=external");
+  await page.getByRole("button", { name: /^Filters/ }).click();
+  const source = page.getByRole("combobox", { name: "Source", exact: true });
+
+  for (const domain of [external.domain, github.domain]) {
+    await source.selectOption(domain);
+    expect(new URL(page.url()).searchParams.get("blog_feed")).toBe("external");
+    expect(new URL(page.url()).searchParams.get("domain")).toBe(domain);
+    await expect(
+      navigation(page).getByRole("button", { name: /^From external/ }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(sourceEntry(page, "github.blog")).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(
+      page.getByRole("heading", { name: "From external", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".topbar .collection-count-pill")).toHaveCount(0);
+  }
+});
+
 for (const selection of ["domain=github.blog", "blog_feed=external"]) {
   test(`Blog selection ${selection} survives search, article return and reload`, async ({
     page,
