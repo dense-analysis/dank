@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import fcntl
+import hashlib
 import json
 import logging
 import pathlib
@@ -10,7 +11,7 @@ import re
 import shutil
 import tempfile
 from collections.abc import AsyncIterator
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from typing import Any, cast
 from urllib.parse import urlsplit
 
@@ -45,6 +46,7 @@ from dank.scrape.assets.http import (
     thumbnail_observation,
     youtube_thumbnail_urls,
 )
+from dank.scrape.concurrency import collection_resources
 from dank.scrape.hacker_news import (
     scrape_hacker_news,
     scrape_hacker_news_details,
@@ -97,7 +99,7 @@ MAX_TRANSCRIPTS_PER_RUN = 25
 
 
 class CollectionBusyError(RuntimeError):
-    """Another collector owns the shared browser profiles."""
+    """Another collector owns an overlapping source or browser profile."""
 
 
 async def run_scrape(
@@ -113,6 +115,7 @@ async def run_scrape(
     hacker_news_details: bool = False,
     target_post: tuple[str, str] | None = None,
     scoped: bool = False,
+    exclusive: bool = False,
 ) -> RunMetrics:
     if target_post is not None:
         selected = tuple(source for source in settings.sources
@@ -128,25 +131,40 @@ async def run_scrape(
 
     settings.data_dir.mkdir(parents=True, exist_ok=True)
 
-    with (settings.data_dir / "collection.lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise CollectionBusyError(
-                "Another collection is already running",
-            ) from error
+    with ExitStack() as locks:
+        lock = locks.enter_context(
+            (settings.data_dir / "collection.lock").open("a"),
+        )
+        operation = fcntl.LOCK_EX if exclusive or not scoped else fcntl.LOCK_SH
 
         try:
-            return await _run_scrape(
-                settings, headless=headless, batch_size=batch_size,
-                retry_failed_pages=retry_failed_pages, x_posts=x_posts,
-                reddit_details=reddit_details,
-                reddit_linked_articles=reddit_linked_articles,
-                x_details=x_details, hacker_news_details=hacker_news_details,
-                target_post=target_post, scoped=scoped,
-            )
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+            fcntl.flock(lock, operation | fcntl.LOCK_NB)
+
+            if operation == fcntl.LOCK_SH:
+                directory = settings.data_dir / "collection-locks"
+                directory.mkdir(exist_ok=True)
+
+                for resource in sorted(collection_resources(
+                    settings, target_post,
+                )):
+                    name = hashlib.sha256(resource.encode()).hexdigest()
+                    resource_lock = locks.enter_context(
+                        (directory / name).open("a"),
+                    )
+                    fcntl.flock(resource_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise CollectionBusyError(
+                "Another collection is already using this source or browser",
+            ) from error
+
+        return await _run_scrape(
+            settings, headless=headless, batch_size=batch_size,
+            retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+            reddit_details=reddit_details,
+            reddit_linked_articles=reddit_linked_articles,
+            x_details=x_details, hacker_news_details=hacker_news_details,
+            target_post=target_post, scoped=scoped,
+        )
 
 
 async def _run_scrape(
@@ -320,33 +338,41 @@ async def _run_source_sessions(
     target_post: tuple[str, str] | None = None,
     scoped: bool = False,
 ) -> None:
-    async with (
-        aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-        ) as http_client,
-        BrowserSession(x_config) as x_session,
-        BrowserSession(reddit_config) as reddit_session,
-        BrowserSession(youtube_config) as youtube_session,
-        BrowserSession(x_config._replace(
-            profile_dir=settings.data_dir / "rss-browser-profile",
-            keep_open=False,
-        )) as rss_session,
-    ):
-        token = current_page_recovery.set(PageRecovery(rss_session))
+    # Public-page recovery needs no saved sign-in state. Give concurrent
+    # reader runs separate profiles while preserving the CLI's existing cache.
+    recovery_profile = (
+        tempfile.TemporaryDirectory(prefix="dank-rss-") if scoped
+        else nullcontext(str(settings.data_dir / "rss-browser-profile"))
+    )
 
-        try:
-            await _collect_with_history(
-                settings, client, http_client, x_session, reddit_session,
-                youtube_session, history, assets_dir,
-                youtube_profile=youtube_config.profile_dir or assets_dir,
-                retry_failed_pages=retry_failed_pages, x_posts=x_posts,
-                reddit_details=reddit_details, x_details=x_details,
-                reddit_linked_articles=reddit_linked_articles,
-                hacker_news_details=hacker_news_details,
-                target_post=target_post, scoped=scoped,
-            )
-        finally:
-            current_page_recovery.reset(token)
+    with recovery_profile as rss_profile:
+        async with (
+            aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as http_client,
+            BrowserSession(x_config) as x_session,
+            BrowserSession(reddit_config) as reddit_session,
+            BrowserSession(youtube_config) as youtube_session,
+            BrowserSession(x_config._replace(
+                profile_dir=pathlib.Path(rss_profile),
+                keep_open=False,
+            )) as rss_session,
+        ):
+            token = current_page_recovery.set(PageRecovery(rss_session))
+
+            try:
+                await _collect_with_history(
+                    settings, client, http_client, x_session, reddit_session,
+                    youtube_session, history, assets_dir,
+                    youtube_profile=youtube_config.profile_dir or assets_dir,
+                    retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                    reddit_details=reddit_details, x_details=x_details,
+                    reddit_linked_articles=reddit_linked_articles,
+                    hacker_news_details=hacker_news_details,
+                    target_post=target_post, scoped=scoped,
+                )
+            finally:
+                current_page_recovery.reset(token)
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
