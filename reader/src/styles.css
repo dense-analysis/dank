@@ -1996,10 +1996,12 @@ input[type="checkbox"] {
 }
 .source-avatar {
   position: relative;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
 }
 .source-avatar img {
   object-fit: contain;
-  background: #edf1ed;
 }
 .source-avatar .avatar-pending {
   position: absolute;
