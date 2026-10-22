@@ -131,6 +131,7 @@ class AppState(NamedTuple):
 
 def create_app(settings: Settings, *, page_size: int) -> web.Application:
     from dank.web.reader_api import add_reader_routes
+    from dank.web.reader_source_icons import add_source_icon_routes
 
     app = web.Application()
     static_dir = _static_dir()
@@ -150,6 +151,7 @@ def create_app(settings: Settings, *, page_size: int) -> web.Application:
     app.router.add_get("/", handle_index)
     app.router.add_get("/post", handle_post_detail)
     add_reader_routes(app)
+    add_source_icon_routes(app)
 
     if static_dir.exists():
         app.router.add_static("/static/", static_dir, show_index=False)

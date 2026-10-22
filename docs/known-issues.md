@@ -72,6 +72,19 @@ features/collection-provenance.md), [collection tests](
 ../tests/scrape/test_reddit_linked_articles.py), and [provenance tests](
 ../tests/web/test_reader_provenance.py).
 
+## Blog source icons
+
+The reader captures a source favicon when its sidebar icon first loads, without
+collecting articles. It checks the source homepage and a bounded set of declared
+raster icons, then `/favicon.ico`; copies are resized and saved locally as PNG.
+Unknown sources and private network destinations are rejected. Up to three
+captures run at once, with a 15-second budget per source and image size limits.
+
+Successful icons are reused for 30 days. Failures retry after six hours while
+the web app remains running, and a failed refresh preserves an older good icon.
+Sources offering only SVG icons, blocked pages or unsupported images keep the
+reader fallback. See [source icon tests](../tests/web/test_reader_source_icons.py).
+
 ## Publisher excerpts across feeds
 
 Reddit link posts with only a URL and preview image now use a matching saved
