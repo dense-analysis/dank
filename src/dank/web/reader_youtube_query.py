@@ -19,13 +19,16 @@ class YouTubeFilters(NamedTuple):
     item_id: str = ""
     limit: int = 30
     cursor: str = ""
+    sort: str = "newest"
 
     def signature(self) -> str:
-        return hashlib.sha256(json.dumps(self[:5]).encode()).hexdigest()[:24]
+        encoded = json.dumps((*self[:5], self.sort)).encode()
+
+        return hashlib.sha256(encoded).hexdigest()[:24]
 
 
 def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
-    allowed = {"feed", "channel", "kind", "q", "id", "limit", "cursor"}
+    allowed = {"feed", "channel", "kind", "q", "id", "limit", "cursor", "sort"}
 
     if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
         raise ValueError("Unknown or repeated YouTube filter")
@@ -40,7 +43,7 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
         channel=query.get("channel", "").strip(),
         kind=query.get("kind", ""), q=query.get("q", "").strip(),
         item_id=query.get("id", ""), limit=limit,
-        cursor=query.get("cursor", ""),
+        cursor=query.get("cursor", ""), sort=query.get("sort", "newest"),
     )
 
     if not 1 <= limit <= 100 or filters.kind not in {
@@ -51,6 +54,11 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
     if any(len(value) > 2000 for value in filters[:5]):
         raise ValueError("YouTube filters are limited to 2000 characters")
 
+    if filters.sort not in {"newest", "oldest", "most-linked"} or (
+        filters.sort != "newest" and filters.feed != "linked"
+    ):
+        raise ValueError("Invalid sort for this YouTube feed")
+
     if filters.cursor:
         decode_youtube_cursor(filters)
 
@@ -59,14 +67,16 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
 
 def encode_youtube_cursor(
     filters: YouTubeFilters, observed_at: str, item_id: str,
-    position: int = 0,
+    position: int = 0, reference_count: int = 0,
 ) -> str:
     return base64.urlsafe_b64encode(json.dumps([
-        filters.signature(), observed_at, item_id, position,
+        filters.signature(), observed_at, item_id, position, reference_count,
     ]).encode()).decode()
 
 
-def decode_youtube_cursor(filters: YouTubeFilters) -> tuple[str, str, int]:
+def decode_youtube_cursor(
+    filters: YouTubeFilters,
+) -> tuple[str, str, int, int]:
     try:
         if len(filters.cursor) > 8192:
             raise ValueError
@@ -81,9 +91,10 @@ def decode_youtube_cursor(filters: YouTubeFilters) -> tuple[str, str, int]:
         data = cast(list[Any], raw)
 
         if (
-            len(data) != 4
+            len(data) != 5
             or not all(isinstance(value, str) for value in data[:3])
             or type(data[3]) is not int or not 0 <= data[3] <= 2**32 - 1
+            or type(data[4]) is not int or not 0 <= data[4] <= 2**64 - 1
             or data[0] != filters.signature()
         ):
             raise ValueError
@@ -93,7 +104,7 @@ def decode_youtube_cursor(filters: YouTubeFilters) -> tuple[str, str, int]:
         if date.tzinfo is None:
             raise ValueError
 
-        return date.astimezone(dt.UTC).isoformat(), data[2], data[3]
+        return date.astimezone(dt.UTC).isoformat(), data[2], data[3], data[4]
     except (ValueError, TypeError, UnicodeError):
         raise ValueError("Invalid cursor for these filters") from None
 
@@ -133,23 +144,36 @@ def build_youtube_query(
             conditions.append(condition)
             params[key] = value
 
-    if filters.cursor and not count:
-        timestamp, item_id, position = decode_youtube_cursor(filters)
-        conditions.append(
-            "(observed_at, -toInt64(position), item_id) < "
-            "(parseDateTime64BestEffort(%(cursor_time)s, 3), "
-            "-toInt64(%(cursor_position)s), %(cursor_id)s)",
+    order_by = "observed_at DESC, position ASC, item_id DESC"
+    cursor_columns = "(observed_at, -toInt64(position), item_id)"
+    cursor_values = (
+        "(parseDateTime64BestEffort(%(cursor_time)s, 3), "
+        "-toInt64(%(cursor_position)s), %(cursor_id)s)"
+    )
+    comparison = "<"
+
+    if filters.sort == "oldest":
+        order_by = "observed_at ASC, position DESC, item_id ASC"
+        comparison = ">"
+    elif filters.sort == "most-linked":
+        order_by = "reference_count DESC, observed_at DESC, item_id DESC"
+        cursor_columns = "(reference_count, observed_at, item_id)"
+        cursor_values = (
+            "(%(cursor_count)s, "
+            "parseDateTime64BestEffort(%(cursor_time)s, 3), %(cursor_id)s)"
         )
+
+    if filters.cursor and not count:
+        timestamp, item_id, position, reference_count = decode_youtube_cursor(
+            filters,
+        )
+        conditions.append(f"{cursor_columns} {comparison} {cursor_values}")
         params.update(cursor_time=timestamp, cursor_id=item_id,
-                      cursor_position=position)
+                      cursor_position=position, cursor_count=reference_count)
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     select = "count() AS total" if count else "*"
-    order = (
-        "" if count else
-        " ORDER BY observed_at DESC, position ASC, item_id DESC "
-        "LIMIT %(limit)s"
-    )
+    order = "" if count else f" ORDER BY {order_by} LIMIT %(limit)s"
 
     return f"SELECT {select} FROM ({table}){where}{order}", params
 
@@ -182,7 +206,7 @@ def _feed_items(filters: YouTubeFilters) -> str:
         "max(d.observed_at) AS observed_at, "
         "argMax(d.payload, d.observed_at) AS payload, '' AS search_text, "
         f"argMax({position}, (d.observed_at, -toInt64({position}))) "
-        "AS position "
+        "AS position, toUInt64(0) AS reference_count "
         f"FROM youtube_discoveries AS d{where} GROUP BY item_id"
     )
 
@@ -193,8 +217,12 @@ def _linked_items() -> str:
         "SELECT concat('video:', links.video_id) AS item_id, "
         "if(empty(discovered.kind), links.kind, discovered.kind) AS kind, "
         "links.observed_at AS observed_at, discovered.payload AS payload, "
-        "links.search_text AS search_text, toUInt32(0) AS position FROM ("
+        "links.search_text AS search_text, toUInt32(0) AS position, "
+        "links.reference_count AS reference_count FROM ("
         "SELECT video_id, max(observed_at) AS observed_at, "
+        "uniqExact(tuple(domain, post_id, "
+        "youtube_reference_evidence.kind, reference_id)) "
+        "AS reference_count, "
         "if(countIf(format_hint = 'short') > 0, 'short', 'video') AS kind, "
         "arrayStringConcat(groupUniqArray(100)(concat(title, ' ', excerpt)), "
         "' ') AS search_text "
@@ -219,7 +247,9 @@ def _items_table(filters: YouTubeFilters) -> str:
             "max(i.observed_at) AS observed_at, "
             "argMax(i.payload, i.observed_at) AS payload, "
             "argMax(i.search_text, i.observed_at) AS search_text, "
-            "toUInt32(0) AS position FROM ("
+            "toUInt32(0) AS position, "
+            "max(i.reference_count) AS reference_count "
+            "FROM ("
             + _feed_items(filters) + " UNION ALL " + _linked_items()
             + ") AS i GROUP BY item_id"
         )
@@ -244,6 +274,7 @@ def _metadata_items(items: str, *, prefer_metadata: bool = False) -> str:
     return (
         "SELECT i.item_id AS item_id, i.kind AS kind, "
         "i.observed_at AS observed_at, i.search_text AS search_text, "
+        "i.reference_count AS reference_count, "
         f"i.position AS position, {combined} AS payload "
         "FROM (" + items + ") AS i LEFT JOIN ("
         "SELECT v.video_id AS video_id, JSONMergePatch("

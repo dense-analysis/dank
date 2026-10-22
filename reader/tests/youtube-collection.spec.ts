@@ -232,6 +232,15 @@ async function fixture(page: Page) {
               .toLowerCase()
               .includes(params.get("q")?.toLowerCase() ?? "")),
       );
+      if (params.get("feed") === "linked") {
+        selected.sort((a, b) => {
+          const date = a.observed_at.localeCompare(b.observed_at);
+          if (params.get("sort") === "oldest") return date;
+          if (params.get("sort") === "most-linked")
+            return b.reference_count - a.reference_count || -date;
+          return -date;
+        });
+      }
       const offset = Number(params.get("cursor") ?? 0);
       return route.fulfill({
         json: {
@@ -821,6 +830,73 @@ test("references show post and comment evidence with exact destinations", async 
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("linked videos sort across pages and retain order through navigation", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.pageSize = 2;
+  state.data = [
+    { ...first, title: "Middle video", observed_at: "2026-10-16T10:00:00Z" },
+    {
+      ...first,
+      id: "video:AAAAAAAAAAA",
+      video_id: "AAAAAAAAAAA",
+      title: "Old popular video",
+      reference_count: 150,
+      observed_at: "2026-10-15T10:00:00Z",
+    },
+    {
+      ...first,
+      id: "video:BBBBBBBBBBB",
+      video_id: "BBBBBBBBBBB",
+      title: "Recent video",
+      reference_count: 1,
+      observed_at: "2026-10-17T10:00:00Z",
+    },
+  ];
+  await page.goto("/reader/?view=youtube&feed=linked&format=video");
+  const sort = page.getByRole("combobox", { name: "Order linked videos" });
+  const titles = page.locator(".yt-card h3");
+  await expect(sort).toHaveValue("newest");
+  await expect(titles.first()).toHaveText("Recent video");
+  await sort.selectOption("most-linked");
+  await expect(titles.first()).toHaveText("Old popular video");
+  await expect(page).toHaveURL(/sort=most-linked/);
+  await expect
+    .poll(() =>
+      state.requests.some(
+        (url) =>
+          url.searchParams.get("sort") === "most-linked" &&
+          url.searchParams.get("cursor") === "2",
+      ),
+    )
+    .toBe(true);
+  await expect(titles).toHaveText([
+    "Old popular video",
+    "Middle video",
+    "Recent video",
+  ]);
+  await page
+    .getByRole("link", { name: "Old popular video", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Back to from your feeds" }).click();
+  await expect(sort).toHaveValue("most-linked");
+  await sort.selectOption("oldest");
+  await expect(titles.first()).toHaveText("Old popular video");
+  await page.reload();
+  await expect(sort).toHaveValue("oldest");
+  await sort.selectOption("newest");
+  await expect(titles.first()).toHaveText("Recent video");
+  await expect(page).toHaveURL(/format=video/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(sort).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
 });

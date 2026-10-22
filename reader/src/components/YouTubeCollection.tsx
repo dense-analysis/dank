@@ -485,6 +485,19 @@ export function YouTubeCollection({
             </button>
           ))}
         </div>
+        {linked && (
+          <select
+            className="sort-select"
+            aria-label="Order linked videos"
+            title="Order by saved links or when a video was last linked"
+            value={filters.sort}
+            onChange={(event) => change("sort", event.target.value)}
+          >
+            <option value="most-linked">Most linked</option>
+            <option value="newest">Most recent</option>
+            <option value="oldest">Oldest</option>
+          </select>
+        )}
         {filters.q && (
           <button
             type="button"

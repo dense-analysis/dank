@@ -99,6 +99,7 @@ export interface YouTubePage {
   total: number;
 }
 export interface YouTubeFilters {
+  sort?: "newest" | "oldest" | "most-linked";
   feed: string;
   channel: string;
   kind: "" | YouTubeKind;
@@ -273,8 +274,17 @@ export async function fetchYouTubeItems(
 
 export function youtubeFilters(params: URLSearchParams): YouTubeFilters {
   const kind = params.get("format") ?? "";
+  const sort = params.get("sort");
 
   return {
+    ...(params.get("feed") === "linked"
+      ? {
+          sort:
+            sort === "oldest" || sort === "most-linked"
+              ? sort
+              : ("newest" as const),
+        }
+      : {}),
     feed: params.get("feed") ?? "",
     channel: params.get("channel") ?? "",
     kind: kind === "video" || kind === "short" || kind === "post" ? kind : "",

@@ -375,6 +375,12 @@ YouTube search and selection. If the comment or link is missing from the current
 saved post, DANK shows the archived excerpt and original link when available
 instead of highlighting another comment. Counts describe distinct
 post/comment references, so multiple comments in one thread remain distinct.
+
+In YouTube **From your feeds**, choose **Most linked**, **Most recent** (the
+default), or **Oldest**. Link counts include distinct saved post and comment
+references; dates use when the video was last linked in collected content.
+The selected order stays in the URL and applies across loaded pages.
+
 Videos without a collected YouTube title use their video ID; a source headline
 is never presented as the video's title. Opening a linked video collects its
 public preview details when missing, with visible progress and cached retries.

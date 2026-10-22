@@ -101,6 +101,7 @@ async def handle_youtube(request: web.Request) -> web.Response:
         cursor = encode_youtube_cursor(
             filters, last["observed_at"], last["id"],
             int(rows[-1].get("position") or 0),
+            int(rows[-1].get("reference_count") or 0),
         )
 
     return web.json_response({

@@ -52,7 +52,9 @@ def test_cursors_bind_filters_and_keep_stable_item_tie_breaker() -> None:
     timestamp = "2026-10-17T10:00:00+00:00"
     cursor = encode_youtube_cursor(filters, timestamp, "video:AbCdEfGhIjK")
     paged = filters._replace(cursor=cursor)
-    assert decode_youtube_cursor(paged) == (timestamp, "video:AbCdEfGhIjK", 0)
+    assert decode_youtube_cursor(paged) == (
+        timestamp, "video:AbCdEfGhIjK", 0, 0,
+    )
     query, _ = build_youtube_query(paged)
     assert "(observed_at, -toInt64(position), item_id) <" in query
     count_query, _ = build_youtube_query(paged, count=True)
@@ -443,3 +445,43 @@ async def test_latest_successful_snapshot_overrides_remote_thumbnail(
         "first_seen": timestamp.isoformat(),
         "last_seen": timestamp.isoformat(),
     }]
+
+
+@pytest.mark.parametrize(("sort", "order", "comparison"), [
+    ("newest", "observed_at DESC, position ASC, item_id DESC", "<"),
+    ("oldest", "observed_at ASC, position DESC, item_id ASC", ">"),
+    ("most-linked",
+     "reference_count DESC, observed_at DESC, item_id DESC", "<"),
+])
+def test_linked_sort_pagination(sort: str, order: str, comparison: str):
+    filters = parse_youtube_filters(MultiDict({
+        "feed": "linked", "sort": sort,
+    }))
+    cursor = encode_youtube_cursor(
+        filters, "2026-10-17T10:00:00+00:00", "video:AbCdEfGhIjK",
+        reference_count=150,
+    )
+    paged = filters._replace(cursor=cursor)
+    query, params = build_youtube_query(paged)
+    assert f"ORDER BY {order} LIMIT" in query
+    assert f") {comparison} (" in query
+    assert params["cursor_count"] == 150
+    assert params["cursor_id"] == "video:AbCdEfGhIjK"
+    assert "uniqExact(tuple(domain, post_id, " in query
+    assert "youtube_reference_evidence.kind, reference_id))" in query
+    count_query, _ = build_youtube_query(paged, count=True)
+    assert "cursor_count" not in count_query
+    assert "cursor_time" not in count_query
+
+    for other in {"newest", "oldest", "most-linked"} - {sort}:
+        with pytest.raises(ValueError, match="Invalid cursor"):
+            decode_youtube_cursor(paged._replace(sort=other))
+
+
+@pytest.mark.parametrize("query", [
+    {"feed": "linked", "sort": "invalid"},
+    {"sort": "most-linked"}, {"feed": "news", "sort": "oldest"},
+])
+def test_invalid_youtube_sorts(query: dict[str, str]):
+    with pytest.raises(ValueError, match="Invalid sort"):
+        parse_youtube_filters(MultiDict(query))
