@@ -174,8 +174,13 @@ def test_schema_copies_and_package_data_include_youtube() -> None:
     assert '"youtube.sql"' in (root / "pyproject.toml").read_text()
 
 
-def test_rank_is_part_of_cursor_and_snapshots_keep_channels_incremental():
-    filters = YouTubeFilters(feed="https://www.youtube.com/feed/hype")
+@pytest.mark.parametrize("feed", [
+    "https://www.youtube.com/feed/hype", "https://www.youtube.com/",
+])
+def test_rank_is_part_of_cursor_and_snapshots_keep_channels_incremental(
+    feed: str,
+):
+    filters = YouTubeFilters(feed=feed)
     cursor = encode_youtube_cursor(
         filters, "2026-10-17T10:00:00+00:00", "video:AbCdEfGhIjK", 7,
     )
@@ -259,8 +264,16 @@ async def test_extensionless_cached_thumbnail_uses_type_and_keeps_containment(
     }
 
 
-def test_recommendation_pages_and_total_keep_original_snapshot():
-    filters = YouTubeFilters(feed="https://www.youtube.com/feed/hype", limit=1)
+@pytest.mark.parametrize("feed", [
+    "https://www.youtube.com/feed/hype", "https://www.youtube.com/",
+])
+@pytest.mark.parametrize("kind", ["", "video", "short", "post"])
+def test_recommendation_pages_and_total_keep_original_snapshot(
+    feed: str, kind: str,
+):
+    filters = parse_youtube_filters(MultiDict({
+        "feed": feed, "kind": kind, "limit": "1",
+    }))
     captured = "2026-10-17T10:00:00+00:00"
     cursor = encode_youtube_cursor(filters, captured, "video:AbCdEfGhIjK", 1)
     paged = filters._replace(cursor=cursor)
@@ -273,6 +286,15 @@ def test_recommendation_pages_and_total_keep_original_snapshot():
         ) in query
         assert params["snapshot_time"] == captured
         assert "feed_kind = 'channel' OR" in query
+        assert "GROUP BY item_id" in query
+        assert params["feed"] == feed
+
+        if kind:
+            assert "kind = %(kind)s" in query
+            assert params["kind"] == kind
+
+    with pytest.raises(ValueError, match="Invalid cursor"):
+        decode_youtube_cursor(paged._replace(kind="post" if not kind else ""))
 
     first_query, first_params = build_youtube_query(filters)
     assert "snapshot_time" not in first_query

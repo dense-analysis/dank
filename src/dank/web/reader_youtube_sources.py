@@ -42,6 +42,9 @@ def configured_sources(
             if observation.get(key):
                 feed[key] = observation[key]
 
+        if feed["kind"] == "home":
+            feed["name"] = "Recommendations"
+
         if feed["kind"] == "channel":
             channel_url = _channel_url(str(
                 observation.get("channel_url") or url,
@@ -94,7 +97,7 @@ def _configured_feeds(settings: Settings) -> dict[str, dict[str, Any]]:
 
     if getattr(youtube, "homepage", False):
         url = YOUTUBE_ORIGIN + "/"
-        feeds[url] = _feed(url, "Home recommendations", "home", region)
+        feeds[url] = _feed(url, "Recommendations", "home", region)
 
     for source in settings.sources:
         if source.domain != "youtube.com":
@@ -154,7 +157,7 @@ def _configured_feed(url: str, region: str) -> dict[str, Any]:
                      "news", region, tab)
 
     if not path.rstrip("/"):
-        return _feed(YOUTUBE_ORIGIN + "/", "Home recommendations",
+        return _feed(YOUTUBE_ORIGIN + "/", "Recommendations",
                      "home", region)
 
     kind = "hype" if path == "/feed/hype" else "playlist"

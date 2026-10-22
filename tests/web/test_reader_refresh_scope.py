@@ -211,15 +211,45 @@ async def test_single_youtube_feed_avoids_other_defaults(target: str):
 
 
 async def test_youtube_home_keeps_session_requirement_without_other_feeds():
-    original = settings(SourceConfig("youtube.com", ("Alice",)))
+    original = settings(
+        SourceConfig("youtube.com", ("Alice",)),
+        SourceConfig("reddit.com", (), ("https://reddit.com/r/python/",)),
+    )
     original = original._replace(youtube=original.youtube._replace(
         authenticated=True, homepage=True,
+        hype_playlists=(("US", YOUTUBE + "/playlist?list=usa"),),
     ))
-    plan = await resolve_scope(original, client(), {
+    storage = client()
+    plan = await resolve_scope(original, storage, {
         "kind": "youtube", "feed_id": YOUTUBE + "/",
     })
     assert feed_urls(plan.settings) == [YOUTUBE + "/"]
+    assert len(plan.settings.sources) == 1
+    assert plan.settings.sources[0].accounts == ()
     assert plan.settings.youtube.authenticated
+    assert plan.settings.youtube.homepage
+    assert not plan.settings.youtube.hype
+    assert not plan.settings.youtube.hype_playlists
+    assert not plan.settings.youtube.news_tabs
+    assert plan.label == "Recommendations"
+    storage.fetch_json.assert_not_called()
+
+
+@pytest.mark.parametrize("authenticated, homepage", [
+    (False, False), (False, True), (True, False),
+])
+async def test_recommendations_refresh_requires_enabled_authenticated_home(
+    *, authenticated: bool, homepage: bool,
+) -> None:
+    original = settings(SourceConfig("youtube.com", ("Alice",)))
+    original = original._replace(youtube=original.youtube._replace(
+        authenticated=authenticated, homepage=homepage,
+    ))
+
+    with pytest.raises(ValueError):
+        await resolve_scope(original, client(), {
+            "kind": "youtube", "feed_id": YOUTUBE + "/",
+        })
 
 
 async def test_regional_hype_preserves_region_without_other_playlists():

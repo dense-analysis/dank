@@ -303,8 +303,11 @@ async def _youtube_settings(
             hype_playlists=tuple((feed.region, feed.url) for feed in regional),
         )
 
-    return (settings._replace(sources=(source,), youtube=youtube),
-            selected[0].name)
+    label = (
+        "Recommendations" if selected[0].kind == "home" else selected[0].name
+    )
+
+    return settings._replace(sources=(source,), youtube=youtube), label
 
 
 async def _channel_feeds(

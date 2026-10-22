@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dank.config import SourceConfig, load_settings
 from dank.web.reader_youtube_sources import configured_sources
 
@@ -170,3 +172,49 @@ async def test_channel_metadata_is_local_and_preserves_rounded_source_count(
     icon.unlink()
     metadata = await _channel_metadata(client, tmp_path)
     assert metadata[0]["avatar_url"] is None
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_empty_recommendations_feed_is_visible_before_collection(
+    *, explicit: bool,
+) -> None:
+    home = "https://www.youtube.com/"
+    settings = load_settings("config.example.toml")
+    settings = settings._replace(
+        sources=(SourceConfig(
+            "youtube.com", (), (home,) if explicit else (),
+        ),),
+        youtube=settings.youtube._replace(authenticated=True, homepage=True),
+    )
+    feeds, channels = configured_sources(settings, [])
+    assert [feed for feed in feeds if feed["kind"] == "home"] == [{
+        "id": home, "url": home, "name": "Recommendations", "kind": "home",
+        "region": "GB", "tab": "", "count": 0,
+    }]
+    assert channels == []
+
+
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("captured_name", [
+    "Home recommendations", "Home", "Recommendations",
+])
+def test_recommendations_label_is_stable_for_saved_observations(
+    *, configured: bool, captured_name: str,
+) -> None:
+    settings = load_settings("config.example.toml")
+    settings = settings._replace(
+        sources=(SourceConfig("youtube.com", ()),),
+        youtube=settings.youtube._replace(
+            authenticated=True, homepage=configured,
+        ),
+    )
+    feeds, channels = configured_sources(settings, [{
+        "feed_url": "https://www.youtube.com/", "name": captured_name,
+        "kind": "home", "region": "US", "count": 42,
+    }])
+    home = [feed for feed in feeds if feed["kind"] == "home"]
+    assert len(home) == 1
+    assert home[0]["name"] == "Recommendations"
+    assert home[0]["count"] == 42
+    assert home[0]["region"] == "US"
+    assert channels == []
