@@ -201,13 +201,13 @@ it("keeps X post selection through filters and article navigation", () => {
 it("keeps combined platform filters through search and article URLs, but scopes them to All", () => {
   const filters: Filters = {
     ...defaultFilters,
-    platforms: ["reddit", "hacker_news"],
+    platforms: ["reddit", "stories"],
     q: "research",
     after: "2026-10-01",
     sort: "oldest",
   };
   const params = filterParams(filters);
-  expect(params.getAll("platform")).toEqual(["reddit", "hacker_news"]);
+  expect(params.getAll("platform")).toEqual(["reddit", "stories"]);
   expect(parseFilters(params)).toEqual(filters);
   expect(
     parseFilters(articleParams(params, { domain: "example.com", id: "story" })),
@@ -256,3 +256,14 @@ it.each(["sources", "external"] as const)(
     ).toBe("");
   },
 );
+
+it("maps legacy Hacker News platform selections to Blogs without hidden filters", () => {
+  expect(
+    parseFilters(
+      new URLSearchParams("platform=hacker_news&platform=stories&platform=x"),
+    ).platforms,
+  ).toEqual(["stories", "x"]);
+  expect(parseFilters(new URLSearchParams("view=hacker_news")).kind).toBe(
+    "hacker_news",
+  );
+});

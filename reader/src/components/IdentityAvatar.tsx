@@ -35,26 +35,34 @@ export function IdentityAvatar({
   kind: "community" | "account" | "channel" | "source";
 }) {
   const [failedUrl, setFailedUrl] = useState<string>();
+  const [loadedUrl, setLoadedUrl] = useState<string>();
   const src = imageUrl(iconUrl, kind === "account");
+  const initial =
+    name
+      .replace(/^(r\/|@)/i, "")
+      .slice(0, 1)
+      .toUpperCase() || "?";
+  const pending =
+    kind === "source" && src && src !== failedUrl && src !== loadedUrl;
 
   return (
     <span
       className={`source-mark identity-avatar ${kind}-avatar tone-${name.length % 5}`}
       aria-hidden="true"
     >
+      {pending && initial}
       {src && src !== failedUrl ? (
         <img
           src={src}
           alt=""
+          className={pending ? "avatar-pending" : undefined}
           loading={kind === "source" ? "lazy" : undefined}
           referrerPolicy="no-referrer"
+          onLoad={() => setLoadedUrl(src)}
           onError={() => setFailedUrl(src)}
         />
       ) : (
-        name
-          .replace(/^(r\/|@)/i, "")
-          .slice(0, 1)
-          .toUpperCase() || "?"
+        initial
       )}
     </span>
   );

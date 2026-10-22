@@ -55,6 +55,7 @@ from dank.web.reader_reddit import (
 )
 from dank.web.reader_reddit_history import preserve_reddit_archives
 from dank.web.reader_refresh import add_refresh_routes
+from dank.web.reader_source_icons import source_icon_url
 from dank.web.reader_x import post_x_content
 from dank.web.reader_youtube import add_youtube_routes
 from dank.web.reader_youtube_feed import add_youtube_post_metadata
@@ -97,7 +98,8 @@ async def reader_errors(
             status=503,
         )
 
-    response.headers["Cache-Control"] = "no-store"
+    if request.path != "/api/reader/source-icon" or response.status != 200:
+        response.headers["Cache-Control"] = "no-store"
 
     return response
 
@@ -118,6 +120,7 @@ async def handle_sources(request: web.Request) -> web.Response:
         {"domain": domain,
          "name": "Hacker News" if domain == "news.ycombinator.com" else domain,
          "kind": source_kind(domain),
+         "icon_url": source_icon_url(domain),
          "configured": domain in tags,
          "tags": sorted(tags.get(domain, [])),
          "count": counts.get(domain, 0)}

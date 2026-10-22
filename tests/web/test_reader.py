@@ -277,6 +277,7 @@ async def test_sources_include_empty_configured_and_collected_sources(
     assert data["total_posts"] == 10
     assert data["blog_external_count"] == 4
     assert data["sources"][0] == {
+        "icon_url": "/api/reader/source-icon?domain=empty.example",
         "domain": "empty.example", "name": "empty.example",
         "tags": ["culture"], "count": 0, "kind": "rss", "configured": True,
     }

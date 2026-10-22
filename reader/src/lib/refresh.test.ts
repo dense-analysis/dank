@@ -276,3 +276,13 @@ it.each(["sources", "external"] as const)(
     ).toBe(false);
   },
 );
+
+it("refreshes discovery feeds when external articles are filtered to a publisher", () => {
+  expect(
+    refreshContext(
+      new URLSearchParams(
+        "view=stories&blog_feed=external&domain=unfollowed.test&tag=tech",
+      ),
+    )?.scope,
+  ).toEqual({ kind: "rss", blog_feed: "external" });
+});

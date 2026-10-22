@@ -68,11 +68,14 @@ export function parseFilters(params: URLSearchParams): Filters {
         : "",
     platforms:
       kind === "all" && section === "all"
-        ? selections(params, "platform").filter(
-            (value): value is FeedPlatform =>
-              ["x", "reddit", "hacker_news", "youtube", "stories"].includes(
-                value,
+        ? [
+            ...new Set(
+              selections(params, "platform").map((value) =>
+                value === "hacker_news" ? "stories" : value,
               ),
+            ),
+          ].filter((value): value is FeedPlatform =>
+            ["x", "reddit", "youtube", "stories"].includes(value),
           )
         : [],
     xView:

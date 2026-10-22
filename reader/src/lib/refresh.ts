@@ -132,7 +132,8 @@ export function refreshContext(params: URLSearchParams) {
     };
   }
 
-  if (scope.kind !== "post") {
+  // Publisher filters do not identify the feeds that discovered external articles.
+  if (scope.kind !== "post" && scope.blog_feed !== "external") {
     if (filters.domains.length) {
       scope.domains = [...filters.domains].sort();
       label =

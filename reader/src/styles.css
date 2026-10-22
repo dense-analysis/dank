@@ -1995,10 +1995,16 @@ input[type="checkbox"] {
   object-fit: cover;
 }
 .source-avatar {
+  position: relative;
   border-radius: 4px;
 }
 .source-avatar img {
   object-fit: contain;
+  background: #edf1ed;
+}
+.source-avatar .avatar-pending {
+  position: absolute;
+  opacity: 0;
 }
 #blog-feeds {
   max-height: none;

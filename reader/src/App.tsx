@@ -186,7 +186,9 @@ export function App() {
     (source) => source.configured !== false,
   );
   const activeBlogSource =
-    section === "stories" && filters.domains.length === 1
+    section === "stories" &&
+    filters.blogFeed !== "external" &&
+    filters.domains.length === 1
       ? allSources.find((source) => source.domain === filters.domains[0])
       : undefined;
   const blogContext =
@@ -396,9 +398,11 @@ export function App() {
         section === "hacker_news"
           ? "source:news.ycombinator.com"
           : section === "stories"
-            ? filters.domains.length === 1
-              ? `source:${filters.domains[0]}`
-              : filters.blogFeed
+            ? filters.blogFeed === "external"
+              ? "external"
+              : filters.domains.length === 1
+                ? `source:${filters.domains[0]}`
+                : filters.blogFeed
             : ""
       }
       selectBlog={selectBlog}
@@ -708,9 +712,11 @@ export function App() {
                       {section === "stories"
                         ? filters.blogFeed === "external"
                           ? "Articles linked from your feeds, including X and Reddit."
-                          : filters.blogFeed === "sources" || activeBlogSource
-                            ? "Posts from the source feeds you follow."
-                            : "Your source feeds and discovered articles, together."
+                          : activeBlogSource
+                            ? "Collected posts from this source."
+                            : filters.blogFeed === "sources"
+                              ? "Posts from the source feeds you follow."
+                              : "Your source feeds and discovered articles, together."
                         : "Your followed sources and discoveries, together."}
                     </p>
                   )}
