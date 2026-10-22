@@ -8,7 +8,11 @@ from multidict import MultiDict
 
 from dank.config import SourceConfig, load_settings
 from dank.storage.clickhouse import QueryResult
-from dank.web.reader_blogs import EXTERNAL_BLOG_CONDITION, external_blog_count
+from dank.web.reader_blogs import (
+    BLOG_CONDITION,
+    EXTERNAL_BLOG_CONDITION,
+    external_blog_count,
+)
 from dank.web.reader_links import RESOLVED_HN_POSTS_SQL
 from dank.web.reader_query import (
     ReaderFilters,
@@ -149,5 +153,50 @@ async def test_invalid_blog_refresh_context_fails_before_storage(
         await resolve_scope(
             load_settings("config.example.toml"), client, scope,
         )
+
+    client.fetch_json.assert_not_called()
+
+
+@pytest.mark.parametrize("filters,selected", [
+    (ReaderFilters(kind="stories"), "(" + BLOG_CONDITION + ")"),
+    (ReaderFilters(kind="all", platforms=("stories",)),
+     "((" + BLOG_CONDITION + "))"),
+    (ReaderFilters(kind="all", platforms=("stories", "youtube")),
+     "((" + BLOG_CONDITION + ") OR domain = 'youtube.com')"),
+])
+def test_blogs_only_suppress_wrappers_with_targets_in_selected_collections(
+    filters: ReaderFilters, selected: str,
+):
+    query, _ = build_query(filters, ())
+    assert (
+        RESOLVED_HN_POSTS_SQL
+        + " AND (target.domain, target.post_id) IN "
+        "(SELECT domain, post_id FROM posts FINAL WHERE "
+        + selected + ")" in query
+    )
+
+
+def test_unfiltered_all_still_uses_any_saved_canonical_destination():
+    query, _ = build_query(ReaderFilters(kind="all"), ())
+    assert "(domain, post_id) NOT IN (" + RESOLVED_HN_POSTS_SQL + ")" in query
+
+
+@pytest.mark.parametrize("field,values", [
+    ("domains", ["blog.test"]), ("domains", ["unconfigured.test"]),
+    ("tags", ["tech"]),
+])
+async def test_external_refresh_rejects_publisher_filters(
+    field: str, values: list[str],
+):
+    settings = load_settings("config.example.toml")._replace(sources=(
+        SourceConfig("blog.test", (), tags=("tech",)),
+        SourceConfig("x.com", ("alice",)),
+    ))
+    client = AsyncMock()
+
+    with pytest.raises(ValueError, match="publisher domains or tags"):
+        await resolve_scope(settings, client, {
+            "kind": "rss", "blog_feed": "external", field: values,
+        })
 
     client.fetch_json.assert_not_called()

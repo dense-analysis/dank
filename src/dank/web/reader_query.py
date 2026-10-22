@@ -365,9 +365,19 @@ def build_query(
         filters.kind == "stories" and not filters.blog_feed
         and not filters.domains
     ):
-        conditions.append(
-            "(domain, post_id) NOT IN (" + RESOLVED_HN_POSTS_SQL + ")",
-        )
+        resolved = RESOLVED_HN_POSTS_SQL
+
+        if filters.kind == "stories" or "stories" in filters.platforms:
+            target_conditions, _ = _collection_conditions(filters, sources)
+            # A canonical target must belong to this collection before its
+            # source-feed wrapper can disappear from the collection.
+            resolved += (
+                " AND (target.domain, target.post_id) IN "
+                "(SELECT domain, post_id FROM posts FINAL WHERE "
+                + " AND ".join(target_conditions) + ")"
+            )
+
+        conditions.append("(domain, post_id) NOT IN (" + resolved + ")")
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     prefix = "WITH " + ", ".join(expressions) + " " if expressions else ""

@@ -107,6 +107,13 @@ def _parse_scope(raw: object) -> dict[str, Any]:
 
     _normalize_details(scope)
 
+    if scope.get("blog_feed") == "external" and (
+        scope.get("domains") or scope.get("tags")
+    ):
+        raise ValueError(
+            "External blog refresh cannot use publisher domains or tags",
+        )
+
     return scope
 
 
