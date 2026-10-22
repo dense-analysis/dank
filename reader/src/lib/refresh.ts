@@ -141,6 +141,39 @@ export function refreshContext(params: URLSearchParams) {
   return { scope, label, disabled: undefined };
 }
 
+export function refreshDestination(scope: RefreshScope): URLSearchParams {
+  const params = new URLSearchParams();
+
+  if (scope.kind === "post") {
+    if (scope.domain === "youtube.com") {
+      params.set("view", "youtube");
+      params.set("youtube_item", scope.post_id ?? "");
+    } else {
+      params.set("article", scope.post_id ?? "");
+      params.set("article_source", scope.domain ?? "");
+    }
+
+    return params;
+  }
+
+  if (scope.kind !== "all") {
+    params.set("view", scope.kind === "rss" ? "stories" : scope.kind);
+  }
+
+  for (const platform of scope.platforms ?? []) {
+    params.append("platform", platform === "rss" ? "stories" : platform);
+  }
+
+  for (const domain of scope.domains ?? []) params.append("domain", domain);
+  for (const tag of scope.tags ?? []) params.append("tag", tag);
+  if (scope.community) params.set("community", scope.community);
+  if (scope.account) params.set("account", scope.account);
+  if (scope.channel_id) params.set("channel", scope.channel_id);
+  if (scope.feed_id) params.set("feed", scope.feed_id);
+
+  return params;
+}
+
 export function refreshScopeKey(scope: RefreshScope): string {
   return JSON.stringify([
     scope.kind,

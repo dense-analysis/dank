@@ -3,7 +3,9 @@ import {
   fetchRefreshJobs,
   isRefreshJob,
   type RefreshJob,
+  type RefreshScope,
   refreshContext,
+  refreshDestination,
   refreshScopeKey,
   startRefresh,
 } from "./refresh";
@@ -214,5 +216,45 @@ describe("refresh API boundary", () => {
     await expect(fetchRefreshJobs()).rejects.toThrow(
       "unexpected refresh status",
     );
+  });
+});
+
+describe("refresh result destinations", () => {
+  it.each<[RefreshScope, string]>([
+    [{ kind: "all" }, ""],
+    [
+      {
+        kind: "all",
+        platforms: ["rss", "reddit"],
+        domains: ["example.com"],
+        tags: ["news"],
+      },
+      "platform=stories&platform=reddit&domain=example.com&tag=news",
+    ],
+    [
+      { kind: "rss", domains: ["example.com"], tags: ["news"] },
+      "view=stories&domain=example.com&tag=news",
+    ],
+    [
+      { kind: "reddit", community: "LocalLLaMA" },
+      "view=reddit&community=LocalLLaMA",
+    ],
+    [{ kind: "x", account: "reporter" }, "view=x&account=reporter"],
+    [{ kind: "hacker_news" }, "view=hacker_news"],
+    [{ kind: "youtube", channel_id: "UC123" }, "view=youtube&channel=UC123"],
+    [
+      { kind: "youtube", feed_id: "https://www.youtube.com/feed/hype" },
+      "view=youtube&feed=https%3A%2F%2Fwww.youtube.com%2Ffeed%2Fhype",
+    ],
+    [
+      { kind: "post", domain: "reddit.com", post_id: "abc" },
+      "article=abc&article_source=reddit.com",
+    ],
+    [
+      { kind: "post", domain: "youtube.com", post_id: "video:dQw4w9WgXcQ" },
+      "view=youtube&youtube_item=video%3AdQw4w9WgXcQ",
+    ],
+  ])("opens the saved collection scope %j", (scope, expected) => {
+    expect(refreshDestination(scope).toString()).toBe(expected);
   });
 });

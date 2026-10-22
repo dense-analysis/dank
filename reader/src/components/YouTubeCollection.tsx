@@ -114,8 +114,13 @@ export function YouTubeCollection({
       ),
     enabled: !!selectedId && !cachedItem,
   });
+  const detailedItem = detail.data?.items.find(
+    (item) => item.id === selectedId,
+  );
   const selected =
-    cachedItem ?? detail.data?.items.find((item) => item.id === selectedId);
+    detail.dataUpdatedAt > query.dataUpdatedAt
+      ? (detailedItem ?? cachedItem)
+      : (cachedItem ?? detailedItem);
   const more = useRef<HTMLDivElement>(null);
   const { fetchNextPage, hasNextPage, isFetching, isError } = query;
 

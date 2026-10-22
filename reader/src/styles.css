@@ -3190,6 +3190,18 @@ a.social-metric:hover {
   padding: 4px 10px 4px 14px;
   color: var(--muted);
 }
+.refresh-status-heading > span,
+.refresh-status-heading > .text-button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.refresh-status-heading > .refresh-result-link {
+  display: block;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .refresh-status .icon-button {
   flex-shrink: 0;
   width: 32px;
@@ -3226,15 +3238,11 @@ a.social-metric:hover {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.refresh-status-actions {
-  padding: 0 14px 14px;
-}
-.refresh-status-actions .primary-button {
+.refresh-job-updates {
+  margin-top: 6px;
   min-height: 36px;
-  width: 100%;
 }
-.refresh-status-error,
-.refresh-more {
+.refresh-status-error {
   margin: 0;
   padding: 10px 14px;
   color: var(--muted);
@@ -3259,7 +3267,7 @@ a.social-metric:hover {
     width: 44px;
     height: 44px;
   }
-  .refresh-status-actions .primary-button {
+  .refresh-job-updates {
     min-height: 44px;
   }
   .topbar .breadcrumb {

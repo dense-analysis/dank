@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import type { RefreshJob, RefreshScope } from "../src/lib/refresh";
 import type { Post } from "../src/lib/types";
+import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
 const saved: Post = {
   id: "post-one",
@@ -23,10 +24,14 @@ async function fixture(page: Page) {
     jobs: [] as RefreshJob[],
     requests: [] as RefreshScope[],
     postRequests: 0,
+    requestedFeeds: [] as string[],
+    postsByKind: {} as Record<string, Post[]>,
     jobsRequests: 0,
+    youtubeItems: [] as YouTubeItem[],
     posts: [saved],
     reject: false,
     statusFail: false,
+    youtubeSourcesFail: false,
     postsFail: false,
   };
   await page.route("**/api/reader/**", async (route) => {
@@ -79,13 +84,22 @@ async function fixture(page: Page) {
 
     if (url.pathname.endsWith("/youtube/sources")) {
       await route.fulfill({
-        json: { feeds: [], channels: [], total: 0, linked_count: 0 },
+        status: state.youtubeSourcesFail ? 503 : 200,
+        json: state.youtubeSourcesFail
+          ? { detail: "YouTube unavailable" }
+          : { feeds: [], channels: [], total: 0, linked_count: 0 },
       });
       return;
     }
 
-    if (url.pathname.endsWith("/youtube/items")) {
-      await route.fulfill({ json: { items: [], next_cursor: null, total: 0 } });
+    if (url.pathname.endsWith("/youtube")) {
+      await route.fulfill({
+        json: {
+          items: state.youtubeItems,
+          next_cursor: null,
+          total: state.youtubeItems.length,
+        },
+      });
       return;
     }
 
@@ -100,6 +114,13 @@ async function fixture(page: Page) {
               tags: [],
               count: state.posts.length,
               communities: [{ name: "LocalLLaMA", count: state.posts.length }],
+            },
+            {
+              domain: "news.ycombinator.com",
+              name: "Hacker News",
+              kind: "hacker_news",
+              tags: [],
+              count: 0,
             },
           ],
           total_posts: state.posts.length,
@@ -118,6 +139,8 @@ async function fixture(page: Page) {
     }
 
     state.postRequests++;
+    const kind = url.searchParams.get("kind") ?? "all";
+    state.requestedFeeds.push(kind);
 
     if (state.postsFail) {
       await route.fulfill({
@@ -128,7 +151,11 @@ async function fixture(page: Page) {
     }
 
     await route.fulfill({
-      json: { posts: state.posts, next_cursor: null, limited: false },
+      json: {
+        posts: state.postsByKind[kind] ?? state.posts,
+        next_cursor: null,
+        limited: false,
+      },
     });
   });
 
@@ -182,7 +209,7 @@ test("refresh collects only the community and holds updates until accepted while
     finished_at: "2026-10-22T10:01:00Z",
   };
   await expect(
-    page.getByRole("button", { name: "Show updates", exact: true }),
+    page.getByRole("button", { name: /^Show updates for / }),
   ).toBeVisible();
   expect(state.postRequests).toBe(requestsBefore);
   await expect(
@@ -192,7 +219,7 @@ test("refresh collects only the community and holds updates until accepted while
     .getByRole("button", { name: "Back to stories", exact: true })
     .click();
   await expect(page.locator(".post-card")).toHaveCount(1);
-  await page.getByRole("button", { name: "Show updates", exact: true }).click();
+  await page.getByRole("button", { name: /^Show updates for / }).click();
   await expect(
     page.getByRole("link", {
       name: "Read Fresh discussion just collected",
@@ -224,12 +251,12 @@ test("uncollected post refresh targets only the post and preserves its notice un
   state.posts = [saved];
   state.jobs[0] = { ...state.jobs[0], status: "completed", posts_saved: 1 };
   await expect(
-    page.getByRole("button", { name: "Show updates" }),
+    page.getByRole("button", { name: /^Show updates for / }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Full text not collected", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Show updates" }).click();
+  await page.getByRole("button", { name: /^Show updates for / }).click();
   await expect(
     page
       .getByText("A discussion you can keep reading.", { exact: true })
@@ -261,7 +288,7 @@ test("reload recovers a queued refresh, reports partial completion, and remember
     page.getByText("Refresh partly complete", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Show updates" }),
+    page.getByRole("button", { name: /^Show updates for / }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Dismiss refresh: all" }).click();
   await page.reload();
@@ -307,9 +334,9 @@ test("submission and progress failures keep content and recovery controls availa
   await expect(
     page.getByRole("button", { name: "Refresh all sources", exact: true }),
   ).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Show updates" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: /^Show updates for / }),
+  ).toHaveCount(0);
 });
 
 for (const width of [320, 1280]) {
@@ -348,9 +375,7 @@ for (const width of [320, 1280]) {
       path: testInfo.outputPath(`refresh-${width}.png`),
     });
     await page.getByRole("button", { name: "Hide refresh details" }).click();
-    await expect(
-      page.getByText("1 refresh in progress", { exact: true }),
-    ).toBeVisible();
+    await expect(page.getByText("1 refreshing", { exact: true })).toBeVisible();
     await expect(
       page.getByText("Collecting fresh posts. Keep reading while this runs.", {
         exact: true,
@@ -445,7 +470,7 @@ test("collapsed progress announces completion and offers updates", async ({
     page.getByText("Refresh complete", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Show updates" }),
+    page.getByRole("button", { name: /^Show updates for / }),
   ).toBeVisible();
 });
 
@@ -460,10 +485,10 @@ test("failed update loading keeps the collected feed readable and allows retry",
   await expect.poll(() => state.jobs.length).toBe(1);
   state.jobs[0].status = "completed";
   await expect(
-    page.getByRole("button", { name: "Show updates" }),
+    page.getByRole("button", { name: /^Show updates for / }),
   ).toBeVisible();
   state.postsFail = true;
-  await page.getByRole("button", { name: "Show updates" }).click();
+  await page.getByRole("button", { name: /^Show updates for / }).click();
   await expect(
     page.getByText(
       "Updates could not be loaded. Your saved content is still available; try again.",
@@ -478,11 +503,274 @@ test("failed update loading keeps the collected feed readable and allows retry",
     { ...saved, id: "new-post", title: "Newly collected report" },
     saved,
   ];
-  await page.getByRole("button", { name: "Show updates" }).click();
+  await page.getByRole("button", { name: /^Show updates for / }).click();
   await expect(
     page.getByRole("link", {
       name: "Read Newly collected report",
       exact: true,
     }),
   ).toBeVisible();
+});
+
+for (const width of [320, 1280]) {
+  test(`concurrent refreshes distinguish running and waiting at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 800 });
+    const state = await fixture(page);
+    state.jobs = [
+      {
+        id: "blogs",
+        scope: { kind: "rss" },
+        label: "Blogs",
+        status: "running",
+      },
+      {
+        id: "hn",
+        scope: { kind: "hacker_news" },
+        label: "Hacker News",
+        status: "running",
+      },
+      {
+        id: "all",
+        scope: { kind: "all" },
+        label: "All sources",
+        status: "queued",
+      },
+    ].map((job) => ({
+      created_at: "2026-10-22T10:00:00Z",
+      finished_at: null,
+      posts_saved: 0,
+      message:
+        job.status === "queued"
+          ? "Waiting for an overlapping refresh."
+          : "Collecting in the background.",
+      ...job,
+    })) as RefreshJob[];
+    await page.goto("/reader/");
+    const heading = page.locator(".refresh-status-heading [aria-live]");
+    await expect(heading).toHaveText("2 refreshing · 1 waiting");
+    await expect(heading).toHaveAttribute("aria-live", "polite");
+
+    if (width <= 760) {
+      await expect(page.locator(".refresh-notice")).toHaveCount(0);
+      await page.getByRole("button", { name: "Show refresh details" }).click();
+    }
+
+    await expect(page.locator('[data-refresh-status="running"]')).toHaveCount(
+      2,
+    );
+    await expect(page.locator('[data-refresh-status="queued"]')).toHaveCount(1);
+    await expect(page.locator(".refresh-notice .refresh-spinning")).toHaveCount(
+      2,
+    );
+    await expect(
+      page.getByText("Waiting for an overlapping refresh."),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`concurrent-refresh-${width}.png`),
+    });
+    state.jobs[0].status = "processing";
+    await expect(
+      page.getByText("Preparing updates", { exact: true }),
+    ).toBeVisible();
+    await expect(heading).toHaveText("2 refreshing · 1 waiting");
+    state.jobs.forEach((job) => {
+      job.status = "queued";
+    });
+    await expect(heading).toHaveText("3 waiting");
+    state.jobs.forEach((job) => {
+      job.status = "running";
+    });
+    await expect(heading).toHaveText("3 refreshing");
+  });
+}
+
+test("Show updates opens its completed collection without reloading an unrelated feed", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const blog = {
+    ...saved,
+    id: "fresh-blog",
+    domain: "example.com",
+    source: "rss",
+    title: "Newly collected blog",
+    reddit: undefined,
+  };
+  state.postsByKind.stories = [{ ...blog, title: "Previously collected blog" }];
+  await page.goto("/reader/?view=stories");
+  await page.locator(".topbar .refresh-button").click();
+  await page.getByRole("button", { name: "Hacker News", exact: true }).click();
+  await expect(page).toHaveURL(/view=hacker_news/);
+  state.postsByKind.stories = [blog];
+  state.jobs[0] = {
+    ...state.jobs[0],
+    scope: { kind: "rss" },
+    label: "Blogs",
+    status: "completed",
+    posts_saved: 1,
+  };
+  const show = page.getByRole("button", {
+    name: "Show updates for Blogs",
+    exact: true,
+  });
+  await expect(show).toBeVisible();
+  state.youtubeSourcesFail = true;
+  const hnRequests = state.requestedFeeds.filter(
+    (kind) => kind === "hacker_news",
+  ).length;
+  await show.click();
+  await expect(page).toHaveURL(/\/reader\/\?view=stories$/);
+  await expect(
+    page.getByRole("link", { name: "Read Newly collected blog", exact: true }),
+  ).toBeVisible();
+  expect(
+    state.requestedFeeds.filter((kind) => kind === "hacker_news"),
+  ).toHaveLength(hnRequests);
+  await expect(
+    page.getByRole("complementary", { name: "Background refresh" }),
+  ).toBeHidden();
+});
+
+test("each completed refresh opens its own destination and dismisses only that result", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.jobs = [
+    { id: "blogs", scope: { kind: "rss" }, label: "Blogs" },
+    {
+      id: "reddit",
+      scope: { kind: "reddit", community: "LocalLLaMA" },
+      label: "r/LocalLLaMA",
+    },
+  ].map((job) => ({
+    status: "completed",
+    message: "1 post saved.",
+    created_at: "2026-10-22T10:00:00Z",
+    finished_at: "2026-10-22T10:01:00Z",
+    posts_saved: 1,
+    ...job,
+  })) as RefreshJob[];
+  await page.goto("/reader/?view=hacker_news");
+  await expect(
+    page.getByRole("button", { name: /^Show updates for / }),
+  ).toHaveCount(2);
+  await page.getByRole("button", { name: "Hide refresh details" }).click();
+  await expect(
+    page.getByText("2 refreshes ready", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Show updates for / }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Show refresh details" }).click();
+  await page
+    .getByRole("button", { name: "Show updates for Blogs", exact: true })
+    .click();
+  await expect(page).toHaveURL(/view=stories$/);
+  await expect(
+    page.getByRole("button", { name: "Show updates for Blogs", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Show updates for r/LocalLLaMA", exact: true })
+    .click();
+  await expect(page).toHaveURL(/view=reddit&community=LocalLLaMA$/);
+  await expect(
+    page.getByRole("complementary", { name: "Background refresh" }),
+  ).toBeHidden();
+});
+
+test("refreshing a YouTube video replaces an older cached feed preview", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.youtubeItems = [
+    {
+      id: "video:dQw4w9WgXcQ",
+      kind: "video",
+      video_id: "dQw4w9WgXcQ",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      title: "Old video title",
+      text: "",
+      channel: {
+        id: "UC123",
+        name: "Example channel",
+        url: "https://www.youtube.com/channel/UC123",
+      },
+      thumbnail_url: null,
+      duration_text: "3:30",
+      views_text: "100 views",
+      published_text: "Today",
+      observed_at: "2026-10-22T10:00:00Z",
+      detail_capture: { status: "disabled" },
+      discoveries: [],
+      references: [],
+      reference_count: 0,
+    },
+  ];
+  await page.goto("/reader/?view=youtube");
+  await page
+    .getByRole("link", { name: "Old video title", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Refresh this YouTube item", exact: true })
+    .click();
+  await expect.poll(() => state.jobs.length).toBe(1);
+  state.youtubeItems[0] = {
+    ...state.youtubeItems[0],
+    title: "Fresh video title",
+  };
+  state.jobs[0] = { ...state.jobs[0], status: "completed", posts_saved: 1 };
+  await page
+    .getByRole("button", { name: "Show updates for This post", exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    /view=youtube&youtube_item=video%3AdQw4w9WgXcQ$/,
+  );
+  await expect(
+    page.getByRole("heading", { name: "Fresh video title", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Old video title", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("a compact completed result identifies its destination without overflowing", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  const state = await fixture(page);
+  const label = "Blogs · a-very-long-publisher-domain.example.com";
+  state.jobs = [
+    {
+      id: "blogs",
+      scope: { kind: "rss" },
+      label,
+      status: "completed",
+      message: "1 post saved.",
+      created_at: "2026-10-22T10:00:00Z",
+      finished_at: "2026-10-22T10:01:00Z",
+      posts_saved: 1,
+    },
+  ];
+  await page.goto("/reader/");
+  await expect(
+    page.getByRole("button", {
+      name: `Show updates for ${label}`,
+      exact: true,
+    }),
+  ).toHaveText(`Show ${label}`);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("completed-refresh-320.png"),
+  });
 });

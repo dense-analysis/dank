@@ -81,7 +81,7 @@ import { fetchYouTubeSources } from "./lib/youtubeCollection";
 export function App() {
   const { params, navigate, backTo, backToConnection, positionError } =
     useLocation();
-  const refresh = useRefresh();
+  const refresh = useRefresh(navigate);
   const refreshTarget = refreshContext(params);
   const refreshingHere =
     refreshTarget &&
