@@ -173,7 +173,8 @@ for saved articles linked from your feeds, including X and Reddit. Select an
 individual source such as github.blog to browse only its posts. An article can
 appear in both groups when you follow its publisher and it was also shared.
 Blog sources use locally cached favicons in navigation, cards and articles,
-preserving each icon's shape and transparency, with initials when unavailable.
+with transparent backgrounds, softly rounded corners and initials when unavailable.
+Post icons are 22px; compact sidebar icons are 20px.
 Source icons fit the visible artwork to their display size while keeping its proportions.
 Source labels omit the leading `www.`.
 Icons are captured on first display without re-collecting article content.

@@ -1996,9 +1996,14 @@ input[type="checkbox"] {
 }
 .source-avatar {
   position: relative;
-  border-radius: 0;
-  overflow: visible;
+  border-radius: 3px;
+  overflow: hidden;
   background: transparent;
+}
+.post-meta .source-avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
 }
 .source-avatar img {
   object-fit: contain;
