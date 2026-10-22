@@ -416,6 +416,39 @@ test("platform choices survive search, article return and reload, then clear on 
   ]);
 });
 
+test("legacy Hacker News platform links expose their selection as Blogs", async ({
+  page,
+}) => {
+  const requests = await fixture(page);
+  await page.goto("/reader/?platform=hacker_news");
+  const filters = chips(page);
+  await expect(
+    filters.getByRole("button", { name: "Blogs", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(story(page, hackerNews)).toBeVisible();
+  await expect(story(page, blog)).toBeVisible();
+  await filters.getByRole("button", { name: "X", exact: true }).click();
+  await expectPlatforms(page, ["stories", "x"]);
+  await expect(story(page, x)).toBeVisible();
+  await expect(story(page, hackerNews)).toBeVisible();
+  await expect
+    .poll(() =>
+      requests.some(
+        (url) =>
+          url.pathname.endsWith("/posts") &&
+          url.searchParams.getAll("platform").length === 2 &&
+          ["stories", "x"].every((value) =>
+            url.searchParams.getAll("platform").includes(value),
+          ),
+      ),
+    )
+    .toBe(true);
+  await filters.getByRole("button", { name: "Blogs", exact: true }).click();
+  await expectPlatforms(page, ["x"]);
+  await expect(story(page, hackerNews)).toHaveCount(0);
+  await expect(story(page, blog)).toHaveCount(0);
+});
+
 test("Blogs quick filter includes configured blogs, discovered articles and Hacker News", async ({
   page,
 }) => {
