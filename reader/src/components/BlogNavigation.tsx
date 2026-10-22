@@ -1,4 +1,5 @@
 import { Link2, Newspaper, Rss } from "lucide-react";
+import { sourceLabel } from "../lib/collections";
 import type { Source } from "../lib/types";
 import { CollectionNavGroup } from "./CollectionNavGroup";
 import { IdentityAvatar } from "./IdentityAvatar";
@@ -49,12 +50,12 @@ export function BlogNavigation({
           selectItem={selectItem}
           items={sources.map((source) => ({
             id: `source:${source.domain}`,
-            label: source.name,
-            title: source.domain,
+            label: sourceLabel(source.name),
+            title: sourceLabel(source.domain),
             count: source.count,
             avatar: (
               <IdentityAvatar
-                name={source.name}
+                name={sourceLabel(source.name)}
                 iconUrl={source.icon_url}
                 kind="source"
               />

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
 import { hasArticleContent } from "../lib/article";
+import { sourceKind, sourceLabel } from "../lib/collections";
 import { savedPublisherExcerpt } from "../lib/postExcerpt";
 import {
   displayedRedditImages,
@@ -18,6 +19,7 @@ import { CollectionBadge } from "./CollectionBadge";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { FeedSourceBadge } from "./FeedSourceBadge";
 import { HighlightedText } from "./HighlightedText";
+import { IdentityAvatar } from "./IdentityAvatar";
 import { NavigableCard } from "./NavigableCard";
 import { PostFooter } from "./PostFooter";
 import { PostTime } from "./PostTime";
@@ -54,13 +56,18 @@ export function PostTimestamp({ post }: { post: Post }) {
 }
 
 export function SourceMark({ domain }: { domain: string }) {
+  const blog = ["stories", "hacker_news"].includes(sourceKind(domain));
+
   return (
-    <span
-      className={`source-mark tone-${domain.length % 5}`}
-      aria-hidden="true"
-    >
-      {sourceName(domain).slice(0, 1).toUpperCase()}
-    </span>
+    <IdentityAvatar
+      name={sourceName(domain)}
+      kind="source"
+      iconUrl={
+        blog
+          ? `/api/reader/source-icon?${new URLSearchParams({ domain })}`
+          : undefined
+      }
+    />
   );
 }
 export function PostCard({
@@ -256,7 +263,7 @@ export function PostCard({
           post.reddit && (
             <AuthorLink
               author={post.author}
-              fallback={post.domain}
+              fallback={sourceLabel(post.domain)}
               filters={filters}
               select={selectAuthor}
             />
@@ -269,7 +276,7 @@ export function PostCard({
           <div className="post-footer-details">
             <AuthorLink
               author={post.author}
-              fallback={post.domain}
+              fallback={sourceLabel(post.domain)}
               filters={filters}
               select={selectAuthor}
             />

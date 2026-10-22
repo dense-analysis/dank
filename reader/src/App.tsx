@@ -52,6 +52,7 @@ import {
   feedLabels,
   sectionFromView,
   sourceFeedKind,
+  sourceLabel,
   sourcesForFeed,
 } from "./lib/collections";
 import {
@@ -197,7 +198,7 @@ export function App() {
   const blogTitle =
     filters.blogFeed === "external"
       ? "From external"
-      : activeBlogSource?.name ||
+      : sourceLabel(activeBlogSource?.name ?? "") ||
         (filters.blogFeed === "sources" ? "Source Feeds" : "Blogs");
   const redditSources = sourcesForFeed(allSources, "reddit");
   const xSources = sourcesForFeed(allSources, "x");
@@ -514,7 +515,7 @@ export function App() {
           avatar={
             activeBlogSource ? (
               <IdentityAvatar
-                name={activeBlogSource.name}
+                name={sourceLabel(activeBlogSource.name)}
                 iconUrl={activeBlogSource.icon_url}
                 kind="source"
               />

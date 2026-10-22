@@ -20,6 +20,7 @@ import { useRedditContent } from "../hooks/useRedditContent";
 import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
+import { sourceLabel } from "../lib/collections";
 import { hasHackerNewsBody } from "../lib/hackerNews";
 import { matchesLinkUrl, normalizedLinkUrl } from "../lib/linkIdentity";
 import { articleParams } from "../lib/navigation";
@@ -322,7 +323,7 @@ export function ArticleView({
           <div className="article-byline">
             <AuthorLink
               author={post.author}
-              fallback={post.domain}
+              fallback={sourceLabel(post.domain)}
               filters={filters}
               select={selectAuthor}
             />

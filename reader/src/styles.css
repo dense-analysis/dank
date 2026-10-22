@@ -612,7 +612,7 @@ input[type="checkbox"] {
   font-size: 14px;
   font-family: Georgia, serif;
   font-weight: 700;
-  border-radius: 6px;
+  border-radius: 50%;
   background: #2d3830;
   color: #c4dec9;
 }
@@ -1996,7 +1996,6 @@ input[type="checkbox"] {
 }
 .source-avatar {
   position: relative;
-  border-radius: 4px;
 }
 .source-avatar img {
   object-fit: contain;

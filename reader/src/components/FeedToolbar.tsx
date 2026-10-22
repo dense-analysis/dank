@@ -1,5 +1,6 @@
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { sourceLabel } from "../lib/collections";
 import { formatCount } from "../lib/counts";
 import { calendarDate, recentDates } from "../lib/dateRanges";
 import { availableFlairs } from "../lib/reddit";
@@ -54,7 +55,7 @@ export function FeedToolbar({
             ? `Search @${filters.account}`
             : "Search X"
           : filters.domains.length === 1
-            ? `Search ${filters.domains[0]}`
+            ? `Search ${sourceLabel(filters.domains[0])}`
             : filters.kind === "stories"
               ? filters.blogFeed === "external"
                 ? "Search external articles"
@@ -201,7 +202,7 @@ export function FeedToolbar({
               </option>
               {sources.map((source) => (
                 <option key={source.domain} value={source.domain}>
-                  {source.name}
+                  {sourceLabel(source.name)}
                 </option>
               ))}
             </select>
@@ -375,7 +376,7 @@ export function FeedToolbar({
             <button
               type="button"
               key={domain}
-              aria-label={`Remove source filter: ${domain}`}
+              aria-label={`Remove source filter: ${sourceLabel(domain)}`}
               onClick={() =>
                 change({
                   ...filters,
@@ -383,7 +384,9 @@ export function FeedToolbar({
                 })
               }
             >
-              <span className="filter-chip-label">Source: {domain}</span>
+              <span className="filter-chip-label">
+                Source: {sourceLabel(domain)}
+              </span>
               <X size={12} />
             </button>
           ))}

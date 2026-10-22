@@ -1,4 +1,4 @@
-import { sourceKind } from "../lib/collections";
+import { sourceKind, sourceLabel } from "../lib/collections";
 import { filterParams } from "../lib/navigation";
 import { defaultFilters } from "../lib/storage";
 import type { FeedKind } from "../lib/types";
@@ -7,7 +7,7 @@ import { ReaderLink } from "./ReaderLink";
 export function sourceName(domain: string) {
   if (sourceKind(domain) === "hacker_news") return "Hacker News";
 
-  return domain.replace(/^www\./, "").replace(/\.(com|org|net|co\.uk|io)$/, "");
+  return sourceLabel(domain).replace(/\.(com|org|net|co\.uk|io)$/, "");
 }
 
 export function SourceLink({
@@ -24,7 +24,7 @@ export function SourceLink({
       href={`/reader/?${filterParams({ ...defaultFilters, kind, domains: [domain] })}`}
       onNavigate={() => select(domain)}
       className="source-link"
-      title={domain}
+      title={sourceLabel(domain)}
       aria-label={`Stories from ${sourceName(domain)}`}
     >
       {sourceName(domain)}

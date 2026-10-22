@@ -1,5 +1,9 @@
 import type { FeedKind, Section, Source, XAccount } from "./types";
 
+export function sourceLabel(name: string): string {
+  return name.replace(/^www\./i, "");
+}
+
 export const feedLabels: Record<FeedKind, string> = {
   all: "All",
   stories: "Blogs",

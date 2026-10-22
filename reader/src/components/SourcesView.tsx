@@ -1,5 +1,6 @@
 import { ArrowUpRight, Search } from "lucide-react";
 import { useState } from "react";
+import { sourceLabel } from "../lib/collections";
 import type { Source } from "../lib/types";
 import { Count } from "./Count";
 import { SourceMark } from "./PostCard";
@@ -38,8 +39,8 @@ export function SourcesView({
         >
           <SourceMark domain={source.domain} />
           <span>
-            <strong>{source.name}</strong>
-            <small>{source.domain}</small>
+            <strong>{sourceLabel(source.name)}</strong>
+            <small>{sourceLabel(source.domain)}</small>
             <span className="source-tags">
               {source.tags.map((tag) => (
                 <span key={tag}>{tag}</span>
