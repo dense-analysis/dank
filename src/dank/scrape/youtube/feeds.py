@@ -40,7 +40,7 @@ def describe_feed(url: str) -> YouTubeFeed:
         return YouTubeFeed(url, "Playlist", "playlist")
 
     if not path:
-        return YouTubeFeed(ORIGIN + "/", "Home recommendations", "home")
+        return YouTubeFeed(ORIGIN + "/", "Recommendations", "home")
 
     parts = path.split("/")
     channel = parts[1] if parts[1].startswith("@") else parts[2]

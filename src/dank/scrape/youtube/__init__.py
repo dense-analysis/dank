@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import json
 import logging
+import random
 from collections import Counter
 from collections.abc import AsyncIterator, Iterable, Mapping
 from typing import Any, cast
@@ -15,9 +16,19 @@ from dank.config import Settings, SourceConfig, YouTubeSettings
 from dank.model import RawPost
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
-from dank.scrape.zendriver import BrowserSession, NetworkCapture
+from dank.scrape.zendriver import (
+    BrowserSession,
+    NetworkCapture,
+    NetworkResponse,
+)
 
-from .browser import EXPAND_SCRIPT, SCROLL_SCRIPT, navigate, snapshot
+from .browser import (
+    EXPAND_SCRIPT,
+    HOME_SCROLL_SCRIPT,
+    SCROLL_SCRIPT,
+    navigate,
+    snapshot,
+)
 from .channels import discover_channel
 from .feeds import configured_feeds
 from .payloads import (
@@ -26,6 +37,8 @@ from .payloads import (
     YouTubeFeed,
     as_dict,
     discover_assets,
+    excluded_home_section,
+    excluded_home_shelf,
     hype_playlist,
     normalize_renderer,
     playlist_title,
@@ -36,10 +49,23 @@ logger = logging.getLogger(__name__)
 # Consent can trigger a second navigation before the channel header arrives.
 CHANNEL_INITIAL_ATTEMPTS = 10
 CHANNEL_INITIAL_PAUSE_SECONDS = 0.5
+# Home discovery has its own short wall-clock budget, including navigation.
+# Generous item/scroll guards prevent runaway work without inheriting the
+# smaller limits intended for channel and news listings.
+HOME_BUDGET_SECONDS = 25.0
+HOME_ITEM_LIMIT = 2000
+HOME_SCROLL_LIMIT = 200
+HOME_SCROLL_PAUSE_SECONDS = (0.3, 0.65)
+HOME_END_SECONDS = 2.0
+HOME_STALL_SECONDS = 8.0
 
 
 class YouTubeFeedError(RuntimeError):
     pass
+
+
+class YouTubeFeedIncomplete(YouTubeFeedError):
+    """A usable snapshot stopped before the end of its recommendation feed."""
 
 
 def _localized(url: str, region: str) -> str:
@@ -59,10 +85,13 @@ class FeedCapture:
     ) -> None:
         self.feed = feed
         self.settings = settings
-        self.item_limit = (
-            min(settings.scrape.max_posts, 100)
-            if feed.kind == "hype" else settings.scrape.max_posts
-        )
+        self.item_limit = settings.scrape.max_posts
+
+        if feed.kind == "home":
+            self.item_limit = HOME_ITEM_LIMIT
+        elif feed.kind == "hype":
+            self.item_limit = min(self.item_limit, 100)
+
         self.known_ids = known_ids
         self.observed_at = datetime.datetime.now(datetime.UTC)
         self.seen: set[tuple[str, str]] = set()
@@ -143,17 +172,36 @@ class FeedCapture:
 
 
 def _candidates(
-    state: dict[str, object], responses: list[object],
+    state: dict[str, object], responses: list[object], *, home: bool = False,
 ) -> Iterable[tuple[str, dict[str, Any], str]]:
     # Initial data includes collapsed shelf items in their original order.
-    yield from renderers(state.get("initial"))
+    yield from renderers(state.get("initial"), exclude_home_sections=home)
+
+    if home:
+        # Network order includes cards not yet rendered in the DOM.
+        for response in responses:
+            yield from renderers(response, exclude_home_sections=True)
 
     for item in cast(list[object], state.get("items", [])):
         data = as_dict(item)
-        yield from renderers(data.get("value"), str(data.get("shelf", "")))
 
-    for response in responses:
-        yield from renderers(response)
+        if home and (
+            data.get("playable")
+            or any(excluded_home_section("shelfRenderer", as_dict(context))
+                   for context in data.get("shelf_contexts", []))
+            or any(excluded_home_shelf(str(heading))
+                   for heading in data.get("shelves", []))
+        ):
+            continue
+
+        yield from renderers(
+            data.get("value"), str(data.get("shelf", "")),
+            exclude_home_sections=home,
+        )
+
+    if not home:
+        for response in responses:
+            yield from renderers(response)
 
 
 async def _resolve_feed(
@@ -210,7 +258,170 @@ async def _channel_state(
     return state
 
 
+def _home_response_values(
+    responses: list[NetworkResponse], feed_url: str,
+) -> tuple[list[object], YouTubeFeedError | None]:
+    values: list[object] = []
+    failure: YouTubeFeedError | None = None
+
+    for response in responses:
+        if response.status >= 400:
+            failure = YouTubeFeedError(
+                f"YouTube listing returned HTTP {response.status}",
+            )
+            continue
+
+        try:
+            values.append(json.loads(response.body))
+        except json.JSONDecodeError:
+            count("parse_failures")
+            logger.warning(
+                "YouTube browse response was not JSON for %s", feed_url,
+            )
+
+    return values, failure
+
+
+async def _collect_home_feed(
+    page: zendriver.Tab,
+    feed: YouTubeFeed,
+    settings: YouTubeSettings,
+    batches: list[ScrapeBatch],
+) -> None:
+    """Buffer discoveries so downstream work cannot consume the time budget."""
+    capture = NetworkCapture(page, [r"youtube\.com/youtubei/v1/browse"])
+    collected = FeedCapture(feed, settings, set())
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    idle_since: float | None = None
+    previous_height: object = None
+    idle = 0
+    stop = "scroll limit"
+    budget = asyncio.timeout(HOME_BUDGET_SECONDS)
+
+    try:
+        async with budget:
+            await capture.start()
+            request_url, state = await _resolve_feed(page, feed, settings)
+
+            for step in range(HOME_SCROLL_LIMIT + 1):
+                values, failure = _home_response_values(
+                    await capture.drain(timeout_seconds=0.01), feed.url,
+                )
+                batch = collected.extract(
+                    _candidates(state, values, home=True), request_url,
+                )
+
+                if batch.posts:
+                    batches.append(batch)
+
+                if failure is not None:
+                    raise failure
+
+                height = state.get("scroll_height")
+                settled = (
+                    not batch.posts and not values
+                    and state.get("at_bottom", False)
+                    and not state.get("loading", False)
+                    and height == previous_height
+                )
+                previous_height = height
+                idle = idle + 1 if settled else 0
+                idle_since = (
+                    (idle_since if idle_since is not None else loop.time())
+                    if settled else None
+                )
+                logger.info(
+                    "YouTube %s scroll=%d items=%d discoveries=%d "
+                    "elapsed=%.1fs",
+                    feed.name, step, len(collected.item_ids),
+                    len(collected.seen), loop.time() - started,
+                )
+
+                if len(collected.item_ids) >= collected.item_limit:
+                    stop = "item limit"
+                    break
+
+                idle_seconds = (
+                    HOME_STALL_SECONDS if state.get("continuation", False)
+                    else HOME_END_SECONDS
+                )
+
+                if (idle >= settings.stall_scrolls and idle_since is not None
+                        and loop.time() - idle_since >= idle_seconds):
+                    stop = (
+                        "repeated stall" if state.get("continuation", False)
+                        else "end of feed"
+                    )
+                    break
+
+                if step == HOME_SCROLL_LIMIT:
+                    break
+
+                await page.evaluate(HOME_SCROLL_SCRIPT)
+                await asyncio.sleep(random.uniform(*HOME_SCROLL_PAUSE_SECONDS))
+                state = await snapshot(page)
+    except TimeoutError:
+        if not budget.expired():
+            stop = "browser timeout"
+            raise
+
+        stop = "time budget"
+    except Exception:
+        stop = "listing error"
+        raise
+    finally:
+        await capture.stop()
+        logger.info(
+            "Finished YouTube %s items=%d reason=%s elapsed=%.1fs",
+            feed.name, len(collected.item_ids), stop, loop.time() - started,
+        )
+
+    _check_home_result(stop, len(collected.item_ids))
+
+
+def _check_home_result(stop: str, item_count: int) -> None:
+    if not item_count:
+        raise YouTubeFeedError(
+            f"No usable recommendation items found ({stop}); "
+            "check access or renderer changes",
+        )
+
+    if stop != "end of feed":
+        raise YouTubeFeedIncomplete(
+            f"Recommendations incomplete: {stop}; retained {item_count} "
+            "items, but the end of the feed was not observed",
+        )
+
+
 async def _scrape_feed(
+    page: zendriver.Tab,
+    feed: YouTubeFeed,
+    settings: YouTubeSettings,
+    known_ids: set[str],
+) -> AsyncIterator[ScrapeBatch]:
+    if feed.kind == "home":
+        batches: list[ScrapeBatch] = []
+        failure: Exception | None = None
+
+        try:
+            await _collect_home_feed(page, feed, settings, batches)
+        except Exception as error:
+            failure = error
+
+        for batch in batches:
+            yield batch
+
+        if failure is not None:
+            raise failure
+
+        return
+
+    async for batch in _scrape_listing_feed(page, feed, settings, known_ids):
+        yield batch
+
+
+async def _scrape_listing_feed(
     page: zendriver.Tab,
     feed: YouTubeFeed,
     settings: YouTubeSettings,

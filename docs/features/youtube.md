@@ -174,9 +174,9 @@ still apply: older videos gain new versions only when encountered again.
 
 ## Limits and downloads
 
-Limits apply per feed. Collection stops at the configured item/scroll budget,
-after repeated scrolls without new content, or when a channel's latest-video
-listing reaches a consecutive overlap with already saved items. The overlap
+Channel, News and Hype limits apply per feed. Collection stops at the configured
+item/scroll budget, after repeated scrolls without new content, or when a
+channel's latest-video listing reaches a consecutive overlap with already saved items. The overlap
 rule applies only to channels, because known videos can still reveal a new
 recommendation order elsewhere. Set `known_overlap` to adjust that threshold.
 
@@ -205,9 +205,30 @@ no password belongs in the configuration. Native and Docker sessions are
 separate, so sign in in the mode you will use for collection.
 
 Then set `[youtube].authenticated = true`. Enable `homepage = true` to also
-capture your homepage recommendations. A requested authenticated collection
-requires a valid saved session rather than silently collecting a signed-out
-page. The default remains signed out, using a temporary profile on every run.
+capture your homepage in the reader's **Recommendations** section. Its Videos,
+Shorts and Posts filters use the same saved item types as the other YouTube feeds.
+A requested authenticated collection requires a valid saved session rather than
+silently collecting a signed-out page. The default remains signed out, using a
+temporary profile on every run.
+
+Recommendations makes a rapid pass with varied 0.3–0.65 second pauses and
+multi-screen scrolling. Its 25-second listing budget includes navigation and
+keeps everything discovered before the deadline. It stops sooner at a stable
+bottom: two seconds without a visible continuation, or eight seconds with an
+unchanged continuation and no loading indicator or new response. Logs distinguish
+an observed end, a repeated stall, and the time budget; a bounded capture does
+not establish that every possible recommendation was available. Budget,
+item/scroll guard and repeated-stall exits mark collection partial while retaining
+their items; a completed pass requires an observed end.
+
+The homepage uses this timed pass instead of `max_posts`, `max_scrolls` and
+`scroll_pause_seconds`, with separate safeguards of 2,000 items and 200 scrolls.
+News shelves, including **Top news** and **Breaking news**, and Playables are
+excluded before their children are collected. An ordinary recommended video
+about news or gaming remains eligible. The separate News feeds are unaffected.
+`include_shorts` and `include_posts` still apply. The pass only reads listings;
+media downloads, persistence and optional caption enrichment happen afterward
+and can extend the total scrape duration.
 
 The saved profile normally lives at
 `<storage.data_dir>/youtube-browser-profile`; `profile_dir` can override it.

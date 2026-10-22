@@ -24,21 +24,43 @@ SNAPSHOT_SCRIPT = """JSON.stringify((() => {
         'yt-shorts-lockup-view-model': 'shortsLockupViewModel',
     };
     const selectors = Object.keys(renderers).join(',');
+    const shelfSelector = 'ytd-rich-shelf-renderer,ytd-shelf-renderer,' +
+        'ytd-reel-shelf-renderer';
     const items = Array.from(document.querySelectorAll(selectors))
         .filter(node => !node.closest('ytd-ad-slot-renderer,' +
             'ytd-in-feed-ad-layout-renderer'))
         .map(node => {
-            const shelf = node.closest('ytd-rich-shelf-renderer,' +
-                'ytd-shelf-renderer,ytd-reel-shelf-renderer');
+            const shelves = [];
+            const shelfContexts = [];
+            let playable = false;
+            for (let parent = node.parentElement; parent;
+                    parent = parent.parentElement) {
+                playable ||= /playable|mini-game/i.test(parent.tagName);
+                if (!parent.matches(shelfSelector)) continue;
+                const context = parent.data || parent.__data?.data || {};
+                const heading = parent.querySelector('#title')
+                    ?.textContent?.trim() || '';
+                shelves.push(heading);
+                shelfContexts.push({title: context.title || heading,
+                    endpoint: context.endpoint});
+            }
             const data = node.data || node.__data?.data;
             return {value: {[renderers[node.tagName.toLowerCase()]]: data},
-                shelf: shelf?.querySelector('#title')?.textContent?.trim()
-                    || ''};
+                shelf: shelves[0] || '', shelves,
+                shelf_contexts: shelfContexts, playable};
         }).filter(item => Object.values(item.value)[0]);
     const root = document.scrollingElement || document.documentElement;
     return {url: location.href, text: document.body?.innerText || '',
         at_bottom: root.scrollTop + window.innerHeight
             >= root.scrollHeight - 100,
+        scroll_height: root.scrollHeight,
+        loading: Array.from(document.querySelectorAll(
+            'ytd-continuation-item-renderer tp-yt-paper-spinner,' +
+            'ytd-continuation-item-renderer tp-yt-paper-spinner-lite'
+        )).some(node => node.active && node.getClientRects().length),
+        continuation: Array.from(document.querySelectorAll(
+            'ytd-continuation-item-renderer'
+        )).some(node => node.getClientRects().length),
         initial: window.ytInitialData || {}, items,
         signed_in: window.ytcfg?.get?.('LOGGED_IN') === true};
 })())"""
@@ -71,6 +93,11 @@ CONSENT_SCRIPT = """(() => {
 SCROLL_SCRIPT = (
     """window.scrollBy(0, Math.max(600, window.innerHeight * 1.5))"""
 )
+
+# A recommendation pass advances several screens while leaving YouTube time
+# to request its next continuation. Jitter is pacing, not a change of identity.
+HOME_SCROLL_SCRIPT = """window.scrollBy(0,
+    Math.max(1800, window.innerHeight * (3 + Math.random() * 2)))"""
 
 
 async def navigate(page: zendriver.Tab, url: str) -> None:

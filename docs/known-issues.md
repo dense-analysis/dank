@@ -170,6 +170,30 @@ later feeds to continue. Already persisted appearances remain available.
 Channel latest-video listings stop after consecutive known items; this heuristic
 does not apply to ranked or personalized feeds.
 
+Signed-in homepage **Recommendations** use a 25-second navigation/listing budget,
+rapid multi-screen scrolling and varied 0.3–0.65 second pauses. This pass replaces
+the normal per-feed item/scroll/pause settings, with 2,000-item and 200-scroll
+safeguards. A stable bottom without continuation is checked for two seconds;
+a visible but unchanged continuation is allowed eight seconds without new
+responses, items, page growth or loading. Logs distinguish end, stall and budget
+outcomes. Guard/budget/stall exits retain their discoveries and report partial
+collection; a completed pass requires an observed end. Slow YouTube responses
+can still leave recommendations undiscovered; there is no claim that a timed
+pass exhausts every homepage.
+
+Whole news/Playables subtrees are excluded in initial data and continuation
+responses, and DOM fallback retains all shelf ancestors and destination context.
+This prevents nested Shorts or repeated DOM cards from leaking out of excluded
+shelves. Actual recommended news/gaming videos outside those shelves remain
+eligible, and News feeds keep their existing coverage. Unknown future renderer
+shapes or changed shelf names can require parser updates. Buffered discoveries
+survive a listing deadline or later HTTP failure; an empty result remains a
+reported failure. Storage, thumbnails and caption enrichment happen after this
+listing budget. [Recommendation regressions](../tests/scrape/test_youtube_recommendations.py)
+cover exclusions, item kinds, partial captures, bounded navigation, end/stall
+handling and unchanged News collection; live account depth remains a separate
+operational check.
+
 - [ ] **P2: Verify regional Hype playlist freshness across days.** The configured
   US playlist was supplied after viewing Hype through a US VPN on 2026-10-17.
   A same-day public yt-dlp metadata check returned **United States's top hyped

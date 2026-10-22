@@ -72,26 +72,69 @@ def objects(value: object) -> Iterator[dict[str, Any]]:
             yield from objects(child)
 
 
+def excluded_home_shelf(heading: str) -> bool:
+    """Exclude homepage shelves while retaining individual news videos."""
+    return bool(re.search(r"\b(?:news|playables?)\b", heading, re.IGNORECASE))
+
+
+def excluded_home_section(key: str, data: dict[str, Any]) -> bool:
+    if any(token in key.casefold() for token in ("playable", "minigame")):
+        return True
+
+    if key in {"adSlotRenderer", "inFeedAdLayoutRenderer"}:
+        return True
+
+    if key not in SHELF_RENDERERS:
+        return False
+
+    if excluded_home_shelf(text(data.get("title"))):
+        return True
+
+    # A shelf's destination also identifies it when its heading is absent.
+    for node in objects(data.get("endpoint")):
+        if str(node.get("browseId", "")).casefold().startswith(
+            ("fenews", "fegaming_playables"),
+        ) or str(node.get("url", "")).startswith(
+            ("/feed/news_destination", "/playables"),
+        ):
+            return True
+
+    return False
+
+
 def renderers(
     value: object,
     shelf: str = "",
+    *,
+    exclude_home_sections: bool = False,
 ) -> Iterator[tuple[str, dict[str, Any], str]]:
     if isinstance(value, list):
         for child in cast(list[object], value):
-            yield from renderers(child, shelf)
+            yield from renderers(
+                child, shelf, exclude_home_sections=exclude_home_sections,
+            )
 
         return
 
     for key, child in as_dict(value).items():
         data = as_dict(child)
 
+        if exclude_home_sections and (
+            excluded_home_shelf(shelf) or excluded_home_section(key, data)
+        ):
+            continue
+
         if key in VIDEO_RENDERERS | POST_RENDERERS:
             yield key, data, shelf
         elif key in SHELF_RENDERERS:
             heading = text(data.get("title")) or shelf
-            yield from renderers(data, heading)
+            yield from renderers(
+                data, heading, exclude_home_sections=exclude_home_sections,
+            )
         else:
-            yield from renderers(child, shelf)
+            yield from renderers(
+                child, shelf, exclude_home_sections=exclude_home_sections,
+            )
 
 
 def hype_playlist(value: object) -> str | None:
@@ -144,6 +187,19 @@ def _live(renderer: dict[str, Any], shelf: str) -> bool:
 
 
 def _identity(key: str, renderer: dict[str, Any]) -> tuple[str, str]:
+    if key == "lockupViewModel" and renderer.get("contentType") not in {
+        None, "LOCKUP_CONTENT_TYPE_VIDEO",
+    }:
+        return "", ""
+
+    if any(
+        "playable" in str(node.get("contentType", "")).casefold()
+        or "miniGameEndpoint" in node
+        or "playableEndpoint" in node
+        for node in objects(renderer)
+    ):
+        return "", ""
+
     if key in POST_RENDERERS:
         return "post", str(renderer.get("postId", ""))
 
@@ -334,7 +390,8 @@ def normalize_renderer(
     kind, identifier = _identity(key, renderer)
 
     if (
-        not kind
+        (feed.kind == "home" and excluded_home_shelf(shelf))
+        or not kind
         or not identifier
         or _live(renderer, shelf)
         or (kind == "short" and not settings.include_shorts)

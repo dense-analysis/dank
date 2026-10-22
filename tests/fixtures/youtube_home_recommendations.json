@@ -1,0 +1,224 @@
+{
+  "initial": {
+    "contents": [
+      {
+        "videoRenderer": {
+          "videoId": "normal00001",
+          "title": {
+            "simpleText": "A recommended gaming video"
+          }
+        }
+      },
+      {
+        "richSectionRenderer": {
+          "content": {
+            "richShelfRenderer": {
+              "title": {
+                "simpleText": "Top news"
+              },
+              "contents": [
+                {
+                  "videoRenderer": {
+                    "videoId": "topnews0001"
+                  }
+                },
+                {
+                  "reelShelfRenderer": {
+                    "title": {
+                      "simpleText": "Shorts"
+                    },
+                    "contents": [
+                      {
+                        "reelItemRenderer": {
+                          "videoId": "newsshort01"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "richShelfRenderer": {
+          "title": {
+            "simpleText": "Playables"
+          },
+          "contents": [
+            {
+              "lockupViewModel": {
+                "contentId": "playable001",
+                "contentType": "LOCKUP_CONTENT_TYPE_GAME"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "richShelfRenderer": {
+          "title": {
+            "simpleText": "Shorts"
+          },
+          "contents": [
+            {
+              "shortsLockupViewModel": {
+                "onTap": {
+                  "innertubeCommand": {
+                    "reelWatchEndpoint": {
+                      "videoId": "shorts00001"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "backstagePostThreadRenderer": {
+          "post": {
+            "backstagePostRenderer": {
+              "postId": "UgCommunity",
+              "contentText": {
+                "runs": [
+                  {
+                    "text": "A recommended post"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "items": [
+    {
+      "value": {
+        "videoRenderer": {
+          "videoId": "topnews0001"
+        }
+      },
+      "shelf": "Top news"
+    },
+    {
+      "value": {
+        "reelItemRenderer": {
+          "videoId": "newsshort01"
+        }
+      },
+      "shelf": "Shorts",
+      "shelves": [
+        "Shorts",
+        "Top news"
+      ]
+    },
+    {
+      "value": {
+        "videoRenderer": {
+          "videoId": "noshelf0001"
+        }
+      },
+      "shelf": "",
+      "shelf_contexts": [
+        {
+          "endpoint": {
+            "browseEndpoint": {
+              "browseId": "FEnews"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "value": {
+        "videoRenderer": {
+          "videoId": "fakegame001"
+        }
+      },
+      "shelf": "",
+      "playable": true
+    },
+    {
+      "value": {
+        "videoRenderer": {
+          "videoId": "domvideo001"
+        }
+      },
+      "shelf": ""
+    }
+  ],
+  "responses": [
+    {
+      "onResponseReceivedActions": [
+        {
+          "appendContinuationItemsAction": {
+            "continuationItems": [
+              {
+                "shelfRenderer": {
+                  "title": {
+                    "simpleText": "Breaking News"
+                  },
+                  "contents": [
+                    {
+                      "videoRenderer": {
+                        "videoId": "breaknews01"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "shelfRenderer": {
+                  "title": {
+                    "simpleText": "Untitled"
+                  },
+                  "contents": [
+                    {
+                      "videoRenderer": {
+                        "videoId": "noshelf0001"
+                      }
+                    }
+                  ],
+                  "endpoint": {
+                    "browseEndpoint": {
+                      "browseId": "FEnews"
+                    }
+                  }
+                }
+              },
+              {
+                "miniGameCardRenderer": {
+                  "content": {
+                    "videoRenderer": {
+                      "videoId": "fakegame001"
+                    }
+                  }
+                }
+              },
+              {
+                "lockupViewModel": {
+                  "contentId": "fakegame002",
+                  "contentType": "LOCKUP_CONTENT_TYPE_GAME"
+                }
+              },
+              {
+                "lockupViewModel": {
+                  "contentId": "playlist001",
+                  "contentType": "LOCKUP_CONTENT_TYPE_PLAYLIST"
+                }
+              },
+              {
+                "videoRenderer": {
+                  "videoId": "network0001"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
