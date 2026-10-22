@@ -100,8 +100,8 @@ def test_hacker_news_is_a_separate_source_kind():
     query, params = build_query(ReaderFilters(kind="stories"), (
         SourceConfig(POST.domain, ()), SourceConfig("blog.test", ()),
     ))
-    assert "domain IN %(blog_domains)s" in query
-    assert params["blog_domains"] == ["blog.test"]
+    assert "source IN ('rss', 'linked_article', 'hacker_news')" in query
+    assert "blog_domains" not in params
 
 
 async def test_hacker_news_source_has_readable_name(tmp_path: pathlib.Path):
@@ -110,9 +110,10 @@ async def test_hacker_news_source_has_readable_name(tmp_path: pathlib.Path):
     )
     app = create_app(settings, page_size=50)
     client = AsyncMock()
-    client.fetch_json.return_value = QueryResult([
-        {"domain": POST.domain, "count": 3},
-    ])
+    client.fetch_json.side_effect = [
+        QueryResult([{"domain": POST.domain, "count": 3}]),
+        QueryResult([{"blog_external_count": 1}]),
+    ]
     app["clickhouse"] = client
     response = await handle_sources(make_mocked_request(
         "GET", "/api/reader/sources", app=app,

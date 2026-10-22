@@ -43,6 +43,9 @@ class FakeClickHouse:
                         "x_parent_keys", "x_thread_domain"} & params.keys()):
             return QueryResult([])
 
+        if "AS blog_external_count" in query:
+            return QueryResult([{"blog_external_count": 4}])
+
         return QueryResult(self.results.pop(0))
 
 
@@ -272,6 +275,7 @@ async def test_sources_include_empty_configured_and_collected_sources(
     data = json.loads(response.text or "")
     assert response.status == 200
     assert data["total_posts"] == 10
+    assert data["blog_external_count"] == 4
     assert data["sources"][0] == {
         "domain": "empty.example", "name": "empty.example",
         "tags": ["culture"], "count": 0, "kind": "rss", "configured": True,
@@ -381,7 +385,7 @@ def test_reddit_filters_are_separate_parameterized_and_case_insensitive():
     assert params["community"] == "localllama"
     assert "LocalLLaMA" not in query
     stories, _ = build_query(ReaderFilters(kind="stories"), ())
-    assert "WHERE 0" in stories
+    assert "source IN ('rss', 'linked_article', 'hacker_news')" in stories
 
 
 @pytest.mark.parametrize("query", [

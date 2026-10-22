@@ -78,7 +78,7 @@ async def test_hacker_news_refresh_preserves_compound_and_rss_only_sources():
     ]
 
 
-async def test_blogs_refresh_excludes_platform_rss_and_keeps_publisher_feeds():
+async def test_blog_source_feeds_refresh_includes_hacker_news_and_publishers():
     original = settings(
         SourceConfig("news.ycombinator.com", (), adapters=(
             SourceAdapterConfig(SourceAdapter.RSS, ("https://a.test/rss",)),
@@ -91,10 +91,12 @@ async def test_blogs_refresh_excludes_platform_rss_and_keeps_publisher_feeds():
         SourceConfig("youtube.com", ()),
         SourceConfig("x.com", ("alice",)),
     )
-    plan = await resolve_scope(original, client(), {"kind": "rss"})
-    assert plan.settings.sources == (original.sources[1],)
+    plan = await resolve_scope(original, client(), {
+        "kind": "rss", "blog_feed": "sources",
+    })
+    assert plan.settings.sources == original.sources[:2]
     assert [adapter.feed_urls for adapter in
-            plan.settings.sources[0].collection_adapters] == [
+            plan.settings.sources[1].collection_adapters] == [
         ("https://b.test/rss",), ("https://c.test/rss",),
     ]
 
@@ -245,7 +247,7 @@ async def test_regional_hype_preserves_region_without_other_playlists():
     {"kind": "all", "domains": ["unknown.test"]},
     {"kind": "all", "tags": ["unknown"]},
     {"kind": "rss", "domains": ["reddit.com"]},
-    {"kind": "rss", "tags": ["social"]},
+    {"kind": "rss", "blog_feed": "sources", "tags": ["social"]},
     {"kind": "all", "domains": ["publisher.test"], "tags": ["social"]},
 ])
 async def test_unknown_or_empty_context_never_falls_back_to_all(scope: object):
@@ -393,7 +395,9 @@ async def test_tagged_domain_still_limits_x_to_selected_account():
     (["reddit"], ["reddit.com"], "Reddit"),
     (["youtube", "reddit", "reddit"], ["reddit.com", "youtube.com"],
      "Reddit + YouTube"),
-    (["rss"], ["publisher.test"], "Blogs"),
+    (["rss"],
+     ["publisher.test", "reddit.com", "news.ycombinator.com", "x.com"],
+     "Blogs"),
     (["hacker_news"], ["news.ycombinator.com"], "Hacker News"),
 ])
 async def test_all_platform_filters_follow_reader_domains(

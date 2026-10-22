@@ -28,7 +28,7 @@ from dank.web.reader_youtube_feed import add_youtube_post_metadata
 @pytest.mark.parametrize("kind,platforms", [
     ("stories", ()), ("all", ("stories",)),
 ])
-def test_blogs_only_match_configured_publishers(
+def test_blogs_include_collected_publishers_and_hacker_news(
     kind: str, platforms: tuple[str, ...],
 ) -> None:
     filters = ReaderFilters(kind=kind, platforms=platforms)
@@ -41,13 +41,12 @@ def test_blogs_only_match_configured_publishers(
         SourceConfig("twitter.com", ()),
         SourceConfig("x.com", ()),
     ))
-    assert params["blog_domains"] == ["empty.example", "followed.example"]
-    assert "domain IN %(blog_domains)s" in query
-    # Publisher membership is intentional regardless of how a post was found.
-    assert "source = 'rss'" not in query
+    assert "source IN ('rss', 'linked_article', 'hacker_news')" in query
+    assert "blog_domains" not in params
+    assert RESOLVED_HN_POSTS_SQL in query
 
     empty, _ = build_query(ReaderFilters(kind=kind, platforms=platforms), ())
-    assert "WHERE 0" in empty or "WHERE (0)" in empty
+    assert "source IN ('rss', 'linked_article', 'hacker_news')" in empty
 
 
 def test_platforms_are_unioned_then_intersected_with_other_filters() -> None:
@@ -78,8 +77,8 @@ def test_hacker_news_platform_keeps_canonical_publishers_and_unresolved_posts(
     assert HN_LINKED_POSTS_SQL in query
     assert "SELECT DISTINCT target.domain, target.post_id" in query
     assert "(domain, post_id) NOT IN (" + RESOLVED_HN_POSTS_SQL in query
-    assert "OR domain IN %(blog_domains)s" in query
-    assert params["blog_domains"] == ["followed.example"]
+    assert "OR (source IN ('rss', 'linked_article', 'hacker_news')" in query
+    assert "blog_domains" not in params
     assert "hn_filter" not in params
 
     for safeguard in (

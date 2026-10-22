@@ -39,7 +39,7 @@ def test_stories_and_x_are_separate_collections() -> None:
     stories, _ = build_query(
         parse_filters(MultiDict({"kind": "stories"})), (),
     )
-    assert "WHERE 0" in stories
+    assert "source IN ('rss', 'linked_article', 'hacker_news')" in stories
 
 
 @pytest.mark.parametrize("mode", ["words", "meaning", "combined"])

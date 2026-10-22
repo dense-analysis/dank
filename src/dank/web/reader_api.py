@@ -33,6 +33,7 @@ from dank.web.reader_accounts import (
     source_accounts,
     source_kind,
 )
+from dank.web.reader_blogs import external_blog_count
 from dank.web.reader_communities import community_icons, community_totals
 from dank.web.reader_connections import handle_connection, handle_connections
 from dank.web.reader_excerpt import search_excerpt
@@ -152,6 +153,7 @@ async def handle_sources(request: web.Request) -> web.Response:
     return web.json_response({
         "sources": sources,
         "total_posts": sum(counts.values()),
+        "blog_external_count": await external_blog_count(client),
     })
 
 

@@ -23,7 +23,7 @@ LABELS = {
     "x": "X", "hacker_news": "Hacker News", "youtube": "YouTube",
 }
 DETAIL_FIELDS: dict[str, set[str]] = {
-    "all": set(), "rss": set(), "reddit": {"community"},
+    "all": set(), "rss": {"blog_feed"}, "reddit": {"community"},
     "x": {"account"}, "hacker_news": set(),
     "youtube": {"channel_id", "feed_id"}, "post": {"domain", "post_id"},
 }
@@ -54,6 +54,10 @@ async def resolve_scope(
     if kind == "all" and (scope.get("domains") or scope.get("tags")):
         label = (f"{label} · selected sources" if platforms
                  else "Selected sources")
+
+    if kind == "rss" and (blog_feed := scope.get("blog_feed")):
+        label = ("Blog source feeds" if blog_feed == "sources"
+                 else "Blogs from external")
 
     if community := scope.get("community"):
         sources = _community_sources(sources, community)
@@ -140,6 +144,10 @@ def _normalize_details(scope: dict[str, Any]) -> None:
     if platforms - (LABELS.keys() - {"all"}):
         raise ValueError("Refresh includes an unknown platform")
 
+    if ("blog_feed" in scope
+            and scope["blog_feed"] not in {"sources", "external"}):
+        raise ValueError("Refresh blog_feed must be sources or external")
+
     if scope["kind"] == "post":
         if "domain" not in scope or "post_id" not in scope:
             raise ValueError("Post refresh needs domain and post_id")
@@ -180,6 +188,11 @@ def _selected_sources(
     tag_domains = {source.domain for source in settings.sources
                    if tags.intersection(source.tags)}
     selected: list[SourceConfig] = []
+    kinds = _scope_source_kinds(scope)
+    platform_kinds = {kind for platform in platforms for kind in (
+        {"rss", "hacker_news", "x", "reddit"}
+        if platform == "rss" else {platform}
+    )}
 
     for source in settings.sources:
         if domains and source.domain not in domains:
@@ -188,16 +201,26 @@ def _selected_sources(
         if tags and source.domain not in tag_domains:
             continue
 
-        if platforms and source_kind(source.domain) not in platforms:
+        if platforms and source_kind(source.domain) not in platform_kinds:
             continue
 
-        # Reader sections identify platforms by domain. A Hacker News source
-        # still belongs to Hacker News when it uses RSS or several adapters.
-        if (scope["kind"] == "all"
-                or source_kind(source.domain) == scope["kind"]):
+        # Keep compound adapters intact when a source is selected.
+        if scope["kind"] == "all" or source_kind(source.domain) in kinds:
             selected.append(source)
 
     return tuple(selected)
+
+
+def _scope_source_kinds(scope: dict[str, Any]) -> set[str]:
+    if scope["kind"] != "rss":
+        return {scope["kind"]}
+
+    if scope.get("blog_feed") == "sources" or scope.get("domains"):
+        return {"rss", "hacker_news"}
+
+    # External publishers are discovered by these configured feeds. Refresh the
+    # discovery sources instead of inventing configuration for publisher hosts.
+    return {"rss", "hacker_news", "x", "reddit"}
 
 
 def _community_sources(

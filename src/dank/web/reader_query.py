@@ -13,6 +13,7 @@ from multidict import MultiMapping
 
 from dank.config import HackerNewsFilter, SourceConfig
 from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS, source_kind
+from dank.web.reader_blogs import BLOG_CONDITION, EXTERNAL_BLOG_CONDITION
 from dank.web.reader_flairs import (
     FLAIR_WHITESPACE_PATTERN,
     LATEST_REDDIT_FLAIRS_SQL,
@@ -45,6 +46,7 @@ class ReaderFilters(NamedTuple):
     hn_filter: str = ""
     x_view: str = "posts"
     platforms: tuple[str, ...] = ()
+    blog_feed: str = ""
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -61,7 +63,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     unknown = set(query) - {
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
-        "account", "hn_filter", "x_view", "platform",
+        "account", "hn_filter", "x_view", "platform", "blog_feed",
     }
 
     if unknown:
@@ -80,6 +82,14 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
     if "x_view" in query and query.get("kind") != "x":
         raise ValueError("x_view requires kind=x")
 
+    if "blog_feed" in query and (
+        query.get("kind") != "stories"
+        or query["blog_feed"] not in {"sources", "external"}
+    ):
+        raise ValueError(
+            "blog_feed requires kind=stories and sources or external",
+        )
+
     filters = ReaderFilters(
         q=query.get("q", "").strip(),
         mode=query.get("mode", "words"),
@@ -87,6 +97,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         domains=_choices(query.getall("domain", [])),
         tags=_choices(query.getall("tag", [])),
         platforms=_choices(query.getall("platform", [])),
+        blog_feed=query.get("blog_feed", ""),
         author=query.get("author", "").strip(),
         author_match=query.get("author_match", "contains"),
         after=_date(query.get("after", "")),
@@ -197,6 +208,14 @@ def _validate_collection_filters(filters: ReaderFilters) -> None:
         raise ValueError(
             "platform requires kind=all and stories, reddit, x, "
             "youtube or hacker_news",
+        )
+
+    if filters.blog_feed and (
+        filters.kind != "stories"
+        or filters.blog_feed not in {"sources", "external"}
+    ):
+        raise ValueError(
+            "blog_feed requires kind=stories and sources or external",
         )
 
     if filters.hn_filter and (
@@ -342,7 +361,10 @@ def build_query(
             "%(cursor_domain)s, %(cursor_id)s)",
         )
 
-    if filters.kind in {"", "all"}:
+    if filters.kind in {"", "all"} or (
+        filters.kind == "stories" and not filters.blog_feed
+        and not filters.domains
+    ):
         conditions.append(
             "(domain, post_id) NOT IN (" + RESOLVED_HN_POSTS_SQL + ")",
         )
@@ -379,7 +401,17 @@ def _collection_conditions(
     conditions: list[str] = []
     params: dict[str, Any] = {}
 
-    if filters.kind in {"reddit", "youtube", "stories", "x"}:
+    if filters.kind == "stories" and filters.blog_feed == "external":
+        conditions.append(EXTERNAL_BLOG_CONDITION)
+    elif filters.kind == "stories" and filters.blog_feed == "sources":
+        params["blog_domains"] = sorted({
+            source.domain for source in sources
+            if source_kind(source.domain) in {"rss", "hacker_news"}
+        })
+        conditions.append(
+            "domain IN %(blog_domains)s" if params["blog_domains"] else "0",
+        )
+    elif filters.kind in {"reddit", "youtube", "stories", "x"}:
         conditions.append(_platform_condition(filters.kind, sources, params))
     elif filters.kind == "hacker_news":
         conditions.append("domain = 'news.ycombinator.com'")
@@ -426,12 +458,7 @@ def _platform_condition(
     platform: str, sources: tuple[SourceConfig, ...], params: dict[str, Any],
 ) -> str:
     if platform == "stories":
-        params["blog_domains"] = sorted({
-            source.domain for source in sources
-            if source_kind(source.domain) == "rss"
-        })
-
-        return "domain IN %(blog_domains)s" if params["blog_domains"] else "0"
+        return "(" + BLOG_CONDITION + ")"
 
     if platform == "x":
         params["x_domains"] = list(X_DOMAINS)
