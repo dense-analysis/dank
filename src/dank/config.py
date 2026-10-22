@@ -42,6 +42,13 @@ class XSettings(NamedTuple):
     conversation: XConversationSettings = XConversationSettings()
 
 
+class YouTubeOnePasswordSettings(NamedTuple):
+    account: str
+    username: str
+    password: str
+    otp: str = ""
+
+
 class YouTubeSettings(NamedTuple):
     """Feed discovery is independent of optional video archiving."""
 
@@ -58,6 +65,7 @@ class YouTubeSettings(NamedTuple):
     stall_scrolls: int = 3
     known_overlap: int = 5
     profile_dir: pathlib.Path | None = None
+    onepassword: YouTubeOnePasswordSettings | None = None
 
 
 class RedditCommentSort(StrEnum):
@@ -1028,6 +1036,7 @@ def _parse_youtube_settings(value: object) -> YouTubeSettings:
         hype_playlists=_youtube_hype_playlists(data.get("hype_playlists", {})),
         news_tabs=tuple(dict.fromkeys(cast(list[str], tabs))),
         profile_dir=_youtube_profile(data.get("profile_dir")),
+        onepassword=_parse_youtube_onepassword(data.get("onepassword")),
         stall_scrolls=limits["stall_scrolls"],
         known_overlap=limits["known_overlap"],
         scrape=BrowserScrapeSettings(
@@ -1035,6 +1044,65 @@ def _parse_youtube_settings(value: object) -> YouTubeSettings:
             scroll_pause_seconds=float(pause),
         ),
     )
+
+
+def _parse_youtube_onepassword(
+    value: object,
+) -> YouTubeOnePasswordSettings | None:
+    if value is None:
+        return None
+
+    data = _as_dict(value)
+
+    if data is None or set(data) - {"account", "username", "password", "otp"}:
+        raise ConfigError(
+            "youtube.onepassword must be a secret-reference table",
+        )
+
+    account = data.get("account")
+
+    if (not isinstance(account, str) or not account.strip()
+            or any(ord(char) < 32 or ord(char) == 127 for char in account)):
+        raise ConfigError("youtube.onepassword.account must name an account")
+
+    references: dict[str, str] = {}
+
+    for field in ("username", "password", "otp"):
+        reference = data.get(field, "" if field == "otp" else None)
+
+        if field == "otp" and reference == "":
+            references[field] = ""
+            continue
+
+        if (not isinstance(reference, str)
+                or not reference.startswith("op://")
+                or any(ord(char) < 32 or ord(char) == 127
+                       for char in reference)):
+            raise ConfigError(
+                f"youtube.onepassword.{field} must be an op:// reference",
+            )
+
+        path, _, query = reference.partition("?")
+        parts = path[5:].split("/")
+
+        if len(parts) not in {3, 4} or not all(parts) or "#" in reference:
+            raise ConfigError(
+                f"youtube.onepassword.{field} must be an op:// reference",
+            )
+
+        if field == "otp":
+            if query and query not in {"attribute=otp", "attr=otp"}:
+                raise ConfigError(
+                    "youtube.onepassword.otp must request attribute=otp",
+                )
+
+            # Request a generated code, never the saved TOTP seed.
+            # https://www.1password.dev/cli/secret-reference-syntax
+            reference = path + "?attribute=otp"
+
+        references[field] = reference
+
+    return YouTubeOnePasswordSettings(account=account, **references)
 
 
 def _youtube_profile(value: object) -> pathlib.Path | None:

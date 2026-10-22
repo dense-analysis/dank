@@ -163,3 +163,45 @@ def test_hype_playlist_configuration_rejects_ambiguous_destinations(
 
     with pytest.raises(ConfigError, match=r"youtube\.hype_playlists"):
         load_settings(path)
+
+
+def test_youtube_onepassword_keeps_references_and_normalizes_generated_otp(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(
+        '[youtube.onepassword]\naccount = "my.1password.com"\n'
+        'username = "op://Private/Google/username"\n'
+        'password = "op://Private/Google/password"\n'
+        'otp = "op://Private/Google/one-time password"\n',
+    )
+    credentials = load_settings(path).youtube.onepassword
+    assert credentials is not None
+    assert credentials.account == "my.1password.com"
+    assert credentials.username == "op://Private/Google/username"
+    assert credentials.password == "op://Private/Google/password"
+    assert credentials.otp == (
+        "op://Private/Google/one-time password?attribute=otp"
+    )
+
+
+@pytest.mark.parametrize("replacement", [
+    'account = ""', 'account = 42', 'username = "literal-secret"',
+    'password = "op://Private/Google"', 'password = "op://Private//password"',
+    'otp = "op://Private/Google/otp?attribute=value"',
+    'otp = "otpauth://seed"', 'unexpected = "field"',
+])
+def test_youtube_onepassword_rejects_invalid_references_and_seed_attributes(
+    tmp_path: Path, replacement: str,
+) -> None:
+    fields = {
+        "account": 'account = "my.1password.com"',
+        "username": 'username = "op://Private/Google/username"',
+        "password": 'password = "op://Private/Google/password"',
+    }
+    fields[replacement.split(" =")[0]] = replacement
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("[youtube.onepassword]\n" + "\n".join(fields.values()))
+
+    with pytest.raises(ConfigError, match=r"youtube\.onepassword"):
+        load_settings(path)
