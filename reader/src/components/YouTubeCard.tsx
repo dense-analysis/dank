@@ -14,6 +14,7 @@ import {
 import { Count } from "./Count";
 import { NavigableCard } from "./NavigableCard";
 import { ReaderLink } from "./ReaderLink";
+import { SourceActions } from "./SourceActions";
 import { YouTubeLocalVideo } from "./YouTubeLocalVideo";
 import { YouTubePlayer } from "./YouTubePlayer";
 import { YouTubeThumbnail } from "./YouTubeThumbnail";
@@ -249,7 +250,7 @@ export function YouTubeCard({
           </ReaderLink>
         )}
         {original && (
-          <a
+          <SourceActions
             className="yt-original"
             href={original}
             target="_blank"
@@ -262,7 +263,7 @@ export function YouTubeCard({
             title="Open on YouTube"
           >
             <ArrowUpRight size={15} />
-          </a>
+          </SourceActions>
         )}
       </div>
     </NavigableCard>

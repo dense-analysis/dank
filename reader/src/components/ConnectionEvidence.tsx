@@ -10,6 +10,7 @@ import {
 import { connectionSourceLabel } from "../lib/postConnectionsGraph";
 import { safeUrl } from "../lib/urls";
 import { ReaderLink } from "./ReaderLink";
+import { SourceActions } from "./SourceActions";
 
 export interface ConnectionNavigation {
   onOpenEvidence: (evidence: PostConnectionEvidence) => void;
@@ -42,9 +43,9 @@ function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
   const href = url ? safeUrl(url) : undefined;
 
   return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer">
+    <SourceActions href={href} target="_blank" rel="noopener noreferrer">
       {children} <ArrowUpRight size={14} aria-hidden="true" />
-    </a>
+    </SourceActions>
   ) : null;
 }
 

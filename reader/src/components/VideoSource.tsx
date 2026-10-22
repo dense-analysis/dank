@@ -1,6 +1,7 @@
 import { ExternalLink, Globe2 } from "lucide-react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { videoSource } from "../lib/videoSource";
+import { SourceActions } from "./SourceActions";
 
 export function VideoSource({
   url,
@@ -27,7 +28,7 @@ export function VideoSource({
         </span>
       )}
       {external && (
-        <a
+        <SourceActions
           className="icon-button video-source-link"
           href={source.url}
           target="_blank"
@@ -36,7 +37,7 @@ export function VideoSource({
           aria-label={`Watch on ${source.name}`}
         >
           <ExternalLink size={13} aria-hidden="true" />
-        </a>
+        </SourceActions>
       )}
     </span>
   );

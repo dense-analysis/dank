@@ -319,7 +319,7 @@
 .yt-original:hover {
   color: var(--green);
 }
-.yt-card-detailed .yt-original {
+.yt-card-detailed .source-link-actions:has(.yt-original) {
   margin-left: auto;
 }
 .yt-thumbnail iframe {

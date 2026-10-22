@@ -129,6 +129,9 @@ presentation. This does not fetch articles or change where Reddit cards open.
   and time from yesterday onward. Hover a timestamp for its exact time.
   YouTube's dedicated view keeps the relative publication labels from YouTube;
   the mixed All feed uses the shared post date style.
+- Source actions include **Copy source link**, which copies the adjacent original
+  URL for sharing and briefly confirms success. This also works on feed cards,
+  videos, comments and connection evidence without opening the item.
 - Reopening an article resumes where you left off.
 - Code blocks use their declared language for syntax highlighting, with copy
   controls and horizontal scrolling. Unsupported or unlabelled code stays plain.

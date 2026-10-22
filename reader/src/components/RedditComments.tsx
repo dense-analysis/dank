@@ -7,6 +7,7 @@ import { ArticleBody } from "./ArticleBody";
 import { Count } from "./Count";
 import { dateLabel, safeUrl } from "./PostCard";
 import { PostTime } from "./PostTime";
+import { SourceActions } from "./SourceActions";
 
 export function RedditComments({
   reddit,
@@ -150,13 +151,13 @@ export function RedditComments({
                       </span>
                     )}
                     {safeUrl(comment.permalink) && (
-                      <a
+                      <SourceActions
                         href={safeUrl(comment.permalink)}
                         target="_blank"
                         rel="noreferrer"
                       >
                         On Reddit <ExternalLink size={11} aria-hidden="true" />
-                      </a>
+                      </SourceActions>
                     )}
                   </div>
                 </li>
@@ -175,10 +176,14 @@ export function RedditComments({
                 This is a saved selection. More comments and replies are
                 available on Reddit.
               </p>
-              <a href={safeUrl(originalUrl)} target="_blank" rel="noreferrer">
+              <SourceActions
+                href={safeUrl(originalUrl)}
+                target="_blank"
+                rel="noreferrer"
+              >
                 More comments on Reddit{" "}
                 <ExternalLink size={13} aria-hidden="true" />
-              </a>
+              </SourceActions>
             </footer>
           )}
         </>
@@ -201,10 +206,14 @@ export function RedditComments({
               </>
             )}
           </p>
-          <a href={safeUrl(originalUrl)} target="_blank" rel="noreferrer">
+          <SourceActions
+            href={safeUrl(originalUrl)}
+            target="_blank"
+            rel="noreferrer"
+          >
             Read comments on Reddit{" "}
             <ExternalLink size={13} aria-hidden="true" />
-          </a>
+          </SourceActions>
         </div>
       )}
     </section>

@@ -18,6 +18,7 @@ import {
 import { youtubeEmbedUrl } from "../lib/youtube";
 import { ArticleBody } from "./ArticleBody";
 import { safeUrl } from "./PostCard";
+import { SourceActions } from "./SourceActions";
 import { VideoSource } from "./VideoSource";
 import { XLinkPreview } from "./XLinkPreview";
 import { XPostPreview } from "./XPostPreview";
@@ -201,9 +202,13 @@ function XAttachment({
       <div className="x-media-unavailable">
         <ImageOff size={20} aria-hidden="true" />
         <span>{asset.type === "image" ? "Image" : "Video"} unavailable</span>
-        <a href={safeUrl(original)} target="_blank" rel="noreferrer">
+        <SourceActions
+          href={safeUrl(original)}
+          target="_blank"
+          rel="noreferrer"
+        >
           View on X <ExternalLink size={13} />
-        </a>
+        </SourceActions>
       </div>
     );
 

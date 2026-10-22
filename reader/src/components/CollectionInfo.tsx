@@ -7,6 +7,7 @@ import { dateLabel } from "../lib/timestamps";
 import type { CollectionInfo, Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ReaderLink } from "./ReaderLink";
+import { SourceActions } from "./SourceActions";
 
 export function earlierDiscoveryTitle(info: CollectionInfo): string | null {
   if (
@@ -102,9 +103,13 @@ export function CollectionInfoContent({
           <div>
             <dt>Linked Reddit video</dt>
             <dd>
-              <a href={original ?? undefined} target="_blank" rel="noreferrer">
+              <SourceActions
+                href={original ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+              >
                 Open video
-              </a>
+              </SourceActions>
             </dd>
           </div>
         ) : (
@@ -133,9 +138,13 @@ export function CollectionInfoContent({
               {info.article_status === "unavailable" && original && (
                 <>
                   {" · "}
-                  <a href={original} target="_blank" rel="noreferrer">
+                  <SourceActions
+                    href={original}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     Open publisher
-                  </a>
+                  </SourceActions>
                 </>
               )}
             </dd>

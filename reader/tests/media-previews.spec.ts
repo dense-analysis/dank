@@ -357,7 +357,7 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
         );
         const group = element.getBoundingClientRect();
         const original = parent.querySelector(
-          ".social-post-actions .icon-button",
+          ".social-post-actions a.icon-button",
         );
         if (!original) throw new Error("Missing original-source link");
         const originalBox = original.getBoundingClientRect();
@@ -395,7 +395,7 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
         expect(layout.iconWidth).toBe(18);
 
         if (layout.utilitiesWidth !== undefined)
-          expect(layout.utilitiesWidth).toBeLessThanOrEqual(64);
+          expect(layout.utilitiesWidth).toBeLessThanOrEqual(100);
 
         expect(
           Math.max(...layout.gaps) - Math.min(...layout.gaps),

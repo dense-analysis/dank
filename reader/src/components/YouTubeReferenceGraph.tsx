@@ -6,6 +6,7 @@ import type { YouTubeItem, YouTubeReference } from "../lib/youtubeCollection";
 import { youtubeReferenceGraph } from "../lib/youtubeReferenceGraph";
 import { Count } from "./Count";
 import { RelationshipGraph } from "./RelationshipGraph";
+import { SourceActions } from "./SourceActions";
 
 export default function YouTubeReferenceGraph({
   item,
@@ -122,14 +123,14 @@ export default function YouTubeReferenceGraph({
                             </a>
                           )}
                           {original && (
-                            <a
+                            <SourceActions
                               href={original}
                               target="_blank"
                               rel="noopener noreferrer"
                             >
                               Original {reference.kind}{" "}
                               <ArrowUpRight size={14} />
-                            </a>
+                            </SourceActions>
                           )}
                         </div>
                       </article>

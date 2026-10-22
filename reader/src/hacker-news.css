@@ -76,6 +76,9 @@
   gap: 12px 24px;
 }
 .hn-detail-links .original-link {
+  margin-bottom: 0;
+}
+.hn-detail-links .source-link-actions {
   margin-bottom: 12px;
 }
 .hn-comments {

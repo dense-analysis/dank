@@ -267,3 +267,102 @@ for (const kind of ["video", "post"] as const) {
     );
   });
 }
+
+for (const width of [1280, 390]) {
+  test(`source links copy the original URL without opening cards at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await fixtures(context);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            document.documentElement.dataset.copiedSource = text;
+          },
+        },
+      });
+    });
+
+    for (const [post, view] of [
+      [blog, "stories"],
+      [reddit, "reddit"],
+      [x, "x"],
+      [hn, "hacker_news"],
+    ] as const) {
+      for (const feed of [view, "all"]) {
+        await page.goto(`/reader/?view=${feed}`);
+        const primary = page.getByRole("link", {
+          name: `Read ${post.title}`,
+          exact: true,
+        });
+        const card = page.locator(".post-card").filter({ has: primary });
+        const copy = card.getByRole("button", { name: "Copy source link" });
+        const destination = post === hn ? blog.url : post.url;
+        const before = page.url();
+        await copy.click();
+        await expect(card.getByRole("status")).toHaveText("Link copied");
+        await expect(page.locator("html")).toHaveAttribute(
+          "data-copied-source",
+          destination,
+        );
+        await expect(page).toHaveURL(before);
+        expect(context.pages()).toHaveLength(1);
+        const bounds = await copy.boundingBox();
+        expect(bounds?.x).toBeGreaterThanOrEqual(0);
+        expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(
+          width,
+        );
+      }
+    }
+
+    await page.goto("/reader/?view=youtube");
+
+    for (const item of [video, communityPost]) {
+      const card = page.locator(`.yt-card.yt-${item.kind}`);
+      const before = page.url();
+      await card.getByRole("button", { name: "Copy source link" }).click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-copied-source",
+        item.url,
+      );
+      await expect(page).toHaveURL(before);
+      expect(context.pages()).toHaveLength(1);
+    }
+
+    await page.goto(
+      "/reader/?view=stories&article=blog&article_source=example.com",
+    );
+    const original = page.getByRole("link", {
+      name: "Read original",
+      exact: true,
+    });
+    const actions = original.locator("..");
+    await actions.getByRole("button", { name: "Copy source link" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(actions.getByRole("status")).toHaveText("Link copied");
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-copied-source",
+      blog.url,
+    );
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async () => {
+            throw new Error("Permission denied");
+          },
+        },
+      });
+    });
+    await actions.getByRole("button", { name: "Copy source link" }).click();
+    await expect(actions.getByRole("status")).toContainText("Copy failed");
+    await expect(original).toHaveAttribute("href", blog.url);
+    await expect(
+      actions.getByRole("button", { name: "Copy source link" }),
+    ).toBeEnabled();
+  });
+}

@@ -2760,6 +2760,7 @@ html:has(.x-text-expanding:not([hidden] *)) {
   font-size: 11px;
 }
 .post-utilities {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2825,7 +2826,7 @@ a.social-metric:hover {
     padding: 7px;
   }
   .post-utilities {
-    flex: 0 0 64px;
+    flex: 0 0 auto;
     justify-content: flex-end;
     margin-left: 0;
   }
@@ -2846,7 +2847,6 @@ a.social-metric:hover {
     gap: 12px;
   }
   .post-utilities {
-    flex-basis: 52px;
     gap: 4px;
   }
 }
@@ -3299,4 +3299,41 @@ a.social-metric:hover {
   .refresh-spinning {
     animation: none;
   }
+}
+
+.source-link-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+  max-width: 100%;
+}
+.source-copy-control {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.source-copy-status:not(:empty) {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  width: max-content;
+  max-width: min(240px, 70vw);
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 3px 12px #0004;
+  pointer-events: none;
+}
+.source-link-actions:has(> .original-link) {
+  padding-bottom: 24px;
+}
+.source-link-actions > .original-link {
+  padding-bottom: 0;
 }

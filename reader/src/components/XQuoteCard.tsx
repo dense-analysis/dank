@@ -2,6 +2,7 @@ import { articleParams } from "../lib/navigation";
 import type { Post, XQuote } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { NavigableCard } from "./NavigableCard";
+import { SourceActions } from "./SourceActions";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -45,7 +46,7 @@ export function XQuoteCard({
         </p>
       )}
       {!destination && (
-        <a
+        <SourceActions
           className="x-quote-original"
           data-card-link
           href={safeUrl(quote.url)}
@@ -53,7 +54,7 @@ export function XQuoteCard({
           rel="noreferrer"
         >
           View quoted post on X
-        </a>
+        </SourceActions>
       )}
     </NavigableCard>
   );

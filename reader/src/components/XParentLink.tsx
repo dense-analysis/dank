@@ -2,6 +2,7 @@ import { articleParams } from "../lib/navigation";
 import type { Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { ReaderLink } from "./ReaderLink";
+import { SourceActions } from "./SourceActions";
 
 export function XParentLink({
   post,
@@ -25,13 +26,13 @@ export function XParentLink({
       {label}
     </ReaderLink>
   ) : (
-    <a
+    <SourceActions
       className="x-parent-link"
       href={safeUrl(parent.url)}
       target="_blank"
       rel="noreferrer"
     >
       {label} · parent not collected · view on X
-    </a>
+    </SourceActions>
   );
 }

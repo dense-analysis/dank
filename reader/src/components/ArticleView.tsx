@@ -45,6 +45,7 @@ import {
 } from "./RedditMetadata";
 import { RedditVideo } from "./RedditVideo";
 import { ReferenceFocusNotice } from "./ReferenceFocusNotice";
+import { SourceActions } from "./SourceActions";
 import { SourceLink } from "./SourceLink";
 import { XPostDetail } from "./XPostDetail";
 
@@ -336,7 +337,7 @@ export function ArticleView({
           {postLinks}
           {hasReadableContent ? (
             <>
-              <a
+              <SourceActions
                 className={`original-link${originalMatch ? " reference-match" : ""}`}
                 data-reference-match={originalMatch ? "true" : undefined}
                 href={safeUrl(post.url)}
@@ -345,7 +346,7 @@ export function ArticleView({
               >
                 Read original
                 <ExternalLink size={13} />
-              </a>
+              </SourceActions>
               {post.collection_incomplete && (
                 <aside
                   className="collection-notice collection-notice-partial"
@@ -412,7 +413,7 @@ export function ArticleView({
                   available here.
                 </p>
                 {safeUrl(post.url) && (
-                  <a
+                  <SourceActions
                     className={`collection-source-link${originalMatch ? " reference-match" : ""}`}
                     data-reference-match={originalMatch ? "true" : undefined}
                     href={safeUrl(post.url)}
@@ -421,7 +422,7 @@ export function ArticleView({
                   >
                     Read original article{" "}
                     <ExternalLink size={13} aria-hidden="true" />
-                  </a>
+                  </SourceActions>
                 )}
               </div>
             </aside>

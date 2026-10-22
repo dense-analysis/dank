@@ -190,7 +190,9 @@ for (const detail of [false, true]) {
     await scope
       .getByRole("button", { name: "Play video", exact: true })
       .click();
-    await expect(scope.getByRole("status")).toContainText("couldn’t be played");
+    await expect(
+      scope.getByRole("status").filter({ hasText: "couldn’t be played" }),
+    ).toBeVisible();
     if (detail)
       await expect(
         scope.getByRole("link", { name: raw, exact: true }),

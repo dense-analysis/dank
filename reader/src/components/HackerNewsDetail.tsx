@@ -11,6 +11,7 @@ import { Count } from "./Count";
 import { HackerNewsMetrics, HackerNewsTimestamp } from "./HackerNewsFeed";
 import { PlatformIcon } from "./PlatformIcon";
 import { PostTime } from "./PostTime";
+import { SourceActions } from "./SourceActions";
 
 export function HackerNewsDetail({
   post,
@@ -71,7 +72,7 @@ export function HackerNewsDetail({
       <div className="hn-detail-links">
         {linkedArticle}
         {externalUrl && (
-          <a
+          <SourceActions
             className={`original-link${externalMatch ? " reference-match" : ""}`}
             data-reference-match={externalMatch ? "true" : undefined}
             href={externalUrl}
@@ -79,10 +80,10 @@ export function HackerNewsDetail({
             rel="noreferrer"
           >
             Read original article <ExternalLink size={13} aria-hidden="true" />
-          </a>
+          </SourceActions>
         )}
         {discussionUrl && (
-          <a
+          <SourceActions
             className="original-link"
             href={discussionUrl}
             target="_blank"
@@ -90,7 +91,7 @@ export function HackerNewsDetail({
           >
             View discussion on Hacker News{" "}
             <ExternalLink size={13} aria-hidden="true" />
-          </a>
+          </SourceActions>
         )}
       </div>
       {links}
@@ -199,7 +200,7 @@ export function HackerNewsDetail({
           </>
         )}
         {discussionUrl && (
-          <a
+          <SourceActions
             className="original-link"
             href={discussionUrl}
             target="_blank"
@@ -207,7 +208,7 @@ export function HackerNewsDetail({
           >
             Read comments on Hacker News{" "}
             <ExternalLink size={13} aria-hidden="true" />
-          </a>
+          </SourceActions>
         )}
       </section>
     </div>

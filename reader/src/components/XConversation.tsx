@@ -9,6 +9,7 @@ import type {
 import { Count } from "./Count";
 import { dateLabel, safeUrl } from "./PostCard";
 import { ReaderLink } from "./ReaderLink";
+import { SourceActions } from "./SourceActions";
 import { XPostContent } from "./XPostContent";
 import { XPostHeader } from "./XPostHeader";
 
@@ -184,14 +185,14 @@ export function XConversation({
             )}
           </>
         )}
-        <a
+        <SourceActions
           className="text-button"
           href={safeUrl(post.url)}
           target="_blank"
           rel="noreferrer"
         >
           View conversation on X <ExternalLink size={14} />
-        </a>
+        </SourceActions>
       </section>
       {!pending && replies.length > 0 && (
         <ConversationPosts
@@ -266,7 +267,7 @@ function ConversationPosts({
                   Open saved post
                 </ReaderLink>
               )}
-              <a
+              <SourceActions
                 className="x-conversation-original"
                 href={safeUrl(post.url)}
                 target="_blank"
@@ -274,7 +275,7 @@ function ConversationPosts({
               >
                 {context ? "View post on X" : "View reply on X"}{" "}
                 <ExternalLink size={12} />
-              </a>
+              </SourceActions>
             </div>
           </article>
         </li>

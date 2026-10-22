@@ -29,6 +29,7 @@ import {
 import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
 import { Count } from "./Count";
 import { CountryFlag } from "./CountryFlag";
+import { SourceActions } from "./SourceActions";
 import { YouTubeCard } from "./YouTubeCard";
 import { YouTubeMetadataStatus } from "./YouTubeMetadataStatus";
 import YouTubeReferenceGraph from "./YouTubeReferenceGraph";
@@ -252,26 +253,26 @@ export function YouTubeCollection({
                           <>
                             <dt>Playlist</dt>
                             <dd>
-                              <a
+                              <SourceActions
                                 href={`https://www.youtube.com/playlist?list=${encodeURIComponent(discovery.playlist_id)}`}
                                 target="_blank"
                                 rel="noreferrer"
                               >
                                 View playlist <ArrowUpRight size={12} />
-                              </a>
+                              </SourceActions>
                             </dd>
                           </>
                         )}
                       </dl>
                       {safeUrl(discovery.feed_url) && (
-                        <a
+                        <SourceActions
                           className="text-button"
                           href={safeUrl(discovery.feed_url)}
                           target="_blank"
                           rel="noreferrer"
                         >
                           Open original feed <ArrowUpRight size={12} />
-                        </a>
+                        </SourceActions>
                       )}
                     </div>
                   ))
@@ -787,7 +788,7 @@ function YouTubeSourceReference({
             </a>
           )}
           {original && (
-            <a
+            <SourceActions
               className="yt-reference-original"
               href={original}
               target="_blank"
@@ -795,17 +796,17 @@ function YouTubeSourceReference({
               aria-label={`Original ${reference.kind}: ${reference.author || reference.title || reference.domain}`}
             >
               Original {reference.kind} <ArrowUpRight size={14} />
-            </a>
+            </SourceActions>
           )}
           {matched && (
-            <a
+            <SourceActions
               className="yt-reference-original"
               href={matched}
               target="_blank"
               rel="noopener noreferrer"
             >
               Matched video link <ArrowUpRight size={14} />
-            </a>
+            </SourceActions>
           )}
           {reference.observed_at && (
             <span>

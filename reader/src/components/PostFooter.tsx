@@ -3,6 +3,7 @@ import { type ReactNode, useId, useState } from "react";
 import type { Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { CollectionInfoContent, earlierDiscoveryTitle } from "./CollectionInfo";
+import { SourceActions } from "./SourceActions";
 
 export function PostFooter({
   children,
@@ -66,7 +67,7 @@ export function PostFooter({
             </button>
           )}
           {original && (
-            <a
+            <SourceActions
               className="icon-button"
               href={original}
               target="_blank"
@@ -75,7 +76,7 @@ export function PostFooter({
               title={source.title ?? "Open original"}
             >
               <ExternalLink size={16} aria-hidden="true" />
-            </a>
+            </SourceActions>
           )}
         </div>
       </div>

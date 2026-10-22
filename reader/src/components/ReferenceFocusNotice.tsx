@@ -3,6 +3,7 @@ import { normalizedLinkUrl } from "../lib/linkIdentity";
 import { fetchReferenceEvidence } from "../lib/referenceEvidence";
 import type { ReferenceTarget } from "../lib/referenceFocus";
 import { safeUrl } from "../lib/urls";
+import { SourceActions } from "./SourceActions";
 
 export function ReferenceFocusNotice({
   target,
@@ -85,9 +86,13 @@ export function ReferenceFocusNotice({
                   : "Back to connections")}
             </button>
             {original && (
-              <a href={original} target="_blank" rel="noopener noreferrer">
+              <SourceActions
+                href={original}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 Original {target.kind}
-              </a>
+              </SourceActions>
             )}
           </div>
         </>
