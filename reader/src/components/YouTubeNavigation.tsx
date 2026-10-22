@@ -1,5 +1,12 @@
 import "../youtube-navigation.css";
-import { Flame, Link2, Newspaper, Play, TvMinimal } from "lucide-react";
+import {
+  Flame,
+  Link2,
+  Newspaper,
+  Play,
+  Sparkles,
+  TvMinimal,
+} from "lucide-react";
 import type { YouTubeSources } from "../lib/youtubeCollection";
 import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
 import { CollectionNavGroup } from "./CollectionNavGroup";
@@ -55,9 +62,14 @@ export function YouTubeNavigation({
                 )
                 .map((feed) => ({
                   id: `feed:${feed.id}`,
-                  label: feed.name,
+                  label: youtubeFeedLabel(feed),
                   count: feed.count,
-                  avatar: <Play size={15} />,
+                  avatar:
+                    feed.kind === "home" ? (
+                      <Sparkles size={15} />
+                    ) : (
+                      <Play size={15} />
+                    ),
                 })),
             ]
           : []

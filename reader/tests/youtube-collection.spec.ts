@@ -286,6 +286,179 @@ async function noOverflow(page: Page) {
   ).toBe(true);
 }
 
+const home = "https://www.youtube.com/";
+
+async function recommendationsFixture(page: Page, empty = false) {
+  const state = await fixture(page);
+  const recommendations = [videos[0], videos[2], videos[4], videos[7]].map(
+    (entry) => ({
+      ...entry,
+      discoveries: [
+        {
+          ...entry.discoveries[0],
+          feed_url: home,
+          feed_name: "Recommendations",
+          feed_kind: "home",
+          shelf: "",
+          tab: "",
+          rank: null,
+          playlist_id: "",
+          region: "",
+        },
+      ],
+    }),
+  );
+  state.data = empty ? [] : [...recommendations, videos[1]];
+  state.sources = {
+    ...sources,
+    feeds: [
+      ...sources.feeds,
+      {
+        id: home,
+        url: home,
+        // Existing saved captures may still use the old display name.
+        name: "Home recommendations",
+        kind: "home",
+        count: empty ? 0 : recommendations.length,
+        region: "",
+        tab: "",
+      },
+    ],
+  };
+
+  return state;
+}
+
+for (const width of [1440, 390, 320]) {
+  test(`recommendations retain format and search through details and history at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const state = await recommendationsFixture(page);
+    await page.goto("/reader/?view=youtube");
+
+    if (width < 600) {
+      await page
+        .getByRole("button", { name: "Open navigation", exact: true })
+        .click();
+    }
+
+    await page
+      .getByRole("navigation", { name: "Main navigation" })
+      .getByRole("button", { name: "Recommendations, 4 discoveries" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Recommendations", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".yt-card")).toHaveCount(4);
+    expect(new URL(page.url()).searchParams.get("feed")).toBe(home);
+    await noOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`youtube-recommendations-${width}.png`),
+      fullPage: true,
+    });
+
+    for (const [format, label, count] of [
+      ["video", "Videos", 2],
+      ["short", "Shorts", 1],
+      ["post", "Posts", 1],
+      ["", "All", 4],
+    ] as const) {
+      await page
+        .locator(".yt-tabs")
+        .getByRole("button", { name: label, exact: true })
+        .click();
+      await expect(page.locator(".yt-card")).toHaveCount(count);
+      expect(new URL(page.url()).searchParams.get("format") ?? "").toBe(format);
+      expect(
+        state.requests.some(
+          (url) =>
+            url.pathname.endsWith("/youtube") &&
+            url.searchParams.get("feed") === home &&
+            (url.searchParams.get("kind") ?? "") === format,
+        ),
+      ).toBe(true);
+    }
+
+    await page.getByRole("button", { name: "Videos", exact: true }).click();
+    const search = page.getByRole("searchbox", {
+      name: "Search Recommendations",
+      exact: true,
+    });
+    await search.fill("cities");
+    await page
+      .getByRole("button", { name: "Search YouTube collection" })
+      .click();
+    await expect(page.locator(".yt-card")).toHaveCount(1);
+    const timeline = page.url();
+    const link = page.getByRole("link", { name: first.title, exact: true });
+    const destination = new URL(
+      (await link.getAttribute("href")) ?? "",
+      page.url(),
+    );
+    expect(destination.searchParams.get("feed")).toBe(home);
+    expect(destination.searchParams.get("format")).toBe("video");
+    expect(destination.searchParams.get("q")).toBe("cities");
+    await link.click();
+    await expect(
+      page.getByRole("heading", { name: "How it found you" }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "How it found you" }),
+    ).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(timeline);
+    await expect(search).toHaveValue("cities");
+    await expect(
+      page.getByRole("button", { name: "Videos", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page.goForward();
+    await page
+      .getByRole("button", { name: "Back to recommendations", exact: true })
+      .click();
+    await expect(page).toHaveURL(timeline);
+    await expect(page.locator(".yt-card")).toHaveCount(1);
+    await noOverflow(page);
+    expect(
+      (
+        await new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+          .analyze()
+      ).violations,
+    ).toEqual([]);
+  });
+}
+
+test("configured recommendations remain selectable before their first capture", async ({
+  page,
+}) => {
+  await recommendationsFixture(page, true);
+  await page.goto("/reader/?view=youtube");
+  await page
+    .getByRole("button", { name: "Recommendations, 0 discoveries" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Recommendations", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Your recommendations will appear here",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Choose Refresh to collect videos, Shorts and community posts from your YouTube homepage.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Refresh YouTube recommendations",
+      exact: true,
+    }),
+  ).toBeEnabled();
+});
+
 test("nested YouTube groups remember independent expansion choices", async ({
   page,
 }) => {

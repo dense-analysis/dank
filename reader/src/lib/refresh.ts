@@ -71,7 +71,10 @@ export function refreshContext(params: URLSearchParams) {
       label = "this YouTube channel";
     } else if (feed) {
       scope.feed_id = feed;
-      label = "this YouTube feed";
+      label =
+        feed === "https://www.youtube.com/"
+          ? "YouTube recommendations"
+          : "this YouTube feed";
     }
 
     if (feed === "linked" && !channel) {

@@ -87,6 +87,23 @@ describe("contextual collection scope", () => {
     ).toEqual({ kind: "reddit", community: "LocalLLaMA" });
   });
 
+  it("refreshes recommendations independently of saved format and search filters", () => {
+    expect(
+      refreshContext(
+        new URLSearchParams({
+          view: "youtube",
+          feed: "https://www.youtube.com/",
+          format: "short",
+          q: "science",
+        }),
+      ),
+    ).toEqual({
+      scope: { kind: "youtube", feed_id: "https://www.youtube.com/" },
+      label: "YouTube recommendations",
+      disabled: undefined,
+    });
+  });
+
   it("explains unavailable derived feeds without collecting every source", () => {
     expect(
       refreshContext(new URLSearchParams("view=youtube&feed=linked")),

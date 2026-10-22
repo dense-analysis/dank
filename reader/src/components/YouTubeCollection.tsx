@@ -73,6 +73,7 @@ export function YouTubeCollection({
     (channel) => channel.id === filters.channel,
   );
   const linked = filters.feed === "linked";
+  const recommendations = activeFeed?.kind === "home";
   const groupKind =
     activeFeed?.kind === "news" || activeFeed?.kind === "hype"
       ? activeFeed.kind
@@ -82,7 +83,7 @@ export function YouTubeCollection({
   const title = linked
     ? "From your feeds"
     : activeChannel?.name ||
-      activeFeed?.name ||
+      (recommendations ? youtubeFeedLabel(activeFeed) : activeFeed?.name) ||
       (scoped ? "Collected feed" : "Collected recommendations");
   const query = useInfiniteQuery({
     queryKey: ["youtube", filters],
@@ -602,14 +603,18 @@ export function YouTubeCollection({
               ? "No matching discoveries"
               : linked
                 ? "Your feeds haven't linked a video yet"
-                : "Your next discovery starts here"}
+                : recommendations
+                  ? "Your recommendations will appear here"
+                  : "Your next discovery starts here"}
           </h2>
           <p>
             {filters.q || filters.kind
               ? "Try another search or choose All to see every format."
               : linked
                 ? "YouTube links in collected posts will appear here, with their original sources attached."
-                : "Run YouTube collection to save recommendations from Hype, News and your chosen channels."}
+                : recommendations
+                  ? "Choose Refresh to collect videos, Shorts and community posts from your YouTube homepage."
+                  : "Run YouTube collection to save recommendations from your homepage, Hype, News and your chosen channels."}
           </p>
           {(filters.q || filters.kind) && (
             <button

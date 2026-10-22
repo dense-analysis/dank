@@ -16,6 +16,7 @@ const newsLabels: Record<string, string> = {
 };
 
 export function youtubeFeedLabel(feed: YouTubeFeed) {
+  if (feed.kind === "home") return "Recommendations";
   if (feed.kind === "news")
     return newsLabels[feed.tab] ?? feed.name.replace(/^News\s*[·-]\s*/, "");
   if (feed.kind === "hype") {

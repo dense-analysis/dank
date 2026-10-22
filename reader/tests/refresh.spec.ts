@@ -448,6 +448,29 @@ for (const [url, scope] of [
   });
 }
 
+test("recommendations refresh collects the whole homepage while retaining reader filters", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  const params = new URLSearchParams({
+    view: "youtube",
+    feed: "https://www.youtube.com/",
+    format: "short",
+    q: "science",
+  });
+  await page.goto(`/reader/?${params}`);
+  const refresh = page.getByRole("button", {
+    name: "Refresh YouTube recommendations",
+    exact: true,
+  });
+  await refresh.click();
+  await expect
+    .poll(() => state.requests)
+    .toEqual([{ kind: "youtube", feed_id: "https://www.youtube.com/" }]);
+  expect(new URL(page.url()).searchParams.toString()).toBe(params.toString());
+  await expect(refresh).toBeDisabled();
+});
+
 test("collapsed progress announces completion and offers updates", async ({
   page,
 }) => {

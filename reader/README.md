@@ -343,8 +343,12 @@ See [Hacker News collection settings](../docs/features/hacker-news.md).
 
 ## YouTube
 
-**YouTube** saves the context of discovery: Hype rankings, News topics, channel
-feeds, Shorts and community posts. Its expandable sidebar groups **News** by
+**YouTube** saves the context of discovery: homepage recommendations, Hype
+rankings, News topics, channel feeds, Shorts and community posts.
+**Recommendations** collects your configured YouTube homepage, including videos,
+Shorts and community posts. Choose **Refresh** to collect the homepage again;
+search and Videos / Shorts / Posts filters only change the saved results you see.
+Its expandable sidebar groups **News** by
 Top stories, Business and World, **Hyped** by country, and **Channel Feeds** by
 channel. News opens Top stories; Hyped opens the UK feed when configured.
 Topic and country tabs, search, and Videos / Shorts / Posts filters stay in the URL.

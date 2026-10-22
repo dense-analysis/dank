@@ -78,6 +78,7 @@ import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
 import { isXPost } from "./lib/x";
 import { fetchYouTubeSources } from "./lib/youtubeCollection";
+import { youtubeFeedLabel } from "./lib/youtubeNavigation";
 
 export function App() {
   const { params, navigate, backTo, backToConnection, positionError } =
@@ -238,7 +239,9 @@ export function App() {
         ? "News"
         : activeYouTubeFeed?.kind === "hype"
           ? "Hyped"
-          : activeYouTubeFeed?.name || "YouTube";
+          : activeYouTubeFeed
+            ? youtubeFeedLabel(activeYouTubeFeed)
+            : "YouTube";
   const collectionContext =
     accountContext || communityContext || youtubeContext || blogContext;
   const visibleSources = sourcesForFeed(allSources, filters.kind).filter(
