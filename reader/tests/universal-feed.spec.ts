@@ -188,9 +188,9 @@ const sources: (Source & { configured: boolean })[] = [
 ];
 
 function platform(post: MixedPost) {
-  if (post.id === discovered.id) return "hacker_news";
-
-  return post.source === "rss" ? "stories" : post.source;
+  return post.source === "rss" || post.source === "hacker_news"
+    ? "stories"
+    : post.source;
 }
 
 async function fixture(page: Page) {
@@ -275,7 +275,7 @@ async function fixture(page: Page) {
     const selectedPlatforms = params.getAll("platform");
     const kind = params.get("kind") ?? "all";
     const selected = posts.filter((post) => {
-      if (kind === "stories" && post.domain !== blog.domain) return false;
+      if (kind === "stories" && platform(post) !== "stories") return false;
       if (kind !== "all" && kind !== "stories" && post.source !== kind)
         return false;
       if (
@@ -326,14 +326,12 @@ test("quick platform filters combine with OR, preserve other filters and reset i
     filters.getByRole("button", { name: "All sources", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await filters.getByRole("button", { name: "Reddit", exact: true }).click();
-  await filters
-    .getByRole("button", { name: "Hacker News", exact: true })
-    .click();
-  await expectPlatforms(page, ["reddit", "hacker_news"]);
+  await filters.getByRole("button", { name: "Blogs", exact: true }).click();
+  await expectPlatforms(page, ["reddit", "stories"]);
   await expect(story(page, reddit)).toBeVisible();
   await expect(story(page, hackerNews)).toBeVisible();
   await expect(story(page, discovered)).toBeVisible();
-  await expect(story(page, blog)).toHaveCount(0);
+  await expect(story(page, blog)).toBeVisible();
   await expect(
     page.getByRole("button", { name: `Play ${video.title}`, exact: true }),
   ).toHaveCount(0);
@@ -347,14 +345,14 @@ test("quick platform filters combine with OR, preserve other filters and reset i
       requests.some(
         (url) =>
           url.pathname.endsWith("/posts") &&
-          ["reddit", "hacker_news"].every((value) =>
+          ["reddit", "stories"].every((value) =>
             url.searchParams.getAll("platform").includes(value),
           ),
       ),
     )
     .toBe(true);
   await filters.getByRole("button", { name: "Reddit", exact: true }).click();
-  await expectPlatforms(page, ["hacker_news"]);
+  await expectPlatforms(page, ["stories"]);
   await expect(story(page, reddit)).toHaveCount(0);
   await filters
     .getByRole("button", { name: "All sources", exact: true })
@@ -370,9 +368,7 @@ test("platform choices survive search, article return and reload, then clear on 
   page,
 }) => {
   await fixture(page);
-  await page.goto(
-    "/reader/?platform=reddit&platform=hacker_news&after=2026-10-01",
-  );
+  await page.goto("/reader/?platform=reddit&platform=stories&after=2026-10-01");
   await page
     .getByRole("textbox", { name: "Search everything", exact: true })
     .fill("analysis");
@@ -380,7 +376,7 @@ test("platform choices survive search, article return and reload, then clear on 
   await page
     .getByRole("combobox", { name: "Order stories" })
     .selectOption("oldest");
-  await expectPlatforms(page, ["reddit", "hacker_news"]);
+  await expectPlatforms(page, ["reddit", "stories"]);
   const before = page.url();
   const primary = story(page, discovered);
   await expect(primary).toHaveAttribute("href", /platform=/);
@@ -388,7 +384,7 @@ test("platform choices survive search, article return and reload, then clear on 
   await expect(
     page.getByRole("main", { name: "Article reader" }),
   ).toBeVisible();
-  await expectPlatforms(page, ["reddit", "hacker_news"]);
+  await expectPlatforms(page, ["reddit", "stories"]);
   await page
     .getByRole("button", { name: "Back to stories", exact: true })
     .click();
@@ -399,7 +395,7 @@ test("platform choices survive search, article return and reload, then clear on 
     chips(page).getByRole("button", { name: "Reddit", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
-    chips(page).getByRole("button", { name: "Hacker News", exact: true }),
+    chips(page).getByRole("button", { name: "Blogs", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await page
     .getByRole("navigation", { name: "Main navigation" })
@@ -408,48 +404,54 @@ test("platform choices survive search, article return and reload, then clear on 
   await expectPlatforms(page, []);
   await expect(chips(page)).toHaveCount(0);
   await expect(story(page, blog)).toBeVisible();
-  await expect(story(page, discovered)).toHaveCount(0);
+  await expect(story(page, discovered)).toBeVisible();
+  await expect(story(page, hackerNews)).toBeVisible();
   await page.getByRole("button", { name: /^Filters/ }).click();
   const source = page.getByRole("combobox", { name: "Source", exact: true });
   await expect(source.locator("option")).toHaveText([
     "All sources",
     "Followed Blog",
+    "Discovered Publisher",
+    "Hacker News",
   ]);
 });
 
-test("Blogs quick filter is limited to followed publishers while All retains discovered articles", async ({
+test("Blogs quick filter includes configured blogs, discovered articles and Hacker News", async ({
   page,
 }) => {
   await fixture(page);
   await page.goto("/reader/");
   await expect(story(page, discovered)).toBeVisible();
+  await expect(
+    chips(page).getByRole("button", { name: "Hacker News", exact: true }),
+  ).toHaveCount(0);
   const blogs = chips(page).getByRole("button", { name: "Blogs", exact: true });
   await blogs.focus();
   await page.keyboard.press("Space");
   await expectPlatforms(page, ["stories"]);
   await expect(blogs).toHaveAttribute("aria-pressed", "true");
   await expect(story(page, blog)).toBeVisible();
-  await expect(story(page, discovered)).toHaveCount(0);
+  await expect(story(page, discovered)).toBeVisible();
+  await expect(story(page, hackerNews)).toBeVisible();
+  await expect(story(page, reddit)).toHaveCount(0);
   await page.keyboard.press("Space");
   await expectPlatforms(page, []);
   await expect(story(page, discovered)).toBeVisible();
 });
 
-test("discovered publisher source links open a useful All view in normal and new-tab navigation", async ({
+test("discovered publisher source links open a filtered Blogs view in normal and new-tab navigation", async ({
   page,
   context,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?platform=hacker_news");
+  await page.goto("/reader/?platform=stories");
   const card = page
     .locator(".post-card")
     .filter({ has: story(page, discovered) });
   const source = card.locator(".source-link");
   const href = await source.getAttribute("href");
   if (!href) throw new Error("Missing source destination");
-  expect(new URL(href, page.url()).searchParams.get("view")).not.toBe(
-    "stories",
-  );
+  expect(new URL(href, page.url()).searchParams.get("view")).toBe("stories");
   const initial = page.url();
   const [tab] = await Promise.all([
     context.waitForEvent("page"),
@@ -533,14 +535,7 @@ for (const width of [320, 390, 1440]) {
     await page.goto("/reader/");
     const filters = chips(page);
 
-    for (const name of [
-      "All sources",
-      "X",
-      "Reddit",
-      "Hacker News",
-      "YouTube",
-      "Blogs",
-    ]) {
+    for (const name of ["All sources", "X", "Reddit", "YouTube", "Blogs"]) {
       const button = filters.getByRole("button", { name, exact: true });
       await button.scrollIntoViewIfNeeded();
       await expect(button).toBeInViewport();

@@ -606,7 +606,9 @@ test("Show updates opens its completed collection without reloading an unrelated
   state.postsByKind.stories = [{ ...blog, title: "Previously collected blog" }];
   await page.goto("/reader/?view=stories");
   await page.locator(".topbar .refresh-button").click();
-  await page.getByRole("button", { name: "Hacker News", exact: true }).click();
+  await page
+    .getByRole("button", { name: /^Hacker News, \d+ collected posts$/ })
+    .click();
   await expect(page).toHaveURL(/view=hacker_news/);
   state.postsByKind.stories = [blog];
   state.jobs[0] = {

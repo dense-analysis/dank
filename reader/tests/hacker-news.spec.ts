@@ -113,15 +113,20 @@ for (const width of [390, 1280]) {
     const navigation = page.getByRole("navigation", {
       name: "Main navigation",
     });
+
+    if (width < 600) {
+      await navigation
+        .getByRole("button", { name: "Expand Blog feeds" })
+        .click();
+      await navigation
+        .getByRole("button", { name: "Expand Blog Source Feeds" })
+        .click();
+    }
+
     const entry = navigation.getByRole("button", {
-      name: "Hacker News",
-      exact: true,
+      name: /^Hacker News, \d+ collected posts$/,
     });
-    await expect(entry.locator("svg")).toHaveAttribute(
-      "stroke",
-      "currentColor",
-    );
-    await expect(entry.locator('[fill="#ff6600"]')).toHaveCount(0);
+    await expect(page.locator("#blog-sources")).toContainText("Hacker News");
     await entry.click();
     await expect(page).toHaveURL(/view=hacker_news/);
     const selection = page.getByRole("group", {
