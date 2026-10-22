@@ -56,7 +56,11 @@ export function FeedToolbar({
           : filters.domains.length === 1
             ? `Search ${filters.domains[0]}`
             : filters.kind === "stories"
-              ? "Search blogs"
+              ? filters.blogFeed === "external"
+                ? "Search external articles"
+                : filters.blogFeed === "sources"
+                  ? "Search source feeds"
+                  : "Search blogs"
               : "Search everything";
   const activeCount =
     filters.domains.length +

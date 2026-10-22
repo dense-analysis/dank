@@ -59,9 +59,11 @@ function invalidResponse(): never {
   );
 }
 
-export async function fetchSources(
-  signal?: AbortSignal,
-): Promise<{ sources: Source[]; total_posts: number }> {
+export async function fetchSources(signal?: AbortSignal): Promise<{
+  sources: Source[];
+  total_posts: number;
+  blog_external_count?: number;
+}> {
   const body = await request("/sources", signal);
   if (
     !isRecord(body) ||
@@ -69,12 +71,20 @@ export async function fetchSources(
     !body.sources.every(isSource) ||
     typeof body.total_posts !== "number" ||
     !Number.isSafeInteger(body.total_posts) ||
-    body.total_posts < 0
+    body.total_posts < 0 ||
+    (body.blog_external_count !== undefined &&
+      (typeof body.blog_external_count !== "number" ||
+        !Number.isSafeInteger(body.blog_external_count) ||
+        body.blog_external_count < 0))
   ) {
     return invalidResponse();
   }
 
-  return { sources: body.sources, total_posts: body.total_posts };
+  return {
+    sources: body.sources,
+    total_posts: body.total_posts,
+    blog_external_count: body.blog_external_count as number | undefined,
+  };
 }
 
 export async function fetchPosts(

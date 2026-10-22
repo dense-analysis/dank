@@ -142,7 +142,7 @@ presentation. This does not fetch articles or change where Reddit cards open.
 
 **All** combines followed blogs, discovered articles, X posts, Reddit discussions,
 Hacker News and YouTube. Sticky quick filters select any combination of **X**,
-**Reddit**, **Hacker News**, **YouTube** and **Blogs**; **All sources** clears that
+**Reddit**, **YouTube** and **Blogs** (including Hacker News); **All sources** clears that
 selection. Selected platforms match any of them and combine with the existing
 search, source, author and date filters. Selections stay in the URL through
 opening an item and returning to the feed. Videos and Shorts show their saved
@@ -164,14 +164,19 @@ not inferred topic or semantic relationships.
 Collected linked articles show their publication date when available
 and explicitly label missing dates. Hacker News keeps its own daily listing and discussions.
 
-**Blogs** shows articles only from blog domains in the configured `sources` list.
-Publishers discovered through Hacker News stay in All, including when its
-**Hacker News** quick filter is selected. Selecting a discovered publisher opens
-its articles within All. **X** and **Reddit** each have their own feed and expandable
-sidebar list. Search, source filters and dates apply within the selected view.
+**Blogs** combines followed source feeds and discovered articles. Expand it to
+choose **Source Feeds** for configured blogs and aggregators, or **From external**
+for saved articles linked from your feeds, including X and Reddit. Select an
+individual source such as github.blog to browse only its posts. An article can
+appear in both groups when you follow its publisher and it was also shared.
+Source entries use locally cached favicons, with initials when an icon is unavailable.
+Icons are captured on first display without re-collecting article content.
+**Hacker News** lives under Source Feeds and keeps its daily ranked view and discussions.
+**X** and **Reddit** each have their own feed and expandable sidebar list.
+Search, source filters and dates apply within the selected view.
 
 Sidebar groups remember whether you expanded or collapsed them in this browser,
-including YouTube's nested lists, across navigation and page refreshes.
+including the nested Blogs and YouTube lists, across navigation and page refreshes.
 On phones, groups start collapsed except for the active feed. Navigation stays
 within reach while scrolling; tap outside the drawer to close it. Saved group
 choices still take precedence.

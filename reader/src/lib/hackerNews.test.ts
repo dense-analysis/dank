@@ -89,7 +89,7 @@ it("defaults absent and invalid selections to Top 50% and drops HN-only filters 
   ).toBe(false);
 });
 
-it("identifies Hacker News separately from blogs, including older source responses", () => {
+it("includes Hacker News in Blogs while preserving its dedicated view", () => {
   const source = {
     domain: "news.ycombinator.com",
     name: "Hacker News",
@@ -98,7 +98,7 @@ it("identifies Hacker News separately from blogs, including older source respons
   };
   expect(sourceKind(source.domain)).toBe("hacker_news");
   expect(sourceKind("www.hckrnews.com")).toBe("hacker_news");
-  expect(sourcesForFeed([source], "stories")).toEqual([]);
+  expect(sourcesForFeed([source], "stories")).toEqual([source]);
   expect(sourcesForFeed([source], "hacker_news")).toEqual([source]);
   expect(isSource({ ...source, kind: "hacker_news" })).toBe(true);
 });

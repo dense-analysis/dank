@@ -229,3 +229,30 @@ it("keeps combined platform filters through search and article URLs, but scopes 
     false,
   );
 });
+
+it.each(["sources", "external"] as const)(
+  "preserves the %s blog feed through search and article navigation",
+  (blogFeed) => {
+    const filters: Filters = {
+      ...defaultFilters,
+      kind: "stories",
+      blogFeed,
+      domains: ["github.blog"],
+      q: "security",
+      sort: "relevance",
+      after: "2026-10-01",
+    };
+    const params = filterParams(filters);
+    expect(params.get("blog_feed")).toBe(blogFeed);
+    expect(
+      parseFilters(articleParams(params, { domain: "github.blog", id: "one" })),
+    ).toEqual(filters);
+    expect(filterParams({ ...filters, kind: "reddit" }).has("blog_feed")).toBe(
+      false,
+    );
+    expect(
+      parseFilters(new URLSearchParams(`view=reddit&blog_feed=${blogFeed}`))
+        .blogFeed,
+    ).toBe("");
+  },
+);

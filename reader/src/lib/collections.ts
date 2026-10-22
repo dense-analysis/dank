@@ -41,11 +41,8 @@ export function sourceKind(domain: string): Exclude<FeedKind, "all"> {
   }
 }
 
-export function sourceFeedKind(domain: string, sources: Source[]): FeedKind {
-  const kind = sourceKind(domain);
-  const source = sources.find((item) => item.domain === domain);
-
-  return kind === "stories" && source?.configured === false ? "all" : kind;
+export function sourceFeedKind(domain: string): FeedKind {
+  return sourceKind(domain);
 }
 
 export function sourcesForFeed(sources: Source[], kind: FeedKind): Source[] {
@@ -54,8 +51,11 @@ export function sourcesForFeed(sources: Source[], kind: FeedKind): Source[] {
 
     return (
       kind === "all" ||
-      ((collection ?? sourceKind(source.domain)) === kind &&
-        (kind !== "stories" || source.configured !== false))
+      (kind === "stories"
+        ? ["stories", "hacker_news"].includes(
+            collection ?? sourceKind(source.domain),
+          )
+        : (collection ?? sourceKind(source.domain)) === kind)
     );
   });
 }

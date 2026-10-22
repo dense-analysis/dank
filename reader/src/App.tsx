@@ -182,7 +182,21 @@ export function App() {
   );
   const readKeys = new Set(read);
   const allSources = sources.data?.sources ?? [];
-  const hackerNewsSources = sourcesForFeed(allSources, "hacker_news");
+  const blogSources = sourcesForFeed(allSources, "stories").filter(
+    (source) => source.configured !== false,
+  );
+  const activeBlogSource =
+    section === "stories" && filters.domains.length === 1
+      ? allSources.find((source) => source.domain === filters.domains[0])
+      : undefined;
+  const blogContext =
+    section === "hacker_news" ||
+    (section === "stories" && (!!filters.blogFeed || !!activeBlogSource));
+  const blogTitle =
+    filters.blogFeed === "external"
+      ? "From external"
+      : activeBlogSource?.name ||
+        (filters.blogFeed === "sources" ? "Source Feeds" : "Blogs");
   const redditSources = sourcesForFeed(allSources, "reddit");
   const xSources = sourcesForFeed(allSources, "x");
   const accounts = collectedAccounts(xSources);
@@ -223,8 +237,10 @@ export function App() {
           ? "Hyped"
           : activeYouTubeFeed?.name || "YouTube";
   const collectionContext =
-    accountContext || communityContext || youtubeContext;
-  const visibleSources = sourcesForFeed(allSources, filters.kind);
+    accountContext || communityContext || youtubeContext || blogContext;
+  const visibleSources = sourcesForFeed(allSources, filters.kind).filter(
+    (source) => filters.blogFeed !== "sources" || source.configured !== false,
+  );
   const title =
     section === "youtube"
       ? youtubeTitle
@@ -238,7 +254,9 @@ export function App() {
               ? accountHasName
                 ? accountName
                 : `@${accountHandle}`
-              : feedLabels[filters.kind];
+              : section === "stories"
+                ? blogTitle
+                : feedLabels[filters.kind];
   const overviewPlatform =
     !accountContext &&
     !communityContext &&
@@ -332,7 +350,7 @@ export function App() {
     if (next) navigate(next, false, params.toString());
   }
   function selectSource(domain: string) {
-    select(sourceFeedKind(domain, allSources), {
+    select(sourceFeedKind(domain), {
       ...defaultFilters,
       domains: [domain],
     });
@@ -342,6 +360,13 @@ export function App() {
   }
   function selectAccount(account: string) {
     select("x", { ...defaultFilters, account });
+  }
+  function selectBlog(selection: string) {
+    if (selection.startsWith("source:")) {
+      selectSource(selection.slice(7));
+    } else if (selection === "external" || selection === "sources") {
+      select("stories", { ...defaultFilters, blogFeed: selection });
+    }
   }
   function selectFlair(community: string, flair: string) {
     select("reddit", { ...defaultFilters, community, flairs: [flair] });
@@ -365,7 +390,18 @@ export function App() {
     <Sidebar
       section={section}
       select={select}
-      hackerNewsEnabled={hackerNewsSources.length > 0}
+      blogSources={blogSources}
+      blogExternalCount={sources.data?.blog_external_count ?? 0}
+      blogSelection={
+        section === "hacker_news"
+          ? "source:news.ycombinator.com"
+          : section === "stories"
+            ? filters.domains.length === 1
+              ? `source:${filters.domains[0]}`
+              : filters.blogFeed
+            : ""
+      }
+      selectBlog={selectBlog}
       redditEnabled={redditSources.length > 0}
       communities={communities}
       community={filters.community}
@@ -457,20 +493,28 @@ export function App() {
           back={
             collectionContext
               ? {
-                  label: `Back to ${accountContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
+                  label: `Back to ${blogContext ? "Blogs" : accountContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
                   onClick: () =>
                     select(
-                      accountContext
-                        ? "x"
-                        : communityContext
-                          ? "reddit"
-                          : "youtube",
+                      blogContext
+                        ? "stories"
+                        : accountContext
+                          ? "x"
+                          : communityContext
+                            ? "reddit"
+                            : "youtube",
                     ),
                 }
               : undefined
           }
           avatar={
-            accountContext ? (
+            activeBlogSource ? (
+              <IdentityAvatar
+                name={activeBlogSource.name}
+                iconUrl={activeBlogSource.icon_url}
+                kind="source"
+              />
+            ) : accountContext ? (
               <IdentityAvatar
                 name={accountName}
                 iconUrl={activeAccount?.icon_url}
@@ -495,7 +539,9 @@ export function App() {
             accountContext && accountHasName ? `@${accountHandle}` : undefined
           }
           count={
-            accountContext && activeAccount ? (
+            activeBlogSource ? (
+              <CollectionCount count={activeBlogSource.count} />
+            ) : accountContext && activeAccount ? (
               <CollectionCount
                 count={activeAccount.count}
                 total={activeAccount.total_posts}
@@ -557,7 +603,7 @@ export function App() {
                 onExploreTarget={exploreTarget}
               />
             )}
-            sourceFeed={sourceFeedKind(articleDomain, allSources)}
+            sourceFeed={sourceFeedKind(articleDomain)}
             selectSource={selectSource}
             markRead={markRead}
             filters={filters}
@@ -660,7 +706,11 @@ export function App() {
                   {(section === "all" || section === "stories") && (
                     <p className="feed-description">
                       {section === "stories"
-                        ? "Articles from the blogs you follow."
+                        ? filters.blogFeed === "external"
+                          ? "Articles linked from your feeds, including X and Reddit."
+                          : filters.blogFeed === "sources" || activeBlogSource
+                            ? "Posts from the source feeds you follow."
+                            : "Your source feeds and discovered articles, together."
                         : "Your followed sources and discoveries, together."}
                     </p>
                   )}
@@ -798,7 +848,7 @@ export function App() {
                           />
                         ) : (
                           <PostCard
-                            sourceFeed={sourceFeedKind(post.domain, allSources)}
+                            sourceFeed={sourceFeedKind(post.domain)}
                             key={postKey(post)}
                             post={post}
                             links={

@@ -1,7 +1,8 @@
-import { Layers3, Newspaper, Rss, Settings2, X } from "lucide-react";
+import { Layers3, Rss, Settings2, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import type { RedditCommunity, Section, XAccount } from "../lib/types";
+import type { RedditCommunity, Section, Source, XAccount } from "../lib/types";
 import type { YouTubeSources } from "../lib/youtubeCollection";
+import { BlogNavigation } from "./BlogNavigation";
 import { CollectionNavGroup } from "./CollectionNavGroup";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { IdentityAvatar } from "./IdentityAvatar";
@@ -11,7 +12,10 @@ import { YouTubeNavigation } from "./YouTubeNavigation";
 export function Sidebar({
   section,
   select,
-  hackerNewsEnabled,
+  blogSources,
+  blogExternalCount,
+  blogSelection,
+  selectBlog,
   redditEnabled,
   communities,
   community,
@@ -28,7 +32,10 @@ export function Sidebar({
 }: {
   section: Section;
   select: (section: Section) => void;
-  hackerNewsEnabled: boolean;
+  blogSources: Source[];
+  blogExternalCount: number;
+  blogSelection: string;
+  selectBlog: (selection: string) => void;
   redditEnabled: boolean;
   communities: RedditCommunity[];
   community: string;
@@ -81,14 +88,14 @@ export function Sidebar({
         >
           <Layers3 size={19} /> All <span className="active-dot" />
         </button>
-        <button
-          type="button"
-          className={`nav-item ${section === "stories" ? "active" : ""}`}
-          aria-current={section === "stories" ? "page" : undefined}
-          onClick={() => select("stories")}
-        >
-          <Newspaper size={19} /> Blogs
-        </button>
+        <BlogNavigation
+          sources={blogSources}
+          externalCount={blogExternalCount}
+          active={section === "stories" || section === "hacker_news"}
+          selected={blogSelection}
+          select={() => select("stories")}
+          selectItem={selectBlog}
+        />
         {xEnabled && (
           <CollectionNavGroup
             id="x-accounts"
@@ -147,16 +154,6 @@ export function Sidebar({
               ),
             }))}
           />
-        )}
-        {hackerNewsEnabled && (
-          <button
-            type="button"
-            className={`nav-item ${section === "hacker_news" ? "active" : ""}`}
-            aria-current={section === "hacker_news" ? "page" : undefined}
-            onClick={() => select("hacker_news")}
-          >
-            <PlatformIcon platform="hacker_news" monochrome /> Hacker News
-          </button>
         )}
         <YouTubeNavigation
           sources={youtubeSources}

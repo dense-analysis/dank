@@ -3,13 +3,7 @@ import { feedLabels } from "../lib/collections";
 import type { FeedPlatform, Filters } from "../lib/types";
 import { PlatformIcon } from "./PlatformIcon";
 
-const platforms: FeedPlatform[] = [
-  "x",
-  "reddit",
-  "hacker_news",
-  "youtube",
-  "stories",
-];
+const platforms: FeedPlatform[] = ["x", "reddit", "youtube", "stories"];
 
 export function PlatformFilters({
   filters,

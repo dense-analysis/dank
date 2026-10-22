@@ -12,6 +12,7 @@ export type RefreshPlatform =
 
 export interface RefreshScope {
   kind: "all" | "rss" | "reddit" | "x" | "hacker_news" | "youtube" | "post";
+  blog_feed?: "sources" | "external";
   platforms?: RefreshPlatform[];
   domains?: string[];
   tags?: string[];
@@ -90,6 +91,14 @@ export function refreshContext(params: URLSearchParams) {
       hacker_news: "Hacker News",
     }[section];
 
+    if (section === "stories" && filters.blogFeed) {
+      scope.blog_feed = filters.blogFeed;
+      label =
+        filters.blogFeed === "external"
+          ? "external article sources"
+          : "source feeds";
+    }
+
     if (section === "all" && filters.platforms.length) {
       scope.platforms = filters.platforms
         .map((platform) => (platform === "stories" ? "rss" : platform))
@@ -159,6 +168,8 @@ export function refreshDestination(scope: RefreshScope): URLSearchParams {
   if (scope.kind !== "all") {
     params.set("view", scope.kind === "rss" ? "stories" : scope.kind);
   }
+  if (scope.kind === "rss" && scope.blog_feed)
+    params.set("blog_feed", scope.blog_feed);
 
   for (const platform of scope.platforms ?? []) {
     params.append("platform", platform === "rss" ? "stories" : platform);
@@ -177,6 +188,7 @@ export function refreshDestination(scope: RefreshScope): URLSearchParams {
 export function refreshScopeKey(scope: RefreshScope): string {
   return JSON.stringify([
     scope.kind,
+    scope.blog_feed ?? "",
     [...(scope.platforms ?? [])].sort(),
     [...(scope.domains ?? [])].sort(),
     [...(scope.tags ?? [])].sort(),
@@ -199,6 +211,9 @@ function isScope(value: unknown): value is RefreshScope {
     ["all", "rss", "reddit", "x", "hacker_news", "youtube", "post"].includes(
       String(value.kind),
     ) &&
+    (value.blog_feed === undefined ||
+      (value.kind === "rss" &&
+        ["sources", "external"].includes(String(value.blog_feed)))) &&
     (value.platforms === undefined ||
       (value.kind === "all" &&
         isStringArray(value.platforms) &&

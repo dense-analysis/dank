@@ -66,7 +66,7 @@ it("keeps source filter choices scoped to each collection, including older sourc
   ]);
 });
 
-it("keeps discovered publishers in All while Blogs only offers followed publishers", () => {
+it("includes followed and discovered publishers in Blogs", () => {
   const followed: Source = {
     domain: "followed.test",
     name: "Followed",
@@ -83,7 +83,10 @@ it("keeps discovered publishers in All while Blogs only offers followed publishe
     tags: [],
     count: 3,
   };
-  expect(sourcesForFeed([followed, discovered], "stories")).toEqual([followed]);
+  expect(sourcesForFeed([followed, discovered], "stories")).toEqual([
+    followed,
+    discovered,
+  ]);
   expect(sourcesForFeed([followed, discovered], "all")).toEqual([
     followed,
     discovered,

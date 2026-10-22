@@ -1994,6 +1994,16 @@ input[type="checkbox"] {
   height: 100%;
   object-fit: cover;
 }
+.source-avatar {
+  border-radius: 4px;
+}
+.source-avatar img {
+  object-fit: contain;
+}
+#blog-feeds {
+  max-height: none;
+  overflow: visible;
+}
 .collection-item .identity-avatar {
   width: 20px;
   height: 20px;

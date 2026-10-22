@@ -3,6 +3,7 @@ import { isRecord } from "./validation";
 
 export const defaultFilters: Filters = {
   kind: "all",
+  blogFeed: "",
   platforms: [],
   hnFilter: "top50",
   xView: "posts",

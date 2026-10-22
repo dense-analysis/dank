@@ -464,6 +464,7 @@ function isXPost(
 export function isSource(value: unknown): value is Source {
   return (
     isRecord(value) &&
+    isOptionalIcon(value.icon_url) &&
     (value.configured === undefined || typeof value.configured === "boolean") &&
     typeof value.domain === "string" &&
     typeof value.name === "string" &&

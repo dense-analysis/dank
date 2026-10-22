@@ -258,3 +258,21 @@ describe("refresh result destinations", () => {
     expect(refreshDestination(scope).toString()).toBe(expected);
   });
 });
+
+it.each(["sources", "external"] as const)(
+  "keeps the %s blog refresh scoped and returns to its view",
+  (blogFeed) => {
+    const params = new URLSearchParams({
+      view: "stories",
+      blog_feed: blogFeed,
+    });
+    const scope: RefreshScope = { kind: "rss", blog_feed: blogFeed };
+    expect(refreshContext(params)?.scope).toEqual(scope);
+    expect(refreshDestination(scope).toString()).toBe(params.toString());
+    expect(refreshScopeKey(scope)).not.toBe(refreshScopeKey({ kind: "rss" }));
+    expect(isRefreshJob({ ...job, scope })).toBe(true);
+    expect(
+      isRefreshJob({ ...job, scope: { kind: "reddit", blog_feed: blogFeed } }),
+    ).toBe(false);
+  },
+);

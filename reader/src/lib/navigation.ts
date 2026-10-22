@@ -61,6 +61,11 @@ export function parseFilters(params: URLSearchParams): Filters {
   return {
     ...defaultFilters,
     kind,
+    blogFeed:
+      kind === "stories" &&
+      ["sources", "external"].includes(params.get("blog_feed") ?? "")
+        ? (params.get("blog_feed") as "sources" | "external")
+        : "",
     platforms:
       kind === "all" && section === "all"
         ? selections(params, "platform").filter(
@@ -110,6 +115,8 @@ export function filterParams(filters: Filters): URLSearchParams {
     }
   }
   if (filters.kind !== "all") params.set("view", filters.kind);
+  if (filters.kind === "stories" && filters.blogFeed)
+    params.set("blog_feed", filters.blogFeed);
   if (filters.kind === "x" && filters.xView === "replies")
     params.set("x_view", "replies");
   if (filters.kind === "hacker_news") params.set("hn_filter", filters.hnFilter);

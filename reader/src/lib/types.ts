@@ -141,6 +141,7 @@ export interface Post {
 
 export interface Source {
   configured?: boolean;
+  icon_url?: string | null;
   kind?: "rss" | "x" | "reddit" | "youtube" | "hacker_news";
   accounts?: XAccount[];
   communities?: RedditCommunity[];
@@ -280,6 +281,7 @@ export type Section = FeedKind | "sources" | "settings";
 
 export interface Filters {
   kind: FeedKind;
+  blogFeed: "" | "sources" | "external";
   platforms: FeedPlatform[];
   hnFilter: HackerNewsFilter;
   xView: "posts" | "replies";

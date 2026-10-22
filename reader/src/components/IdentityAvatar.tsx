@@ -7,7 +7,8 @@ function imageUrl(iconUrl: string | null | undefined, allowXImage: boolean) {
     const url = new URL(iconUrl, window.location.origin);
     const local =
       url.origin === window.location.origin &&
-      url.pathname.startsWith("/assets/");
+      (url.pathname.startsWith("/assets/") ||
+        url.pathname === "/api/reader/source-icon");
     const profile =
       allowXImage &&
       url.protocol === "https:" &&
@@ -31,7 +32,7 @@ export function IdentityAvatar({
 }: {
   name: string;
   iconUrl?: string | null;
-  kind: "community" | "account" | "channel";
+  kind: "community" | "account" | "channel" | "source";
 }) {
   const [failedUrl, setFailedUrl] = useState<string>();
   const src = imageUrl(iconUrl, kind === "account");
@@ -45,6 +46,7 @@ export function IdentityAvatar({
         <img
           src={src}
           alt=""
+          loading={kind === "source" ? "lazy" : undefined}
           referrerPolicy="no-referrer"
           onError={() => setFailedUrl(src)}
         />
