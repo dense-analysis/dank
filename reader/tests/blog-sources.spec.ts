@@ -385,6 +385,22 @@ test("Blog source icons use captured assets and readable fallbacks", async ({
   await expect(icon).toHaveJSProperty("naturalWidth", 32);
   await expect(icon).toHaveAttribute("alt", "");
 
+  const blogIcon = page
+    .locator(".post-card")
+    .filter({ has: story(page, github) })
+    .locator(".source-avatar img");
+  const hnIcon = page.locator(".hn-card .source-avatar img");
+  await expect(hnIcon).toHaveAttribute(
+    "src",
+    /source-icon\?domain=news\.ycombinator\.com$/,
+  );
+  await expect(hnIcon).toHaveJSProperty("naturalWidth", 32);
+  await expect(blogIcon).toHaveJSProperty("naturalWidth", 32);
+  const blogSize = await blogIcon.boundingBox();
+  const hnSize = await hnIcon.boundingBox();
+  expect(hnSize?.width).toBe(blogSize?.width);
+  expect(hnSize?.height).toBe(blogSize?.height);
+
   for (const [name, initial] of [
     ["lobste.rs", "L"],
     ["Empty Blog", "E"],

@@ -171,6 +171,7 @@ individual source such as github.blog to browse only its posts. An article can
 appear in both groups when you follow its publisher and it was also shared.
 Blog sources use locally cached favicons in navigation, cards and articles,
 preserving each icon's shape and transparency, with initials when unavailable.
+Feed cards fit the visible artwork to a common size while keeping its proportions.
 Source labels omit the leading `www.`.
 Icons are captured on first display without re-collecting article content.
 **Hacker News** lives under Source Feeds and keeps its daily ranked view and discussions.

@@ -2002,6 +2002,7 @@ input[type="checkbox"] {
 }
 .source-avatar img {
   object-fit: contain;
+  pointer-events: none;
 }
 .source-avatar .avatar-pending {
   position: absolute;

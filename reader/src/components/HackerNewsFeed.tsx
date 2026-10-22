@@ -14,7 +14,7 @@ import { Count } from "./Count";
 import { FeedSourceBadge } from "./FeedSourceBadge";
 import { HighlightedText } from "./HighlightedText";
 import { NavigableCard } from "./NavigableCard";
-import { PlatformIcon } from "./PlatformIcon";
+import { SourceMark } from "./PostCard";
 import { PostFooter } from "./PostFooter";
 import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
@@ -160,7 +160,7 @@ export function HackerNewsCard({
           <FeedSourceBadge source="hacker_news" />
         ) : (
           <>
-            <PlatformIcon platform="hacker_news" size={16} />
+            <SourceMark domain={post.domain} />
             <span>Hacker News</span>
           </>
         )}
