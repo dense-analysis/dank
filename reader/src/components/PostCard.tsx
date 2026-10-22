@@ -62,7 +62,6 @@ export function SourceMark({ domain }: { domain: string }) {
     <IdentityAvatar
       name={sourceName(domain)}
       kind="source"
-      fitArtwork
       iconUrl={
         blog
           ? `/api/reader/source-icon?${new URLSearchParams({ domain })}`

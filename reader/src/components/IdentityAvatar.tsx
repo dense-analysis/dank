@@ -30,7 +30,7 @@ export function IdentityAvatar({
   name,
   iconUrl,
   kind,
-  fitArtwork = false,
+  fitArtwork = kind === "source",
 }: {
   name: string;
   iconUrl?: string | null;
