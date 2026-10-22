@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 def collect_refresh(
     settings: Settings,
     target_post: tuple[str, str] | None,
-    connection: Connection,
+    connection: Connection, *,
+    exclusive: bool = False,
 ) -> None:
     # Keep the worker and its browsers in one group for bounded shutdown.
     os.setsid()
@@ -26,14 +27,15 @@ def collect_refresh(
     logging.basicConfig(level=logging.INFO)
 
     try:
-        asyncio.run(_collect(settings, target_post, connection))
+        asyncio.run(_collect(
+            settings, target_post, connection, exclusive=exclusive,
+        ))
     except asyncio.CancelledError:
         logger.info("Reader refresh interrupted")
     except CollectionBusyError:
         connection.send({
-            "status": "failed",
-            "message": "Another collection is already running. "
-            "Try again when it finishes.",
+            "status": "queued",
+            "message": "Waiting for another collection to finish…",
         })
     except BaseException:
         logger.exception("Reader refresh worker stopped")
@@ -50,7 +52,7 @@ def collect_refresh(
 
 async def _collect(
     settings: Settings, target_post: tuple[str, str] | None,
-    connection: Connection,
+    connection: Connection, *, exclusive: bool = False,
 ) -> None:
     task = asyncio.current_task()
     assert task is not None
@@ -59,7 +61,9 @@ async def _collect(
     owner_watch = asyncio.create_task(watch_owner(connection, task))
 
     try:
-        await collect_and_process(settings, target_post, connection)
+        await collect_and_process(
+            settings, target_post, connection, exclusive=exclusive,
+        )
     finally:
         owner_watch.cancel()
 
@@ -84,10 +88,11 @@ async def watch_owner(
 
 async def collect_and_process(
     settings: Settings, target_post: tuple[str, str] | None,
-    connection: Connection,
+    connection: Connection, *, exclusive: bool = False,
 ) -> None:
     metrics = await run_scrape(
         settings, headless=True, target_post=target_post, scoped=True,
+        exclusive=exclusive,
     )
     connection.send({
         "status": "processing", "message": "Preparing collected content…",

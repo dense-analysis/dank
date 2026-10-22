@@ -919,12 +919,20 @@ request details and comments explicitly. YouTube video refreshes retry metadata
 and reuse saved successful transcripts; community-post detail refresh and the
 computed **From your feeds** view do not have a standalone collector.
 
-Jobs run serially in a child process, with a bounded queue and duplicate-click
-reuse. Collection shares a lock with command-line scrapes to protect browser
-profiles. Processing uses only the posts saved by that run. Partial collection
-and processing failures remain visible; saved content stays usable and the reader
-only reloads it after **Show updates**. Completion means the attempted collection
-finished, not that every post on a platform is archived.
+Up to three independent refreshes run in separate child processes, with at most
+five outstanding requests and duplicate-click reuse. Overlapping source domains
+and shared browser profiles wait; an unrestricted All refresh runs alone and
+keeps its place ahead of later requests. Command-line scrapes remain exclusive;
+reader jobs wait and retry when that lock is held. Public article recovery uses
+separate temporary browser profiles so Blogs and Hacker News can run together.
+
+Processing uses only the posts saved by that run. The notice distinguishes running
+and waiting jobs, and **Show updates** opens the completed job's source view or
+post instead of reloading an unrelated current feed. Each completed result has
+its own action. Partial collection and processing failures remain visible.
+Completion means the attempted collection finished, not that every post on a
+platform is archived. See [concurrency tests](
+../tests/scrape/test_refresh_concurrency.py) for source/profile locking.
 
 Recent job results persist locally. A server restart marks unfinished jobs as
 interrupted instead of replaying them. The queue and status are local to the

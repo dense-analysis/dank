@@ -315,3 +315,222 @@ async def test_worker_processes_only_its_captures_and_preserves_partial_status(
         "processing", "partial",
     ]
     assert updates[0]["posts_saved"] == 1
+
+
+def source_plan(tmp_path: Path, domain: str, *, kind: str = "rss"):
+    selected = settings(tmp_path)._replace(
+        sources=(SourceConfig(domain, ()),),
+    )
+
+    return RefreshPlan({"kind": kind, "domains": [domain]}, domain, selected)
+
+
+async def test_independent_sources_run_together_without_waiting(
+    tmp_path: Path, monkeypatch: Any,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    entered = {domain: asyncio.Event() for domain in (
+        "blog.example", "news.ycombinator.com",
+    )}
+    release = asyncio.Event()
+
+    async def collect(job: dict[str, Any], selected: RefreshPlan):
+        entered[selected.label].set()
+        await release.wait()
+        manager.update(job, {"status": "completed"})
+
+    monkeypatch.setattr(manager, "collect", collect)
+    first = manager.submit(source_plan(tmp_path, "blog.example"))
+    second = manager.submit(source_plan(
+        tmp_path, "news.ycombinator.com", kind="hacker_news",
+    ))
+    manager.worker = asyncio.create_task(manager.run())
+    await asyncio.wait_for(asyncio.gather(
+        *(event.wait() for event in entered.values()),
+    ), 1)
+    assert first["status"] == second["status"] == "running"
+    release.set()
+    await asyncio.wait_for(manager.pending.join(), 1)
+    await manager.close()
+
+
+async def test_overlap_waits_but_unrelated_work_passes_the_queue(
+    tmp_path: Path, monkeypatch: Any,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    first_entered = asyncio.Event()
+    other_entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def collect(job: dict[str, Any], selected: RefreshPlan):
+        (first_entered if selected.label == "reddit.com"
+         else other_entered).set()
+        await release.wait()
+        manager.update(job, {"status": "completed"})
+
+    monkeypatch.setattr(manager, "collect", collect)
+    first = manager.submit(source_plan(tmp_path, "reddit.com", kind="reddit"))
+    post = source_plan(tmp_path, "reddit.com", kind="post")._replace(
+        scope={"kind": "post", "domain": "reddit.com", "post_id": "one"},
+        target_post=("reddit.com", "one"),
+    )
+    queued = manager.submit(post)
+    other = manager.submit(source_plan(tmp_path, "blog.example"))
+    manager.worker = asyncio.create_task(manager.run())
+    await asyncio.wait_for(asyncio.gather(
+        first_entered.wait(), other_entered.wait(),
+    ), 1)
+    assert first["status"] == other["status"] == "running"
+    assert queued["status"] == "queued"
+    assert "reddit.com" in queued["message"]
+    release.set()
+    await asyncio.wait_for(manager.pending.join(), 1)
+    await manager.close()
+
+
+async def test_queued_all_is_a_barrier_and_cannot_be_starved(
+    tmp_path: Path, monkeypatch: Any,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    names = ("first.example", "all", "last.example")
+    entered = {name: asyncio.Event() for name in names}
+    release = {name: asyncio.Event() for name in names}
+
+    async def collect(job: dict[str, Any], selected: RefreshPlan):
+        entered[selected.label].set()
+        await release[selected.label].wait()
+        manager.update(job, {"status": "completed"})
+
+    monkeypatch.setattr(manager, "collect", collect)
+    first = manager.submit(source_plan(tmp_path, names[0]))
+    whole = manager.submit(plan(tmp_path))
+    last = manager.submit(source_plan(tmp_path, names[2]))
+    manager.worker = asyncio.create_task(manager.run())
+    await asyncio.wait_for(entered[names[0]].wait(), 1)
+    assert first["status"] == "running"
+    assert whole["status"] == last["status"] == "queued"
+    release[names[0]].set()
+    await asyncio.wait_for(entered["all"].wait(), 1)
+    assert whole["status"] == "running"
+    assert last["status"] == "queued"
+    release["all"].set()
+    await asyncio.wait_for(entered[names[2]].wait(), 1)
+    release[names[2]].set()
+    await asyncio.wait_for(manager.pending.join(), 1)
+    await manager.close()
+
+
+async def test_parallel_workers_are_bounded_and_cancel_together(
+    tmp_path: Path, monkeypatch: Any,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    entered = asyncio.Event()
+    running = 0
+    cancelled = 0
+
+    async def collect(job: Any, selected: Any):
+        nonlocal running, cancelled
+        running += 1
+
+        if running == api.MAX_CONCURRENT_JOBS:
+            entered.set()
+
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled += 1
+
+    monkeypatch.setattr(manager, "collect", collect)
+
+    for index in range(api.MAX_PENDING_JOBS):
+        manager.submit(source_plan(tmp_path, f"source{index}.example"))
+
+    manager.worker = asyncio.create_task(manager.run())
+    await asyncio.wait_for(entered.wait(), 1)
+    assert running == api.MAX_CONCURRENT_JOBS
+    assert sum(job["status"] == "queued" for job in manager.jobs) == (
+        api.MAX_PENDING_JOBS - api.MAX_CONCURRENT_JOBS
+    )
+    await asyncio.wait_for(manager.close(), 1)
+    assert cancelled == api.MAX_CONCURRENT_JOBS
+    assert all(job["status"] == "interrupted" for job in manager.jobs)
+    await asyncio.wait_for(manager.pending.join(), 1)
+
+
+async def test_external_collection_busy_retries_without_failing_job(
+    tmp_path: Path, monkeypatch: Any,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    attempts = 0
+
+    async def collect(job: dict[str, Any], selected: RefreshPlan):
+        nonlocal attempts
+        attempts += 1
+        manager.update(job, {
+            "status": "queued" if attempts == 1 else "completed",
+            "message": ("Another collection is running"
+                        if attempts == 1 else "Done"),
+        })
+
+    monkeypatch.setattr(manager, "collect", collect)
+    monkeypatch.setattr(api, "BUSY_RETRY_SECONDS", 0.01)
+    job = manager.submit(source_plan(tmp_path, "blog.example"))
+    manager.worker = asyncio.create_task(manager.run())
+    await asyncio.wait_for(manager.pending.join(), 1)
+    assert attempts == 2
+    assert job["status"] == "completed"
+    assert len(manager.jobs) == 1
+    await manager.close()
+
+
+async def test_history_keeps_long_running_job_while_other_jobs_finish(
+    tmp_path: Path,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    running = manager.submit(source_plan(tmp_path, "slow.example"))
+    manager.pending.get_nowait()
+    manager.update(running, {"status": "running"})
+
+    for index in range(api.MAX_HISTORY_JOBS + 5):
+        job = manager.submit(source_plan(tmp_path, f"source{index}.example"))
+        manager.pending.get_nowait()
+        manager.pending.task_done()
+        manager.update(job, {"status": "completed"})
+
+    assert running in manager.jobs
+    assert len(manager.jobs) == api.MAX_HISTORY_JOBS
+    manager.pending.task_done()
+
+
+async def test_close_during_external_retry_drains_waiting_and_running_jobs(
+    tmp_path: Path, monkeypatch: Any,
+):
+    manager = api.RefreshManager(settings(tmp_path))
+    busy = asyncio.Event()
+    independent = asyncio.Event()
+
+    async def collect(job: dict[str, Any], selected: RefreshPlan):
+        if selected.label == "busy.example":
+            manager.update(job, {"status": "queued", "message": "Busy"})
+            busy.set()
+
+            return
+
+        independent.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(manager, "collect", collect)
+    monkeypatch.setattr(api, "BUSY_RETRY_SECONDS", 60)
+    manager.submit(source_plan(tmp_path, "busy.example"))
+    manager.worker = asyncio.create_task(manager.run())
+    await asyncio.wait_for(busy.wait(), 1)
+    manager.submit(source_plan(tmp_path, "busy.example", kind="post"))
+    other = manager.submit(source_plan(tmp_path, "independent.example"))
+    await asyncio.wait_for(independent.wait(), 1)
+    assert other["status"] == "running"
+    assert sum(job["status"] == "queued" for job in manager.jobs) == 2
+    await asyncio.wait_for(manager.close(), 1)
+    await asyncio.wait_for(manager.pending.join(), 1)
+    assert not manager.running and not manager.waiting
+    assert not manager.retry_after
+    assert all(job["status"] == "interrupted" for job in manager.jobs)
