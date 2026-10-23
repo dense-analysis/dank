@@ -13,6 +13,7 @@ import zendriver
 from zendriver.core.connection import ProtocolException
 
 from dank.config import YouTubeOnePasswordSettings
+from dank.onepassword_login import OnePasswordLogin, OnePasswordLoginError
 
 GOOGLE_ORIGIN = "https://accounts.google.com"
 YOUTUBE_SIGN_IN_URL = "https://www.youtube.com/signin?next=%2F&hl=en-GB"
@@ -80,6 +81,17 @@ class GoogleCredentialProvider:
     ) -> None:
         self.settings = settings
         self.stdio = stdio
+
+        try:
+            self._login = OnePasswordLogin(settings.account, {
+                field: str(getattr(settings, field))
+                for field in FIELD_SELECTORS
+            })
+        except OnePasswordLoginError as error:
+            raise GoogleLoginError(str(error)) from None
+
+        self._native_lock = asyncio.Lock()
+        self._native_attempted = False
         self._reader: asyncio.StreamReader | None = None
         self._transport: asyncio.ReadTransport | None = None
 
@@ -98,7 +110,14 @@ class GoogleCredentialProvider:
         if self.stdio:
             value = await self._read_stdio(field)
         else:
-            value = await self._read_native(reference)
+            try:
+                async with self._native_lock:
+                    if not self._login.loaded:
+                        await self._load_native()
+
+                    value = self._login.read(field)
+            except OnePasswordLoginError as error:
+                raise GoogleLoginError(str(error)) from None
 
         if (not value or len(value.encode()) > MAX_CREDENTIAL_BYTES
                 or any(ord(char) < 32 or ord(char) == 127 for char in value)
@@ -111,15 +130,20 @@ class GoogleCredentialProvider:
 
         return value
 
-    async def _read_native(self, reference: str) -> str:
+    async def _load_native(self) -> None:
+        if self._native_attempted:
+            raise GoogleLoginError(
+                "1Password access already failed for this login attempt.",
+            )
+
+        self._native_attempted = True
         executable = shutil.which("op")
 
         if executable is None:
             raise GoogleLoginError("Install 1Password CLI or use --manual.")
 
         process = await asyncio.create_subprocess_exec(
-            executable, "--account", self.settings.account,
-            "read", "--no-newline", reference,
+            *self._login.command(executable),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
 
@@ -138,12 +162,8 @@ class GoogleCredentialProvider:
                 "1Password access failed. Unlock 1Password.",
             )
 
-        try:
-            return stdout.decode("utf-8")
-        except UnicodeError:
-            raise GoogleLoginError(
-                "1Password returned invalid text.",
-            ) from None
+        self._login.load_payload(stdout)
+        stdout = b""
 
     async def _read_stdio(self, field: str) -> str:
         if self._reader is None:
@@ -177,6 +197,8 @@ class GoogleCredentialProvider:
         return cast(str, data["value"])
 
     def close(self) -> None:
+        self._login.close()
+
         if self._transport is not None:
             self._transport.close()
             self._transport = None

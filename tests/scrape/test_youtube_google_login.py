@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from dank import onepassword_login
 from dank.config import YouTubeOnePasswordSettings
 from dank.scrape import youtube_google_login as login
 
@@ -123,11 +124,17 @@ async def test_browser_protocol_failure_cannot_print_the_secret(
     assert failure.value.__suppress_context__
 
 
-async def test_native_reads_use_selected_account_and_only_reference_in_argv(
+async def test_native_reads_one_item_and_keeps_secrets_out_of_argv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    payload = json.dumps({"fields": [
+        {"id": "username", "value": "person@example.test"},
+        {"id": "password", "value": "private-password"},
+        {"id": "otp", "value": "otpauth://totp/Test?secret="
+         "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"},
+    ]}).encode()
     process = SimpleNamespace(
-        communicate=AsyncMock(return_value=(b"123456", b"")),
+        communicate=AsyncMock(return_value=(payload, b"")),
         returncode=0, kill=Mock(), wait=AsyncMock(),
     )
     create = AsyncMock(return_value=process)
@@ -135,13 +142,23 @@ async def test_native_reads_use_selected_account_and_only_reference_in_argv(
         return_value="/usr/local/bin/op",
     ))
     monkeypatch.setattr(login.asyncio, "create_subprocess_exec", create)
+    monkeypatch.setattr(onepassword_login.time, "time", Mock(return_value=59))
     credentials = login.GoogleCredentialProvider(REFERENCES)
-    assert await credentials.read("otp") == "123456"
+    assert await credentials.read("username") == "person@example.test"
+    assert await credentials.read("password") == "private-password"
+    assert await credentials.read("otp") == "287082"
+    create.assert_awaited_once()
     assert create.call_args.args == (
-        "/usr/local/bin/op", "--account", REFERENCES.account,
-        "read", "--no-newline", REFERENCES.otp,
+        "/usr/local/bin/op", "item", "get", "--account", REFERENCES.account,
+        "--vault", "Vault", "Google", "--format", "json",
     )
-    assert "123456" not in str(create.call_args)
+    assert "private-password" not in str(create.call_args)
+    credentials.close()
+
+    with pytest.raises(login.GoogleLoginError):
+        await credentials.read("password")
+
+    assert create.await_count == 1
 
 
 async def test_native_timeout_kills_provider_process_without_secret_errors(
