@@ -346,8 +346,10 @@ See [Hacker News collection settings](../docs/features/hacker-news.md).
 **YouTube** saves the context of discovery: homepage recommendations, Hype
 rankings, News topics, channel feeds, Shorts and community posts.
 **Recommendations** collects your configured YouTube homepage, including videos,
-Shorts and community posts. Choose **Refresh** to collect the homepage again;
-search and format filters only change the saved results you see. **All** puts
+Shorts and community posts. It shows all saved recommendations, deduplicated by
+item and ordered by latest recommendation capture. Choose **Refresh** to collect
+the homepage again; search and format filters only change the saved results you
+see. Pagination keeps its initial capture cutoff while you browse. **All** puts
 Videos before Shorts and Posts, with up to 500 per type and independent **Show
 more** buttons. The Videos, Shorts and Posts tabs keep infinite scrolling.
 **Channels** groups the selected recommendations by channel, ordered by distinct

@@ -542,7 +542,9 @@ export function YouTubeCollection({
         <span className="yt-snapshot-label">
           {query.isFetching && !query.isPending
             ? "Refreshing…"
-            : "Collected feed snapshots"}
+            : recommendations
+              ? "All saved recommendations · newest first"
+              : "Collected feed snapshots"}
         </span>
       </div>
       {sourcesError && (

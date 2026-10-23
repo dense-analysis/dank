@@ -312,8 +312,11 @@ export function youtubeShelves(
     { title: string; context: string; kind: YouTubeKind; items: YouTubeItem[] }
   >();
   for (const item of items) {
+    // Home history stays chronological even when older shelf labels differ.
     const discovery =
-      feed === "linked" || channel ? undefined : itemDiscovery(item, feed);
+      feed === "linked" || feed === "https://www.youtube.com/" || channel
+        ? undefined
+        : itemDiscovery(item, feed);
     const title =
       item.kind === "short"
         ? "Shorts"

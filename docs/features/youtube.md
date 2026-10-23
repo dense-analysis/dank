@@ -84,10 +84,12 @@ items from yt-dlp. A timeout or failed method preserves merged results and
 marks the collection partial. Startup, media, captions and indexing add time
 outside the listing budget.
 
-A selected recommendation feed shows its latest captured snapshot in source
-order. Pagination stays on that snapshot if another collection finishes while
-you read. Channel views retain earlier items as their collection advances;
-opening an item exposes its saved discovery history. In **All**, Videos appear
+**Recommendations** shows all saved homepage captures, with one card per item,
+ordered by when it was most recently recommended. Pagination keeps the original
+capture cutoff while you browse, so a new refresh does not replace or duplicate
+items on later pages. **Channels** groups this same history by distinct item
+count. Hype and News remain scoped to their latest snapshots; channel feeds keep
+their incremental history. Opening an item exposes its saved discovery history. In **All**, Videos appear
 before Shorts and Posts; each type loads up to 500 items and has its own **Show
 more** control. Individual format tabs retain infinite scrolling. **Channels**
 groups the selected feed's captured items, showing the most represented channels

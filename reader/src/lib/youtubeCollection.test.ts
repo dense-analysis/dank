@@ -332,3 +332,32 @@ it.each([
 ])("formats captured count %s as %s", (source, expected) => {
   expect(formatYouTubeViews(source)).toBe(expected);
 });
+
+it("keeps recommendation history chronological across changing shelf labels", () => {
+  const feed = "https://www.youtube.com/";
+  const items = ["Recent", "Different shelf", "Earlier"].map(
+    (title, index) => ({
+      ...video,
+      id: `video:${index}`,
+      title,
+      discoveries: [
+        {
+          ...video.discoveries[0],
+          feed_url: feed,
+          feed_kind: "home",
+          feed_name: index === 2 ? "Home recommendations" : "Recommendations",
+          shelf: index === 1 ? "More for you" : "Recommended",
+        },
+      ],
+    }),
+  );
+  const shelves = youtubeShelves(items, feed);
+  expect(shelves).toHaveLength(1);
+  expect(shelves[0][1].title).toBe("Videos");
+  expect(shelves[0][1].items.map((item) => item.title)).toEqual([
+    "Recent",
+    "Different shelf",
+    "Earlier",
+  ]);
+  expect(items[1].discoveries[0].shelf).toBe("More for you");
+});

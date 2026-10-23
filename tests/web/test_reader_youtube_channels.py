@@ -96,7 +96,7 @@ def test_channel_paging_binds_filters_snapshot_and_stable_count_identity():
     assert "channel_key > %(after_key)s" in sql
     assert "ORDER BY count DESC, channel_key ASC" in sql
     assert "LIMIT" not in base
-    assert "argMax(run_id, observed_at)" in base
+    assert "argMax(run_id, observed_at)" not in base
     assert "AND d.observed_at <=" in base
     assert params["snapshot_time"] == stamp
     with pytest.raises(ValueError):
@@ -112,6 +112,7 @@ async def test_channel_endpoint_groups_saved_examples_and_reports_unknowns(
     settings = load_settings("config.native.example.toml")
     client = AsyncMock()
     client.fetch_json.side_effect = [
+        QueryResult([{"snapshot_time": dt.datetime.now(dt.UTC)}]),
         QueryResult(
             [
                 {

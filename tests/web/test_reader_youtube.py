@@ -23,6 +23,7 @@ from dank.web.reader_youtube_query import (
     decode_youtube_cursor,
     encode_youtube_cursor,
     parse_youtube_filters,
+    youtube_cursor_snapshot,
 )
 
 
@@ -188,8 +189,11 @@ def test_rank_is_part_of_cursor_and_snapshots_keep_channels_incremental(
     assert params["cursor_position"] == 7
     assert "position ASC" in query
     assert "JSONExtractUInt(d.payload, 'discovery', 'position')" in query
-    assert "feed_kind = 'channel' OR run_id =" in query
-    assert "argMax(run_id, observed_at)" in query
+    if feed == "https://www.youtube.com/":
+        assert "argMax(run_id, observed_at)" not in query
+    else:
+        assert "feed_kind = 'channel' OR run_id =" in query
+        assert "argMax(run_id, observed_at)" in query
 
 
 def test_linked_only_item_can_be_deep_linked_without_feed():
@@ -280,12 +284,17 @@ def test_recommendation_pages_and_total_keep_original_snapshot(
 
     for count in (False, True):
         query, params = build_youtube_query(paged, count=count)
-        assert (
-            "WHERE feed_url = %(feed)s AND observed_at <= "
-            "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
-        ) in query
+        if feed == "https://www.youtube.com/":
+            assert "WHERE d.feed_url = %(feed)s AND d.observed_at <=" in query
+            assert "argMax(run_id, observed_at)" not in query
+        else:
+            assert (
+                "WHERE feed_url = %(feed)s AND observed_at <= "
+                "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
+            ) in query
+            assert "feed_kind = 'channel' OR" in query
+
         assert params["snapshot_time"] == captured
-        assert "feed_kind = 'channel' OR" in query
         assert "GROUP BY item_id" in query
         assert params["feed"] == feed
 
@@ -507,3 +516,39 @@ def test_linked_sort_pagination(sort: str, order: str, comparison: str):
 def test_invalid_youtube_sorts(query: dict[str, str]):
     with pytest.raises(ValueError, match="Invalid sort"):
         parse_youtube_filters(MultiDict(query))
+
+
+def test_home_history_keeps_original_cutoff_when_cursor_moves_back_in_time():
+    filters = YouTubeFilters(feed="https://www.youtube.com/", kind="video")
+    anchor = "2026-10-23T12:00:00+00:00"
+    position_time = "2026-10-23T09:00:00+00:00"
+    cursor = encode_youtube_cursor(
+        filters, position_time, "video:aaaaaaaaaaa", 4, snapshot_time=anchor,
+    )
+    paged = filters._replace(cursor=cursor)
+    assert decode_youtube_cursor(paged)[0] == position_time
+    assert youtube_cursor_snapshot(paged) == anchor
+
+    for count in (False, True):
+        sql, params = build_youtube_query(paged, count=count)
+        assert params["snapshot_time"] == anchor
+        assert "d.observed_at <=" in sql
+        assert sql.index("d.observed_at <=") < sql.index("GROUP BY item_id")
+        assert "argMax(run_id, observed_at)" not in sql
+
+        if not count:
+            assert params["cursor_time"] == position_time
+
+
+@pytest.mark.parametrize("snapshot", [
+    "not-a-time", "2026-10-23T10:00:00", "2026-10-22T10:00:00+00:00",
+])
+def test_home_history_rejects_invalid_or_earlier_cutoff(snapshot: str):
+    filters = YouTubeFilters(feed="https://www.youtube.com/")
+    cursor = encode_youtube_cursor(
+        filters, "2026-10-23T09:00:00+00:00", "video:aaaaaaaaaaa",
+        snapshot_time=snapshot,
+    )
+
+    with pytest.raises(ValueError, match="Invalid cursor"):
+        decode_youtube_cursor(filters._replace(cursor=cursor))

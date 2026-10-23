@@ -10,6 +10,8 @@ from typing import Any, NamedTuple, cast
 
 from multidict import MultiMapping
 
+RECOMMENDATIONS_FEED = "https://www.youtube.com/"
+
 
 class YouTubeFilters(NamedTuple):
     feed: str = ""
@@ -24,6 +26,9 @@ class YouTubeFilters(NamedTuple):
 
     def signature(self) -> str:
         values = (*self[:5], self.sort)
+
+        if self.feed == RECOMMENDATIONS_FEED:
+            values = (*values, "recommendation-history-v1")
 
         if self.channel_scope:
             values = (*values, self.channel_scope)
@@ -78,16 +83,33 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
 
 def encode_youtube_cursor(
     filters: YouTubeFilters, observed_at: str, item_id: str,
-    position: int = 0, reference_count: int = 0,
+    position: int = 0, reference_count: int = 0, *, snapshot_time: str = "",
 ) -> str:
-    return base64.urlsafe_b64encode(json.dumps([
+    data: list[Any] = [
         filters.signature(), observed_at, item_id, position, reference_count,
-    ]).encode()).decode()
+    ]
+
+    if filters.feed == RECOMMENDATIONS_FEED:
+        data.append(snapshot_time or observed_at)
+
+    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
 
 
 def decode_youtube_cursor(
     filters: YouTubeFilters,
 ) -> tuple[str, str, int, int]:
+    data = _cursor_data(filters)
+
+    return data[1], data[2], data[3], data[4]
+
+
+def youtube_cursor_snapshot(filters: YouTubeFilters) -> str:
+    data = _cursor_data(filters)
+
+    return str(data[5] if len(data) == 6 else data[1])
+
+
+def _cursor_data(filters: YouTubeFilters) -> list[Any]:
     try:
         if len(filters.cursor) > 8192:
             raise ValueError
@@ -102,7 +124,7 @@ def decode_youtube_cursor(
         data = cast(list[Any], raw)
 
         if (
-            len(data) != 5
+            len(data) != (6 if filters.feed == RECOMMENDATIONS_FEED else 5)
             or not all(isinstance(value, str) for value in data[:3])
             or type(data[3]) is not int or not 0 <= data[3] <= 2**32 - 1
             or type(data[4]) is not int or not 0 <= data[4] <= 2**64 - 1
@@ -115,7 +137,20 @@ def decode_youtube_cursor(
         if date.tzinfo is None:
             raise ValueError
 
-        return date.astimezone(dt.UTC).isoformat(), data[2], data[3], data[4]
+        data[1] = date.astimezone(dt.UTC).isoformat()
+
+        if len(data) == 6:
+            if not isinstance(data[5], str):
+                raise ValueError
+
+            snapshot = dt.datetime.fromisoformat(data[5])
+
+            if snapshot.tzinfo is None or snapshot < date:
+                raise ValueError
+
+            data[5] = snapshot.astimezone(dt.UTC).isoformat()
+
+        return data
     except (ValueError, TypeError, UnicodeError):
         raise ValueError("Invalid cursor for these filters") from None
 
@@ -125,6 +160,11 @@ def build_youtube_query(
     configured_channels: tuple[str, ...] = (),
     paginate: bool = True, snapshot_time: str = "",
 ) -> tuple[str, dict[str, Any]]:
+    snapshot_time = (
+        youtube_cursor_snapshot(filters)
+        if filters.cursor and filters.feed == RECOMMENDATIONS_FEED
+        else snapshot_time
+    )
     params: dict[str, Any] = {"limit": filters.limit + 1}
     conditions: list[str] = []
     table = _metadata_items(
@@ -149,7 +189,7 @@ def build_youtube_query(
         params["feed"] = filters.feed
 
         if filters.cursor:
-            params["snapshot_time"] = decode_youtube_cursor(filters)[0]
+            params["snapshot_time"] = youtube_cursor_snapshot(filters)
 
     for key, value, condition in (
         ("kind", filters.kind, "kind = %(kind)s"),
@@ -204,8 +244,8 @@ def build_youtube_query(
 
 
 def _feed_items(filters: YouTubeFilters, snapshot_time: str = "") -> str:
-    # A refreshing recommendation feed must not replace the snapshot being
-    # paged. Channel feeds keep their incremental history independently.
+    # Ranked feeds retain one captured run; home recommendations span history.
+    # Apply the fixed cutoff before selecting each item's latest observation.
     snapshot_bound = (
         " AND observed_at <= "
         "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
@@ -222,6 +262,9 @@ def _feed_items(filters: YouTubeFilters, snapshot_time: str = "") -> str:
             if snapshot_time else ""
         )
     )
+
+    if filters.feed == RECOMMENDATIONS_FEED:
+        where = " WHERE d.feed_url = %(feed)s"
 
     if snapshot_time and filters.feed:
         where += (

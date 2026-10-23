@@ -22,10 +22,12 @@ from dank.web.reader_youtube_pairs import (
     thumbnail_title_pairs,
 )
 from dank.web.reader_youtube_query import (
+    RECOMMENDATIONS_FEED,
     YouTubeFilters,
     build_youtube_query,
     encode_youtube_cursor,
     parse_youtube_filters,
+    youtube_cursor_snapshot,
 )
 from dank.web.reader_youtube_sources import configured_sources
 from dank.youtube import VIDEO_ID, payload_object
@@ -97,13 +99,22 @@ async def handle_youtube(request: web.Request) -> web.Response:
             client, request.app["state"].settings,
         )
 
+    snapshot_time = ""
+
+    if filters.feed == RECOMMENDATIONS_FEED:
+        snapshot_time = (
+            youtube_cursor_snapshot(filters) if filters.cursor
+            else await recommendation_snapshot_time(client)
+        )
+
     query, params = build_youtube_query(
-        filters, configured_channels=configured,
+        filters, configured_channels=configured, snapshot_time=snapshot_time,
     )
     result = await client.fetch_json(query, params)
     rows = result.rows[:filters.limit]
     query, params = build_youtube_query(
         filters, count=True, configured_channels=configured,
+        snapshot_time=snapshot_time,
     )
     counted = await client.fetch_json(query, params)
     total = int(counted.rows[0]["total"]) if counted.rows else 0
@@ -117,11 +128,23 @@ async def handle_youtube(request: web.Request) -> web.Response:
             filters, last["observed_at"], last["id"],
             int(rows[-1].get("position") or 0),
             int(rows[-1].get("reference_count") or 0),
+            snapshot_time=snapshot_time,
         )
 
     return web.json_response({
         "items": items, "next_cursor": cursor, "total": total,
     })
+
+
+async def recommendation_snapshot_time(client: ClickHouseClient) -> str:
+    # Freeze at the latest persisted capture, not the last item on each page.
+    # Newer captures must not replace older versions while paging the archive.
+    result = await client.fetch_json(
+        "SELECT max(observed_at) AS snapshot_time FROM youtube_discoveries "
+        "WHERE feed_url = %(feed)s", {"feed": RECOMMENDATIONS_FEED},
+    )
+
+    return _timestamp(result.rows[0]["snapshot_time"])
 
 
 async def youtube_items(
@@ -360,7 +383,7 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
         "AS channel_name, "
         "argMax(JSONExtractString(payload, 'channel_url'), observed_at) "
         "AS channel_url "
-        "FROM youtube_discoveries WHERE feed_kind = 'channel' OR "
+        "FROM youtube_discoveries WHERE feed_kind IN ('channel', 'home') OR "
         "(feed_url, run_id) IN (SELECT feed_url, argMax(run_id, observed_at) "
         "FROM youtube_discoveries GROUP BY feed_url) "
         "GROUP BY feed_url ORDER BY name",

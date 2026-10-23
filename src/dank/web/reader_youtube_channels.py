@@ -14,6 +14,7 @@ from multidict import MultiDict
 from dank.config import Settings
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.reader_youtube_query import (
+    RECOMMENDATIONS_FEED,
     YouTubeFilters,
     build_youtube_query,
     parse_youtube_filters,
@@ -147,6 +148,11 @@ async def handle_youtube_channels(request: web.Request) -> web.Response:
 
     client: ClickHouseClient = request.app["clickhouse"]
     state = request.app["state"]
+
+    if filters.feed == RECOMMENDATIONS_FEED and not cursor:
+        from dank.web.reader_youtube import recommendation_snapshot_time
+
+        snapshot = await recommendation_snapshot_time(client)
     configured = await load_configured_channels(client, state.settings)
     sql, params, base = channel_query(filters, configured, snapshot, after)
     result = await client.fetch_json(sql, params)

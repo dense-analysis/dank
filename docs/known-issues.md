@@ -187,6 +187,15 @@ reject live/upcoming videos. Ordinary news or gaming recommendations outside
 excluded shelves remain eligible. Changed renderer shapes, shelf headings or
 pinned extractor hooks may still require updates.
 
+The reader's **Recommendations** feed spans all saved homepage captures,
+deduplicating each item by its latest observation and ordering newest first.
+The first page freezes the latest persisted capture time; cursors carry that
+same cutoff separately from their last-item position. Applying it before
+aggregation keeps older item versions available even if a refresh recommends
+them again while browsing. Sidebar totals and Channels use the same history.
+Hype/News keep their latest-run scope. Historical homepage cursors from the old
+scope are invalidated; reloading starts a consistent archive view.
+
 The reader's **All** view paginates Videos, Shorts and Posts independently in
 500-item batches with explicit **Show more** controls. Format tabs and the
 recommendation-derived **Channels** view use infinite scrolling. Channel counts
