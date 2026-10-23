@@ -2530,10 +2530,18 @@ def compare_youtube_home_main() -> None:
     settings = load_settings(args.config)
     configure_logging(settings.logging, component="youtube-compare")
     report = asyncio.run(compare_home(settings, timeout_seconds=args.timeout))
+    path = save_youtube_comparison(settings, report)
+    print(f"YouTube comparison saved: {path}", flush=True)
+
+
+def save_youtube_comparison(
+    settings: Settings, report: dict[str, Any],
+) -> pathlib.Path:
+    """Persist a collector comparison without cookies or vault credentials."""
     directory = settings.data_dir / "comparisons"
     directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     path = directory / f"youtube-home-{stamp}.json"
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     path.chmod(0o600)
-    print(f"YouTube comparison saved: {path}", flush=True)
+    return path
