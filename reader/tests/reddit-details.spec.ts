@@ -246,7 +246,7 @@ test("retains flair with search, exact author, dates, article reload and browser
     "/reader/?view=reddit&community=LocalLLaMA&flair=New+Model&after=2026-10-15&before=2026-10-15",
   );
   await page
-    .getByRole("textbox", { name: "Search r/LocalLLaMA" })
+    .getByRole("searchbox", { name: "Search r/LocalLLaMA" })
     .fill("New Model");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page
@@ -456,7 +456,7 @@ for (const width of [1440, 816, 390]) {
       "naturalWidth",
       32,
     );
-    const search = page.getByRole("textbox", {
+    const search = page.getByRole("searchbox", {
       name: "Search r/LocalLLaMA",
       exact: true,
     });
@@ -497,16 +497,16 @@ test("updates search scope across communities, all Reddit and stories", async ({
   await mockDetails(page);
   await page.goto("/reader/?view=reddit&community=LocalLLaMA");
   await expect(
-    page.getByRole("textbox", { name: "Search r/LocalLLaMA", exact: true }),
+    page.getByRole("searchbox", { name: "Search r/LocalLLaMA", exact: true }),
   ).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav.getByRole("button", { name: /r\/accelerate/ }).click();
   await expect(
-    page.getByRole("textbox", { name: "Search r/accelerate", exact: true }),
+    page.getByRole("searchbox", { name: "Search r/accelerate", exact: true }),
   ).toBeVisible();
   await nav.getByRole("button", { name: "Reddit", exact: true }).click();
   await expect(
-    page.getByRole("textbox", { name: "Search Reddit", exact: true }),
+    page.getByRole("searchbox", { name: "Search Reddit", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".post-card .community-avatar")).toHaveCount(4);
   await expect(page.locator(".post-card .post-meta .source-link")).toHaveCount(
@@ -514,7 +514,7 @@ test("updates search scope across communities, all Reddit and stories", async ({
   );
   await nav.getByRole("button", { name: "All", exact: true }).click();
   await expect(
-    page.getByRole("textbox", { name: "Search everything", exact: true }),
+    page.getByRole("searchbox", { name: "Search everything", exact: true }),
   ).toBeVisible();
 });
 

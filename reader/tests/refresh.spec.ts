@@ -180,7 +180,7 @@ test("refresh collects only the community and holds updates until accepted while
   await expect(refresh).toBeDisabled();
   await expect(
     page.getByRole("complementary", { name: "Background refresh" }),
-  ).toContainText("Refreshing");
+  ).toContainText("1 refreshing");
   await page
     .getByRole("link", {
       name: "Read Already collected discussion",
@@ -275,6 +275,7 @@ test("reload recovers a queued refresh, reports partial completion, and remember
   await expect.poll(() => state.jobs.length).toBe(1);
   state.jobs[0].status = "queued";
   await page.reload();
+  await page.getByRole("button", { name: "Show refresh details" }).click();
   await expect(
     page.getByText("Waiting to refresh", { exact: true }),
   ).toBeVisible();
@@ -328,6 +329,7 @@ test("submission and progress failures keep content and recovery controls availa
     message: "The server restarted. Refresh again to continue.",
   };
   await page.getByRole("button", { name: "Check again" }).click();
+  await page.getByRole("button", { name: "Show refresh details" }).click();
   await expect(
     page.getByText("Refresh interrupted", { exact: true }),
   ).toBeVisible();
@@ -350,16 +352,14 @@ for (const width of [320, 1280]) {
     await page
       .getByRole("button", { name: "Refresh r/LocalLLaMA", exact: true })
       .click();
-    if (width <= 760) {
-      await expect(
-        page.getByRole("button", { name: "Show refresh details" }),
-      ).toBeVisible();
-      await expect(page.locator(".refresh-notice")).toHaveCount(0);
-      await page.screenshot({
-        path: testInfo.outputPath(`refresh-${width}-compact.png`),
-      });
-      await page.getByRole("button", { name: "Show refresh details" }).click();
-    }
+    await expect(
+      page.getByRole("button", { name: "Show refresh details" }),
+    ).toBeVisible();
+    await expect(page.locator(".refresh-notice")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`refresh-${width}-compact.png`),
+    });
+    await page.getByRole("button", { name: "Show refresh details" }).click();
 
     await expect(page.locator(".refresh-notice .refresh-spinning")).toHaveCSS(
       "animation-name",
@@ -480,7 +480,9 @@ test("collapsed progress announces completion and offers updates", async ({
     .getByRole("button", { name: "Refresh all sources", exact: true })
     .click();
   await expect.poll(() => state.jobs.length).toBe(1);
-  await page.getByRole("button", { name: "Hide refresh details" }).click();
+  await expect(
+    page.getByRole("button", { name: "Show refresh details" }),
+  ).toBeVisible();
   state.jobs[0].status = "processing";
   state.jobs[0].message = "Preparing saved posts for reading.";
   await page.getByRole("button", { name: "Show refresh details" }).click();
@@ -574,11 +576,8 @@ for (const width of [320, 1280]) {
     const heading = page.locator(".refresh-status-heading [aria-live]");
     await expect(heading).toHaveText("2 refreshing · 1 waiting");
     await expect(heading).toHaveAttribute("aria-live", "polite");
-
-    if (width <= 760) {
-      await expect(page.locator(".refresh-notice")).toHaveCount(0);
-      await page.getByRole("button", { name: "Show refresh details" }).click();
-    }
+    await expect(page.locator(".refresh-notice")).toHaveCount(0);
+    await page.getByRole("button", { name: "Show refresh details" }).click();
 
     await expect(page.locator('[data-refresh-status="running"]')).toHaveCount(
       2,
@@ -683,6 +682,7 @@ test("each completed refresh opens its own destination and dismisses only that r
     ...job,
   })) as RefreshJob[];
   await page.goto("/reader/?view=hacker_news");
+  await page.getByRole("button", { name: "Show refresh details" }).click();
   await expect(
     page.getByRole("button", { name: /^Show updates for / }),
   ).toHaveCount(2);
@@ -799,3 +799,55 @@ test("a compact completed result identifies its destination without overflowing"
     path: testInfo.outputPath("completed-refresh-320.png"),
   });
 });
+
+for (const width of [320, 1280]) {
+  test(`saved refresh notices leave content unobstructed at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    const state = await fixture(page);
+    state.jobs = ["completed", "partial", "failed"].map((status, index) => ({
+      id: `saved-${index}`,
+      scope: { kind: "all" },
+      label: "All sources",
+      status,
+      message: "Saved refresh result.",
+      created_at: "2026-10-22T10:00:00Z",
+      finished_at: "2026-10-22T10:01:00Z",
+      posts_saved: status === "failed" ? 0 : 1,
+    })) as RefreshJob[];
+    await page.goto("/reader/");
+    const panel = page.getByRole("complementary", {
+      name: "Background refresh",
+    });
+    const search = page.locator(".search-bar");
+    await expect(
+      page.getByRole("button", { name: "Show refresh details" }),
+    ).toBeVisible();
+    await expect(page.locator(".refresh-notice")).toHaveCount(0);
+    await expect(panel).toContainText("2 ready · 2 need attention");
+
+    async function expectNoOverlap() {
+      const notice = await panel.boundingBox();
+      const field = await search.boundingBox();
+      expect(notice).not.toBeNull();
+      expect(field).not.toBeNull();
+      expect((notice?.y ?? 0) + (notice?.height ?? 0)).toBeLessThanOrEqual(
+        field?.y ?? 0,
+      );
+    }
+
+    await expectNoOverlap();
+    await page.getByRole("button", { name: "Show refresh details" }).click();
+    await expect(page.locator(".refresh-notice")).toHaveCount(3);
+    await expect(
+      page.getByText("Refresh failed", { exact: true }),
+    ).toBeVisible();
+    await expectNoOverlap();
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Show refresh details" }),
+    ).toBeVisible();
+    expect(state.requests).toHaveLength(0);
+  });
+}

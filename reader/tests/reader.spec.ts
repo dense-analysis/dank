@@ -311,7 +311,7 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
   await page.goto(`/reader/?${filters}`);
   await expect(story(page)).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Search example.com" }),
+    page.getByRole("searchbox", { name: "Search example.com" }),
   ).toHaveValue("housing");
   await expect(
     page.getByRole("combobox", { name: "Order stories" }),
@@ -512,7 +512,9 @@ test("starts a fresh cursor sequence after filters change", async ({
   const initialRequests = state.requests.length;
   await page.locator(".load-more").scrollIntoViewIfNeeded();
   await expect(page.locator(".post-card")).toHaveCount(10);
-  await page.getByRole("textbox", { name: "Search everything" }).fill("report");
+  await page
+    .getByRole("searchbox", { name: "Search everything" })
+    .fill("report");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator(".post-card")).toHaveCount(5);
   await expect(story(page)).toHaveCount(0);
@@ -576,7 +578,7 @@ test("opens source-specific deep links and returns to their filtered timeline", 
     .click();
   await expect(story(page)).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Search everything" }),
+    page.getByRole("searchbox", { name: "Search everything" }),
   ).toHaveValue("housing");
   expect(new URL(page.url()).search).toBe("?q=housing");
 });
@@ -694,7 +696,7 @@ for (const view of ["saved", "legacy-politics"]) {
     await expect(story(page, socialPost.title)).toBeVisible();
     await expect(story(page)).toHaveCount(0);
     await expect(
-      page.getByRole("textbox", { name: "Search x.com" }),
+      page.getByRole("searchbox", { name: "Search x.com" }),
     ).toHaveValue("housing");
     await expect(
       page.getByRole("combobox", { name: "Order stories" }),
@@ -1016,7 +1018,7 @@ test("uses one combined search and retains source filters and ordering", async (
   ).toHaveCount(0);
   await expect(page.locator("#search-mode-help")).toHaveCount(0);
   await page
-    .getByRole("textbox", { name: "Search everything" })
+    .getByRole("searchbox", { name: "Search everything" })
     .fill("housing");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(
@@ -1052,7 +1054,7 @@ test("uses one combined search and retains source filters and ordering", async (
   await expect(story(page, socialPost.title)).toHaveCount(0);
   await page.getByRole("button", { name: "Clear search", exact: true }).click();
   await expect(
-    page.getByRole("textbox", { name: "Search everything" }),
+    page.getByRole("searchbox", { name: "Search everything" }),
   ).toHaveValue("");
   expect(new URL(page.url()).searchParams.getAll("tag")).toEqual(["politics"]);
   await expect
@@ -1071,7 +1073,7 @@ for (const mode of ["words", "meaning"]) {
     await page.goto(`/reader/?q=housing&mode=${mode}&sort=relevance`);
     await expect(story(page)).toBeVisible();
     await expect(
-      page.getByRole("textbox", { name: "Search everything" }),
+      page.getByRole("searchbox", { name: "Search everything" }),
     ).toHaveValue("housing");
     await expect(
       page.getByRole("group", { name: "Search method" }),

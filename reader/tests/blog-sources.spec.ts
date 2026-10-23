@@ -312,7 +312,7 @@ for (const selection of ["domain=github.blog", "blog_feed=external"]) {
     await fixture(page);
     await page.goto(`/reader/?view=stories&${selection}&after=2026-10-01`);
     const post = selection.startsWith("domain") ? github : external;
-    await page.getByRole("textbox", { name: /^Search / }).fill("release");
+    await page.getByRole("searchbox", { name: /^Search / }).fill("release");
     await page.getByRole("button", { name: "Search", exact: true }).click();
     await page
       .getByRole("combobox", { name: "Order stories" })
@@ -334,7 +334,7 @@ for (const selection of ["domain=github.blog", "blog_feed=external"]) {
     await expect(link).toBeFocused();
     await page.reload();
     await expect(link).toBeVisible();
-    await expect(page.getByRole("textbox", { name: /^Search / })).toHaveValue(
+    await expect(page.getByRole("searchbox", { name: /^Search / })).toHaveValue(
       "release",
     );
     expect(new URL(page.url()).searchParams.get(key)).toBe(value);

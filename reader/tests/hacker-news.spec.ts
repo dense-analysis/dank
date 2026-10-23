@@ -141,7 +141,7 @@ for (const width of [390, 1280]) {
       ),
     ).toBeVisible();
     await expect(
-      page.getByRole("textbox", { name: "Search Hacker News" }),
+      page.getByRole("searchbox", { name: "Search Hacker News" }),
     ).toBeVisible();
     await page.locator(".hn-card").last().scrollIntoViewIfNeeded();
     await expect

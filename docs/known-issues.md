@@ -8,6 +8,15 @@ Last reviewed: **2026-10-17**, against the implementation on `main`.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Reader refresh results
+
+Refresh results start collapsed below the header and expand within the page,
+without covering reading controls. The summary flags partial, failed and
+interrupted results as needing attention. A result with saved content can also
+be ready to view; this does not mean collection succeeded completely. Submission,
+progress and update-loading errors stay visible while details are collapsed.
+See [refresh browser tests](../reader/tests/refresh.spec.ts).
+
 ## Blocked Reddit collection and cancellation
 
 The 2026-10-19 run `c01507f1` saved 3,044 posts, but spent its last 33 minutes

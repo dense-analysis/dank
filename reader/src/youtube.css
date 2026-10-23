@@ -69,32 +69,9 @@
   align-items: center;
 }
 .yt-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   max-width: 590px;
   width: 100%;
-  padding: 5px 8px 5px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--muted);
-}
-.yt-search:focus-within {
-  border-color: #b1e2bd70;
-}
-.yt-search input {
-  color: var(--text);
   min-width: 0;
-  flex: 1;
-  border: 0;
-  padding: 9px 0;
-  background: transparent;
-  outline: none;
-  font-size: 13px;
-}
-.yt-search input:focus-visible {
-  outline: none;
 }
 .yt-refresh {
   border: 1px solid var(--line);
@@ -699,17 +676,11 @@
 }
 @media (max-width: 760px) {
   .youtube-page {
-    padding-inline: 20px;
+    padding-inline: 16px;
   }
   .youtube-shell:not(.collection-context) > .topbar {
     height: var(--sticky-header-height);
     padding-inline: 12px;
-  }
-  .yt-search input {
-    font-size: 16px;
-  }
-  .yt-search {
-    min-width: 0;
   }
   .yt-tabs button,
   .yt-feed-tabs button,
@@ -769,9 +740,6 @@
   }
 }
 @media (max-width: 510px) {
-  .youtube-page {
-    padding-inline: 18px;
-  }
   .yt-intro {
     align-items: flex-start;
   }

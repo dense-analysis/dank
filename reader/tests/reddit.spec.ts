@@ -307,7 +307,7 @@ test("retains community, search, author and article navigation in Reddit", async
     page.getByRole("heading", { name: otherPost.title }),
   ).toHaveCount(0);
   await page
-    .getByRole("textbox", { name: "Search r/LocalLLaMA" })
+    .getByRole("searchbox", { name: "Search r/LocalLLaMA" })
     .fill("local models");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page

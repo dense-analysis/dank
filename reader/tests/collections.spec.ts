@@ -145,7 +145,7 @@ for (const width of [320, 390, 1280]) {
     await expect(page).toHaveURL(/\/reader\/\?view=x$/);
     await expect(page.locator(".post-card")).toHaveCount(5);
     await expect(
-      page.getByRole("textbox", { name: "Search X", exact: true }),
+      page.getByRole("searchbox", { name: "Search X", exact: true }),
     ).toHaveValue("");
   });
 }
@@ -172,7 +172,7 @@ test("collection headers show honest missing totals and return to the Reddit ove
     .click();
   await expect(page).toHaveURL(/\/reader\/\?view=reddit$/);
   await expect(
-    page.getByRole("textbox", { name: "Search Reddit", exact: true }),
+    page.getByRole("searchbox", { name: "Search Reddit", exact: true }),
   ).toBeVisible();
 });
 
@@ -281,7 +281,7 @@ test("All mixes collections while Blogs, X and Reddit keep their own feeds", asy
     nav.getByRole("button", { name: "All", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await expect(
-    page.getByRole("textbox", { name: "Search everything" }),
+    page.getByRole("searchbox", { name: "Search everything" }),
   ).toBeVisible();
 
   for (const [label, kind, count] of [
@@ -295,7 +295,7 @@ test("All mixes collections while Blogs, X and Reddit keep their own feeds", asy
       page.getByRole("heading", { name: label, exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("textbox", {
+      page.getByRole("searchbox", {
         name: `Search ${label === "Blogs" ? "blogs" : label}`,
       }),
     ).toBeVisible();
@@ -387,7 +387,7 @@ test("X accounts have accessible disclosure, safe icons and initial fallbacks", 
     page.getByRole("heading", { name: "City Reporter", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Search @reporter" }),
+    page.getByRole("searchbox", { name: "Search @reporter" }),
   ).toBeVisible();
   expect(
     (await new AxeBuilder({ page }).analyze()).violations.filter((item) =>
@@ -510,7 +510,7 @@ test("account search, author, loaded pages and history survive article navigatio
   );
   await expect(page.locator(".post-card")).toHaveCount(2);
   await page
-    .getByRole("textbox", { name: "Search @reporter" })
+    .getByRole("searchbox", { name: "Search @reporter" })
     .fill("dispatch");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page
@@ -560,7 +560,7 @@ test("account search, author, loaded pages and history survive article navigatio
     .click();
   await expect(page).toHaveURL(timeline);
   await expect(
-    page.getByRole("textbox", { name: "Search @reporter" }),
+    page.getByRole("searchbox", { name: "Search @reporter" }),
   ).toHaveValue("dispatch");
   await expect(page.locator(".post-card")).toHaveCount(2);
   await page
@@ -597,7 +597,7 @@ test("configured accounts without posts remain selectable and X can be absent", 
     page.getByRole("heading", { name: "No collected posts found" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: "Search @quiet_account" }),
+    page.getByRole("searchbox", { name: "Search @quiet_account" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Show all X posts" }).click();
   await expect(page.locator(".post-card")).toHaveCount(5);

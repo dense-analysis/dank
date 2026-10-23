@@ -461,7 +461,6 @@ export function App() {
       ) : (
         sidebar
       )}
-      <RefreshStatus refresh={refresh} />
       <div
         className={`main-shell ${section === "youtube" ? "youtube-shell" : ""} ${collectionContext ? "collection-context" : ""}`}
       >
@@ -570,6 +569,7 @@ export function App() {
             ) : undefined
           }
         />
+        <RefreshStatus refresh={refresh} />
         {(storageError || positionError) && (
           <div className="error-banner reading-storage-error" role="alert">
             <CircleAlert size={16} /> Reading progress could not be saved in

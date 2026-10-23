@@ -1,11 +1,12 @@
-import { Search, SlidersHorizontal, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { sourceLabel } from "../lib/collections";
 import { formatCount } from "../lib/counts";
 import { calendarDate, recentDates } from "../lib/dateRanges";
 import { availableFlairs } from "../lib/reddit";
 import type { Filters, Source } from "../lib/types";
 import { Count } from "./Count";
+import { SearchField } from "./SearchField";
 
 export function FeedToolbar({
   filters,
@@ -19,30 +20,12 @@ export function FeedToolbar({
   const [draft, setDraft] = useState(filters.q);
   const [authorDraft, setAuthorDraft] = useState(filters.author);
   const [expanded, setExpanded] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setDraft(filters.q);
   }, [filters.q]);
   useEffect(() => {
     setAuthorDraft(filters.author);
   }, [filters.author]);
-  useEffect(() => {
-    function key(event: KeyboardEvent) {
-      if (
-        event.key === "/" &&
-        !(
-          event.target instanceof HTMLElement &&
-          (event.target.closest("input, textarea, select, dialog") ||
-            event.target.isContentEditable)
-        )
-      ) {
-        event.preventDefault();
-        input.current?.focus();
-      }
-    }
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, []);
   const searchLabel =
     filters.kind === "hacker_news"
       ? "Search Hacker News"
@@ -77,45 +60,22 @@ export function FeedToolbar({
       : [];
   return (
     <div className="feed-tools">
-      <form
-        className="search-bar"
-        onSubmit={(event) => {
-          event.preventDefault();
+      <SearchField
+        label={searchLabel}
+        value={draft}
+        onChange={setDraft}
+        onSubmit={() =>
           change({
             ...filters,
             q: draft.trim(),
             sort: draft.trim() ? "relevance" : "newest",
-          });
+          })
+        }
+        onClear={() => {
+          setDraft("");
+          change({ ...filters, q: "", sort: "newest" });
         }}
-      >
-        <Search size={18} />
-        <input
-          ref={input}
-          enterKeyHint="search"
-          autoCapitalize="none"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={searchLabel}
-          aria-label={searchLabel}
-        />
-        {draft && (
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="Clear search"
-            onClick={() => {
-              setDraft("");
-              change({ ...filters, q: "", sort: "newest" });
-            }}
-          >
-            <X size={15} />
-          </button>
-        )}
-        <kbd>/</kbd>
-        <button type="submit" className="search-submit">
-          Search
-        </button>
-      </form>
+      />
       {filters.kind === "x" && (
         <fieldset className="x-feed-selection" aria-label="X post selection">
           <legend className="visually-hidden">X post selection</legend>

@@ -11,9 +11,7 @@ import {
   MessageSquare,
   Network,
   RefreshCw,
-  Search,
   Sparkles,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { referenceParams } from "../lib/referenceFocus";
@@ -29,6 +27,7 @@ import {
 import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
 import { Count } from "./Count";
 import { CountryFlag } from "./CountryFlag";
+import { SearchField } from "./SearchField";
 import { SourceActions } from "./SourceActions";
 import { YouTubeAllSections } from "./YouTubeAllSections";
 import { YouTubeCard } from "./YouTubeCard";
@@ -456,32 +455,19 @@ export function YouTubeCollection({
         </fieldset>
       )}
       <div className="yt-tools">
-        <form
+        <SearchField
           className="yt-search"
-          aria-label="Search YouTube discoveries"
-          onSubmit={(event) => {
-            event.preventDefault();
-            change("q", search.trim());
+          label={`Search ${scoped ? title : "YouTube"}`}
+          placeholder={`Search ${scoped ? title : "YouTube discoveries"}`}
+          submitLabel="Search YouTube collection"
+          value={search}
+          onChange={setSearch}
+          onSubmit={() => change("q", search.trim())}
+          onClear={() => {
+            setSearch("");
+            change("q", "");
           }}
-        >
-          <Search size={18} />
-          <input
-            aria-label={`Search ${scoped ? title : "YouTube"}`}
-            type="search"
-            enterKeyHint="search"
-            autoCapitalize="none"
-            placeholder={`Search ${scoped ? title : "YouTube discoveries"}`}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <button
-            type="submit"
-            className="icon-button"
-            aria-label="Search YouTube collection"
-          >
-            <ArrowUpRight size={17} />
-          </button>
-        </form>
+        />
       </div>
       <div className="yt-filter-row">
         <div className="yt-tabs">
@@ -529,15 +515,6 @@ export function YouTubeCollection({
             <option value="newest">Most recent</option>
             <option value="oldest">Oldest</option>
           </select>
-        )}
-        {filters.q && (
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => change("q", "")}
-          >
-            <X size={13} /> Clear search
-          </button>
         )}
         <span className="yt-snapshot-label">
           {query.isFetching && !query.isPending

@@ -329,6 +329,9 @@ input[type="checkbox"] {
   color: var(--muted);
   box-shadow: none;
 }
+.search-bar > svg {
+  flex-shrink: 0;
+}
 .search-bar > input {
   border: 0;
   background: transparent;
@@ -336,6 +339,9 @@ input[type="checkbox"] {
   flex: 1;
   width: 100%;
   font-size: 14px;
+}
+.search-bar input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
 }
 .search-bar:focus-within {
   border-color: var(--green);
@@ -351,6 +357,7 @@ input[type="checkbox"] {
   padding: 2px 5px;
 }
 .search-submit {
+  flex-shrink: 0;
   font-size: 13px;
   color: var(--green);
   padding: 7px 0 7px 7px;
@@ -1368,9 +1375,17 @@ input[type="checkbox"] {
   text-align: left;
 }
 .source-row > .source-mark {
-  width: 38px;
-  height: 38px;
-  font-size: 19px;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+.source-platform {
+  background: transparent;
+  color: var(--muted);
+}
+.source-row:hover,
+.source-row:focus-visible {
+  background: var(--surface);
 }
 .source-row > span:nth-child(2) {
   min-width: 0;
@@ -3155,6 +3170,7 @@ a.social-metric:hover {
   .platform-filters {
     gap: 6px;
   }
+  .x-feed-selection button,
   .platform-filters button {
     min-height: 44px;
     padding-inline: 8px;
@@ -3188,11 +3204,7 @@ a.social-metric:hover {
   }
 }
 .refresh-status {
-  position: fixed;
-  z-index: 30;
-  top: 86px;
-  right: 16px;
-  width: min(330px, calc(100vw - 32px));
+  margin: 12px 32px 0;
   max-height: min(480px, 65vh);
   overflow: auto;
   background: var(--surface);
@@ -3220,6 +3232,7 @@ a.social-metric:hover {
 }
 .refresh-status-heading > .refresh-result-link {
   display: block;
+  margin-left: auto;
   max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3281,9 +3294,7 @@ a.social-metric:hover {
     display: none;
   }
   .refresh-status {
-    top: 64px;
-    right: 8px;
-    width: min(320px, calc(100vw - 16px));
+    margin-inline: 16px;
   }
   .refresh-status .icon-button {
     min-width: 44px;

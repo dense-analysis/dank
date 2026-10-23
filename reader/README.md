@@ -57,8 +57,8 @@ an opened post. Search terms, dates, author, flair and reading filters only affe
 the display. The button’s tooltip identifies its collection scope. Linked YouTube
 videos are refreshed through their original sources.
 
-A small, collapsible notice counts running and waiting collections separately while
-you keep reading. It survives navigation and reconnects after a page reload.
+A compact notice below the header counts running and waiting collections separately
+while you keep reading. Expand it for details; it stays clear of the page content. It survives navigation and reconnects after a page reload.
 **Show updates** on a completed result opens that refreshed source, community,
 channel or post with its newly saved content. Each result stays available until
 you open or dismiss it; collection does not replace the content on screen

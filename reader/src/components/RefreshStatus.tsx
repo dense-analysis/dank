@@ -25,9 +25,7 @@ export function RefreshStatus({
 }: {
   refresh: ReturnType<typeof useRefresh>;
 }) {
-  const [collapsed, setCollapsed] = useState(
-    () => window.matchMedia("(max-width: 760px)").matches,
-  );
+  const [collapsed, setCollapsed] = useState(true);
   const active = refresh.visible.filter(refreshActive);
   const waiting = active.filter((job) => job.status === "queued").length;
   const running = active.length - waiting;
@@ -44,6 +42,9 @@ export function RefreshStatus({
         job.status === "partial" ||
         job.posts_saved > 0),
   );
+  const attention = refresh.visible.filter((job) =>
+    ["partial", "failed", "interrupted"].includes(job.status),
+  ).length;
   const shown = [...refresh.visible].sort(
     (a, b) => Number(refreshActive(b)) - Number(refreshActive(a)),
   );
@@ -61,11 +62,13 @@ export function RefreshStatus({
             ? activeSummary
             : refresh.startError
               ? "Refresh could not start"
-              : collapsed && ready.length > 1
-                ? `${ready.length} refreshes ready`
-                : collapsed && refresh.visible[0]
-                  ? statusLabels[refresh.visible[0].status]
-                  : "Background refresh"}
+              : collapsed && refresh.visible.length > 1 && attention > 0
+                ? `${ready.length} ready · ${attention} need attention`
+                : collapsed && ready.length > 1
+                  ? `${ready.length} refreshes ready`
+                  : collapsed && refresh.visible[0]
+                    ? statusLabels[refresh.visible[0].status]
+                    : "Background refresh"}
         </span>
         {collapsed && ready.length === 1 && (
           <button
@@ -91,91 +94,88 @@ export function RefreshStatus({
           {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </button>
       </div>
+      {refresh.startError && (
+        <div className="refresh-notice" role="alert">
+          <CircleAlert size={16} />
+          <p>{refresh.startError}</p>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Dismiss refresh error"
+            onClick={refresh.clearError}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
       {!collapsed && (
-        <>
-          {refresh.startError && (
-            <div className="refresh-notice" role="alert">
-              <CircleAlert size={16} />
-              <p>{refresh.startError}</p>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Dismiss refresh error"
-                onClick={refresh.clearError}
-              >
-                <X size={15} />
-              </button>
-            </div>
-          )}
-          <div aria-live="polite" aria-atomic="false">
-            {shown.map((job) => (
-              <div
-                key={job.id}
-                className="refresh-notice"
-                data-refresh-status={job.status}
-              >
-                {refreshActive(job) ? (
-                  <RefreshCw
-                    size={16}
-                    className={
-                      job.status === "queued" ? undefined : "refresh-spinning"
-                    }
-                  />
-                ) : job.status === "completed" ? (
-                  <Check size={16} />
-                ) : (
-                  <CircleAlert size={16} />
-                )}
-                <div className="refresh-notice-copy">
-                  <strong>{statusLabels[job.status]}</strong>
-                  <span className="refresh-job-label">{job.label}</span>
-                  {job.message && <p>{job.message}</p>}
-                  {ready.includes(job) && (
-                    <button
-                      type="button"
-                      className="text-button refresh-job-updates"
-                      aria-label={`Show updates for ${job.label}`}
-                      disabled={refresh.showingUpdates}
-                      onClick={() => void refresh.showUpdates(job)}
-                    >
-                      {refresh.showingJob === job.id
-                        ? "Loading updates…"
-                        : "Show updates"}
-                    </button>
-                  )}
-                </div>
-                {!refreshActive(job) && (
+        <div aria-live="polite" aria-atomic="false">
+          {shown.map((job) => (
+            <div
+              key={job.id}
+              className="refresh-notice"
+              data-refresh-status={job.status}
+            >
+              {refreshActive(job) ? (
+                <RefreshCw
+                  size={16}
+                  className={
+                    job.status === "queued" ? undefined : "refresh-spinning"
+                  }
+                />
+              ) : job.status === "completed" ? (
+                <Check size={16} />
+              ) : (
+                <CircleAlert size={16} />
+              )}
+              <div className="refresh-notice-copy">
+                <strong>{statusLabels[job.status]}</strong>
+                <span className="refresh-job-label">{job.label}</span>
+                {job.message && <p>{job.message}</p>}
+                {ready.includes(job) && (
                   <button
                     type="button"
-                    className="icon-button"
-                    aria-label={`Dismiss refresh: ${job.label}`}
-                    onClick={() => refresh.dismiss([job.id])}
+                    className="text-button refresh-job-updates"
+                    aria-label={`Show updates for ${job.label}`}
+                    disabled={refresh.showingUpdates}
+                    onClick={() => void refresh.showUpdates(job)}
                   >
-                    <X size={15} />
+                    {refresh.showingJob === job.id
+                      ? "Loading updates…"
+                      : "Show updates"}
                   </button>
                 )}
               </div>
-            ))}
-          </div>
-          {refresh.statusError && refresh.visible.length > 0 && (
-            <p className="refresh-status-error" role="status">
-              Progress is temporarily unavailable. Collection may still be
-              running.{" "}
-              <button
-                type="button"
-                className="text-button"
-                onClick={refresh.retryStatus}
-              >
-                Check again
-              </button>
-            </p>
-          )}
-          {refresh.updatesError && (
-            <p className="refresh-status-error" role="alert">
-              {refresh.updatesError}
-            </p>
-          )}
-        </>
+              {!refreshActive(job) && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Dismiss refresh: ${job.label}`}
+                  onClick={() => refresh.dismiss([job.id])}
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {refresh.statusError && refresh.visible.length > 0 && (
+        <p className="refresh-status-error" role="status">
+          Progress is temporarily unavailable. Collection may still be running.{" "}
+          <button
+            type="button"
+            className="text-button"
+            onClick={refresh.retryStatus}
+          >
+            Check again
+          </button>
+        </p>
+      )}
+      {refresh.updatesError && (
+        <p className="refresh-status-error" role="alert">
+          {refresh.updatesError}
+        </p>
       )}
     </aside>
   );

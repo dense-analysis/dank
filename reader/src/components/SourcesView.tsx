@@ -1,9 +1,11 @@
-import { ArrowUpRight, Search } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { sourceLabel } from "../lib/collections";
+import { sourceKind, sourceLabel } from "../lib/collections";
 import type { Source } from "../lib/types";
 import { Count } from "./Count";
+import { PlatformIcon } from "./PlatformIcon";
 import { SourceMark } from "./PostCard";
+import { SearchField } from "./SearchField";
 
 export function SourcesView({
   sources,
@@ -16,45 +18,60 @@ export function SourcesView({
   const matches = sources.filter((source) =>
     `${source.name} ${source.domain} ${source.tags.join(" ")}`
       .toLowerCase()
-      .includes(query.toLowerCase()),
+      .includes(query.trim().toLowerCase()),
   );
   return (
     <div className="sources-view">
-      <div className="search-bar">
-        <Search size={18} />
-        <input
-          placeholder="Find a source or tag"
-          aria-label="Search sources"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </div>
-      <p className="sources-intro">Select a source to view its stories.</p>
-      {matches.map((source) => (
-        <button
-          type="button"
-          className="source-row"
-          key={source.domain}
-          onClick={() => select(source)}
-        >
-          <SourceMark domain={source.domain} />
-          <span>
-            <strong>{sourceLabel(source.name)}</strong>
-            <small>{sourceLabel(source.domain)}</small>
-            <span className="source-tags">
-              {source.tags.map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
-            </span>
-          </span>
-          <span className="source-total">
+      <SearchField
+        label="Search sources"
+        placeholder="Find a source or tag"
+        value={query}
+        onChange={setQuery}
+        onClear={() => setQuery("")}
+      />
+      <p className="sources-intro">
+        Select a source to view its collected posts.
+      </p>
+      {matches.map((source) => {
+        const kind = sourceKind(source.domain);
+
+        return (
+          <button
+            type="button"
+            className="source-row"
+            key={source.domain}
+            onClick={() => select(source)}
+          >
+            {kind === "stories" ? (
+              <SourceMark domain={source.domain} />
+            ) : (
+              <span className="source-mark source-platform">
+                <PlatformIcon platform={kind} size={22} />
+              </span>
+            )}
             <span>
-              <Count value={source.count} /> stories
+              <strong>{sourceLabel(source.name)}</strong>
+              {sourceLabel(source.name) !== sourceLabel(source.domain) && (
+                <small>{sourceLabel(source.domain)}</small>
+              )}
+              {source.tags.length > 0 && (
+                <span className="source-tags">
+                  {source.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </span>
+              )}
             </span>
-            <ArrowUpRight size={16} />
-          </span>
-        </button>
-      ))}
+            <span className="source-total">
+              <span>
+                <Count value={source.count} />{" "}
+                {source.count === 1 ? "post" : "posts"}
+              </span>
+              <ChevronRight size={16} aria-hidden="true" />
+            </span>
+          </button>
+        );
+      })}
       {!matches.length && (
         <p className="empty-state">No sources match this search.</p>
       )}

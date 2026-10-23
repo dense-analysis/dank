@@ -370,7 +370,7 @@ test("platform choices survive search, article return and reload, then clear on 
   await fixture(page);
   await page.goto("/reader/?platform=reddit&platform=stories&after=2026-10-01");
   await page
-    .getByRole("textbox", { name: "Search everything", exact: true })
+    .getByRole("searchbox", { name: "Search everything", exact: true })
     .fill("analysis");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page
