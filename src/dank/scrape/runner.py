@@ -6,13 +6,16 @@ import fcntl
 import hashlib
 import json
 import logging
+import math
 import pathlib
 import re
 import shutil
 import tempfile
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, nullcontext
-from typing import Any, cast
+from itertools import batched
+from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -165,6 +168,295 @@ async def run_scrape(
             x_details=x_details, hacker_news_details=hacker_news_details,
             target_post=target_post, scoped=scoped,
         )
+
+
+YOUTUBE_HOME_URL = "https://www.youtube.com/"
+
+
+class _YouTubeComparisonCapture(NamedTuple):
+    posts: tuple[RawPost, ...]
+    run_id: uuid.UUID
+    started_at: datetime.datetime
+    finished_at: datetime.datetime
+    elapsed_ms: int
+    outcome: str
+
+
+def _comparison_timestamp(value: object) -> datetime.datetime:
+    if not isinstance(value, str):
+        raise ValueError(
+            "Comparison timestamps must be timezone-aware ISO text",
+        )
+
+    stamp = datetime.datetime.fromisoformat(value)
+
+    if stamp.tzinfo is None:
+        raise ValueError("Comparison timestamps must include a timezone")
+
+    return stamp.astimezone(datetime.UTC)
+
+
+def _comparison_post(entry: object, position: int) -> RawPost:
+    if not isinstance(entry, dict):
+        raise ValueError("Invalid browser comparison entry")
+
+    row = cast(dict[str, Any], entry)
+    raw = payload_object(row.get("raw"))
+    discovery = payload_object(raw.get("discovery"))
+    kind = row.get("kind")
+
+    if (not isinstance(kind, str) or kind not in {"video", "short", "post"}
+            or not isinstance(row.get("raw"), dict)
+            or not isinstance(raw.get("discovery"), dict)
+            or not isinstance(raw.get("renderer"), dict)
+            or raw.get("kind") != kind
+            or type(raw.get("schema_version")) is not int
+            or raw["schema_version"] != 1
+            or not payload_object(raw.get("renderer"))
+            or discovery.get("feed_url") != YOUTUBE_HOME_URL
+            or discovery.get("feed_kind") != "home"):
+        raise ValueError(
+            "Browser entries must retain homepage renderer provenance",
+        )
+
+    identifier = raw.get("post_id" if kind == "post" else "video_id")
+    pattern = r"[A-Za-z0-9_-]{10,128}" if kind == "post" else VIDEO_ID.pattern
+    prefix = "post" if kind == "post" else "video"
+
+    if (not isinstance(identifier, str)
+            or not re.fullmatch(pattern, identifier)
+            or row.get("identity") != prefix + ":" + identifier):
+        raise ValueError(
+            "Browser comparison identity does not match its payload",
+        )
+
+    for value in (row.get("position"), discovery.get("position")):
+        if type(value) is not int or value != position:
+            raise ValueError(
+                "Browser comparison discovery order is inconsistent",
+            )
+
+    rank = discovery.get("rank")
+
+    if (type(rank) is not int or not 1 <= rank < 2 ** 32
+            or not isinstance(discovery.get("shelf"), str)):
+        raise ValueError(
+            "Browser comparison discovery rank or shelf is invalid",
+        )
+
+    url = (YOUTUBE_HOME_URL + "post/" + identifier if kind == "post" else
+           YOUTUBE_HOME_URL + "watch?v=" + identifier)
+
+    return RawPost(
+        "youtube.com", prefix + ":" + identifier, url, None,
+        _comparison_timestamp(discovery.get("observed_at")), "youtube",
+        YOUTUBE_HOME_URL,
+        json.dumps(raw, separators=(",", ":"), allow_nan=False),
+    )
+
+
+def _comparison_capture(report: dict[str, Any]) -> _YouTubeComparisonCapture:
+    if (type(report.get("schema_version")) is not int
+            or report["schema_version"] != 1
+            or report.get("feed_url") != YOUTUBE_HOME_URL):
+        raise ValueError("Expected a version 1 YouTube homepage comparison")
+
+    browser = payload_object(report.get("browser"))
+    outcome = browser.get("outcome")
+    entries = browser.get("entries")
+    elapsed = browser.get("elapsed_seconds")
+
+    if (not isinstance(report.get("browser"), dict)
+            or not isinstance(outcome, str)
+            or outcome not in {"completed", "incomplete", "timeout", "failed"}
+            or type(browser.get("partial")) is not bool
+            or browser["partial"] != (outcome != "completed")
+            or not isinstance(entries, list)
+            or not isinstance(elapsed, int | float)
+            or isinstance(elapsed, bool)
+            or not math.isfinite(elapsed) or not 0 <= elapsed <= 3600):
+        raise ValueError("Invalid browser comparison outcome or timing")
+
+    if outcome == "completed" and browser.get("stop_reason") != "end of feed":
+        raise ValueError(
+            "Completed browser comparison must reach the feed end",
+        )
+
+    started = _comparison_timestamp(browser.get("started_at"))
+    finished = _comparison_timestamp(browser.get("finished_at"))
+    values = cast(list[object], entries)
+
+    if finished < started or len(values) > 20000:
+        raise ValueError("Invalid browser comparison bounds")
+
+    posts = tuple(_comparison_post(entry, index)
+                  for index, entry in enumerate(values, 1))
+
+    appearances = {
+        (post.post_id, payload_object(post.payload)["discovery"]["shelf"])
+        for post in posts
+    }
+
+    if len(appearances) != len(posts):
+        raise ValueError(
+            "Browser comparison repeats the same shelf appearance",
+        )
+
+    if any(not started <= post.scraped_at <= finished for post in posts):
+        raise ValueError(
+            "Observation timestamps fall outside browser collection",
+        )
+
+    identity = json.dumps({
+        "feed": YOUTUBE_HOME_URL, "started_at": started.isoformat(),
+        "entries": values,
+    }, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    run_id = uuid.uuid5(
+        uuid.NAMESPACE_URL, "dank-youtube-comparison:" + identity,
+    )
+
+    return _YouTubeComparisonCapture(
+        posts, run_id, started, finished,
+        round(float(elapsed) * 1000), outcome,
+    )
+
+
+def _comparison_history(
+    settings: Settings, capture: _YouTubeComparisonCapture,
+) -> RunMetrics:
+    history = RunMetrics(
+        runtime_info(), 1, 50, headless=True, limits=settings.scrape,
+        options=ScrapeOptions(media_download_types=()),
+    )
+    history.run_id = capture.run_id
+    history.started_at = capture.started_at
+    source = SourceMetrics(1, SourceConfig(
+        "youtube.com", (), feed_urls=(YOUTUBE_HOME_URL,),
+    ))
+    source.started_at = capture.started_at
+    source.discovered(len(capture.posts), 0)
+
+    if capture.outcome != "completed":
+        source.counts["fetch_failures"] = 1
+        source.error_type = "YouTubeFeedIncomplete"
+
+    history.sources[1] = source
+
+    return history
+
+
+def _finish_comparison(
+    history: RunMetrics, capture: _YouTubeComparisonCapture,
+    error: BaseException | None = None,
+) -> None:
+    history.finish(error)
+    history.finished_at = capture.finished_at
+    history.elapsed_ms = capture.elapsed_ms
+
+    for source in history.sources.values():
+        source.finished_at = capture.finished_at
+        source.elapsed_ms = capture.elapsed_ms
+        source.collection_ms = capture.elapsed_ms
+
+
+async def _store_comparison(
+    client: ClickHouseClient, settings: Settings,
+    capture: _YouTubeComparisonCapture,
+) -> tuple[str, int, bool]:
+    await _ensure_history_tables(client)
+    existing = await client.fetch_json(
+        "SELECT status, posts_saved FROM scrape_runs FINAL "
+        "WHERE run_id = %(run_id)s", {"run_id": str(capture.run_id)},
+    )
+
+    if existing.rows:
+        previous = existing.rows[0]
+
+        if previous["status"] not in {"completed", "partial"}:
+            raise ValueError(
+                "An interrupted comparison import already exists; inspect its "
+                "saved rows before retrying to avoid duplicate raw posts",
+            )
+
+        expected = "completed" if capture.outcome == "completed" else "partial"
+
+        if (previous["status"] != expected
+                or int(previous["posts_saved"]) != len(capture.posts)):
+            raise ValueError(
+                "Saved comparison history differs from this report",
+            )
+
+        return str(previous["status"]), int(previous["posts_saved"]), True
+
+    schema = pathlib.Path(__file__).parents[1] / "storage/youtube.sql"
+
+    for statement in schema.read_text().split(";"):
+        if statement.strip():
+            await client.execute(statement)
+
+    history = _comparison_history(settings, capture)
+    source = history.sources[1]
+    await client.insert_rows("scrape_runs", [history.row(1)])
+    await client.insert_rows(
+        "scrape_source_runs", [source.row(history.run_id, 1)],
+    )
+
+    try:
+        for group in batched(capture.posts, history.batch_size):
+            saved = await _flush_posts(client, list(group))
+            source.counts["posts_saved"] += saved
+            source.persisted(saved)
+            await _persist_youtube_discoveries(
+                client, list(group), str(history.run_id),
+            )
+
+        source.collected()
+    except BaseException as error:
+        _finish_comparison(history, capture, error)
+        await _save_history(client, history)
+        raise
+
+    _finish_comparison(history, capture)
+    await _save_history(client, history)
+
+    return history.status, source.counts["posts_saved"], False
+
+
+async def store_youtube_comparison(
+    settings: Settings, report: dict[str, Any],
+) -> dict[str, Any]:
+    """Import browser rows; never scrape or replay an interrupted import."""
+    capture = _comparison_capture(report)
+    started = asyncio.get_running_loop().time()
+    status, count_saved, reused = (
+        "skipped" if capture.outcome == "completed" else "failed", 0, False,
+    )
+
+    if capture.posts:
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+        with (settings.data_dir / "collection.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise CollectionBusyError(
+                    "Another collection is running; retry this import later",
+                ) from None
+
+            async with ClickHouseClient(settings.clickhouse) as client:
+                status, count_saved, reused = await _store_comparison(
+                    client, settings, capture,
+                )
+
+    return {
+        "run_id": str(capture.run_id), "status": status,
+        "posts_saved": count_saved, "unique_items": len({
+            post.post_id for post in capture.posts
+        }), "reused": reused, "capture_elapsed_ms": capture.elapsed_ms,
+        "import_elapsed_ms": round(
+            (asyncio.get_running_loop().time() - started) * 1000,
+        ),
+    }
 
 
 async def _run_scrape(
