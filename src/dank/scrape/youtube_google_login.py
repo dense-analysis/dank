@@ -233,8 +233,12 @@ async def _choose(page: zendriver.Tab, action: str) -> bool:
     script = """(() => {
         if (location.origin !== 'https://accounts.google.com') return false;
         const visible = VISIBLE;
-        const choice = Array.from(CHOICES).find(element => visible(element) &&
+        const matches = Array.from(CHOICES).filter(element =>
+            visible(element) &&
             new RegExp(PATTERN, 'i').test(element.textContent.trim()));
+        // Google nests the actionable link inside a matching list item.
+        const choice = matches.find(element => !matches.some(other =>
+            other !== element && element.contains(other)));
         if (!choice) return false;
         choice.click();
         return true;
