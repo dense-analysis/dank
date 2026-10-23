@@ -207,3 +207,53 @@ def test_invalid_item_payloads_are_redacted(payload: bytes) -> None:
 
     assert "private" not in str(failure.value)
     assert not session.loaded
+
+
+@pytest.mark.parametrize("timestamp", [59, 1111111109, 20000000000])
+@pytest.mark.parametrize("seed", [SEED, SEED.lower(), "  " + SEED + "  ",
+                                  SEED[:8] + " " + SEED[8:]])
+def test_bare_base32_uses_standard_defaults(
+    timestamp: int, seed: str,
+) -> None:
+    assert login.totp(seed, at=timestamp) == login.totp(OTP_URI, at=timestamp)
+
+
+def test_totp_uri_normalizes_case_spacing_and_algorithm_name() -> None:
+    assert login.totp(
+        "  OTPAUTH://TOTP/Test?secret=" + SEED.lower()
+        + "&algorithm=sha-1&digits=8&period=30  ", at=59,
+    ) == "94287082"
+
+
+@pytest.mark.parametrize("otp", [
+    "private-invalid-seed", "otpauth-migration://offline?data=private",
+    "", None, "missing-field",
+])
+def test_invalid_otp_does_not_block_login_or_repeat_item_access(
+    monkeypatch: pytest.MonkeyPatch, otp: str | None,
+) -> None:
+    payload = item_payload()
+
+    if otp == "missing-field":
+        payload["fields"] = [field for field in payload["fields"]
+                             if field["id"] != "otp"]
+    else:
+        payload["fields"][2]["value"] = otp
+
+    execute = Mock(return_value=subprocess.CompletedProcess(
+        [], 0, json.dumps(payload).encode(), b"",
+    ))
+    monkeypatch.setattr(login.shutil, "which", Mock(
+        return_value="/fixture/op",
+    ))
+    monkeypatch.setattr(login.subprocess, "run", execute)
+    session = login.OnePasswordLogin("account-id", REFERENCES)
+    assert session.read("username") == "person@example.test"
+    assert session.read("password") == "private 'password' $shell"
+
+    with pytest.raises(login.OnePasswordLoginError) as failure:
+        session.read("otp")
+
+    assert "private" not in str(failure.value)
+    assert session.read("password") == "private 'password' $shell"
+    assert execute.call_count == 1

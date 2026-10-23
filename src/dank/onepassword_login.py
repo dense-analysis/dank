@@ -93,18 +93,27 @@ def _field_value(
 def totp(uri: str, *, at: float | None = None) -> str:
     """Generate the current code without rereading or exposing the seed."""
     try:
-        parsed = urlsplit(uri)
-        values = parse_qs(parsed.query, keep_blank_values=True,
-                          max_num_fields=20)
+        source = uri.strip()
+        parsed = urlsplit(source)
 
-        if (parsed.scheme != "otpauth" or parsed.netloc != "totp"
-                or any(len(values.get(key, [])) > 1 for key in (
-                    "secret", "algorithm", "period", "digits",
-                ))):
+        if parsed.scheme:
+            if (parsed.scheme != "otpauth"
+                    or parsed.netloc.casefold() != "totp"):
+                raise ValueError
+
+            values = parse_qs(parsed.query, keep_blank_values=True,
+                              max_num_fields=20)
+        else:
+            values = {"secret": [source]}
+
+        if any(len(values.get(key, [])) > 1 for key in (
+            "secret", "algorithm", "period", "digits",
+        )):
             raise ValueError
 
-        seed = values["secret"][0].replace(" ", "").rstrip("=")
-        algorithm = values.get("algorithm", ["SHA1"])[0].upper()
+        seed = "".join(values["secret"][0].split()).rstrip("=")
+        algorithm = values.get("algorithm", ["SHA1"])[0]
+        algorithm = algorithm.upper().replace("-", "")
         period = int(values.get("period", ["30"])[0])
         digits = int(values.get("digits", ["6"])[0])
         timestamp = time.time() if at is None else at
@@ -197,13 +206,17 @@ class OnePasswordLogin:
             ):
                 raise ValueError
 
-            selected = {
-                field: _field_value(cast(list[dict[str, Any]], fields), ref)
-                for field, ref in self.references.items()
-            }
+            selected: dict[str, str] = {}
 
-            if "otp" in selected:
-                totp(selected["otp"])
+            for field, ref in self.references.items():
+                try:
+                    selected[field] = _field_value(
+                        cast(list[dict[str, Any]], fields), ref,
+                    )
+                except OnePasswordLoginError:
+                    # Google may not request a code for this saved device.
+                    if field != "otp":
+                        raise
         except (ValueError, UnicodeError):
             raise OnePasswordLoginError(
                 "1Password returned an invalid login item.",
@@ -249,7 +262,12 @@ class OnePasswordLogin:
         if not self.loaded:
             self._load()
 
-        value = self._values[field]
+        value = self._values.get(field)
+
+        if value is None:
+            raise OnePasswordLoginError(
+                "The configured authenticator field is missing or invalid.",
+            )
 
         return totp(value) if field == "otp" else value
 
