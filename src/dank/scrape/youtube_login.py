@@ -26,6 +26,9 @@ from dank.scrape.zendriver import (
 
 SESSION_POLL_SECONDS = 1.0
 SESSION_CHECK_SECONDS = 15.0
+# Settling is a bounded heuristic; reopening proves disk persistence.
+SESSION_SETTLE_SECONDS = 2.0
+SESSION_FINALIZE_SECONDS = 15.0
 
 
 async def _session_state(page: zendriver.Tab) -> bool | str:
@@ -69,6 +72,60 @@ async def _wait_for_session(
         return False
 
 
+async def _ready_document(page: zendriver.Tab) -> float | None:
+    try:
+        marker = await page.evaluate(
+            "location.origin === 'https://www.youtube.com' && "
+            "document.readyState === 'complete' && "
+            "window.ytcfg?.get('LOGGED_IN') === true "
+            "? performance.timeOrigin : null",
+        )
+    except (ProtocolException, ConnectionError):
+        return None
+
+    if (isinstance(marker, int | float) and not isinstance(marker, bool)
+            and math.isfinite(marker) and marker > 0):
+        return float(marker)
+
+    return None
+
+
+async def _settled_document(
+    page: zendriver.Tab, previous: float | None = None,
+) -> float:
+    loop = asyncio.get_running_loop()
+    stable_since = loop.time()
+    last: float | None = None
+
+    while True:
+        marker = await _ready_document(page)
+
+        if marker is None or marker == previous or marker != last:
+            stable_since = loop.time()
+
+        last = marker
+
+        if (marker is not None and marker != previous
+                and loop.time() - stable_since >= SESSION_SETTLE_SECONDS):
+            return marker
+
+        await asyncio.sleep(SESSION_POLL_SECONDS)
+
+
+async def _finalize_session(page: zendriver.Tab) -> bool:
+    # A fresh document must authenticate using cookies before we close Chrome.
+    # Reopening the profile still independently verifies persistence on disk.
+    try:
+        async with asyncio.timeout(SESSION_FINALIZE_SECONDS):
+            previous = await _settled_document(page)
+            await page.reload(ignore_cache=True)
+            await _settled_document(page, previous)
+
+        return True
+    except (TimeoutError, ProtocolException, ConnectionError):
+        return False
+
+
 async def _open_session(
     settings: Settings, config: BrowserConfig, *, timeout_seconds: float,
     check_only: bool, remote_desktop: bool, manual: bool,
@@ -94,7 +151,7 @@ async def _open_session(
                 page, provider, timeout_seconds=timeout_seconds,
             )
 
-            return await _wait_for_session(page, SESSION_CHECK_SECONDS)
+            return await _finalize_session(page)
 
         destination = (
             "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"
@@ -105,7 +162,10 @@ async def _open_session(
             "Complete any verification yourself.", flush=True,
         )
 
-        return await _wait_for_session(page, timeout_seconds)
+        if not await _wait_for_session(page, timeout_seconds):
+            return False
+
+        return await _finalize_session(page)
 
 
 async def sign_in(
