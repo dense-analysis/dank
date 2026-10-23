@@ -260,3 +260,34 @@ async def test_invalid_limits_reject_without_spawning(kwargs: dict[str, Any]):
 async def test_missing_session_never_loads_browser_cookies():
     with pytest.raises(ValueError, match="session snapshot"):
         await collect_ytdlp_home([])
+
+
+def test_worker_diagnostics_identify_stale_sessions_without_private_text(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from dank.scrape.youtube import ytdlp_home
+
+    events: list[dict[str, Any]] = []
+    monkeypatch.setattr(ytdlp_home, "_emit", events.append)
+    logger = ytdlp_home._WorkerLogger()  # pyright: ignore[reportPrivateUsage]
+    logger.warning("The provided YouTube account cookies are no longer valid.")
+    logger.error("Private details: URL redirected to youtube.com home page")
+    assert events == [
+        {"event": "warning", "category": "expired_session"},
+        {"event": "warning", "category": "feed_redirected_to_home"},
+    ]
+
+
+def test_worker_initialization_errors_never_expose_cookie_payload(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from dank.scrape.youtube import ytdlp_home
+
+    events: list[dict[str, Any]] = []
+    monkeypatch.setattr(ytdlp_home, "_emit", events.append)
+    monkeypatch.setattr(
+        ytdlp_home, "_run_worker",
+        Mock(side_effect=ValueError("private-cookie-value")),
+    )
+    _worker()
+    assert events == [{"event": "error", "error_type": "ValueError"}]

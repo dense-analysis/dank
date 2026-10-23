@@ -267,13 +267,21 @@ class _WorkerLogger:
             _emit({"event": "warning", "category": "repeated_continuation"})
 
     def warning(self, message: str) -> None:
-        _emit({"event": "warning", "category": "extractor_warning"})
+        category = (
+            "expired_session" if "cookies are no longer valid"
+            in message.casefold() else "extractor_warning"
+        )
+        _emit({"event": "warning", "category": category})
 
     def error(self, message: str) -> None:
-        _emit({"event": "warning", "category": "extractor_error"})
+        category = (
+            "feed_redirected_to_home" if "redirected to youtube.com home"
+            in message.casefold() else "extractor_error"
+        )
+        _emit({"event": "warning", "category": category})
 
 
-def _worker() -> None:
+def _run_worker() -> None:
     from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
 
     request = cast(dict[str, Any], json.load(sys.stdin))
@@ -314,6 +322,14 @@ def _worker() -> None:
 
             _emit({"event": "done", "outcome": "completed"})
     except Exception as error:
+        _emit({"event": "error", "error_type": type(error).__name__})
+
+
+def _worker() -> None:
+    try:
+        _run_worker()
+    except Exception as error:
+        # Input/initialization failures must not expose cookie-bearing data.
         _emit({"event": "error", "error_type": type(error).__name__})
 
 
