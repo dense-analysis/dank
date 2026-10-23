@@ -287,24 +287,33 @@ async def _collect_home_feed(
     feed: YouTubeFeed,
     settings: YouTubeSettings,
     batches: list[ScrapeBatch],
+    *, timeout_seconds: float | None = None,
+    max_items: int | None = None, max_scrolls: int | None = None,
 ) -> None:
     """Buffer discoveries so downstream work cannot consume the time budget."""
     capture = NetworkCapture(page, [r"youtube\.com/youtubei/v1/browse"])
     collected = FeedCapture(feed, settings, set())
+
+    if max_items is not None:
+        collected.item_limit = max_items
+
+    scroll_limit = HOME_SCROLL_LIMIT if max_scrolls is None else max_scrolls
     loop = asyncio.get_running_loop()
     started = loop.time()
     idle_since: float | None = None
     previous_height: object = None
     idle = 0
     stop = "scroll limit"
-    budget = asyncio.timeout(HOME_BUDGET_SECONDS)
+    budget = asyncio.timeout(
+        HOME_BUDGET_SECONDS if timeout_seconds is None else timeout_seconds,
+    )
 
     try:
         async with budget:
             await capture.start()
             request_url, state = await _resolve_feed(page, feed, settings)
 
-            for step in range(HOME_SCROLL_LIMIT + 1):
+            for step in range(scroll_limit + 1):
                 values, failure = _home_response_values(
                     await capture.drain(timeout_seconds=0.01), feed.url,
                 )
@@ -355,7 +364,7 @@ async def _collect_home_feed(
                     )
                     break
 
-                if step == HOME_SCROLL_LIMIT:
+                if step == scroll_limit:
                     break
 
                 await page.evaluate(HOME_SCROLL_SCRIPT)
