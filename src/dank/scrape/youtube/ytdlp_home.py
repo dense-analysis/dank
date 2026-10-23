@@ -292,6 +292,9 @@ def _run_worker() -> None:
         "logger": _WorkerLogger(), "socket_timeout": 15,
         "retries": 0, "extractor_retries": 0,
         "extractor_args": {"youtube": {"lang": ["en-GB"]}},
+        # Regional query parameters defeat yt-dlp's exact recommended-URL
+        # exception. This worker intentionally follows only that home route.
+        "compat_opts": ["no-youtube-channel-redirect"],
     }
 
     try:

@@ -94,10 +94,10 @@ SCROLL_SCRIPT = (
     """window.scrollBy(0, Math.max(600, window.innerHeight * 1.5))"""
 )
 
-# A recommendation pass advances several screens while leaving YouTube time
-# to request its next continuation. Jitter is pacing, not a change of identity.
-HOME_SCROLL_SCRIPT = """window.scrollBy(0,
-    Math.max(1800, window.innerHeight * (3 + Math.random() * 2)))"""
+# Visit the bottom of each loaded batch to trigger the next continuation.
+# The separate pause adds pacing variation, not a change of identity.
+HOME_SCROLL_SCRIPT = """window.scrollTo(0,
+    (document.scrollingElement || document.documentElement).scrollHeight)"""
 
 
 async def navigate(page: zendriver.Tab, url: str) -> None:

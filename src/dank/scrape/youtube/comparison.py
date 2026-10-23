@@ -438,6 +438,7 @@ async def compare_home(
     config = BrowserConfig.from_settings(settings, headless=True)._replace(
         profile_dir=profile_dir,
         session_file=session_file,
+        allow_browser_signin=False,
     )
 
     async with BrowserSession(config) as session:

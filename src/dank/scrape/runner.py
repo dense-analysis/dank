@@ -558,6 +558,7 @@ async def _run_scrape(
                 )
                 youtube_config = browser_config._replace(
                     profile_dir=youtube_profile,
+                    allow_browser_signin=False,
                     session_file=(
                         youtube_profile / "youtube-session.json"
                         if settings.youtube.authenticated else None

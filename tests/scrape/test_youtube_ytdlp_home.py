@@ -291,3 +291,44 @@ def test_worker_initialization_errors_never_expose_cookie_payload(
     )
     _worker()
     assert events == [{"event": "error", "error_type": "ValueError"}]
+
+
+@pytest.mark.parametrize("allow_home_redirect", [False, True])
+def test_regional_home_url_needs_the_explicit_redirect_compatibility_option(
+    monkeypatch: pytest.MonkeyPatch, *, allow_home_redirect: bool,
+) -> None:
+    from yt_dlp.extractor.youtube import YoutubeTabIE  # type: ignore
+    from yt_dlp.utils import ExtractorError
+
+    data: dict[str, Any] = {
+        "contents": {"twoColumnBrowseResultsRenderer": {"tabs": [{
+            "tabRenderer": {
+                "selected": True, "tabIdentifier": "FEwhat_to_watch",
+                "content": {"richGridRenderer": {"contents": []}},
+            },
+        }]}},
+    }
+    options: Any = {
+        "quiet": True,
+        "compat_opts": (
+            ["no-youtube-channel-redirect"] if allow_home_redirect else []
+        ),
+    }
+    with yt_dlp.YoutubeDL(options) as downloader:
+        extractor: Any = YoutubeTabIE(downloader)
+        monkeypatch.setattr(
+            extractor, "_extract_webpage", Mock(return_value=("", data)),
+        )
+
+        if allow_home_redirect:
+            result, _ = extractor._extract_data(
+                "https://www.youtube.com/feed/recommended?gl=GB&hl=en-GB",
+                "recommended", ytcfg={"LOGGED_IN": True},
+            )
+            assert result == data
+        else:
+            with pytest.raises(ExtractorError, match="redirected"):
+                extractor._extract_data(
+                    "https://www.youtube.com/feed/recommended?gl=GB&hl=en-GB",
+                    "recommended", ytcfg={"LOGGED_IN": True},
+                )

@@ -53,7 +53,7 @@ CHANNEL_INITIAL_PAUSE_SECONDS = 0.5
 # Home discovery has its own short wall-clock budget, including navigation.
 # Generous item/scroll guards prevent runaway work without inheriting the
 # smaller limits intended for channel and news listings.
-HOME_BUDGET_SECONDS = 25.0
+HOME_BUDGET_SECONDS = 30.0
 HOME_ITEM_LIMIT = 2000
 HOME_SCROLL_LIMIT = 200
 HOME_SCROLL_PAUSE_SECONDS = (0.3, 0.65)

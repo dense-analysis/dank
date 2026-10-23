@@ -159,6 +159,7 @@ async def test_profile_isolation_and_feed_appearances_survive_media_skip(
         session: Browser, **kwargs: Any,
     ) -> AsyncIterator[ScrapeBatch]:
         profiles.append(session.config.profile_dir)
+        assert session.config.allow_browser_signin is False
         first, second = post(), post(shelf="More on this story")
         yield ScrapeBatch([first, second], [AssetDiscovery(
             "youtube", "youtube.com", first.post_id, first.url,

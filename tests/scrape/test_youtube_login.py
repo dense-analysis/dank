@@ -42,6 +42,7 @@ async def test_sign_in_uses_youtube_profile_and_closes_after_confirmation(
     assert await youtube_login.sign_in(settings, timeout_seconds=1)
     config: BrowserConfig = factory.call_args_list[0].args[0]
     assert config.profile_dir == tmp_path / "youtube-browser-profile"
+    assert config.allow_browser_signin is False
     assert config.headless is False
     assert context.__aexit__.await_count == 2
     assert factory.call_args_list[1].args[0].headless is True
@@ -67,6 +68,7 @@ async def test_session_check_does_not_report_signed_out_as_success(
     )
     config: BrowserConfig = factory.call_args.args[0]
     assert config.profile_dir == tmp_path / "custom-session"
+    assert config.allow_browser_signin is False
     assert config.headless is True
     context.__aexit__.assert_awaited_once()
 

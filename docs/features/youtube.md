@@ -220,7 +220,9 @@ vary results between requests even with matching cookies and close start times.
 ## Google account and 1Password
 
 Personal recommendations need a saved Google session. DANK keeps YouTube's
-profile separate from X and Reddit. Configure references to your Google login
+profile separate from X and Reddit. Chromium browser-account sign-in is disabled
+for that profile so it does not reconcile away the saved Google website session.
+Configure references to your Google login
 in private `config.toml`; passwords and authenticator secrets stay in 1Password:
 
 ```toml

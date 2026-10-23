@@ -226,6 +226,7 @@ async def sign_in(
         ),
     )
     config = config._replace(
+        allow_browser_signin=False,
         session_file=(config.profile_dir or settings.data_dir
                       / "youtube-browser-profile") / "youtube-session.json",
     )

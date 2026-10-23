@@ -170,8 +170,8 @@ later feeds to continue. Already persisted appearances remain available.
 Channel latest-video listings stop after consecutive known items; this heuristic
 does not apply to ranked or personalized feeds.
 
-Signed-in homepage **Recommendations** use a 25-second navigation/listing budget,
-rapid multi-screen scrolling and varied 0.3–0.65 second pauses. This pass replaces
+Signed-in homepage **Recommendations** use a 30-second navigation/listing budget,
+scrolling to the bottom of each loaded batch and varied 0.3–0.65 second pauses. This pass replaces
 the normal per-feed item/scroll/pause settings, with 2,000-item and 200-scroll
 safeguards. A stable bottom without continuation is checked for two seconds;
 a visible but unchanged continuation is allowed eight seconds without new
@@ -205,8 +205,18 @@ neither cookie injection nor vault access. Authentication failure stays local
 to YouTube collection. The private cache is refreshed only after verification,
 with page scripts stopped; invalid/expired caches preserve the saved file.
 See [session cache tests](../tests/test_youtube_session.py)
-and [login checks](../tests/scrape/test_youtube_login.py). Live restart and paired
-collection verification remain necessary before treating an account as ready.
+and [login checks](../tests/scrape/test_youtube_login.py).
+
+**Restart verification, 2026-10-23:** web login initially worked only while its
+browser stayed open. Reopening retained YouTube cookies but removed Google
+account cookies and invalidated the web session. Disabling Chromium's own
+browser-account sign-in for the isolated YouTube browser fixed this: a fresh
+login survived reopening and a separate one-off container check, with no new
+vault read. Login, collection and comparison use the same
+`--allow-browser-signin=false` setting; Google website sign-in remains enabled.
+Chromium's [account consistency implementation](https://chromium.googlesource.com/chromium/src/+/HEAD/chrome/browser/signin/account_consistency_mode_manager.cc)
+recognizes this setting. This does not prevent ordinary server-side expiry or
+future Google verification challenges.
 
 The paired comparison keeps yt-dlp's flat results separate: shelf context and
 text-only posts are unavailable, and Shorts shelves may be omitted. Reports
@@ -214,6 +224,25 @@ include raw/unique category totals, partial outcomes, start skew and video-ID
 overlap. A matched cookie snapshot and close starts reduce timing differences
 but cannot force YouTube to return identical recommendations. See
 [comparison tests](../tests/scrape/test_youtube_comparison.py).
+
+**Live paired comparison, 2026-10-23:** starts were 0.000209 seconds apart.
+The browser reached an observed end in 27.716 seconds with 322 unique items
+(304 videos, 18 Shorts, no posts). yt-dlp completed in 5.939 seconds with
+315 unique videos plus 27 playlist entries; it omitted all 18 browser Shorts.
+209 video identities overlapped. A fresh-process repeat after the session fix
+reached the browser end in 23.688 seconds with 251 videos and 18 Shorts; yt-dlp
+returned 251 videos plus 19 playlist entries in 5.711 seconds. Starts were
+0.000163 seconds apart, and 188 video identities overlapped. These are
+request-specific captures, not proof that either method is a strict superset. The regional recommended-feed URL
+requires yt-dlp's scoped `no-youtube-channel-redirect` compatibility option;
+without it, the extractor's exact-URL guard rejects the home response.
+
+The runner can import a captured browser comparison without collecting again
+or downloading media/captions. Original order, timestamps and source payloads
+are retained, while yt-dlp rows are excluded. Reimporting a completed or partial
+snapshot is idempotent. Interrupted imports require inspection before retry
+because raw posts are append-only. The comparison command remains read-only.
+See [import regressions](../tests/scrape/test_youtube_comparison_import.py).
 
 - [ ] **P2: Verify regional Hype playlist freshness across days.** The configured
   US playlist was supplied after viewing Hype through a US VPN on 2026-10-17.

@@ -275,6 +275,7 @@ async def test_pair_shares_auth_budget_and_keeps_partial_batches(
         == tmp_path / "youtube-browser-profile"
     )
     assert fixture.configurations[0].headless is True
+    assert fixture.configurations[0].allow_browser_signin is False
     assert fixture.browser.get.call_count == 1
 
 
