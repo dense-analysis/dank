@@ -19,6 +19,7 @@ from zendriver import cdp
 
 MAX_CACHE_BYTES = 1024 * 1024
 MAX_COOKIES = 512
+COOKIE_CAPTURE_TIMEOUT_SECONDS = 15.0
 COOKIE_REQUEST_SECONDS = 10
 AUTH_NAMES = {
     "SID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID",
@@ -286,7 +287,7 @@ async def save_youtube_session_from_page(
 ) -> bool:
     """Stop page scripts before saving the current authenticated cookies."""
     try:
-        async with asyncio.timeout(15):
+        async with asyncio.timeout(COOKIE_CAPTURE_TIMEOUT_SECONDS):
             verified = await page.evaluate(
                 "location.origin === 'https://www.youtube.com' && "
                 "window.ytcfg?.get?.('LOGGED_IN') === true",
@@ -298,7 +299,17 @@ async def save_youtube_session_from_page(
             # YouTube rotates cookies in open tabs. Stop its page scripts
             # before capturing the final snapshot, as recommended upstream:
             # https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies
+            previous = await page.evaluate("performance.timeOrigin")
             await page.get("https://www.youtube.com/robots.txt")
+
+            while await page.evaluate(
+                "location.origin === 'https://www.youtube.com' && "
+                "location.pathname === '/robots.txt' && "
+                "document.readyState === 'complete' && "
+                f"performance.timeOrigin !== {json.dumps(previous)}",
+            ) is not True:
+                await asyncio.sleep(0.1)
+
             return await save_youtube_session(browser, path)
     except Exception:
         return False

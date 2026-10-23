@@ -216,3 +216,37 @@ async def test_signed_out_page_never_replaces_saved_cookie_cache(
     )
     page.get.assert_not_called()
     save.assert_not_called()
+
+
+async def test_cookie_capture_waits_for_committed_static_document(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+):
+    page = SimpleNamespace(
+        evaluate=AsyncMock(side_effect=[True, 1000.0, False, False, True]),
+        get=AsyncMock(),
+    )
+    save = AsyncMock(return_value=True)
+    monkeypatch.setattr(session, "save_youtube_session", save)
+    assert await session.save_youtube_session_from_page(
+        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+    )
+    assert page.evaluate.await_count == 5
+    save.assert_awaited_once()
+
+
+async def test_cookie_capture_preserves_cache_if_static_page_never_commits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+):
+    answers = iter([True, 1000.0])
+
+    async def evaluate(_script: str):
+        return next(answers, False)
+
+    page = SimpleNamespace(evaluate=evaluate, get=AsyncMock())
+    save = AsyncMock()
+    monkeypatch.setattr(session, "save_youtube_session", save)
+    monkeypatch.setattr(session, "COOKIE_CAPTURE_TIMEOUT_SECONDS", 0.01)
+    assert not await session.save_youtube_session_from_page(
+        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+    )
+    save.assert_not_awaited()
