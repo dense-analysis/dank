@@ -540,6 +540,34 @@ def _stop_reason(capture: FeedCapture, idle: int) -> str | None:
     return None
 
 
+async def _verify_saved_session(
+    settings: Settings, session: BrowserSession, page: zendriver.Tab,
+) -> None:
+    if not settings.youtube.authenticated:
+        return
+
+    await navigate(page, _localized(ORIGIN + "/", settings.youtube.region))
+    profile = (settings.youtube.profile_dir
+               or settings.data_dir / "youtube-browser-profile")
+    guard = await session.get_youtube_session(profile / "youtube-session.json")
+
+    if await guard.check(page) is not True:
+        raise YouTubeFeedError(
+            "Could not verify the saved YouTube session; "
+            "run youtube-login separately",
+        )
+
+
+def _collection_failure(name: str, error: Exception) -> None:
+    count("fetch_failures")
+    stats = current_source.get()
+
+    if stats is not None:
+        stats.error_type = type(error).__name__
+
+    logger.warning("YouTube %s failed (%s)", name, type(error).__name__)
+
+
 async def scrape_youtube_feeds(
     settings: Settings,
     source: SourceConfig,
@@ -561,6 +589,12 @@ async def scrape_youtube_feeds(
         page = await browser.get("about:blank", new_tab=True)
 
     try:
+        try:
+            await _verify_saved_session(settings, session, page)
+        except Exception as error:
+            _collection_failure("session verification", error)
+            return
+
         for feed in feeds:
             try:
                 async for batch in _scrape_feed(
@@ -571,17 +605,7 @@ async def scrape_youtube_feeds(
                 ):
                     yield batch
             except Exception as error:
-                count("fetch_failures")
-
-                if stats is not None:
-                    stats.error_type = type(error).__name__
-
-                logger.warning(
-                    "YouTube %s failed (%s): %s; continuing with next feed",
-                    feed.name,
-                    type(error).__name__,
-                    error,
-                )
+                _collection_failure(feed.name, error)
     finally:
         try:
             if settings.youtube.authenticated:

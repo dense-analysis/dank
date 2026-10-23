@@ -20,7 +20,11 @@ from dank.scrape.youtube import (
     _localized,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
-from dank.youtube_session import save_youtube_session_from_page
+from dank.youtube_session import (
+    YouTubeSession,
+    read_youtube_session_state,
+    save_youtube_session_from_page,
+)
 
 from .browser import navigate
 from .payloads import ORIGIN, YouTubeFeed, as_dict
@@ -332,12 +336,9 @@ async def compare_authenticated_home(
     started = loop.time()
 
     async with asyncio.timeout(WARMUP_TIMEOUT_SECONDS):
-        signed_in = await page.evaluate(
-            "location.origin === 'https://www.youtube.com' && "
-            "window.ytcfg?.get?.('LOGGED_IN') === true",
-        )
+        state = await read_youtube_session_state(page)
 
-        if signed_in is not True:
+        if state.signed_in is not True:
             raise YouTubeFeedError(
                 "Sign in to YouTube before comparing collectors",
             )
@@ -447,6 +448,13 @@ async def compare_home(
                 page,
                 _localized(ORIGIN + "/", settings.youtube.region),
             )
+            guard = YouTubeSession(browser, session_file)
+
+            if await guard.check(page) is not True:
+                raise YouTubeFeedError(
+                    "Could not verify the saved YouTube session; "
+                    "run youtube-login separately",
+                )
 
         launch_seconds = loop.time() - started
         report = await compare_authenticated_home(

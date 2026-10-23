@@ -11,11 +11,12 @@ import re
 import stat
 import tempfile
 import time
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
 
 import zendriver
 from zendriver import cdp
+from zendriver.core.connection import ProtocolException
 
 MAX_CACHE_BYTES = 1024 * 1024
 MAX_COOKIES = 512
@@ -302,7 +303,7 @@ async def save_youtube_session_from_page(
             previous = await page.evaluate("performance.timeOrigin")
             await page.get("https://www.youtube.com/robots.txt")
 
-            while await page.evaluate(
+            while await page.evaluate(  # noqa: ASYNC110
                 "location.origin === 'https://www.youtube.com' && "
                 "location.pathname === '/robots.txt' && "
                 "document.readyState === 'complete' && "
@@ -313,3 +314,97 @@ async def save_youtube_session_from_page(
             return await save_youtube_session(browser, path)
     except Exception:
         return False
+
+
+SESSION_POLL_SECONDS = 0.5
+SESSION_STATE_SCRIPT = """JSON.stringify((() => {
+    if (location.origin !== 'https://www.youtube.com' ||
+        location.pathname !== '/' || document.readyState !== 'complete')
+        return {signed_in: null, document: null};
+    const state = window.ytcfg?.get?.('LOGGED_IN');
+    return {signed_in: typeof state === 'boolean' ? state : null,
+        document: performance.timeOrigin};
+})())"""
+
+
+class SessionState(NamedTuple):
+    signed_in: bool | None = None
+    document: float | None = None
+
+
+async def read_youtube_session_state(page: zendriver.Tab) -> SessionState:
+    """Only a complete YouTube homepage can establish an auth decision."""
+    try:
+        decoded = json.loads(str(await page.evaluate(SESSION_STATE_SCRIPT)))
+
+        if not isinstance(decoded, dict):
+            return SessionState()
+
+        data = cast(dict[str, object], decoded)
+        marker = data.get("document")
+        signed_in = data.get("signed_in")
+
+        if (type(signed_in) is not bool
+                or not isinstance(marker, int | float)
+                or isinstance(marker, bool) or not math.isfinite(marker)
+                or marker <= 0):
+            return SessionState()
+
+        return SessionState(signed_in, float(marker))
+    except (ValueError, ProtocolException, ConnectionError):
+        return SessionState()
+
+
+async def _wait_youtube_state(
+    page: zendriver.Tab, previous_document: float | None = None,
+) -> SessionState:
+    while True:
+        state = await read_youtube_session_state(page)
+
+        if (state.signed_in is not None and state.document is not None
+                and state.document != previous_document):
+            return state
+
+        await asyncio.sleep(SESSION_POLL_SECONDS)
+
+
+class YouTubeSession:
+    """Keep native auth authoritative; try a saved cookie jar at most once."""
+
+    def __init__(
+        self, browser: zendriver.Browser, cache_path: pathlib.Path | None,
+    ) -> None:
+        self.browser = browser
+        self.cache_path = cache_path
+        self.restore_attempted = False
+        self._lock = asyncio.Lock()
+        self._pending_document: float | None = None
+
+    async def check(
+        self, page: zendriver.Tab, *, timeout_seconds: float = 15,
+    ) -> bool | None:
+        try:
+            async with asyncio.timeout(timeout_seconds), self._lock:
+                state = await _wait_youtube_state(page, self._pending_document)
+                self._pending_document = None
+
+                if (state.signed_in is True or self.restore_attempted
+                        or self.cache_path is None):
+                    return state.signed_in
+
+                # Mark first so cancellation cannot replay stale cookies.
+                self.restore_attempted = True
+
+                if not await restore_youtube_session(
+                    self.browser, self.cache_path,
+                ):
+                    return False
+
+                self._pending_document = state.document
+                await page.reload(ignore_cache=True)
+                refreshed = await _wait_youtube_state(page, state.document)
+                self._pending_document = None
+
+                return refreshed.signed_in
+        except (TimeoutError, ProtocolException, ConnectionError):
+            return None

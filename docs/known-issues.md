@@ -198,10 +198,13 @@ Google sign-in uses one 1Password item read per attempt and generates any
 requested authenticator code in memory. A successful callback is insufficient:
 login must authenticate a clean homepage and a new browser instance. A refused
 vault request stops the attempt; collection never falls back to signed-out
-recommendations. The private cookie cache is captured after verification,
-with page scripts stopped, and refreshed after collection so older cookies
-cannot replace a rotated session. Invalid/expired caches preserve the last
-saved file and require sign-in. See [session cache tests](../tests/test_youtube_session.py)
+recommendations. Native profile cookies are checked first. Only a complete,
+definitively signed-out homepage permits one cache restore per browser session;
+a fresh document must then authenticate. Loading or uncertain states trigger
+neither cookie injection nor vault access. Authentication failure stays local
+to YouTube collection. The private cache is refreshed only after verification,
+with page scripts stopped; invalid/expired caches preserve the saved file.
+See [session cache tests](../tests/test_youtube_session.py)
 and [login checks](../tests/scrape/test_youtube_login.py). Live restart and paired
 collection verification remain necessary before treating an account as ready.
 

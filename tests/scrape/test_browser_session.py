@@ -357,3 +357,24 @@ async def test_failed_browser_start_releases_profile_lock(
         await second.get_browser()
 
     assert start.await_count == 2
+
+
+async def test_startup_does_not_restore_and_youtube_sources_share_one_guard(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = _browser()
+    browser.stopped = True
+    browser.cookies.set_all = AsyncMock()
+    monkeypatch.setattr(browser_module.zendriver, "start", AsyncMock(
+        return_value=browser,
+    ))
+    cache = tmp_path / "youtube-session.json"
+
+    async with BrowserSession(BrowserConfig(
+        profile_dir=tmp_path / "profile", session_file=cache,
+    )) as owner:
+        await owner.get_browser()
+        first = await owner.get_youtube_session(cache)
+        second = await owner.get_youtube_session(cache)
+        assert first is second
+        browser.cookies.set_all.assert_not_awaited()

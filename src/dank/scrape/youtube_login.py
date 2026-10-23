@@ -23,7 +23,7 @@ from dank.scrape.zendriver import (
     BrowserProfileBusyError,
     BrowserSession,
 )
-from dank.youtube_session import save_youtube_session_from_page
+from dank.youtube_session import YouTubeSession, save_youtube_session_from_page
 
 SESSION_POLL_SECONDS = 1.0
 SESSION_CHECK_SECONDS = 15.0
@@ -139,10 +139,13 @@ async def _open_session(
     async with BrowserSession(config) as session:
         browser = await session.get_browser()
         page = await browser.get("https://www.youtube.com/")
-        existing = await _wait_for_session(
-            page, min(timeout_seconds, SESSION_CHECK_SECONDS),
-            stop_signed_out=not check_only,
+        guard = YouTubeSession(browser, session_path)
+        existing = await guard.check(
+            page, timeout_seconds=min(timeout_seconds, SESSION_CHECK_SECONDS),
         )
+
+        if existing is None:
+            return False
 
         if check_only or existing:
             if existing:

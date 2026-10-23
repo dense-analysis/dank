@@ -14,7 +14,7 @@ import zendriver
 from zendriver import cdp
 
 from dank.config import Settings
-from dank.youtube_session import restore_youtube_session
+from dank.youtube_session import YouTubeSession
 
 logger = logging.getLogger(__name__)
 # Zendriver 0.17.1 sends SIGTERM immediately after CDP Browser.close.
@@ -86,6 +86,7 @@ class BrowserSession:
     def __init__(self, config: BrowserConfig) -> None:
         self._config = config
         self._browser: zendriver.Browser | None = None
+        self._youtube_session: YouTubeSession | None = None
         self._lock = asyncio.Lock()
         self._profile_lock: IO[bytes] | None = None
 
@@ -136,12 +137,19 @@ class BrowserSession:
                 )
                 await self._browser.wait(0.5)
 
-                if self._config.session_file is not None:
-                    await restore_youtube_session(
-                        self._browser, self._config.session_file,
-                    )
-
             return self._browser
+
+    async def get_youtube_session(
+        self, cache_path: pathlib.Path,
+    ) -> YouTubeSession:
+        browser = await self.get_browser()
+
+        if self._youtube_session is None:
+            self._youtube_session = YouTubeSession(browser, cache_path)
+        elif self._youtube_session.cache_path != cache_path:
+            raise ValueError("Cannot change the YouTube session cache path")
+
+        return self._youtube_session
 
     def _acquire_profile(self) -> None:
         profile = self._config.profile_dir
@@ -200,6 +208,7 @@ class BrowserSession:
                 await self._stop_browser(browser)
             finally:
                 self._browser = None
+                self._youtube_session = None
                 self._release_profile()
 
     async def _stop_browser(self, browser: zendriver.Browser) -> None:

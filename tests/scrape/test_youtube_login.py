@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
 from types import SimpleNamespace
 from typing import Any, cast
@@ -11,6 +12,9 @@ import pytest
 from dank.config import YouTubeOnePasswordSettings, load_settings
 from dank.scrape import youtube_login
 from dank.scrape.zendriver import BrowserConfig
+
+AUTHENTICATED = json.dumps({"signed_in": True, "document": 1000})
+SIGNED_OUT = json.dumps({"signed_in": False, "document": 1000})
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +31,7 @@ async def test_sign_in_uses_youtube_profile_and_closes_after_confirmation(
     settings = load_settings("config.native.example.toml")._replace(
         data_dir=tmp_path,
     )
-    page = SimpleNamespace(evaluate=AsyncMock(return_value=True))
+    page = SimpleNamespace(evaluate=AsyncMock(return_value=AUTHENTICATED))
     browser = SimpleNamespace(get=AsyncMock(return_value=page))
     context = AsyncMock()
     context.__aenter__.return_value = SimpleNamespace(
@@ -90,7 +94,7 @@ def automated_settings() -> Any:
 async def test_saved_session_never_opens_vault(
     monkeypatch: pytest.MonkeyPatch, *, check_only: bool,
 ) -> None:
-    page = SimpleNamespace(evaluate=AsyncMock(return_value=True))
+    page = SimpleNamespace(evaluate=AsyncMock(return_value=AUTHENTICATED))
     browser = SimpleNamespace(get=AsyncMock(return_value=page))
     context = AsyncMock()
     context.__aenter__.return_value = SimpleNamespace(
@@ -112,7 +116,7 @@ async def test_automated_login_checks_saved_session_before_lazy_provider(
 ) -> None:
     settings = automated_settings()
     page = SimpleNamespace(evaluate=AsyncMock(side_effect=[
-        "signed_out", True, True,
+        SIGNED_OUT, AUTHENTICATED, AUTHENTICATED,
     ]))
     browser = SimpleNamespace(get=AsyncMock(return_value=page))
     context = AsyncMock()
@@ -154,7 +158,7 @@ async def test_session_must_survive_reopening_before_reporting_saved(
     monkeypatch.setattr(youtube_login, "BrowserSession", Mock(
         return_value=context,
     ))
-    monkeypatch.setattr(youtube_login, "_wait_for_session", AsyncMock(
+    monkeypatch.setattr(youtube_login.YouTubeSession, "check", AsyncMock(
         side_effect=[True, False],
     ))
     assert not await youtube_login.sign_in(
@@ -174,8 +178,11 @@ async def test_manual_login_does_not_use_configured_credentials(
     factory = Mock(return_value=context)
     monkeypatch.setattr(youtube_login, "BrowserSession", factory)
     monkeypatch.setattr(youtube_login, "GoogleCredentialProvider", credentials)
+    monkeypatch.setattr(youtube_login.YouTubeSession, "check", AsyncMock(
+        side_effect=[False, True],
+    ))
     monkeypatch.setattr(youtube_login, "_wait_for_session", AsyncMock(
-        side_effect=[False, True, True],
+        return_value=True,
     ))
     finalized = AsyncMock(return_value=True)
     monkeypatch.setattr(youtube_login, "_finalize_session", finalized)
@@ -252,7 +259,7 @@ async def test_finalization_rejects_stale_or_signed_out_documents(
 async def test_finalization_failure_does_not_restart_login_or_read_vault_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    page = SimpleNamespace(evaluate=AsyncMock(return_value="signed_out"))
+    page = SimpleNamespace(evaluate=AsyncMock(return_value=SIGNED_OUT))
     browser = SimpleNamespace(get=AsyncMock(return_value=page))
     context = AsyncMock()
     context.__aenter__.return_value = SimpleNamespace(
@@ -291,3 +298,25 @@ async def test_finalization_cancellation_propagates(
         )
 
     page.reload.assert_not_awaited()
+
+
+async def test_unresolved_native_state_never_opens_vault_or_rewrites_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = AsyncMock()
+    context.__aenter__.return_value = SimpleNamespace(
+        get_browser=AsyncMock(return_value=SimpleNamespace(get=AsyncMock())),
+    )
+    credentials = Mock()
+    monkeypatch.setattr(youtube_login, "BrowserSession", Mock(
+        return_value=context,
+    ))
+    monkeypatch.setattr(youtube_login.YouTubeSession, "check", AsyncMock(
+        return_value=None,
+    ))
+    monkeypatch.setattr(youtube_login, "GoogleCredentialProvider", credentials)
+    assert not await youtube_login.sign_in(
+        automated_settings(), timeout_seconds=1,
+    )
+    credentials.assert_not_called()
+    youtube_login.save_youtube_session_from_page.assert_not_awaited()  # type: ignore

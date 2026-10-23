@@ -378,3 +378,35 @@ async def test_explicit_regional_hype_skips_local_discovery_and_saves_region(
     assert discovery["feed_kind"] == "hype"
     assert discovery["rank"] == 1
     assert discovery["observed_at"]
+
+
+async def test_session_preflight_failure_is_local_and_closes_the_tab(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dank.config import SourceConfig, load_settings
+    from dank.scrape.metrics import SourceMetrics, current_source
+    from dank.scrape.youtube import YouTubeFeedError, scrape_youtube_feeds
+
+    settings = load_settings("config.native.example.toml")
+    source = SourceConfig("youtube.com", ())
+    stats = SourceMetrics(0, source)
+    owner = AsyncMock()
+    page = owner.get_browser.return_value.get.return_value
+    monkeypatch.setattr("dank.scrape.youtube._verify_saved_session", AsyncMock(
+        side_effect=YouTubeFeedError("session unavailable"),
+    ))
+    collect = AsyncMock()
+    monkeypatch.setattr("dank.scrape.youtube._scrape_feed", collect)
+    token = current_source.set(stats)
+
+    try:
+        assert [batch async for batch in scrape_youtube_feeds(
+            settings, source, owner,
+        )] == []
+    finally:
+        current_source.reset(token)
+
+    assert stats.counts["fetch_failures"] == 1
+    assert stats.error_type == "YouTubeFeedError"
+    collect.assert_not_called()
+    page.close.assert_awaited_once()

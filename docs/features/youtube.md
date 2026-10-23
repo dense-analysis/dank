@@ -270,11 +270,12 @@ mode opens a local browser. Native and Docker profiles are separate, so use
 the mode that collects your feeds. The saved profile normally lives at
 `<storage.data_dir>/youtube-browser-profile`; `profile_dir` can override it.
 DANK also keeps an owner-only (0600) youtube-session.json beside that
-profile. It restores those cookies into its dedicated browser and refreshes
-the snapshot after collection. Saved cookies are captured after verified
-homepage authentication, once page scripts have stopped, so an earlier
-snapshot cannot overwrite rotated cookies. Keep the profile and cookie cache
-private; Google passwords and authenticator seeds remain in 1Password.
+profile. Native profile authentication takes precedence. Only a completed,
+signed-out homepage permits one cache restore per browser session, followed
+by verification in a fresh document. Loading or uncertain pages trigger neither
+restoration nor vault access. DANK refreshes the cache after verified collection,
+with page scripts stopped. Keep the profile and cookie cache private; Google
+passwords and authenticator seeds remain in 1Password.
 
 Authenticated collection requires a valid saved session; it never silently
 collects a signed-out homepage. Public feeds remain signed out by default.

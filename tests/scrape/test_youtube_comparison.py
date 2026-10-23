@@ -138,7 +138,9 @@ def setup_browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         for value in cookie_values
     ]
     auth = SimpleNamespace(
-        evaluate=AsyncMock(return_value=True),
+        evaluate=AsyncMock(return_value=json.dumps({
+            "signed_in": True, "document": 1000,
+        })),
         send=AsyncMock(return_value=cookies),
         close=AsyncMock(),
     )
@@ -227,7 +229,7 @@ async def test_pair_shares_auth_budget_and_keeps_partial_batches(
         )
 
     async def collect_ytdlp(cookies: Any, **kwargs: Any):
-        assert fixture.auth.evaluate.await_count == 1
+        assert fixture.auth.evaluate.await_count == 2
         assert {cookie["domain"] for cookie in cookies} == {
             ".youtube.com",
             ".google.com",
@@ -281,12 +283,14 @@ async def test_signed_out_stops_before_collection_and_cookies(
     tmp_path: Path,
 ):
     fixture = setup_browser(monkeypatch, tmp_path)
-    fixture.auth.evaluate.return_value = False
+    fixture.auth.evaluate.return_value = json.dumps({
+        "signed_in": False, "document": 1000,
+    })
     browser, ytdlp = AsyncMock(), AsyncMock()
     monkeypatch.setattr(comparison, "_collect_home_feed", browser)
     monkeypatch.setattr(comparison, "collect_ytdlp_home", ytdlp)
 
-    with pytest.raises(YouTubeFeedError, match="Sign in"):
+    with pytest.raises(YouTubeFeedError, match="saved YouTube session"):
         await comparison.compare_home(fixture.settings)
 
     browser.assert_not_awaited()
@@ -426,7 +430,9 @@ async def test_authenticated_comparison_failure_preserves_caller_session(
     tmp_path: Path,
 ):
     fixture = setup_browser(monkeypatch, tmp_path)
-    fixture.auth.evaluate.return_value = False
+    fixture.auth.evaluate.return_value = json.dumps({
+        "signed_in": False, "document": 1000,
+    })
     collect = AsyncMock()
     monkeypatch.setattr(comparison, "_collect_home_feed", collect)
 

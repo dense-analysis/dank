@@ -192,13 +192,13 @@ async def test_snapshot_stops_page_scripts_before_reading_current_cookies(
         order.append("cookies saved")
         return True
 
-    page = SimpleNamespace(
+    page: Any = SimpleNamespace(
         evaluate=AsyncMock(return_value=True),
         get=AsyncMock(side_effect=navigate),
     )
     monkeypatch.setattr(session, "save_youtube_session", save)
     assert await session.save_youtube_session_from_page(
-        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+        cast(Any, object()), page, tmp_path / "session.json",
     )
     assert order == ["page stopped", "cookies saved"]
 
@@ -206,13 +206,13 @@ async def test_snapshot_stops_page_scripts_before_reading_current_cookies(
 async def test_signed_out_page_never_replaces_saved_cookie_cache(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
 ):
-    page = SimpleNamespace(
+    page: Any = SimpleNamespace(
         evaluate=AsyncMock(return_value=False), get=AsyncMock(),
     )
     save = AsyncMock()
     monkeypatch.setattr(session, "save_youtube_session", save)
     assert not await session.save_youtube_session_from_page(
-        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+        cast(Any, object()), page, tmp_path / "session.json",
     )
     page.get.assert_not_called()
     save.assert_not_called()
@@ -221,14 +221,14 @@ async def test_signed_out_page_never_replaces_saved_cookie_cache(
 async def test_cookie_capture_waits_for_committed_static_document(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
 ):
-    page = SimpleNamespace(
+    page: Any = SimpleNamespace(
         evaluate=AsyncMock(side_effect=[True, 1000.0, False, False, True]),
         get=AsyncMock(),
     )
     save = AsyncMock(return_value=True)
     monkeypatch.setattr(session, "save_youtube_session", save)
     assert await session.save_youtube_session_from_page(
-        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+        cast(Any, object()), page, tmp_path / "session.json",
     )
     assert page.evaluate.await_count == 5
     save.assert_awaited_once()
@@ -242,11 +242,128 @@ async def test_cookie_capture_preserves_cache_if_static_page_never_commits(
     async def evaluate(_script: str):
         return next(answers, False)
 
-    page = SimpleNamespace(evaluate=evaluate, get=AsyncMock())
+    page: Any = SimpleNamespace(evaluate=evaluate, get=AsyncMock())
     save = AsyncMock()
     monkeypatch.setattr(session, "save_youtube_session", save)
     monkeypatch.setattr(session, "COOKIE_CAPTURE_TIMEOUT_SECONDS", 0.01)
     assert not await session.save_youtube_session_from_page(
-        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+        cast(Any, object()), page, tmp_path / "session.json",
     )
     save.assert_not_awaited()
+
+
+def page_state(*, signed_in: bool | None, marker: object = 1000) -> str:
+    return json.dumps({"signed_in": signed_in, "document": marker})
+
+
+def auth_page(*, signed_in: bool | None = False) -> Any:
+    return SimpleNamespace(
+        evaluate=AsyncMock(return_value=page_state(signed_in=signed_in)),
+        reload=AsyncMock(),
+    )
+
+
+async def test_native_authentication_never_injects_cached_cookies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    restore = AsyncMock()
+    monkeypatch.setattr(session, "restore_youtube_session", restore)
+    page = auth_page(signed_in=True)
+    guard = session.YouTubeSession(
+        browser(), tmp_path / "youtube-session.json",
+    )
+    assert await guard.check(page) is True
+    restore.assert_not_awaited()
+    page.reload.assert_not_awaited()
+    assert not guard.restore_attempted
+
+
+@pytest.mark.parametrize("payload", [
+    page_state(signed_in=None), page_state(signed_in=False, marker=None),
+    page_state(signed_in=False, marker=float("nan")), "null", "false",
+    page_state(signed_in=True, marker=True),
+])
+async def test_unresolved_state_never_restores(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, payload: str,
+) -> None:
+    restore = AsyncMock()
+    monkeypatch.setattr(session, "restore_youtube_session", restore)
+    page = auth_page()
+    page.evaluate.return_value = payload
+    guard = session.YouTubeSession(
+        browser(), tmp_path / "youtube-session.json",
+    )
+    assert await guard.check(page, timeout_seconds=0.005) is None
+    restore.assert_not_awaited()
+    assert not guard.restore_attempted
+
+
+async def test_one_fallback_requires_fresh_document_and_is_not_replayed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    restore = AsyncMock(return_value=True)
+    monkeypatch.setattr(session, "restore_youtube_session", restore)
+    monkeypatch.setattr(session, "SESSION_POLL_SECONDS", 0)
+    page = auth_page()
+    page.evaluate.side_effect = [
+        page_state(signed_in=False), page_state(signed_in=True),
+        page_state(signed_in=False), page_state(signed_in=True, marker=2000),
+        page_state(signed_in=False, marker=3000),
+    ]
+    guard = session.YouTubeSession(
+        browser(), tmp_path / "youtube-session.json",
+    )
+    assert await guard.check(page) is True
+    assert await guard.check(page) is False
+    restore.assert_awaited_once()
+    page.reload.assert_awaited_once_with(ignore_cache=True)
+
+
+async def test_failed_fallback_preserves_cache_without_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    cache = tmp_path / "youtube-session.json"
+    cache.write_text("invalid existing cache")
+    cache.chmod(0o600)
+    page = auth_page()
+    target = browser()
+    guard = session.YouTubeSession(target, cache)
+    assert await guard.check(page) is False
+    assert await guard.check(page) is False
+    assert cache.read_text() == "invalid existing cache"
+    target.cookies.set_all.assert_not_awaited()
+    page.reload.assert_not_awaited()
+
+
+async def test_reload_timeout_keeps_old_document_unknown_on_later_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    restore = AsyncMock(return_value=True)
+    monkeypatch.setattr(session, "restore_youtube_session", restore)
+    page = auth_page()
+    guard = session.YouTubeSession(
+        browser(), tmp_path / "youtube-session.json",
+    )
+    assert await guard.check(page, timeout_seconds=0.005) is None
+    assert await guard.check(page, timeout_seconds=0.005) is None
+    restore.assert_awaited_once()
+    page.reload.assert_awaited_once()
+    page.evaluate.return_value = page_state(signed_in=True, marker=2000)
+    assert await guard.check(page) is True
+
+
+async def test_cancelled_fallback_cannot_retry_in_same_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    restore = AsyncMock(side_effect=asyncio.CancelledError)
+    monkeypatch.setattr(session, "restore_youtube_session", restore)
+    page = auth_page()
+    guard = session.YouTubeSession(
+        browser(), tmp_path / "youtube-session.json",
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await guard.check(page)
+
+    assert await guard.check(page) is False
+    restore.assert_awaited_once()

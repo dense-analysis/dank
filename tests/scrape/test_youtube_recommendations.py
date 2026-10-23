@@ -254,6 +254,9 @@ async def test_truncated_home_keeps_posts_and_marks_source_partial(
 
     page, _ = _install_listing(monkeypatch)
     monkeypatch.setattr("dank.scrape.youtube.HOME_SCROLL_LIMIT", 0)
+    monkeypatch.setattr(
+        "dank.scrape.youtube._verify_saved_session", AsyncMock(),
+    )
     fixture = tmp_path / "settings.fixture.toml"
     fixture.write_text("")
     settings = load_settings(fixture)._replace(youtube=YouTubeSettings(
