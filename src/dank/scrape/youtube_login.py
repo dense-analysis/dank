@@ -144,7 +144,9 @@ async def _open_session(
             page, timeout_seconds=min(timeout_seconds, SESSION_CHECK_SECONDS),
         )
 
-        if existing is None:
+        automated = settings.youtube.onepassword is not None and not manual
+
+        if existing is None and (check_only or automated):
             return False
 
         if check_only or existing:
@@ -153,9 +155,10 @@ async def _open_session(
                     browser, page, session_path,
                 )
 
-            return existing
+            return existing is True
 
-        if settings.youtube.onepassword is not None and not manual:
+        if automated:
+            assert settings.youtube.onepassword is not None
             provider = GoogleCredentialProvider(
                 settings.youtube.onepassword, stdio=credentials_stdio,
             )

@@ -320,3 +320,40 @@ async def test_unresolved_native_state_never_opens_vault_or_rewrites_cache(
     )
     credentials.assert_not_called()
     youtube_login.save_youtube_session_from_page.assert_not_awaited()  # type: ignore
+
+
+@pytest.mark.parametrize("manual", [False, True])
+async def test_unresolved_manual_session_can_wait_without_opening_vault(
+    monkeypatch: pytest.MonkeyPatch, *, manual: bool,
+) -> None:
+    settings = automated_settings()
+
+    if not manual:
+        settings = settings._replace(youtube=settings.youtube._replace(
+            onepassword=None,
+        ))
+
+    context = AsyncMock()
+    context.__aenter__.return_value = SimpleNamespace(
+        get_browser=AsyncMock(return_value=SimpleNamespace(get=AsyncMock())),
+    )
+    credentials = Mock()
+    monkeypatch.setattr(youtube_login, "BrowserSession", Mock(
+        return_value=context,
+    ))
+    monkeypatch.setattr(youtube_login.YouTubeSession, "check", AsyncMock(
+        side_effect=[None, True],
+    ))
+    monkeypatch.setattr(youtube_login, "GoogleCredentialProvider", credentials)
+    manual_wait = AsyncMock(return_value=True)
+    monkeypatch.setattr(youtube_login, "_wait_for_session", manual_wait)
+    monkeypatch.setattr(youtube_login, "_finalize_session", AsyncMock(
+        return_value=True,
+    ))
+    assert await youtube_login.sign_in(
+        settings, timeout_seconds=30, manual=manual,
+    )
+    credentials.assert_not_called()
+    manual_wait.assert_awaited_once()
+    assert manual_wait.await_args is not None
+    assert manual_wait.await_args.args[1] == 30
