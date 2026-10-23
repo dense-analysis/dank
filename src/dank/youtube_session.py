@@ -279,3 +279,26 @@ async def restore_youtube_session(
         return True
     except Exception:
         return False
+
+
+async def save_youtube_session_from_page(
+    browser: zendriver.Browser, page: zendriver.Tab, path: pathlib.Path,
+) -> bool:
+    """Stop page scripts before saving the current authenticated cookies."""
+    try:
+        async with asyncio.timeout(15):
+            verified = await page.evaluate(
+                "location.origin === 'https://www.youtube.com' && "
+                "window.ytcfg?.get?.('LOGGED_IN') === true",
+            )
+
+            if verified is not True:
+                return False
+
+            # YouTube rotates cookies in open tabs. Stop its page scripts
+            # before capturing the final snapshot, as recommended upstream:
+            # https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies
+            await page.get("https://www.youtube.com/robots.txt")
+            return await save_youtube_session(browser, path)
+    except Exception:
+        return False

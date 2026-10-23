@@ -194,6 +194,24 @@ cover exclusions, item kinds, partial captures, bounded navigation, end/stall
 handling and unchanged News collection; live account depth remains a separate
 operational check.
 
+Google sign-in uses one 1Password item read per attempt and generates any
+requested authenticator code in memory. A successful callback is insufficient:
+login must authenticate a clean homepage and a new browser instance. A refused
+vault request stops the attempt; collection never falls back to signed-out
+recommendations. The private cookie cache is captured after verification,
+with page scripts stopped, and refreshed after collection so older cookies
+cannot replace a rotated session. Invalid/expired caches preserve the last
+saved file and require sign-in. See [session cache tests](../tests/test_youtube_session.py)
+and [login checks](../tests/scrape/test_youtube_login.py). Live restart and paired
+collection verification remain necessary before treating an account as ready.
+
+The paired comparison keeps yt-dlp's flat results separate: shelf context and
+text-only posts are unavailable, and Shorts shelves may be omitted. Reports
+include raw/unique category totals, partial outcomes, start skew and video-ID
+overlap. A matched cookie snapshot and close starts reduce timing differences
+but cannot force YouTube to return identical recommendations. See
+[comparison tests](../tests/scrape/test_youtube_comparison.py).
+
 - [ ] **P2: Verify regional Hype playlist freshness across days.** The configured
   US playlist was supplied after viewing Hype through a US VPN on 2026-10-17.
   A same-day public yt-dlp metadata check returned **United States's top hyped

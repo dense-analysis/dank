@@ -21,6 +21,7 @@ from dank.scrape.zendriver import (
     NetworkCapture,
     NetworkResponse,
 )
+from dank.youtube_session import save_youtube_session_from_page
 
 from .browser import (
     EXPAND_SCRIPT,
@@ -294,8 +295,9 @@ async def _collect_home_feed(
     capture = NetworkCapture(page, [r"youtube\.com/youtubei/v1/browse"])
     collected = FeedCapture(feed, settings, set())
 
-    if max_items is not None:
-        collected.item_limit = max_items
+    collected.item_limit = (
+        collected.item_limit if max_items is None else max_items
+    )
 
     scroll_limit = HOME_SCROLL_LIMIT if max_scrolls is None else max_scrolls
     loop = asyncio.get_running_loop()
@@ -582,6 +584,15 @@ async def scrape_youtube_feeds(
                 )
     finally:
         try:
+            if settings.youtube.authenticated:
+                profile = (
+                    settings.youtube.profile_dir
+                    or settings.data_dir / "youtube-browser-profile"
+                )
+                await save_youtube_session_from_page(
+                    browser, page, profile / "youtube-session.json",
+                )
+
             async with asyncio.timeout(5):
                 await page.close()
         except Exception as error:

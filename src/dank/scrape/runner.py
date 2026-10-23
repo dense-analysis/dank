@@ -266,6 +266,10 @@ async def _run_scrape(
                 )
                 youtube_config = browser_config._replace(
                     profile_dir=youtube_profile,
+                    session_file=(
+                        youtube_profile / "youtube-session.json"
+                        if settings.youtube.authenticated else None
+                    ),
                 )
                 await _run_source_sessions(
                     settings, clickhouse_client, history, assets_dir,
@@ -2500,3 +2504,36 @@ async def collect_run_youtube_transcripts(
 
         if not row["cached"]:
             await asyncio.sleep(2)
+
+
+def compare_youtube_home_main() -> None:
+    """Run both homepage collectors together and save inspectable evidence."""
+    import argparse
+    import math
+
+    from dank.scrape.youtube.comparison import compare_home
+
+    parser = argparse.ArgumentParser(
+        prog="youtube-compare",
+        description="Compare browser and yt-dlp recommendations together.",
+    )
+    parser.add_argument("--config", default="config.toml")
+    parser.add_argument(
+        "--timeout", type=float, default=240,
+        help="Maximum seconds per method, up to 240 (default: 240)",
+    )
+    args = parser.parse_args()
+
+    if not math.isfinite(args.timeout) or not 0 < args.timeout <= 240:
+        parser.error("--timeout must be positive and no greater than 240")
+
+    settings = load_settings(args.config)
+    configure_logging(settings.logging, component="youtube-compare")
+    report = asyncio.run(compare_home(settings, timeout_seconds=args.timeout))
+    directory = settings.data_dir / "comparisons"
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    path = directory / f"youtube-home-{stamp}.json"
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    path.chmod(0o600)
+    print(f"YouTube comparison saved: {path}", flush=True)

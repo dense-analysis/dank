@@ -14,6 +14,7 @@ import zendriver
 from zendriver import cdp
 
 from dank.config import Settings
+from dank.youtube_session import restore_youtube_session
 
 logger = logging.getLogger(__name__)
 # Zendriver 0.17.1 sends SIGTERM immediately after CDP Browser.close.
@@ -58,6 +59,7 @@ class BrowserConfig(NamedTuple):
     connection_max_tries: int | None = None
     keep_open: bool = False
     profile_dir: pathlib.Path | None = None
+    session_file: pathlib.Path | None = None
 
     @classmethod
     def from_settings(
@@ -133,6 +135,11 @@ class BrowserSession:
                     config=ChromiumConfig(**options),
                 )
                 await self._browser.wait(0.5)
+
+                if self._config.session_file is not None:
+                    await restore_youtube_session(
+                        self._browser, self._config.session_file,
+                    )
 
             return self._browser
 

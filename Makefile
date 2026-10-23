@@ -10,7 +10,7 @@ RUN := $(COMPOSE) run --rm -T dank
 SCRAPE := $(RUN) scrape --headless
 WEB := $(COMPOSE) up --build --wait
 X_LOGIN := bash src/dank/run_x_login.sh $(COMPOSE) --
-YOUTUBE_LOGIN := $(COMPOSE) run --rm -p 127.0.0.1:6081:6080 dank dank-x-login --youtube
+YOUTUBE_LOGIN := python3 src/dank/run_youtube_login.py $(COMPOSE) --
 else ifeq ($(MODE),native)
 CONFIG_TEMPLATE := config.native.example.toml
 RUN := $(UV) run
@@ -22,7 +22,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login
+.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare
 
 help:
 	@printf '%s\n' \
@@ -32,7 +32,8 @@ help:
 		'  up, web         Start the viewer (Docker stack or native foreground)' \
 		'  scrape          Collect sources; save output under logs/scrape/' \
 		'  x-login         Sign in to X and save the session for collection' \
-		'  youtube-login   Sign in to YouTube in its separate browser' \
+		'  youtube-login   Sign in to Google using 1Password' \
+		'  youtube-compare Compare browser and yt-dlp recommendations' \
 		'  process         Process posts/assets; save output under logs/process/' \
 		'  query           Run clickhouse-query; pass -q and SQL through ARGS' \
 		'  embed           Run embed-text; pass quoted text through ARGS' \
@@ -61,6 +62,9 @@ x-login: config
 
 youtube-login: config
 	$(YOUTUBE_LOGIN) $(value ARGS)
+
+youtube-compare: config
+	$(RUN) youtube-compare $(value ARGS)
 
 process: config
 	@bash src/dank/run_logged.sh process $(MODE) $(RUN) process $(value ARGS)

@@ -20,6 +20,7 @@ from dank.scrape.youtube import (
     _localized,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
+from dank.youtube_session import save_youtube_session_from_page
 
 from .browser import navigate
 from .payloads import ORIGIN, YouTubeFeed, as_dict
@@ -325,6 +326,11 @@ async def compare_home(
         ),
     )
 
+    config = config._replace(
+        session_file=(config.profile_dir or settings.data_dir
+                      / "youtube-browser-profile") / "youtube-session.json",
+    )
+
     async with BrowserSession(config) as session:
         async with asyncio.timeout(WARMUP_TIMEOUT_SECONDS):
             browser = await session.get_browser()
@@ -386,6 +392,11 @@ async def compare_home(
         )
         collections_finished = loop.time()
         cookies.clear()
+        cache_updated = await save_youtube_session_from_page(
+            browser, page, (config.profile_dir or settings.data_dir
+                            / "youtube-browser-profile")
+            / "youtube-session.json",
+        )
 
     cleanup_seconds = loop.time() - collections_finished
     metrics = compare_entries(
@@ -415,6 +426,7 @@ async def compare_home(
         "session": {
             "authenticated_before_listing": True,
             "shared_cookie_snapshot_at": snapshot_at,
+            "cache_updated": cache_updated,
         },
         "region": settings.youtube.region,
         "language": "en-GB",

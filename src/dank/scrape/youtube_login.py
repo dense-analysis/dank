@@ -23,6 +23,7 @@ from dank.scrape.zendriver import (
     BrowserProfileBusyError,
     BrowserSession,
 )
+from dank.youtube_session import save_youtube_session_from_page
 
 SESSION_POLL_SECONDS = 1.0
 SESSION_CHECK_SECONDS = 15.0
@@ -118,7 +119,7 @@ async def _finalize_session(page: zendriver.Tab) -> bool:
     try:
         async with asyncio.timeout(SESSION_FINALIZE_SECONDS):
             previous = await _settled_document(page)
-            await page.reload(ignore_cache=True)
+            await page.get("https://www.youtube.com/?hl=en-GB")
             await _settled_document(page, previous)
 
         return True
@@ -131,6 +132,10 @@ async def _open_session(
     check_only: bool, remote_desktop: bool, manual: bool,
     credentials_stdio: bool,
 ) -> bool:
+    session_path = (
+        config.profile_dir or settings.data_dir / "youtube-browser-profile"
+    ) / "youtube-session.json"
+
     async with BrowserSession(config) as session:
         browser = await session.get_browser()
         page = await browser.get("https://www.youtube.com/")
@@ -140,6 +145,11 @@ async def _open_session(
         )
 
         if check_only or existing:
+            if existing:
+                await save_youtube_session_from_page(
+                    browser, page, session_path,
+                )
+
             return existing
 
         if settings.youtube.onepassword is not None and not manual:
@@ -151,7 +161,22 @@ async def _open_session(
                 page, provider, timeout_seconds=timeout_seconds,
             )
 
-            return await _finalize_session(page)
+            if not await _finalize_session(page):
+                raise GoogleLoginError(
+                    "Google sign-in did not authenticate "
+                    "a clean YouTube home.",
+                )
+
+            saved = await save_youtube_session_from_page(
+                browser, page, session_path,
+            )
+
+            if not saved:
+                raise GoogleLoginError(
+                    "Could not save the authenticated YouTube session.",
+                )
+
+            return True
 
         destination = (
             "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=scale"
@@ -165,7 +190,12 @@ async def _open_session(
         if not await _wait_for_session(page, timeout_seconds):
             return False
 
-        return await _finalize_session(page)
+        if not await _finalize_session(page):
+            return False
+
+        return await save_youtube_session_from_page(
+            browser, page, session_path,
+        )
 
 
 async def sign_in(
@@ -189,6 +219,10 @@ async def sign_in(
             or settings.data_dir / "youtube-browser-profile"
         ),
     )
+    config = config._replace(
+        session_file=(config.profile_dir or settings.data_dir
+                      / "youtube-browser-profile") / "youtube-session.json",
+    )
     valid = await _open_session(
         settings, config, timeout_seconds=timeout_seconds,
         check_only=check_only, remote_desktop=remote_desktop,
@@ -199,6 +233,7 @@ async def sign_in(
         return valid
 
     # Chromium must flush the profile before a new browser proves persistence.
+    print("Verifying the saved YouTube session after reopening.", flush=True)
     return await _open_session(
         settings, config._replace(headless=True),
         timeout_seconds=min(timeout_seconds, SESSION_CHECK_SECONDS),

@@ -7,7 +7,7 @@ import pathlib
 import stat
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -177,3 +177,42 @@ async def test_cookie_protocol_errors_are_silent_and_cancellation_propagates(
 
     with pytest.raises(asyncio.CancelledError):
         await session.save_youtube_session(target, path)
+
+
+async def test_snapshot_stops_page_scripts_before_reading_current_cookies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+):
+    order: list[str] = []
+
+    async def navigate(url: str):
+        assert url == "https://www.youtube.com/robots.txt"
+        order.append("page stopped")
+
+    async def save(browser: Any, path: pathlib.Path):
+        order.append("cookies saved")
+        return True
+
+    page = SimpleNamespace(
+        evaluate=AsyncMock(return_value=True),
+        get=AsyncMock(side_effect=navigate),
+    )
+    monkeypatch.setattr(session, "save_youtube_session", save)
+    assert await session.save_youtube_session_from_page(
+        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+    )
+    assert order == ["page stopped", "cookies saved"]
+
+
+async def test_signed_out_page_never_replaces_saved_cookie_cache(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+):
+    page = SimpleNamespace(
+        evaluate=AsyncMock(return_value=False), get=AsyncMock(),
+    )
+    save = AsyncMock()
+    monkeypatch.setattr(session, "save_youtube_session", save)
+    assert not await session.save_youtube_session_from_page(
+        cast(Any, object()), cast(Any, page), tmp_path / "session.json",
+    )
+    page.get.assert_not_called()
+    save.assert_not_called()

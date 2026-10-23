@@ -192,45 +192,89 @@ Collection is bounded, not a promise that every item on an infinite feed was
 captured. A changed layout, consent page or unavailable feed is reported in
 scrape logs/history. See [known issues](../known-issues.md).
 
-## Optional account session
+## Compare collection methods
+
+After saving the YouTube session, run:
+
+```sh
+make youtube-compare
+# Optional shorter comparison:
+make youtube-compare ARGS='--timeout 30'
+```
+
+Add `MODE=native` for native execution. The browser and metadata-only yt-dlp
+`:ytrec` collector start together with the same authenticated cookie snapshot
+and region. Each has a four-minute ceiling by default. The report separates
+browser warmup from collection time and records start skew, stop reasons,
+unique Videos/Shorts/Posts counts, overlap, and IDs found by only one method.
+Raw listing data is saved under `<storage.data_dir>/comparisons/`; credentials
+and cookies are excluded. Comparison does not write to the reader library or
+download media, captions or individual video details.
+
+The browser applies the Recommendations exclusions. yt-dlp's flat output loses
+shelf headings such as **Top News**, omits text-only community posts, and may
+omit Shorts shelves. Its totals remain raw for an honest comparison; a larger
+video count does not establish more relevant or complete capture. YouTube may
+vary results between requests even with matching cookies and close start times.
+
+## Google account and 1Password
+
+Personal recommendations need a saved Google session. DANK keeps YouTube's
+profile separate from X and Reddit. Configure references to your Google login
+in private `config.toml`; passwords and authenticator secrets stay in 1Password:
+
+```toml
+[youtube]
+authenticated = true
+homepage = true
+
+[youtube.onepassword]
+account = "YOUR_1PASSWORD_ACCOUNT_ID"
+username = "op://VAULT_ID/GOOGLE_ITEM_ID/username"
+password = "op://VAULT_ID/GOOGLE_ITEM_ID/password"
+otp = "op://VAULT_ID/GOOGLE_ITEM_ID/one-time password?attribute=otp"
+```
+
+Use your actual field references. The `otp` field is optional; it generates a
+fresh authenticator code when Google requests one. Use item IDs when several
+logins share the name Google. `op account list` identifies the account to use.
+The host needs [1Password CLI with desktop integration](https://developer.1password.com/docs/cli/app-integration/).
+Docker's launcher also needs Python 3 on the host.
 
 ```sh
 make youtube-login
-# Or: make youtube-login MODE=native
+# Native collection:
+make youtube-login MODE=native
 ```
 
-Complete sign-in and verification yourself in the browser. Docker prints a
-local sign-in link on port 6081. The command saves YouTube's separate profile;
-no password belongs in the configuration. Native and Docker sessions are
-separate, so sign in in the mode you will use for collection.
+A valid saved session is reused without requesting vault access. Otherwise,
+authorize 1Password once when prompted. DANK reads the configured Google item
+once per login attempt and keeps its needed fields only in memory. It submits
+the Google username, password
+and, when offered, authenticator code automatically. It only fills the Google
+sign-in origin, then closes and reopens the saved profile to verify that
+YouTube remains signed in. Docker resolves credentials on the host and passes
+them privately to the login process; values are not stored in configuration,
+arguments, environment variables or logs.
 
-Then set `[youtube].authenticated = true`. Enable `homepage = true` to also
-capture your homepage in the reader's **Recommendations** section. Its Videos,
-Shorts and Posts filters use the same saved item types as the other YouTube feeds.
-A requested authenticated collection requires a valid saved session rather than
-silently collecting a signed-out page. The default remains signed out, using a
-temporary profile on every run.
+Google may require a CAPTCHA, device approval, passkey or other challenge that
+an authenticator code cannot answer. DANK reports that requirement instead of
+retrying passwords. Manual browser sign-in remains an explicit option:
 
-Recommendations makes a rapid pass with varied 0.3–0.65 second pauses and
-multi-screen scrolling. Its 25-second listing budget includes navigation and
-keeps everything discovered before the deadline. It stops sooner at a stable
-bottom: two seconds without a visible continuation, or eight seconds with an
-unchanged continuation and no loading indicator or new response. Logs distinguish
-an observed end, a repeated stall, and the time budget; a bounded capture does
-not establish that every possible recommendation was available. Budget,
-item/scroll guard and repeated-stall exits mark collection partial while retaining
-their items; a completed pass requires an observed end.
+```sh
+make youtube-login ARGS='--manual'
+```
 
-The homepage uses this timed pass instead of `max_posts`, `max_scrolls` and
-`scroll_pause_seconds`, with separate safeguards of 2,000 items and 200 scrolls.
-News shelves, including **Top news** and **Breaking news**, and Playables are
-excluded before their children are collected. An ordinary recommended video
-about news or gaming remains eligible. The separate News feeds are unaffected.
-`include_shorts` and `include_posts` still apply. The pass only reads listings;
-media downloads, persistence and optional caption enrichment happen afterward
-and can extend the total scrape duration.
-
-The saved profile normally lives at
+Docker manual mode prints a local browser link on port 6081; native manual
+mode opens a local browser. Native and Docker profiles are separate, so use
+the mode that collects your feeds. The saved profile normally lives at
 `<storage.data_dir>/youtube-browser-profile`; `profile_dir` can override it.
-YouTube has its own browser and collection lock, so it can run concurrently
-with X and Reddit. Keep profiles private; they contain session credentials.
+DANK also keeps an owner-only (0600) youtube-session.json beside that
+profile. It restores those cookies into its dedicated browser and refreshes
+the snapshot after collection. Saved cookies are captured after verified
+homepage authentication, once page scripts have stopped, so an earlier
+snapshot cannot overwrite rotated cookies. Keep the profile and cookie cache
+private; Google passwords and authenticator seeds remain in 1Password.
+
+Authenticated collection requires a valid saved session; it never silently
+collects a signed-out homepage. Public feeds remain signed out by default.

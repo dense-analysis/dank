@@ -104,3 +104,10 @@ days = 7
 comment_limit = "all"
 detail_max_posts = 20
 detail_timeout_seconds = "all"
+
+# Optional Google login through 1Password (including authenticator codes).
+# [youtube.onepassword]
+# account = "YOUR_1PASSWORD_ACCOUNT_ID"
+# username = "op://VAULT_ID/GOOGLE_ITEM_ID/username"
+# password = "op://VAULT_ID/GOOGLE_ITEM_ID/password"
+# otp = "op://VAULT_ID/GOOGLE_ITEM_ID/one-time password?attribute=otp"

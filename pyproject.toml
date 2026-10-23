@@ -43,6 +43,7 @@ dependencies = [
 scrape = "dank.scrape.__main__:main"
 x-login = "dank.scrape.x.login:main"
 youtube-login = "dank.scrape.youtube_login:main"
+youtube-compare = "dank.scrape.runner:compare_youtube_home_main"
 process = "dank.process.__main__:main"
 web = "dank.web.__main__:main"
 clickhouse-query = "dank.tools.clickhouse_query:main"

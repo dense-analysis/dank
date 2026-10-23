@@ -13,6 +13,14 @@ from dank.scrape import youtube_login
 from dank.scrape.zendriver import BrowserConfig
 
 
+@pytest.fixture(autouse=True)
+def session_cookie_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        youtube_login, "save_youtube_session_from_page",
+        AsyncMock(return_value=True),
+    )
+
+
 async def test_sign_in_uses_youtube_profile_and_closes_after_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
 ) -> None:
@@ -126,6 +134,10 @@ async def test_automated_login_checks_saved_session_before_lazy_provider(
         settings.youtube.onepassword, stdio=True,
     )
     flow.assert_awaited_once()
+    assert youtube_login.save_youtube_session_from_page.await_count == 2  # type: ignore
+    assert factory.call_args_list[0].args[0].session_file.name == (
+        "youtube-session.json"
+    )
     finalized.assert_awaited_once_with(page)
     assert factory.call_count == 2
     assert all(call.args[0].headless for call in factory.call_args_list)
@@ -196,12 +208,12 @@ async def test_finalization_requires_a_new_complete_signed_in_document(
 
         return 2000.0
 
-    async def reload(*, ignore_cache: bool) -> None:
+    async def reload(url: str) -> None:
         nonlocal reloaded
-        assert ignore_cache
+        assert url == "https://www.youtube.com/?hl=en-GB"
         reloaded = True
 
-    page = SimpleNamespace(evaluate=evaluate, reload=reload)
+    page = SimpleNamespace(evaluate=evaluate, get=reload)
     monkeypatch.setattr(youtube_login, "SESSION_POLL_SECONDS", 0.001)
     monkeypatch.setattr(youtube_login, "SESSION_SETTLE_SECONDS", 0.003)
     monkeypatch.setattr(youtube_login, "SESSION_FINALIZE_SECONDS", 0.2)
@@ -221,12 +233,12 @@ async def test_finalization_rejects_stale_or_signed_out_documents(
     async def evaluate(_script: str) -> float | bool | None:
         return after_reload if reloaded else 1000.0
 
-    async def reload(*, ignore_cache: bool) -> None:
+    async def reload(url: str) -> None:
         nonlocal reloaded
         reloaded = True
 
     page = SimpleNamespace(
-        evaluate=evaluate, reload=AsyncMock(side_effect=reload),
+        evaluate=evaluate, get=AsyncMock(side_effect=reload),
     )
     monkeypatch.setattr(youtube_login, "SESSION_POLL_SECONDS", 0.001)
     monkeypatch.setattr(youtube_login, "SESSION_SETTLE_SECONDS", 0.002)
@@ -234,7 +246,7 @@ async def test_finalization_rejects_stale_or_signed_out_documents(
     assert not await youtube_login._finalize_session(  # pyright: ignore[reportPrivateUsage]
         cast(Any, page),
     )
-    page.reload.assert_awaited_once_with(ignore_cache=True)
+    page.get.assert_awaited_once_with("https://www.youtube.com/?hl=en-GB")
 
 
 async def test_finalization_failure_does_not_restart_login_or_read_vault_again(
@@ -255,9 +267,12 @@ async def test_finalization_failure_does_not_restart_login_or_read_vault_again(
     monkeypatch.setattr(youtube_login, "_finalize_session", AsyncMock(
         return_value=False,
     ))
-    assert not await youtube_login.sign_in(
-        automated_settings(), timeout_seconds=1,
-    )
+    with pytest.raises(
+        youtube_login.GoogleLoginError, match="clean YouTube home",
+    ):
+        await youtube_login.sign_in(automated_settings(), timeout_seconds=1)
+
+    youtube_login.save_youtube_session_from_page.assert_not_awaited()  # type: ignore
     assert factory.call_count == 1
     credentials.assert_called_once()
     flow.assert_awaited_once()
