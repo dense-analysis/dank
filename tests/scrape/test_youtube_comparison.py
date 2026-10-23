@@ -132,7 +132,8 @@ def setup_browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     ]
     cookies = [
         SimpleNamespace(
-            domain=value["domain"], to_json=Mock(return_value=value),
+            domain=value["domain"],
+            to_json=Mock(return_value=value),
         )
         for value in cookie_values
     ]
@@ -141,8 +142,9 @@ def setup_browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         send=AsyncMock(return_value=cookies),
         close=AsyncMock(),
     )
-    listing = SimpleNamespace()
-    browser = SimpleNamespace(get=AsyncMock(side_effect=[auth, listing]))
+    browser = SimpleNamespace(get=AsyncMock(return_value=auth))
+    auth.browser = browser
+    listing = auth
     session = SimpleNamespace(get_browser=AsyncMock(return_value=browser))
     closed = Mock()
     configurations: list[BrowserConfig] = []
@@ -158,7 +160,10 @@ def setup_browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             closed()
 
     monkeypatch.setattr(comparison, "BrowserSession", Session)
-    monkeypatch.setattr(comparison, "navigate", AsyncMock())
+    navigation = AsyncMock()
+    monkeypatch.setattr(comparison, "navigate", navigation)
+    save = AsyncMock(return_value=True)
+    monkeypatch.setattr(comparison, "save_youtube_session_from_page", save)
 
     return SimpleNamespace(
         settings=settings,
@@ -167,6 +172,8 @@ def setup_browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         browser=browser,
         closed=closed,
         configurations=configurations,
+        save=save,
+        navigation=navigation,
     )
 
 
@@ -174,7 +181,10 @@ def ytdlp_result(outcome: str = "completed") -> YtDlpHomeResult:
     return YtDlpHomeResult(
         entries=(
             YtDlpHomeEntry(
-                VIDEO_A, "video", 1, {"id": "abcdefghijk", "title": "A"},
+                VIDEO_A,
+                "video",
+                1,
+                {"id": "abcdefghijk", "title": "A"},
             ),
         ),
         elapsed_seconds=0.01,
@@ -234,7 +244,8 @@ async def test_pair_shares_auth_budget_and_keeps_partial_batches(
     monkeypatch.setattr(comparison, "_collect_home_feed", collect_browser)
     monkeypatch.setattr(comparison, "collect_ytdlp_home", collect_ytdlp)
     report = await asyncio.wait_for(
-        comparison.compare_home(fixture.settings), 2,
+        comparison.compare_home(fixture.settings),
+        2,
     )
     assert report["browser"]["outcome"] == "timeout"
     assert report["browser"]["partial"] is True
@@ -253,14 +264,16 @@ async def test_pair_shares_auth_budget_and_keeps_partial_batches(
         for secret in ("private-cookie", "google-private", "unrelated")
     )
     assert "cookie_values" not in serialized
-    fixture.auth.close.assert_awaited_once()
+    fixture.auth.close.assert_not_awaited()
+    fixture.save.assert_awaited_once()
+    assert report["session"]["cache_updated"] is True
     fixture.closed.assert_called_once()
     assert (
         fixture.configurations[0].profile_dir
         == tmp_path / "youtube-browser-profile"
     )
     assert fixture.configurations[0].headless is True
-    assert fixture.browser.get.call_count == 2
+    assert fixture.browser.get.call_count == 1
 
 
 async def test_signed_out_stops_before_collection_and_cookies(
@@ -330,7 +343,8 @@ async def test_cancellation_stops_both_collectors_and_releases_browser_session(
     monkeypatch.setattr(comparison, "collect_ytdlp_home", ytdlp_wait)
     task = asyncio.create_task(comparison.compare_home(fixture.settings))
     await asyncio.wait_for(
-        asyncio.gather(*(event.wait() for event in started)), 2,
+        asyncio.gather(*(event.wait() for event in started)),
+        2,
     )
     task.cancel()
 
@@ -343,14 +357,158 @@ async def test_cancellation_stops_both_collectors_and_releases_browser_session(
 
 @pytest.mark.parametrize("budget", [0, -1, 241, float("inf"), float("nan")])
 async def test_invalid_budget_never_opens_profile(
-    budget: float, monkeypatch: pytest.MonkeyPatch,
+    budget: float,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     session = Mock()
     monkeypatch.setattr(comparison, "BrowserSession", session)
 
     with pytest.raises(ValueError, match="at most 240"):
         await comparison.compare_home(
-            load_settings("config.native.example.toml"), budget,
+            load_settings("config.native.example.toml"),
+            budget,
         )
 
     session.assert_not_called()
+
+
+async def test_authenticated_comparison_reuses_page_without_writes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    fixture = setup_browser(monkeypatch, tmp_path)
+    session = Mock(side_effect=AssertionError("Must not open another session"))
+    monkeypatch.setattr(comparison, "BrowserSession", session)
+
+    async def collect(
+        page: Any,
+        feed: Any,
+        settings: Any,
+        batches: list[ScrapeBatch],
+        **kwargs: Any,
+    ):
+        assert page is fixture.auth
+        batches.append(ScrapeBatch([raw_post()], []))
+
+    monkeypatch.setattr(comparison, "_collect_home_feed", collect)
+    monkeypatch.setattr(
+        comparison,
+        "collect_ytdlp_home",
+        AsyncMock(
+            return_value=ytdlp_result()._replace(
+                warnings=("repeated_continuation",),
+            ),
+        ),
+    )
+    report = await comparison.compare_authenticated_home(
+        fixture.settings,
+        fixture.browser,
+        fixture.auth,
+        30,
+    )
+    assert report["listing_budget_seconds"] == 30
+    assert report["browser"]["entries"][0]["raw"]["kind"] == "short"
+    assert report["comparison"]["video_overlap"]["common_count"] == 1
+    assert report["session"]["cache_updated"] is False
+    assert report["cleanup_seconds"] == 0
+    assert report["yt_dlp"]["warnings"] == ["repeated_continuation"]
+    assert "private-cookie" not in json.dumps(report)
+    session.assert_not_called()
+    fixture.browser.get.assert_not_awaited()
+    fixture.auth.close.assert_not_awaited()
+    fixture.closed.assert_not_called()
+    fixture.save.assert_not_awaited()
+    fixture.navigation.assert_not_awaited()
+
+
+async def test_authenticated_comparison_failure_preserves_caller_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    fixture = setup_browser(monkeypatch, tmp_path)
+    fixture.auth.evaluate.return_value = False
+    collect = AsyncMock()
+    monkeypatch.setattr(comparison, "_collect_home_feed", collect)
+
+    with pytest.raises(YouTubeFeedError, match="Sign in"):
+        await comparison.compare_authenticated_home(
+            fixture.settings,
+            fixture.browser,
+            fixture.auth,
+        )
+
+    collect.assert_not_awaited()
+    fixture.auth.send.assert_not_awaited()
+    fixture.auth.close.assert_not_awaited()
+    fixture.closed.assert_not_called()
+    fixture.save.assert_not_awaited()
+
+
+async def test_authenticated_comparison_cancellation_keeps_caller_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    fixture = setup_browser(monkeypatch, tmp_path)
+    started = [asyncio.Event(), asyncio.Event()]
+    stopped = [asyncio.Event(), asyncio.Event()]
+    supplied_cookies: list[Any] = []
+
+    async def browser_wait(*args: Any, **kwargs: Any):
+        started[0].set()
+
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped[0].set()
+
+    async def ytdlp_wait(cookies: Any, **kwargs: Any):
+        supplied_cookies.append(cookies)
+        started[1].set()
+
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped[1].set()
+
+    monkeypatch.setattr(comparison, "_collect_home_feed", browser_wait)
+    monkeypatch.setattr(comparison, "collect_ytdlp_home", ytdlp_wait)
+    task = asyncio.create_task(
+        comparison.compare_authenticated_home(
+            fixture.settings,
+            fixture.browser,
+            fixture.auth,
+        ),
+    )
+    await asyncio.wait_for(
+        asyncio.gather(*(event.wait() for event in started)),
+        2,
+    )
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert all(event.is_set() for event in stopped)
+    assert supplied_cookies == [[]]
+    fixture.auth.close.assert_not_awaited()
+    fixture.closed.assert_not_called()
+    fixture.save.assert_not_awaited()
+
+
+async def test_authenticated_comparison_rejects_mismatched_page(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    fixture = setup_browser(monkeypatch, tmp_path)
+
+    fixture.auth.browser = object()
+
+    with pytest.raises(ValueError, match="belong"):
+        await comparison.compare_authenticated_home(
+            fixture.settings,
+            fixture.browser,
+            fixture.auth,
+        )
+
+    fixture.auth.evaluate.assert_not_awaited()
+    fixture.save.assert_not_awaited()

@@ -9,7 +9,7 @@ import math
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
-from zendriver import cdp
+from zendriver import Browser, Tab, cdp
 
 from dank.config import Settings
 from dank.scrape.types import ScrapeBatch
@@ -270,6 +270,7 @@ async def _ytdlp_collection(
         "first_entry_seconds": result.first_entry_seconds,
         "collector_elapsed_seconds": result.elapsed_seconds,
         "warning_count": len(result.warnings),
+        "warnings": list(result.warnings),
         "limitations": list(result.limitations),
     }
 
@@ -304,10 +305,7 @@ async def _timed(
     }
 
 
-async def compare_home(
-    settings: Settings,
-    timeout_seconds: float = MAX_COMPARISON_SECONDS,
-) -> dict[str, Any]:
+def _validate_budget(timeout_seconds: float) -> None:
     if (
         not math.isfinite(timeout_seconds)
         or not 0 < timeout_seconds <= MAX_COMPARISON_SECONDS
@@ -316,55 +314,50 @@ async def compare_home(
             "Comparison timeout must be positive and at most 240 seconds",
         )
 
+
+async def compare_authenticated_home(
+    settings: Settings,
+    browser: Browser,
+    page: Tab,
+    timeout_seconds: float = MAX_COMPARISON_SECONDS,
+) -> dict[str, Any]:
+    """Compare on the caller's authenticated page; leave its session open."""
+    _validate_budget(timeout_seconds)
+
+    if page.browser is not browser:
+        raise ValueError("The comparison page must belong to its browser")
+
     started_at = _now()
     loop = asyncio.get_running_loop()
     started = loop.time()
-    config = BrowserConfig.from_settings(settings, headless=True)._replace(
-        profile_dir=(
-            settings.youtube.profile_dir
-            or settings.data_dir / "youtube-browser-profile"
-        ),
-    )
 
-    config = config._replace(
-        session_file=(config.profile_dir or settings.data_dir
-                      / "youtube-browser-profile") / "youtube-session.json",
-    )
+    async with asyncio.timeout(WARMUP_TIMEOUT_SECONDS):
+        signed_in = await page.evaluate(
+            "location.origin === 'https://www.youtube.com' && "
+            "window.ytcfg?.get?.('LOGGED_IN') === true",
+        )
 
-    async with BrowserSession(config) as session:
-        async with asyncio.timeout(WARMUP_TIMEOUT_SECONDS):
-            browser = await session.get_browser()
-            auth_page = await browser.get("about:blank", new_tab=True)
-            await navigate(
-                auth_page, _localized(ORIGIN + "/", settings.youtube.region),
-            )
-            signed_in = await auth_page.evaluate(
-                "location.origin === 'https://www.youtube.com' && "
-                "window.ytcfg?.get?.('LOGGED_IN') === true",
+        if signed_in is not True:
+            raise YouTubeFeedError(
+                "Sign in to YouTube before comparing collectors",
             )
 
-            if signed_in is not True:
-                raise YouTubeFeedError(
-                    "Sign in to YouTube before comparing collectors",
-                )
+        cookies = [
+            cookie.to_json()
+            for cookie in await page.send(cdp.storage.get_cookies())
+            if any(
+                cookie.domain.lstrip(".") == host
+                or cookie.domain.lstrip(".").endswith("." + host)
+                for host in ("youtube.com", "google.com")
+            )
+        ]
+        snapshot_at = _now()
 
-            snapshot_at = _now()
-            cookies = [
-                cookie.to_json()
-                for cookie in await auth_page.send(cdp.storage.get_cookies())
-                if any(
-                    cookie.domain.lstrip(".") == host
-                    or cookie.domain.lstrip(".").endswith("." + host)
-                    for host in ("youtube.com", "google.com")
-                )
-            ]
-            await auth_page.close()
-            page = await browser.get("about:blank", new_tab=True)
+    warmup_seconds = loop.time() - started
+    warmup_finished_at = _now()
+    ready = asyncio.Event()
 
-        warmup_seconds = loop.time() - started
-        warmup_finished_at = _now()
-        ready = asyncio.Event()
-
+    try:
         async with asyncio.TaskGroup() as group:
             browser_task = group.create_task(
                 _timed(
@@ -385,20 +378,10 @@ async def compare_home(
                 ),
             )
             ready.set()
-
-        browser_result, ytdlp_result = (
-            browser_task.result(),
-            ytdlp_task.result(),
-        )
-        collections_finished = loop.time()
+    finally:
         cookies.clear()
-        cache_updated = await save_youtube_session_from_page(
-            browser, page, (config.profile_dir or settings.data_dir
-                            / "youtube-browser-profile")
-            / "youtube-session.json",
-        )
 
-    cleanup_seconds = loop.time() - collections_finished
+    browser_result, ytdlp_result = browser_task.result(), ytdlp_task.result()
     metrics = compare_entries(
         browser_result["entries"], ytdlp_result["entries"],
     )
@@ -421,12 +404,12 @@ async def compare_home(
             "finished_at": warmup_finished_at,
             "elapsed_seconds": warmup_seconds,
         },
-        "cleanup_seconds": cleanup_seconds,
+        "cleanup_seconds": 0.0,
         "method_start_skew_seconds": start_skew,
         "session": {
             "authenticated_before_listing": True,
             "shared_cookie_snapshot_at": snapshot_at,
-            "cache_updated": cache_updated,
+            "cache_updated": False,
         },
         "region": settings.youtube.region,
         "language": "en-GB",
@@ -435,3 +418,54 @@ async def compare_home(
         "comparison": metrics,
         "limitations": list(LIMITATIONS),
     }
+
+
+async def compare_home(
+    settings: Settings,
+    timeout_seconds: float = MAX_COMPARISON_SECONDS,
+) -> dict[str, Any]:
+    """Own the browser lifecycle around the reusable in-session comparison."""
+    _validate_budget(timeout_seconds)
+    started_at = _now()
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    profile_dir = (
+        settings.youtube.profile_dir
+        or settings.data_dir / "youtube-browser-profile"
+    )
+    session_file = profile_dir / "youtube-session.json"
+    config = BrowserConfig.from_settings(settings, headless=True)._replace(
+        profile_dir=profile_dir,
+        session_file=session_file,
+    )
+
+    async with BrowserSession(config) as session:
+        async with asyncio.timeout(WARMUP_TIMEOUT_SECONDS):
+            browser = await session.get_browser()
+            page = await browser.get("about:blank", new_tab=True)
+            await navigate(
+                page,
+                _localized(ORIGIN + "/", settings.youtube.region),
+            )
+
+        launch_seconds = loop.time() - started
+        report = await compare_authenticated_home(
+            settings,
+            browser,
+            page,
+            timeout_seconds,
+        )
+        cleanup_started = loop.time()
+        cache_updated = await save_youtube_session_from_page(
+            browser, page, session_file,
+        )
+        report["session"]["cache_updated"] = cache_updated
+
+    report["started_at"] = started_at
+    report["finished_at"] = _now()
+    report["total_elapsed_seconds"] = loop.time() - started
+    report["cleanup_seconds"] = loop.time() - cleanup_started
+    report["warmup"]["started_at"] = started_at
+    report["warmup"]["elapsed_seconds"] += launch_seconds
+
+    return report
