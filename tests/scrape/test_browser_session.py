@@ -331,6 +331,7 @@ async def test_browser_keeps_normal_features_and_persistent_transport(
     assert "--remote-debugging-host=127.0.0.1" in args
     assert "--remote-debugging-port=9222" in args
     assert ("--headless=new" in args) == headless
+    assert not any(arg.startswith("--allow-browser-signin") for arg in args)
     assert config.disable_webrtc is False
     assert config.disable_webgl is False
     assert not config.user_agent and not config.lang
@@ -378,3 +379,33 @@ async def test_startup_does_not_restore_and_youtube_sources_share_one_guard(
         second = await owner.get_youtube_session(cache)
         assert first is second
         browser.cookies.set_all.assert_not_awaited()
+
+
+@pytest.mark.parametrize("allow_browser_signin", [False, True])
+async def test_browser_signin_option_preserves_the_existing_profile(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *,
+    allow_browser_signin: bool,
+) -> None:
+    browser = _browser()
+    browser.stopped = True
+    start = AsyncMock(return_value=browser)
+    monkeypatch.setattr(browser_module.zendriver, "start", start)
+    profile = tmp_path / "browser-profile"
+    profile.mkdir()
+    preferences = profile / "Preferences"
+    preferences.write_bytes(b"opaque existing profile preferences")
+
+    async with BrowserSession(BrowserConfig(
+        profile_dir=profile, allow_browser_signin=allow_browser_signin,
+    )) as session:
+        await session.get_browser()
+
+    config: ChromiumConfig = start.call_args.kwargs["config"]
+    args = config()
+    assert f"--user-data-dir={profile}" in args
+    assert args.count("--allow-browser-signin=false") == (
+        0 if allow_browser_signin else 1
+    )
+    assert "--allow-browser-signin=true" not in args
+    assert preferences.read_bytes() == b"opaque existing profile preferences"
+    assert config.uses_custom_data_dir

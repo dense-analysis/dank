@@ -60,6 +60,7 @@ class BrowserConfig(NamedTuple):
     keep_open: bool = False
     profile_dir: pathlib.Path | None = None
     session_file: pathlib.Path | None = None
+    allow_browser_signin: bool = True
 
     @classmethod
     def from_settings(
@@ -112,6 +113,12 @@ class BrowserSession:
                     "headless": self._config.headless,
                     "disable_webrtc": False,
                 }
+
+                if not self._config.allow_browser_signin:
+                    # Keep web login independent of Chrome account management.
+                    # https://chromeenterprise.google/policies/#BrowserSignin
+                    options["browser_args"] = ["--allow-browser-signin=false"]
+
                 browser_path = _resolve_browser_executable(
                     self._config.browser_executable_path,
                 )
