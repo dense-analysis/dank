@@ -303,3 +303,18 @@ it("refreshes discovery feeds when external articles are filtered to a publisher
     )?.scope,
   ).toEqual({ kind: "rss", blog_feed: "external" });
 });
+
+it("refreshes the recommendation feed when inspecting one recommended channel", () => {
+  const context = refreshContext(
+    new URLSearchParams({
+      view: "youtube",
+      feed: "https://www.youtube.com/",
+      channel: "UCexample",
+      format: "video",
+    }),
+  );
+  expect(context?.scope).toEqual({
+    kind: "youtube",
+    feed_id: "https://www.youtube.com/",
+  });
+});

@@ -30,7 +30,9 @@ import { youtubeFeedLabel, youtubeGroupFeeds } from "../lib/youtubeNavigation";
 import { Count } from "./Count";
 import { CountryFlag } from "./CountryFlag";
 import { SourceActions } from "./SourceActions";
+import { YouTubeAllSections } from "./YouTubeAllSections";
 import { YouTubeCard } from "./YouTubeCard";
+import { YouTubeChannels } from "./YouTubeChannels";
 import { YouTubeMetadataStatus } from "./YouTubeMetadataStatus";
 import YouTubeReferenceGraph from "./YouTubeReferenceGraph";
 import { YouTubeTranscript } from "./YouTubeTranscript";
@@ -65,6 +67,8 @@ export function YouTubeCollection({
   returnToConnections?: () => void;
 }) {
   const filters = youtubeFilters(params);
+  const channelView = params.get("format") === "channels";
+  const allView = !channelView && !filters.kind;
   const [search, setSearch] = useState(filters.q);
   const selectedId = params.get("youtube_item");
   const graphView = params.get("references") === "graph";
@@ -83,6 +87,7 @@ export function YouTubeCollection({
   const title = linked
     ? "From your feeds"
     : activeChannel?.name ||
+      params.get("channel_name") ||
       (recommendations ? youtubeFeedLabel(activeFeed) : activeFeed?.name) ||
       (scoped ? "Collected feed" : "Collected recommendations");
   const query = useInfiniteQuery({
@@ -91,7 +96,7 @@ export function YouTubeCollection({
       fetchYouTubeItems(filters, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
-    enabled: !selectedId,
+    enabled: !selectedId && !allView && !channelView,
   });
   const items = useMemo(
     () => [
@@ -131,6 +136,8 @@ export function YouTubeCollection({
     const target = more.current;
     if (
       !target ||
+      allView ||
+      channelView ||
       selectedId ||
       !hasNextPage ||
       isFetching ||
@@ -150,7 +157,15 @@ export function YouTubeCollection({
     observer.observe(target);
 
     return () => observer.disconnect();
-  }, [selectedId, hasNextPage, isFetching, isError, fetchNextPage]);
+  }, [
+    selectedId,
+    allView,
+    channelView,
+    hasNextPage,
+    isFetching,
+    isError,
+    fetchNextPage,
+  ]);
 
   function change(name: string, value: string) {
     const next = new URLSearchParams(params);
@@ -475,18 +490,33 @@ export function YouTubeCollection({
             ["video", "Videos"],
             ["short", "Shorts"],
             ["post", "Posts"],
+            ["channels", "Channels"],
           ].map(([kind, label]) => (
             <button
               type="button"
               key={kind}
-              className={filters.kind === kind ? "active" : ""}
-              aria-pressed={filters.kind === kind}
+              className={
+                (channelView ? "channels" : filters.kind) === kind
+                  ? "active"
+                  : ""
+              }
+              aria-pressed={(channelView ? "channels" : filters.kind) === kind}
               onClick={() => change("format", kind)}
             >
               {label}
             </button>
           ))}
         </div>
+        <label className="yt-configured-filter">
+          <input
+            type="checkbox"
+            checked={filters.channel_scope === "configured"}
+            onChange={(event) =>
+              change("channel_scope", event.target.checked ? "configured" : "")
+            }
+          />
+          Configured channels only
+        </label>
         {linked && (
           <select
             className="sort-select"
@@ -524,19 +554,56 @@ export function YouTubeCollection({
           </button>
         </div>
       )}
-      {query.isError && query.data && !query.isFetchNextPageError && (
-        <div className="yt-source-error" role="alert">
-          Saved discoveries are still available. Updates could not be loaded.
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => void query.refetch()}
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {query.isPending ? (
+      {!allView &&
+        !channelView &&
+        query.isError &&
+        query.data &&
+        !query.isFetchNextPageError && (
+          <div className="yt-source-error" role="alert">
+            Saved discoveries are still available. Updates could not be loaded.
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void query.refetch()}
+            >
+              Try again
+            </button>
+          </div>
+        )}
+      {channelView ? (
+        <YouTubeChannels
+          filters={filters}
+          params={params}
+          navigate={navigate}
+          open={open}
+          href={href}
+        />
+      ) : allView ? (
+        <YouTubeAllSections
+          filters={filters}
+          open={open}
+          href={href}
+          emptyTitle={
+            filters.q || filters.channel_scope
+              ? "No matching discoveries"
+              : recommendations
+                ? "Your recommendations will appear here"
+                : linked
+                  ? "Your feeds haven't linked a video yet"
+                  : "Your next discovery starts here"
+          }
+          clearFilters={filters.q ? () => change("q", "") : undefined}
+          emptyMessage={
+            filters.q
+              ? "Try another search or choose All to see every format."
+              : filters.channel_scope
+                ? "Turn off Configured channels only to see recommendations from other channels."
+                : recommendations
+                  ? "Choose Refresh to collect videos, Shorts and community posts from your YouTube homepage."
+                  : "Collected videos, Shorts and posts will appear here."
+          }
+        />
+      ) : query.isPending ? (
         <YouTubeLoading />
       ) : query.isError && !query.data ? (
         <YouTubeError
@@ -632,7 +699,7 @@ export function YouTubeCollection({
           )}
         </div>
       )}
-      {query.hasNextPage && (
+      {!allView && !channelView && query.hasNextPage && (
         <div className="load-more" ref={more}>
           {query.isFetchNextPageError ? (
             <YouTubeError

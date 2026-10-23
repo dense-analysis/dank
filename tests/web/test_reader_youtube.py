@@ -65,7 +65,7 @@ def test_cursors_bind_filters_and_keep_stable_item_tie_breaker() -> None:
 
 
 @pytest.mark.parametrize("query", [
-    {"kind": "live"}, {"limit": "0"}, {"limit": "101"}, {"limit": "no"},
+    {"kind": "live"}, {"limit": "0"}, {"limit": "501"}, {"limit": "no"},
     {"page": "2"}, {"q": "a" * 2001}, {"cursor": "not base64"},
 ])
 def test_invalid_filters(query: dict[str, str]) -> None:

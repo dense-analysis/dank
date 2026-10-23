@@ -99,6 +99,7 @@ export interface YouTubePage {
   total: number;
 }
 export interface YouTubeFilters {
+  channel_scope?: "configured";
   sort?: "newest" | "oldest" | "most-linked";
   feed: string;
   channel: string;
@@ -245,8 +246,9 @@ export async function fetchYouTubeItems(
   cursor?: string,
   signal?: AbortSignal,
   id?: string,
+  limit = 30,
 ): Promise<YouTubePage> {
-  const params = new URLSearchParams({ limit: "30" });
+  const params = new URLSearchParams({ limit: String(limit) });
   for (const [key, value] of Object.entries(filters)) {
     if (value) params.set(key, value);
   }
@@ -284,6 +286,9 @@ export function youtubeFilters(params: URLSearchParams): YouTubeFilters {
               ? sort
               : ("newest" as const),
         }
+      : {}),
+    ...(params.get("channel_scope") === "configured"
+      ? { channel_scope: "configured" as const }
       : {}),
     feed: params.get("feed") ?? "",
     channel: params.get("channel") ?? "",
@@ -331,7 +336,10 @@ export function youtubeShelves(
     shelves.set(key, shelf);
   }
 
-  return [...shelves.entries()];
+  const order = { video: 0, short: 1, post: 2 };
+  return [...shelves.entries()].sort(
+    (a, b) => order[a[1].kind] - order[b[1].kind],
+  );
 }
 
 /** Collected thumbnails may only load from YouTube image hosts or our assets. */

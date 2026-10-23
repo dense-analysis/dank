@@ -347,7 +347,15 @@ See [Hacker News collection settings](../docs/features/hacker-news.md).
 rankings, News topics, channel feeds, Shorts and community posts.
 **Recommendations** collects your configured YouTube homepage, including videos,
 Shorts and community posts. Choose **Refresh** to collect the homepage again;
-search and Videos / Shorts / Posts filters only change the saved results you see.
+search and format filters only change the saved results you see. **All** puts
+Videos before Shorts and Posts, with up to 500 per type and independent **Show
+more** buttons. The Videos, Shorts and Posts tabs keep infinite scrolling.
+**Channels** groups the selected recommendations by channel, ordered by distinct
+item count, with up to three saved examples and infinite scrolling. **Configured
+channels only** matches current channel-feed settings using captured channel
+identities; it applies before pagination in every tab. Missing channel identities
+are counted explicitly. Channel examples preserve the current filters through
+opening an item and returning.
 Its expandable sidebar groups **News** by
 Top stories, Business and World, **Hyped** by country, and **Channel Feeds** by
 channel. News opens Top stories; Hyped opens the UK feed when configured.

@@ -66,7 +66,7 @@ export function refreshContext(params: URLSearchParams) {
     scope = { kind: "youtube" };
     label = "YouTube";
 
-    if (channel) {
+    if (channel && feed !== "https://www.youtube.com/") {
       scope.channel_id = channel;
       label = "this YouTube channel";
     } else if (feed) {

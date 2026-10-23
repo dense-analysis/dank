@@ -87,7 +87,15 @@ outside the listing budget.
 A selected recommendation feed shows its latest captured snapshot in source
 order. Pagination stays on that snapshot if another collection finishes while
 you read. Channel views retain earlier items as their collection advances;
-opening an item exposes its saved discovery history.
+opening an item exposes its saved discovery history. In **All**, Videos appear
+before Shorts and Posts; each type loads up to 500 items and has its own **Show
+more** control. Individual format tabs retain infinite scrolling. **Channels**
+groups the selected feed's captured items, showing the most represented channels
+first and up to three recent examples per channel. Its **Configured channels
+only** filter matches current channel feeds, including resolved handles/IDs,
+and also applies to the other tabs. Items without a saved channel identity are
+reported separately. These are counts of saved recommendations, not impressions
+or a live subscription list.
 
 Channel collection also saves the channel icon and YouTube's displayed video
 total. Icons are cached locally when image downloads are enabled. Channel

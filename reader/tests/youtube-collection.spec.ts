@@ -183,7 +183,8 @@ async function fixture(page: Page) {
     requests: [] as URL[],
     fail: false,
     failMore: false,
-    pageSize: 30,
+    pageSize: null as number | null,
+    channelPageSize: 20,
   };
   await page.route("**/assets/channel-icon.png", (route) =>
     route.fulfill({
@@ -227,6 +228,10 @@ async function fixture(page: Page) {
           (!params.get("channel") ||
             entry.channel.id === params.get("channel")) &&
           (!params.get("kind") || entry.kind === params.get("kind")) &&
+          (params.get("channel_scope") !== "configured" ||
+            state.sources.channels.some(
+              (channel) => channel.id === entry.channel.id,
+            )) &&
           (!params.get("q") ||
             entry.title
               .toLowerCase()
@@ -242,13 +247,56 @@ async function fixture(page: Page) {
         });
       }
       const offset = Number(params.get("cursor") ?? 0);
+      const pageSize = state.pageSize ?? Number(params.get("limit") ?? 30);
       return route.fulfill({
         json: {
-          items: selected.slice(offset, offset + state.pageSize),
+          items: selected.slice(offset, offset + pageSize),
           total: selected.length,
           next_cursor:
-            offset + state.pageSize < selected.length
-              ? String(offset + state.pageSize)
+            offset + pageSize < selected.length
+              ? String(offset + pageSize)
+              : null,
+        },
+      });
+    }
+    if (url.pathname.endsWith("/youtube/channels")) {
+      const matches = state.data.filter(
+        (entry) =>
+          (!params.get("feed") ||
+            entry.discoveries.some((d) => d.feed_url === params.get("feed"))) &&
+          (params.get("channel_scope") !== "configured" ||
+            state.sources.channels.some((c) => c.id === entry.channel.id)) &&
+          (!params.get("q") ||
+            `${entry.channel.name} ${entry.title}`
+              .toLowerCase()
+              .includes(params.get("q")?.toLowerCase() ?? "")),
+      );
+      const grouped = new Map<string, YouTubeItem[]>();
+      for (const entry of matches)
+        grouped.set(entry.channel.id, [
+          ...(grouped.get(entry.channel.id) ?? []),
+          entry,
+        ]);
+      const channels = [...grouped.entries()].map(([id, entries]) => ({
+        id,
+        name: entries[0].channel.name,
+        url: entries[0].channel.url,
+        configured: state.sources.channels.some((c) => c.id === id),
+        count: entries.length,
+        video_count: entries.filter((e) => e.kind === "video").length,
+        short_count: entries.filter((e) => e.kind === "short").length,
+        post_count: entries.filter((e) => e.kind === "post").length,
+        items: entries.slice(0, 3),
+      }));
+      const offset = Number(params.get("cursor") ?? 0);
+      return route.fulfill({
+        json: {
+          channels: channels.slice(offset, offset + state.channelPageSize),
+          total: channels.length,
+          unattributed_items: 0,
+          next_cursor:
+            offset + state.channelPageSize < channels.length
+              ? String(offset + state.channelPageSize)
               : null,
         },
       });
@@ -371,11 +419,13 @@ for (const width of [1440, 390, 320]) {
       await expect(page.locator(".yt-card")).toHaveCount(count);
       expect(new URL(page.url()).searchParams.get("format") ?? "").toBe(format);
       expect(
-        state.requests.some(
-          (url) =>
-            url.pathname.endsWith("/youtube") &&
-            url.searchParams.get("feed") === home &&
-            (url.searchParams.get("kind") ?? "") === format,
+        (format ? [format] : ["video", "short", "post"]).every((kind) =>
+          state.requests.some(
+            (url) =>
+              url.pathname.endsWith("/youtube") &&
+              url.searchParams.get("feed") === home &&
+              url.searchParams.get("kind") === kind,
+          ),
         ),
       ).toBe(true);
     }
@@ -617,7 +667,7 @@ test("pagination errors retain discoveries and retry the same collection", async
   await page.addInitScript(() => {
     Reflect.deleteProperty(window, "IntersectionObserver");
   });
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/reader/?view=youtube&format=video");
   await expect(page.locator(".yt-card")).toHaveCount(2);
   state.failMore = true;
   await page.getByRole("button", { name: "More discoveries" }).click();
@@ -1072,4 +1122,167 @@ test("linked videos sort across pages and retain order through navigation", asyn
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("All loads videos before Shorts in independent manual batches of 500", async ({
+  page,
+}) => {
+  const state = await recommendationsFixture(page);
+  function recommended(index: number, kind: "video" | "short") {
+    const value = item(
+      `${kind === "video" ? "V" : "S"}${String(index).padStart(10, "0")}`,
+      `${kind} recommendation ${index}`,
+      kind,
+    );
+    value.discoveries = [
+      {
+        ...value.discoveries[0],
+        feed_url: home,
+        feed_name: "Recommendations",
+        feed_kind: "home",
+        shelf: kind === "short" ? "Shorts" : "",
+      },
+    ];
+    return value;
+  }
+  state.data = [
+    ...Array.from({ length: 501 }, (_, i) => recommended(i, "short")),
+    ...Array.from({ length: 1001 }, (_, i) => recommended(i, "video")),
+  ];
+  await page.goto(`/reader/?view=youtube&feed=${encodeURIComponent(home)}`);
+  await expect(page.locator(".yt-card.yt-video")).toHaveCount(500);
+  await expect(page.locator(".yt-card.yt-short")).toHaveCount(500);
+  await expect(page.locator(".yt-shelf").first()).toHaveClass(/yt-shelf-video/);
+  await page
+    .getByRole("button", { name: "Show more Shorts", exact: true })
+    .scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
+  expect(
+    state.requests.filter(
+      (u) => u.pathname.endsWith("/youtube") && u.searchParams.has("cursor"),
+    ),
+  ).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Show more videos", exact: true })
+    .click();
+  await expect(page.locator(".yt-card.yt-video")).toHaveCount(1000);
+  await expect(page.locator(".yt-card.yt-short")).toHaveCount(500);
+  await page
+    .getByRole("button", { name: "Show more Shorts", exact: true })
+    .click();
+  await expect(page.locator(".yt-card.yt-short")).toHaveCount(501);
+  expect(
+    state.requests
+      .filter(
+        (u) => u.pathname.endsWith("/youtube") && u.searchParams.has("cursor"),
+      )
+      .every((u) => u.searchParams.get("limit") === "500"),
+  ).toBe(true);
+});
+
+for (const width of [1440, 390]) {
+  test(`recommended channels page, filter and preserve detail context at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 700 });
+    const state = await recommendationsFixture(page);
+    state.channelPageSize = 4;
+    state.data = Array.from({ length: 30 }, (_, i) => {
+      const channel = Math.floor(i / 3);
+      const value = item(
+        `C${String(i).padStart(10, "0")}`,
+        `Recommended video ${i}`,
+      );
+      value.channel = {
+        id: `UCgroup${channel}`,
+        name: `Recommended channel ${channel}`,
+        url: `https://www.youtube.com/channel/UCgroup${channel}`,
+      };
+      value.discoveries = [
+        {
+          ...value.discoveries[0],
+          feed_url: home,
+          feed_name: "Recommendations",
+          feed_kind: "home",
+          shelf: "",
+        },
+      ];
+      return value;
+    });
+    state.sources = {
+      ...state.sources,
+      channels: [0, 1].map((i) => ({
+        id: `UCgroup${i}`,
+        name: `Recommended channel ${i}`,
+        url: `https://www.youtube.com/channel/UCgroup${i}`,
+        count: 3,
+      })),
+    };
+    await page.goto(
+      `/reader/?view=youtube&feed=${encodeURIComponent(home)}&format=channels`,
+    );
+    await expect(page.locator(".yt-channel-group")).toHaveCount(4);
+    await expect(
+      page.locator(".yt-channel-group").first().locator(".yt-channel-example"),
+    ).toHaveCount(3);
+    await noOverflow(page);
+    await page.screenshot({
+      path: testInfo.outputPath(`recommended-channels-${width}.png`),
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", { name: "More channels", exact: true })
+      .scrollIntoViewIfNeeded();
+    await expect
+      .poll(
+        () =>
+          state.requests.filter(
+            (u) =>
+              u.pathname.endsWith("/youtube/channels") &&
+              u.searchParams.has("cursor"),
+          ).length,
+      )
+      .toBeGreaterThan(0);
+    await expect(page.locator(".yt-channel-group")).toHaveCount(8);
+    await page
+      .getByRole("checkbox", { name: "Configured channels only" })
+      .check();
+    await expect(page.locator(".yt-channel-group")).toHaveCount(2);
+    expect(new URL(page.url()).searchParams.get("channel_scope")).toBe(
+      "configured",
+    );
+    await page.getByRole("link", { name: /Recommended video 0/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "How it found you" }),
+    ).toBeVisible();
+    await page.goBack();
+    await expect(page.locator(".yt-channel-group")).toHaveCount(2);
+    await expect(
+      page.getByRole("checkbox", { name: "Configured channels only" }),
+    ).toBeChecked();
+    expect(new URL(page.url()).searchParams.get("format")).toBe("channels");
+    await noOverflow(page);
+  });
+}
+
+test("empty configured-only recommendations explain the filter", async ({
+  page,
+}) => {
+  const state = await recommendationsFixture(page);
+  state.sources = { ...state.sources, channels: [] };
+  await page.goto(
+    `/reader/?view=youtube&feed=${encodeURIComponent(home)}&channel_scope=configured`,
+  );
+  await expect(
+    page.getByRole("heading", { name: "No matching discoveries", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Turn off Configured channels only to see recommendations from other channels.",
+    ),
+  ).toBeVisible();
+  await page
+    .getByRole("checkbox", { name: "Configured channels only" })
+    .uncheck();
+  await expect(page.locator(".yt-card")).toHaveCount(4);
 });

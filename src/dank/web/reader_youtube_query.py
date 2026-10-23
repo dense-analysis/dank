@@ -20,15 +20,22 @@ class YouTubeFilters(NamedTuple):
     limit: int = 30
     cursor: str = ""
     sort: str = "newest"
+    channel_scope: str = ""
 
     def signature(self) -> str:
-        encoded = json.dumps((*self[:5], self.sort)).encode()
+        values = (*self[:5], self.sort)
+
+        if self.channel_scope:
+            values = (*values, self.channel_scope)
+
+        encoded = json.dumps(values).encode()
 
         return hashlib.sha256(encoded).hexdigest()[:24]
 
 
 def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
-    allowed = {"feed", "channel", "kind", "q", "id", "limit", "cursor", "sort"}
+    allowed = {"feed", "channel", "kind", "q", "id", "limit", "cursor",
+               "sort", "channel_scope"}
 
     if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
         raise ValueError("Unknown or repeated YouTube filter")
@@ -36,7 +43,7 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
     try:
         limit = int(query.get("limit", "30"))
     except ValueError:
-        raise ValueError("limit must be an integer from 1 to 100") from None
+        raise ValueError("limit must be an integer from 1 to 500") from None
 
     filters = YouTubeFilters(
         feed=query.get("feed", "").strip(),
@@ -44,9 +51,10 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
         kind=query.get("kind", ""), q=query.get("q", "").strip(),
         item_id=query.get("id", ""), limit=limit,
         cursor=query.get("cursor", ""), sort=query.get("sort", "newest"),
+        channel_scope=query.get("channel_scope", ""),
     )
 
-    if not 1 <= limit <= 100 or filters.kind not in {
+    if not 1 <= limit <= 500 or filters.kind not in {
         "", "video", "short", "post",
     }:
         raise ValueError("Invalid limit or content kind")
@@ -58,6 +66,9 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
         filters.sort != "newest" and filters.feed != "linked"
     ):
         raise ValueError("Invalid sort for this YouTube feed")
+
+    if filters.channel_scope not in {"", "configured"}:
+        raise ValueError("Invalid channel scope")
 
     if filters.cursor:
         decode_youtube_cursor(filters)
@@ -111,15 +122,28 @@ def decode_youtube_cursor(
 
 def build_youtube_query(
     filters: YouTubeFilters, *, count: bool = False,
+    configured_channels: tuple[str, ...] = (),
+    paginate: bool = True, snapshot_time: str = "",
 ) -> tuple[str, dict[str, Any]]:
     params: dict[str, Any] = {"limit": filters.limit + 1}
     conditions: list[str] = []
     table = _metadata_items(
-        _items_table(filters), prefer_metadata=(
+        _items_table(filters, snapshot_time), prefer_metadata=(
             filters.feed == "linked"
             or bool(filters.item_id and not filters.feed)
         ),
     )
+
+    if snapshot_time:
+        params["snapshot_time"] = snapshot_time
+
+    if filters.channel_scope == "configured":
+        conditions.append(
+            "(JSONExtractString(payload, 'channel_id') IN %(configured)s "
+            "OR JSONExtractString(payload, 'channel_url') IN %(configured)s)"
+            if configured_channels else "0",
+        )
+        params["configured"] = configured_channels
 
     if filters.feed and filters.feed != "linked":
         params["feed"] = filters.feed
@@ -163,7 +187,7 @@ def build_youtube_query(
             "parseDateTime64BestEffort(%(cursor_time)s, 3), %(cursor_id)s)"
         )
 
-    if filters.cursor and not count:
+    if filters.cursor and not count and paginate:
         timestamp, item_id, position, reference_count = decode_youtube_cursor(
             filters,
         )
@@ -173,26 +197,37 @@ def build_youtube_query(
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     select = "count() AS total" if count else "*"
-    order = "" if count else f" ORDER BY {order_by} LIMIT %(limit)s"
+    order = ("" if count or not paginate
+             else f" ORDER BY {order_by} LIMIT %(limit)s")
 
     return f"SELECT {select} FROM ({table}){where}{order}", params
 
 
-def _feed_items(filters: YouTubeFilters) -> str:
+def _feed_items(filters: YouTubeFilters, snapshot_time: str = "") -> str:
     # A refreshing recommendation feed must not replace the snapshot being
     # paged. Channel feeds keep their incremental history independently.
     snapshot_bound = (
         " AND observed_at <= "
         "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
-        if filters.cursor else ""
+        if filters.cursor or snapshot_time else ""
     )
     where = (
         " WHERE feed_url = %(feed)s AND (feed_kind = 'channel' OR "
         "run_id = (SELECT argMax(run_id, observed_at) "
         "FROM youtube_discoveries WHERE feed_url = %(feed)s"
         f"{snapshot_bound}))"
-        if filters.feed else ""
+        if filters.feed else (
+            " WHERE d.observed_at <= "
+            "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
+            if snapshot_time else ""
+        )
     )
+
+    if snapshot_time and filters.feed:
+        where += (
+            " AND d.observed_at <= "
+            "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
+        )
 
     position = (
         "if(d.feed_kind != 'hype' AND "
@@ -211,8 +246,16 @@ def _feed_items(filters: YouTubeFilters) -> str:
     )
 
 
-def _linked_items() -> str:
+def _linked_items(snapshot_time: str = "") -> str:
     # The index keeps paging independent of source payload size.
+    bound = (
+        " WHERE youtube_reference_evidence.observed_at <= "
+        "parseDateTime64BestEffort(%(snapshot_time)s, 3)"
+        if snapshot_time else ""
+    )
+
+    discovered_bound = bound.replace("youtube_reference_evidence.", "d.")
+
     return (
         "SELECT concat('video:', links.video_id) AS item_id, "
         "if(empty(discovered.kind), links.kind, discovered.kind) AS kind, "
@@ -226,19 +269,20 @@ def _linked_items() -> str:
         "if(countIf(format_hint = 'short') > 0, 'short', 'video') AS kind, "
         "arrayStringConcat(groupUniqArray(100)(concat(title, ' ', excerpt)), "
         "' ') AS search_text "
-        "FROM youtube_reference_evidence FINAL GROUP BY video_id) AS links "
+        f"FROM youtube_reference_evidence FINAL{bound} "
+        "GROUP BY video_id) AS links "
         "LEFT JOIN ("
         "SELECT item_id, argMax(d.kind, d.observed_at) AS kind, "
         "argMax(d.payload, d.observed_at) AS payload "
-        "FROM youtube_discoveries AS d GROUP BY item_id"
+        f"FROM youtube_discoveries AS d{discovered_bound} GROUP BY item_id"
         ") AS discovered ON discovered.item_id = "
         "concat('video:', links.video_id)"
     )
 
 
-def _items_table(filters: YouTubeFilters) -> str:
+def _items_table(filters: YouTubeFilters, snapshot_time: str = "") -> str:
     if filters.feed == "linked":
-        return _linked_items()
+        return _linked_items(snapshot_time)
 
     if filters.item_id and not filters.feed:
         # A shared detail link also resolves a video only found in other posts.
@@ -254,7 +298,7 @@ def _items_table(filters: YouTubeFilters) -> str:
             + ") AS i GROUP BY item_id"
         )
 
-    return _feed_items(filters)
+    return _feed_items(filters, snapshot_time)
 
 
 def _metadata_items(items: str, *, prefer_metadata: bool = False) -> str:

@@ -187,6 +187,17 @@ reject live/upcoming videos. Ordinary news or gaming recommendations outside
 excluded shelves remain eligible. Changed renderer shapes, shelf headings or
 pinned extractor hooks may still require updates.
 
+The reader's **All** view paginates Videos, Shorts and Posts independently in
+500-item batches with explicit **Show more** controls. Format tabs and the
+recommendation-derived **Channels** view use infinite scrolling. Channel counts
+and three-item previews use the selected feed/search, with cursor-bound snapshots
+and count/identity ordering. **Configured channels only** resolves current
+configured feeds through captured channel IDs and URLs before grouping or
+pagination; historical unconfigured feeds do not qualify. Missing channel
+identities remain explicit rather than inferred from display names. See
+[channel API regressions](../tests/web/test_reader_youtube_channels.py) and
+[reader acceptance tests](../reader/tests/youtube-collection.spec.ts).
+
 The merged output contains one row per video/post ID and one set of asset
 references. Browser order is retained, followed by new yt-dlp identities. An
 explicit Shorts renderer takes precedence over a generic video classification.

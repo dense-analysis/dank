@@ -232,7 +232,7 @@ export function App() {
   const youtubeContext =
     section === "youtube" && !!(youtubeChannelId || youtubeFeedId);
   const youtubeTitle = youtubeChannelId
-    ? activeYouTubeChannel?.name || "Channel feed"
+    ? activeYouTubeChannel?.name || params.get("channel_name") || "Channel feed"
     : youtubeFeedId === "linked"
       ? "From your feeds"
       : activeYouTubeFeed?.kind === "news"

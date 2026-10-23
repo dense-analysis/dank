@@ -72,9 +72,11 @@ async def ensure_youtube_storage(client: ClickHouseClient) -> None:
 def add_youtube_routes(app: web.Application) -> None:
     app.router.add_get("/api/reader/youtube", handle_youtube)
     app.router.add_get("/api/reader/youtube/sources", handle_youtube_sources)
+    from dank.web.reader_youtube_channels import handle_youtube_channels
     from dank.web.reader_youtube_metadata import add_metadata_routes
     from dank.web.reader_youtube_transcripts import add_transcript_routes
 
+    app.router.add_get("/api/reader/youtube/channels", handle_youtube_channels)
     add_metadata_routes(app)
     add_transcript_routes(app)
 
@@ -86,10 +88,23 @@ async def handle_youtube(request: web.Request) -> web.Response:
         return web.json_response({"error": str(error)}, status=400)
 
     client: ClickHouseClient = request.app["clickhouse"]
-    query, params = build_youtube_query(filters)
+    configured: tuple[str, ...] = ()
+
+    if filters.channel_scope:
+        from dank.web.reader_youtube_channels import load_configured_channels
+
+        configured = await load_configured_channels(
+            client, request.app["state"].settings,
+        )
+
+    query, params = build_youtube_query(
+        filters, configured_channels=configured,
+    )
     result = await client.fetch_json(query, params)
     rows = result.rows[:filters.limit]
-    query, params = build_youtube_query(filters, count=True)
+    query, params = build_youtube_query(
+        filters, count=True, configured_channels=configured,
+    )
     counted = await client.fetch_json(query, params)
     total = int(counted.rows[0]["total"]) if counted.rows else 0
     state = request.app["state"]

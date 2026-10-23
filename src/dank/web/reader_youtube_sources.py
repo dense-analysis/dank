@@ -171,3 +171,28 @@ def _feed(
 ) -> dict[str, Any]:
     return {"id": url, "url": url, "name": name, "kind": kind,
             "region": region, "tab": tab, "count": 0}
+
+
+def configured_channel_keys(
+    settings: Settings, metadata: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    """Resolve current configured feeds without including retired feeds."""
+    urls = {_channel_url(str(feed["url"]))
+            for feed in _configured_feeds(settings).values()
+            if feed["kind"] == "channel"}
+    keys = set(urls)
+
+    for url in urls:
+        path = urlsplit(url).path
+
+        if path.startswith("/channel/"):
+            keys.add(path.removeprefix("/channel/"))
+
+    for row in metadata:
+        if (_channel_url(str(row.get("feed_url") or "")) in urls
+                or str(row.get("channel_id") or "") in keys
+                or _channel_url(str(row.get("channel_url") or "")) in urls):
+            keys.update(str(row.get(key) or "")
+                        for key in ("channel_id", "channel_url"))
+
+    return tuple(sorted(keys - {""}))
