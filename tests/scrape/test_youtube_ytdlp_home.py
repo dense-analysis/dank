@@ -332,3 +332,26 @@ def test_regional_home_url_needs_the_explicit_redirect_compatibility_option(
                     "https://www.youtube.com/feed/recommended?gl=GB&hl=en-GB",
                     "recommended", ytcfg={"LOGGED_IN": True},
                 )
+
+
+async def test_renderer_timeout_keeps_shelf_context_and_reaps_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    children, _ = _substitute_worker(monkeypatch, '''
+import json, sys, time
+request = json.load(sys.stdin)
+assert request['include_renderers'] is True
+print(json.dumps({'event':'renderer', 'key':'reelItemRenderer',
+    'raw':{'videoId':'abcdefghijk'}, 'shelf':'Shorts','shelves':['Shorts']}),
+    flush=True)
+time.sleep(30)
+''')
+    result = await collect_ytdlp_home(
+        COOKIES, timeout_seconds=0.5, include_renderers=True,
+    )
+    assert result.outcome == "timeout"
+    assert result.entries == ()
+    assert len(result.renderers) == 1
+    assert result.renderers[0].shelves == ("Shorts",)
+    assert result.renderers[0].raw["videoId"] == "abcdefghijk"
+    assert children[0].returncode is not None

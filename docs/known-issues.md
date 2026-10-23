@@ -170,29 +170,47 @@ later feeds to continue. Already persisted appearances remain available.
 Channel latest-video listings stop after consecutive known items; this heuristic
 does not apply to ranked or personalized feeds.
 
-Signed-in homepage **Recommendations** use a 30-second navigation/listing budget,
-scrolling to the bottom of each loaded batch and varied 0.3–0.65 second pauses. This pass replaces
-the normal per-feed item/scroll/pause settings, with 2,000-item and 200-scroll
-safeguards. A stable bottom without continuation is checked for two seconds;
-a visible but unchanged continuation is allowed eight seconds without new
-responses, items, page growth or loading. Logs distinguish end, stall and budget
-outcomes. Guard/budget/stall exits retain their discoveries and report partial
-collection; a completed pass requires an observed end. Slow YouTube responses
-can still leave recommendations undiscovered; there is no claim that a timed
-pass exhausts every homepage.
+Signed-in homepage **Recommendations** runs Chromium and yt-dlp concurrently
+against one cookie snapshot, with a shared 30-second listing deadline including
+snapshot preparation. A verified, already-loaded homepage is reused. Chromium
+scrolls to the bottom of each loaded batch with varied 0.3–0.65 second pauses,
+a 2,000-item guard and 200-scroll guard. Its stable bottom/end and stalled
+continuation checks remain two and eight seconds respectively. Browser startup
+and authentication precede this budget; media, captions and indexing follow it.
 
-Whole news/Playables subtrees are excluded in initial data and continuation
-responses, and DOM fallback retains all shelf ancestors and destination context.
-This prevents nested Shorts or repeated DOM cards from leaking out of excluded
-shelves. Actual recommended news/gaming videos outside those shelves remain
-eligible, and News feeds keep their existing coverage. Unknown future renderer
-shapes or changed shelf names can require parser updates. Buffered discoveries
-survive a listing deadline or later HTTP failure; an empty result remains a
-reported failure. Storage, thumbnails and caption enrichment happen after this
-listing budget. [Recommendation regressions](../tests/scrape/test_youtube_recommendations.py)
-cover exclusions, item kinds, partial captures, bounded navigation, end/stall
-handling and unchanged News collection; live account depth remains a separate
-operational check.
+The isolated yt-dlp worker observes original initial/continuation responses
+before flattening, so Shorts and community posts remain available. Shelf
+ancestry and exclusion flags follow observed continuation tokens; an unknown
+token stops that method as incomplete rather than guessing the shelf. Whole
+news/Playables/ad subtrees are pruned before normalization, and both methods
+reject live/upcoming videos. Ordinary news or gaming recommendations outside
+excluded shelves remain eligible. Changed renderer shapes, shelf headings or
+pinned extractor hooks may still require updates.
+
+The merged output contains one row per video/post ID and one set of asset
+references. Browser order is retained, followed by new yt-dlp identities. An
+explicit Shorts renderer takes precedence over a generic video classification.
+`recommendation_captures` preserves each accepted method's original renderer,
+shelf, source position and observation time. Timeout, stall or failure in either
+method keeps all collected results and records partial status; cancellation
+stops both methods and reaps the yt-dlp worker. No flat item lacking raw shelf
+provenance is admitted to the library. See
+[parallel regressions](../tests/scrape/test_youtube_parallel_home.py),
+[worker cleanup](../tests/scrape/test_youtube_ytdlp_home.py) and
+[browser exclusions](../tests/scrape/test_youtube_recommendations.py).
+
+**Live merged capture, 2026-10-23:** Chromium returned 378 identities and the
+raw yt-dlp path returned 369, with 273 shared. Both completed; deduplication
+produced 474 items (454 videos, 20 Shorts, no posts) in 26.3 seconds of listing
+work, or 34.6 seconds including browser startup/session verification/cleanup.
+Accepted observations retained only ordinary-grid and Shorts shelf context;
+news and Playables subtrees were excluded. This is one measured account snapshot,
+not a guarantee that every future homepage finishes before the deadline.
+A normal reader refresh then saved 482 rows / 482 distinct IDs (461 videos,
+21 Shorts): 122 shared, 244 browser-only and 116 yt-dlp-only. Both listings
+completed in 25.6 seconds, with zero excluded shelf observations in storage.
+The overall refresh was partial because one thumbnail returned 404 and one
+caption request failed; all merged posts remained available.
 
 Google sign-in uses one 1Password item read per attempt and generates any
 requested authenticator code in memory. A successful callback is insufficient:

@@ -73,6 +73,17 @@ sections. Each appearance retains its feed, tab, shelf heading, position,
 region, observation time and original source renderer. The same video can
 therefore have several discoveries without becoming several video identities.
 
+Signed-in **Recommendations** collects through Chromium and yt-dlp in parallel
+with a shared 30-second listing budget. The verified homepage is reused when
+available. yt-dlp's original response renderers retain shelf ancestry, Shorts
+and posts before its flat extraction removes that context. Both paths exclude
+news shelves, Playables, ads, live and upcoming videos. Duplicate video/post IDs
+are saved once, with the accepted method-specific renderers and shelf/rank
+observations retained. Browser order comes first, followed by additional
+items from yt-dlp. A timeout or failed method preserves merged results and
+marks the collection partial. Startup, media, captions and indexing add time
+outside the listing budget.
+
 A selected recommendation feed shows its latest captured snapshot in source
 order. Pagination stays on that snapshot if another collection finishes while
 you read. Channel views retain earlier items as their collection advances;
@@ -202,8 +213,9 @@ make youtube-compare
 make youtube-compare ARGS='--timeout 30'
 ```
 
-Add `MODE=native` for native execution. The browser and metadata-only yt-dlp
-`:ytrec` collector start together with the same authenticated cookie snapshot
+Add `MODE=native` for native execution. This diagnostic compares the browser
+and flat yt-dlp baseline; normal Recommendations uses raw renderers from both.
+The browser and metadata-only yt-dlp `:ytrec` collector start together with the same authenticated cookie snapshot
 and region. Each has a four-minute ceiling by default. The report separates
 browser warmup from collection time and records start skew, stop reasons,
 unique Videos/Shorts/Posts counts, overlap, and IDs found by only one method.

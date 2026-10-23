@@ -11,6 +11,9 @@ from http.cookiejar import Cookie, CookieJar
 from typing import Any, Literal, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
+from .payloads import POST_RENDERERS, VIDEO_RENDERERS
+from .ytdlp_renderers import HomeRenderer, RendererLimitReached
+
 MAX_TIMEOUT_SECONDS = 240.0
 MAX_ENTRIES = 10000
 MAX_EVENT_BYTES = 2 * 1024 * 1024
@@ -41,6 +44,7 @@ class YtDlpHomeResult(NamedTuple):
     error_type: str = ""
     warnings: tuple[str, ...] = ()
     limitations: tuple[str, ...] = LIMITATIONS
+    renderers: tuple[HomeRenderer, ...] = ()
 
 
 def classify_entry(raw: dict[str, Any], position: int) -> YtDlpHomeEntry:
@@ -103,10 +107,29 @@ def _youtube_session(cookies: list[dict[str, object]]) -> bool:
     )
 
 
+def _renderer(event: dict[str, Any]) -> HomeRenderer:
+    raw, key = event["raw"], event["key"]
+    shelf, shelves = event["shelf"], event["shelves"]
+
+    if (key not in VIDEO_RENDERERS | POST_RENDERERS
+            or not isinstance(raw, dict)
+            or not isinstance(shelf, str)
+            or not isinstance(shelves, list)
+            or not all(isinstance(value, str)
+                       for value in cast(list[object], shelves))):
+        raise ValueError("Invalid recommendation renderer")
+
+    return HomeRenderer(
+        key, cast(dict[str, Any], raw), shelf,
+        tuple(cast(list[str], shelves)),
+    )
+
+
 class _Capture:
     def __init__(self, started: float) -> None:
         self.started = started
         self.entries: list[YtDlpHomeEntry] = []
+        self.renderers: list[HomeRenderer] = []
         self.warnings: list[str] = []
         self.first_entry_seconds: float | None = None
         self.outcome: Literal[
@@ -125,8 +148,11 @@ class _Capture:
                 self.entries.append(classify_entry(
                     cast(dict[str, Any], raw), len(self.entries) + 1,
                 ))
-                if self.first_entry_seconds is None:
-                    self.first_entry_seconds = now - self.started
+            case "renderer":
+                if len(self.renderers) >= MAX_ENTRIES:
+                    raise ValueError("Recommendation renderer limit exceeded")
+
+                self.renderers.append(_renderer(event))
             case "warning":
                 self.warnings.append(str(event["category"]))
             case "done":
@@ -143,10 +169,15 @@ class _Capture:
             case _:
                 raise ValueError("Unknown worker event")
 
+        if (event.get("event") in {"entry", "renderer"}
+                and self.first_entry_seconds is None):
+            self.first_entry_seconds = now - self.started
+
     def result(self, now: float) -> YtDlpHomeResult:
         return YtDlpHomeResult(
             tuple(self.entries), now - self.started, self.first_entry_seconds,
             self.outcome, self.error_type, tuple(dict.fromkeys(self.warnings)),
+            renderers=tuple(self.renderers),
         )
 
 
@@ -167,6 +198,7 @@ async def collect_ytdlp_home(
     timeout_seconds: float = MAX_TIMEOUT_SECONDS,
     max_entries: int = MAX_ENTRIES,
     region: str = "GB",
+    include_renderers: bool = False,
 ) -> YtDlpHomeResult:
     """Use supplied cookies and kill the worker on timeout or cancellation."""
     _validate_limits(timeout_seconds, max_entries, region)
@@ -191,7 +223,7 @@ async def collect_ytdlp_home(
             assert process.stdout is not None
             process.stdin.write(json.dumps({
                 "cookies": records, "max_entries": max_entries,
-                "region": region,
+                "region": region, "include_renderers": include_renderers,
             }).encode())
             await process.stdin.drain()
             process.stdin.close()
@@ -302,6 +334,12 @@ def _run_worker() -> None:
             downloader = cast(Any, provider)
             # Inject only the caller's cookie snapshot; never load a profile.
             downloader.cookiejar = cookies
+
+            if request.get("include_renderers"):
+                from .ytdlp_renderers import install_home_capture
+
+                install_home_capture(downloader, _emit, request["max_entries"])
+
             result = downloader.extract_info(":ytrec", download=False,
                                              process=False)
 
@@ -317,13 +355,16 @@ def _run_worker() -> None:
                                                  process=False)
 
             for position, entry in enumerate(result.get("entries", ()), 1):
-                _emit({"event": "entry", "raw": entry})
+                if not request.get("include_renderers"):
+                    _emit({"event": "entry", "raw": entry})
 
                 if position >= request["max_entries"]:
                     _emit({"event": "done", "outcome": "item_limit"})
                     return
 
             _emit({"event": "done", "outcome": "completed"})
+    except RendererLimitReached:
+        _emit({"event": "done", "outcome": "item_limit"})
     except Exception as error:
         _emit({"event": "error", "error_type": type(error).__name__})
 

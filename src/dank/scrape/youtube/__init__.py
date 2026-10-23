@@ -11,6 +11,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import zendriver
+from zendriver import cdp
 
 from dank.config import Settings, SourceConfig, YouTubeSettings
 from dank.model import RawPost
@@ -32,6 +33,7 @@ from .browser import (
 )
 from .channels import discover_channel
 from .feeds import configured_feeds
+from .home_merge import merge_home_posts
 from .payloads import (
     ORIGIN,
     UK_HYPE_PLAYLIST,
@@ -45,6 +47,7 @@ from .payloads import (
     playlist_title,
     renderers,
 )
+from .ytdlp_home import YtDlpHomeResult, collect_ytdlp_home
 
 logger = logging.getLogger(__name__)
 # Consent can trigger a second navigation before the channel header arrives.
@@ -283,6 +286,16 @@ def _home_response_values(
     return values, failure
 
 
+async def _home_initial_state(
+    page: zendriver.Tab, feed: YouTubeFeed, settings: YouTubeSettings,
+    initial_state: dict[str, object] | None,
+) -> tuple[str, dict[str, object]]:
+    if initial_state is not None:
+        return str(initial_state.get("url") or feed.url), initial_state
+
+    return await _resolve_feed(page, feed, settings)
+
+
 async def _collect_home_feed(
     page: zendriver.Tab,
     feed: YouTubeFeed,
@@ -290,6 +303,7 @@ async def _collect_home_feed(
     batches: list[ScrapeBatch],
     *, timeout_seconds: float | None = None,
     max_items: int | None = None, max_scrolls: int | None = None,
+    initial_state: dict[str, object] | None = None,
 ) -> None:
     """Buffer discoveries so downstream work cannot consume the time budget."""
     capture = NetworkCapture(page, [r"youtube\.com/youtubei/v1/browse"])
@@ -313,7 +327,9 @@ async def _collect_home_feed(
     try:
         async with budget:
             await capture.start()
-            request_url, state = await _resolve_feed(page, feed, settings)
+            request_url, state = await _home_initial_state(
+                page, feed, settings, initial_state,
+            )
 
             for step in range(scroll_limit + 1):
                 values, failure = _home_response_values(
@@ -405,6 +421,134 @@ def _check_home_result(stop: str, item_count: int) -> None:
         )
 
 
+def _normalize_home_renderers(
+    result: YtDlpHomeResult, feed: YouTubeFeed, settings: YouTubeSettings,
+    observed_at: datetime.datetime,
+) -> tuple[list[RawPost], int]:
+    posts_out: list[RawPost] = []
+    failures = 0
+    capture = FeedCapture(feed, settings, set())
+    capture.observed_at = observed_at
+    request_url = _localized(ORIGIN + "/feed/recommended",
+                             feed.region or settings.region)
+
+    for entry in result.renderers:
+        try:
+            posts = capture.extract(
+                [(entry.key, entry.raw, entry.shelf)], request_url,
+            ).posts
+        except Exception:
+            count("parse_failures")
+            failures += 1
+            continue
+
+        for post in posts:
+            payload = as_dict(json.loads(post.payload))
+            payload["discovery"]["shelves"] = list(entry.shelves)
+            posts_out.append(post._replace(payload=json.dumps(payload)))
+
+    return posts_out, failures
+
+
+async def _collect_parallel_home(
+    page: zendriver.Tab, feed: YouTubeFeed, settings: YouTubeSettings,
+    batches: list[ScrapeBatch],
+) -> None:
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    observed_at = datetime.datetime.now(datetime.UTC)
+    state: dict[str, object] | None = None
+    cookies: list[dict[str, Any]] = []
+
+    try:
+        async with asyncio.timeout(min(5, HOME_BUDGET_SECONDS)):
+            current = await snapshot(page)
+            url = urlsplit(str(current.get("url", "")))
+
+            if (current.get("signed_in") is True
+                    and url.netloc == "www.youtube.com" and url.path == "/"):
+                state = current
+
+            cookies = [
+                cookie.to_json()
+                for cookie in await page.send(cdp.storage.get_cookies())
+                if any(cookie.domain.lstrip(".") == domain
+                       or cookie.domain.endswith("." + domain)
+                       for domain in ("youtube.com", "google.com"))
+            ]
+    except Exception as error:
+        logger.warning("YouTube snapshot setup failed (%s)",
+                       type(error).__name__)
+
+    remaining = max(0.001, HOME_BUDGET_SECONDS - (loop.time() - started))
+    browser_batches: list[ScrapeBatch] = []
+
+    try:
+        outcomes = await asyncio.gather(
+            _collect_home_feed(
+                page, feed, settings, browser_batches,
+                timeout_seconds=remaining, initial_state=state,
+            ),
+            collect_ytdlp_home(
+                cookies, timeout_seconds=remaining, region=feed.region
+                or settings.region, include_renderers=True,
+            ),
+            return_exceptions=True,
+        )
+    finally:
+        cookies.clear()
+
+    browser_outcome, ytdlp_outcome = outcomes
+    browser_posts = [post for batch in browser_batches for post in batch.posts]
+    ytdlp_posts: list[RawPost] = []
+    ytdlp_status = type(ytdlp_outcome).__name__
+
+    if isinstance(ytdlp_outcome, YtDlpHomeResult):
+        ytdlp_status = ytdlp_outcome.outcome
+        ytdlp_posts, parse_failures = _normalize_home_renderers(
+            ytdlp_outcome, feed, settings, observed_at,
+        )
+
+        if (parse_failures or not ytdlp_outcome.renderers
+                or "repeated_continuation" in ytdlp_outcome.warnings):
+            ytdlp_status = "incomplete"
+
+    merged = merge_home_posts(browser_posts, ytdlp_posts, settings)
+
+    if merged.posts:
+        batches.append(merged)
+
+    browser_ids = {post.post_id for post in browser_posts}
+    ytdlp_ids = {post.post_id for post in ytdlp_posts}
+    browser_status = (
+        type(browser_outcome).__name__ if browser_outcome else "completed"
+    )
+    logger.info(
+        "YouTube merged Recommendations browser=%d (%s) yt-dlp=%d (%s) "
+        "overlap=%d saved=%d kinds=%s elapsed=%.1fs",
+        len(browser_ids), browser_status, len(ytdlp_ids), ytdlp_status,
+        len(browser_ids & ytdlp_ids), len(merged.posts),
+        dict(Counter(json.loads(post.payload)["kind"]
+                     for post in merged.posts)),
+        loop.time() - started,
+    )
+
+    if isinstance(browser_outcome, asyncio.CancelledError):
+        raise browser_outcome
+
+    if isinstance(ytdlp_outcome, asyncio.CancelledError):
+        raise ytdlp_outcome
+
+    if not merged.posts:
+        raise YouTubeFeedError("Both recommendation methods returned no items")
+
+    if browser_outcome is not None or ytdlp_status != "completed":
+        raise YouTubeFeedIncomplete(
+            "Recommendations retained merged results; "
+            f"browser={browser_status}, yt-dlp={ytdlp_status}",
+        )
+
+
 async def _scrape_feed(
     page: zendriver.Tab,
     feed: YouTubeFeed,
@@ -416,7 +560,10 @@ async def _scrape_feed(
         failure: Exception | None = None
 
         try:
-            await _collect_home_feed(page, feed, settings, batches)
+            if settings.authenticated:
+                await _collect_parallel_home(page, feed, settings, batches)
+            else:
+                await _collect_home_feed(page, feed, settings, batches)
         except Exception as error:
             failure = error
 
