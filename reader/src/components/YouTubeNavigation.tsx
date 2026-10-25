@@ -2,6 +2,7 @@ import "../youtube-navigation.css";
 import {
   Flame,
   Link2,
+  ListVideo,
   Newspaper,
   Play,
   Sparkles,
@@ -58,7 +59,10 @@ export function YouTubeNavigation({
               },
               ...sources.feeds
                 .filter(
-                  (feed) => !["hype", "news", "channel"].includes(feed.kind),
+                  (feed) =>
+                    !["hype", "news", "channel", "playlist"].includes(
+                      feed.kind,
+                    ),
                 )
                 .map((feed) => ({
                   id: `feed:${feed.id}`,
@@ -75,6 +79,17 @@ export function YouTubeNavigation({
           : []
       }
     >
+      <li>
+        <button
+          type="button"
+          className={`nav-item collection-item ${active && selected === "playlists" ? "active" : ""}`}
+          aria-current={active && selected === "playlists" ? "page" : undefined}
+          onClick={() => selectItem("playlists")}
+        >
+          <ListVideo size={15} />
+          <span className="collection-name">Playlists</span>
+        </button>
+      </li>
       {groups.map(({ kind, label, icon }) => {
         const feeds = youtubeGroupFeeds(sources, kind);
         if (!feeds.length) return null;

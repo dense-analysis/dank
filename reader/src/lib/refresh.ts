@@ -19,6 +19,7 @@ export interface RefreshScope {
   community?: string;
   account?: string;
   channel_id?: string;
+  playlist_id?: string;
   feed_id?: string;
   domain?: string;
   post_id?: string;
@@ -66,7 +67,12 @@ export function refreshContext(params: URLSearchParams) {
     scope = { kind: "youtube" };
     label = "YouTube";
 
-    if (channel && feed !== "https://www.youtube.com/") {
+    if (params.get("youtube_view") === "playlists") {
+      const playlist = params.get("youtube_playlist");
+      if (playlist) scope.playlist_id = playlist;
+      else scope.feed_id = "playlists";
+      label = playlist ? "this YouTube playlist" : "YouTube playlists";
+    } else if (channel && feed !== "https://www.youtube.com/") {
       scope.channel_id = channel;
       label = "this YouTube channel";
     } else if (feed) {
@@ -189,7 +195,13 @@ export function refreshDestination(scope: RefreshScope): URLSearchParams {
   if (scope.community) params.set("community", scope.community);
   if (scope.account) params.set("account", scope.account);
   if (scope.channel_id) params.set("channel", scope.channel_id);
-  if (scope.feed_id)
+  if (
+    scope.playlist_id ||
+    (scope.kind === "youtube" && scope.feed_id === "playlists")
+  ) {
+    params.set("youtube_view", "playlists");
+    if (scope.playlist_id) params.set("youtube_playlist", scope.playlist_id);
+  } else if (scope.feed_id)
     params.set(scope.kind === "x" ? "x_feed" : "feed", scope.feed_id);
 
   return params;
@@ -205,6 +217,7 @@ export function refreshScopeKey(scope: RefreshScope): string {
     scope.community?.toLowerCase() ?? "",
     scope.account?.toLowerCase() ?? "",
     scope.channel_id ?? "",
+    scope.playlist_id ?? "",
     scope.feed_id ?? "",
     scope.domain ?? "",
     scope.post_id ?? "",
@@ -237,6 +250,7 @@ function isScope(value: unknown): value is RefreshScope {
       "community",
       "account",
       "channel_id",
+      "playlist_id",
       "feed_id",
       "domain",
       "post_id",

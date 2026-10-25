@@ -112,7 +112,7 @@ export function YouTubeThumbnail({
               loading="lazy"
               referrerPolicy="no-referrer"
               className={url === current ? "is-current" : ""}
-              aria-hidden={url !== current}
+              aria-hidden={url !== current ? true : undefined}
               onLoad={() =>
                 setLoaded((values) =>
                   values.includes(url) ? values : [...values, url],

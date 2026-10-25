@@ -61,6 +61,14 @@ describe("contextual collection scope", () => {
     ],
     ["view=hacker_news&hn_filter=top10", { kind: "hacker_news" }],
     ["view=youtube", { kind: "youtube" }],
+    [
+      "view=youtube&youtube_view=playlists&q=music",
+      { kind: "youtube", feed_id: "playlists" },
+    ],
+    [
+      "view=youtube&youtube_view=playlists&youtube_playlist=PLone",
+      { kind: "youtube", playlist_id: "PLone" },
+    ],
     ["view=youtube&channel=UC123", { kind: "youtube", channel_id: "UC123" }],
     [
       "view=youtube&feed=https%3A%2F%2Fwww.youtube.com%2Ffeed%2Fhype",
@@ -323,4 +331,21 @@ it("refreshes the recommendation feed when inspecting one recommended channel", 
     kind: "youtube",
     feed_id: "https://www.youtube.com/",
   });
+});
+
+it("returns playlist refreshes to their collection and keeps scopes distinct", () => {
+  const scope: RefreshScope = { kind: "youtube", playlist_id: "PLone" };
+  expect(refreshDestination(scope).toString()).toBe(
+    "view=youtube&youtube_view=playlists&youtube_playlist=PLone",
+  );
+  expect(
+    refreshDestination({ kind: "youtube", feed_id: "playlists" }).toString(),
+  ).toBe("view=youtube&youtube_view=playlists");
+  expect(refreshScopeKey(scope)).not.toBe(
+    refreshScopeKey({ ...scope, playlist_id: "PLtwo" }),
+  );
+  expect(isRefreshJob({ ...job, scope })).toBe(true);
+  expect(
+    isRefreshJob({ ...job, scope: { kind: "youtube", playlist_id: 123 } }),
+  ).toBe(false);
 });

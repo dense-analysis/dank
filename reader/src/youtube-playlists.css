@@ -1,0 +1,228 @@
+.yt-playlist-search {
+  margin-bottom: 30px;
+}
+.yt-playlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 32px 24px;
+}
+.yt-playlist-card {
+  min-width: 0;
+  padding-top: 9px;
+}
+.yt-playlist-artwork {
+  display: block;
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--surface);
+  border-radius: 12px;
+  margin: 0 0 15px;
+  isolation: isolate;
+}
+.yt-playlist-artwork::before,
+.yt-playlist-artwork::after {
+  content: "";
+  position: absolute;
+  inset: -5px 9px 5px;
+  border-radius: 10px;
+  background: var(--line);
+  z-index: -1;
+}
+.yt-playlist-artwork::before {
+  inset: -9px 18px 9px;
+  opacity: 0.5;
+}
+.yt-playlist-artwork img,
+.yt-playlist-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.yt-playlist-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  border-radius: 5px;
+  background: #101313e8;
+  color: white;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+.yt-playlist-placeholder {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: var(--muted);
+  background: var(--surface);
+}
+.yt-playlist-card h3 {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 7px;
+  overflow-wrap: anywhere;
+}
+.yt-playlist-card h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+.yt-playlist-owner,
+.yt-playlist-card-count {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 5px 0;
+}
+.yt-playlist-card > .text-button {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.yt-playlist-heading {
+  display: grid;
+  grid-template-columns: minmax(190px, 310px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  margin-bottom: 30px;
+}
+.yt-playlist-cover {
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.yt-playlist-heading h2 {
+  font-size: clamp(23px, 2.4vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  line-height: 1.2;
+  margin: 7px 0 10px;
+  overflow-wrap: anywhere;
+}
+.yt-playlist-heading-text > p:not(.eyebrow) {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.yt-playlist-heading-text .yt-playlist-incomplete {
+  color: var(--text);
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.yt-playlist-heading-text > .text-button {
+  margin-top: 7px;
+  font-size: 12px;
+}
+.yt-playlist-entries {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: grid;
+  gap: 18px;
+}
+.yt-playlist-entry {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+}
+.yt-playlist-position {
+  color: var(--muted);
+  font-size: 13px;
+  padding-top: 18px;
+  text-align: right;
+}
+.yt-playlist-entry .yt-card {
+  display: grid;
+  grid-template-columns: minmax(150px, 260px) minmax(0, 1fr);
+  column-gap: 20px;
+  align-content: start;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.yt-playlist-entry .yt-card > .yt-thumbnail {
+  grid-column: 1;
+  grid-row: 1 / span 5;
+  margin-bottom: 0;
+}
+.yt-playlist-entry .yt-card > h3,
+.yt-playlist-entry .yt-card > p,
+.yt-playlist-entry .yt-card > .yt-card-footer,
+.yt-playlist-entry .yt-card > .yt-player-actions {
+  grid-column: 2;
+}
+.yt-playlist-entry .yt-card > h3 {
+  margin-top: 0;
+}
+.yt-playlist-entry .yt-card > .yt-card-footer {
+  margin-top: 10px;
+}
+.yt-playlist-entry .yt-short .yt-thumbnail {
+  aspect-ratio: 16 / 9;
+}
+.yt-playlist-entry .yt-short .yt-thumbnail img {
+  object-fit: contain;
+}
+.yt-playlist-unavailable {
+  display: flex;
+  gap: 17px;
+  align-items: center;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.yt-playlist-unavailable h3 {
+  margin: 0 0 7px;
+  font-size: 14px;
+  color: var(--text);
+}
+.yt-playlist-unavailable p {
+  margin: 0;
+  font-size: 12px;
+}
+.yt-playlist-loading {
+  padding-block: 24px;
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .yt-playlist-heading {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 19px;
+  }
+  .yt-playlist-cover {
+    max-width: 400px;
+  }
+  .yt-playlist-grid {
+    gap: 26px 18px;
+  }
+  .yt-playlist-entry {
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .yt-playlist-entry .yt-card {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px;
+  }
+  .yt-playlist-entry .yt-card > .yt-thumbnail {
+    grid-column: 1;
+    grid-row: auto;
+    margin-bottom: 12px;
+  }
+  .yt-playlist-entry .yt-card > h3,
+  .yt-playlist-entry .yt-card > p,
+  .yt-playlist-entry .yt-card > .yt-card-footer,
+  .yt-playlist-entry .yt-card > .yt-player-actions {
+    grid-column: 1;
+  }
+}

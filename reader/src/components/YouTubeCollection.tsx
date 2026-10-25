@@ -33,12 +33,15 @@ import { YouTubeAllSections } from "./YouTubeAllSections";
 import { YouTubeCard } from "./YouTubeCard";
 import { YouTubeChannels } from "./YouTubeChannels";
 import { YouTubeMetadataStatus } from "./YouTubeMetadataStatus";
+import { YouTubePlaylists } from "./YouTubePlaylists";
 import YouTubeReferenceGraph from "./YouTubeReferenceGraph";
 import { YouTubeTranscript } from "./YouTubeTranscript";
 import { YouTubeVersionHistory } from "./YouTubeVersionHistory";
 
 export function YouTubeCollection({
   backLabel,
+  collectPlaylist,
+  collectingPlaylist,
   params,
   navigate,
   backTo,
@@ -50,6 +53,8 @@ export function YouTubeCollection({
   returnToConnections,
 }: {
   backLabel?: string;
+  collectPlaylist?: (id: string) => void;
+  collectingPlaylist?: boolean;
   params: URLSearchParams;
   navigate: (
     params: URLSearchParams,
@@ -66,6 +71,7 @@ export function YouTubeCollection({
   returnToConnections?: () => void;
 }) {
   const filters = youtubeFilters(params);
+  const playlistView = params.get("youtube_view") === "playlists";
   const channelView = params.get("format") === "channels";
   const allView = !channelView && !filters.kind;
   const [search, setSearch] = useState(filters.q);
@@ -83,19 +89,21 @@ export function YouTubeCollection({
       : undefined;
   const groupFeeds = groupKind ? youtubeGroupFeeds(sources, groupKind) : [];
   const scoped = !!filters.feed || !!filters.channel;
-  const title = linked
-    ? "From your feeds"
-    : activeChannel?.name ||
-      params.get("channel_name") ||
-      (recommendations ? youtubeFeedLabel(activeFeed) : activeFeed?.name) ||
-      (scoped ? "Collected feed" : "Collected recommendations");
+  const title = playlistView
+    ? "playlist"
+    : linked
+      ? "From your feeds"
+      : activeChannel?.name ||
+        params.get("channel_name") ||
+        (recommendations ? youtubeFeedLabel(activeFeed) : activeFeed?.name) ||
+        (scoped ? "Collected feed" : "Collected recommendations");
   const query = useInfiniteQuery({
     queryKey: ["youtube", filters],
     queryFn: ({ pageParam, signal }) =>
       fetchYouTubeItems(filters, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
-    enabled: !selectedId && !allView && !channelView,
+    enabled: !playlistView && !selectedId && !allView && !channelView,
   });
   const items = useMemo(
     () => [
@@ -205,7 +213,10 @@ export function YouTubeCollection({
           <ArrowLeft size={16} />{" "}
           {returnToConnections
             ? "Back to connections"
-            : (backLabel ?? `Back to ${title.toLowerCase()}`)}
+            : (backLabel ??
+              (playlistView
+                ? "Back to playlist"
+                : `Back to ${title.toLowerCase()}`))}
         </button>
         {selected ? (
           <>
@@ -404,6 +415,20 @@ export function YouTubeCollection({
           </div>
         )}
       </div>
+    );
+  }
+
+  if (playlistView) {
+    return (
+      <YouTubePlaylists
+        collectPlaylist={collectPlaylist}
+        collectingPlaylist={collectingPlaylist}
+        params={params}
+        navigate={navigate}
+        backTo={backTo}
+        open={open}
+        href={href}
+      />
     );
   }
 

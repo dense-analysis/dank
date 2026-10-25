@@ -356,6 +356,17 @@ See [Hacker News collection settings](../docs/features/hacker-news.md).
 
 ## YouTube
 
+[**Playlists**](http://127.0.0.1:8080/reader/?view=youtube&youtube_view=playlists) opens a playlist
+library under YouTube. Open a playlist to browse its saved videos in the order
+YouTube returned, including repeated videos and explicit unavailable entries.
+Playlist and video links preserve the selected playlist through reload and Back.
+The playlist view uses source order rather than the ordinary feed sort.
+
+Refresh checks the library or the selected playlist. Its captured count, last
+check, and incomplete or failed status stay visible; saved videos remain
+available after a failed check. **Show updates** opens the refreshed playlist.
+
+
 **YouTube** saves the context of discovery: homepage recommendations, Hype
 rankings, News topics, channel feeds, Shorts and community posts.
 **Recommendations** collects your configured YouTube homepage, including videos,

@@ -16,6 +16,13 @@ import {
   youtubeFilters,
 } from "../lib/youtubeCollection";
 
+import {
+  fetchYouTubePlaylist,
+  fetchYouTubePlaylists,
+  type YouTubePlaylistDetail,
+  type YouTubePlaylistPage,
+} from "../lib/youtubePlaylists";
+
 const dismissedKey = "dank-reader:refresh-dismissed:v1";
 const contentQueries = new Set([
   "posts",
@@ -24,6 +31,8 @@ const contentQueries = new Set([
   "sources",
   "youtube",
   "youtube-item",
+  "youtube-playlists",
+  "youtube-playlist",
   "youtube-sources",
   "youtube-transcript",
   "post-connections",
@@ -103,7 +112,28 @@ export function useRefresh(navigate: (params: URLSearchParams) => void) {
         const itemId = destination.get("youtube_item");
         const filters = youtubeFilters(destination);
 
-        if (itemId) {
+        if (destination.get("youtube_view") === "playlists") {
+          const playlistId = destination.get("youtube_playlist");
+          if (playlistId) {
+            await client.fetchInfiniteQuery({
+              queryKey: ["youtube-playlist", playlistId],
+              queryFn: ({ pageParam, signal }) =>
+                fetchYouTubePlaylist(playlistId, pageParam, signal),
+              initialPageParam: undefined as string | undefined,
+              getNextPageParam: (last: YouTubePlaylistDetail) =>
+                last.next_cursor ?? undefined,
+            });
+          } else {
+            await client.fetchInfiniteQuery({
+              queryKey: ["youtube-playlists", ""],
+              queryFn: ({ pageParam, signal }) =>
+                fetchYouTubePlaylists("", pageParam, signal),
+              initialPageParam: undefined as string | undefined,
+              getNextPageParam: (last: YouTubePlaylistPage) =>
+                last.next_cursor ?? undefined,
+            });
+          }
+        } else if (itemId) {
           await client.fetchQuery({
             queryKey: ["youtube-item", itemId],
             queryFn: ({ signal }) =>

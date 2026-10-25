@@ -229,6 +229,7 @@ export function App() {
       community.name.toLowerCase() === filters.community.toLowerCase(),
   );
   const communityName = activeCommunity?.name ?? filters.community;
+  const youtubePlaylists = params.get("youtube_view") === "playlists";
   const youtubeChannelId = params.get("channel");
   const youtubeFeedId = params.get("feed");
   const activeYouTubeChannel = youtubeSources.data?.channels.find(
@@ -238,18 +239,23 @@ export function App() {
     (feed) => feed.id === youtubeFeedId,
   );
   const youtubeContext =
-    section === "youtube" && !!(youtubeChannelId || youtubeFeedId);
-  const youtubeTitle = youtubeChannelId
-    ? activeYouTubeChannel?.name || params.get("channel_name") || "Channel feed"
-    : youtubeFeedId === "linked"
-      ? "From your feeds"
-      : activeYouTubeFeed?.kind === "news"
-        ? "News"
-        : activeYouTubeFeed?.kind === "hype"
-          ? "Hyped"
-          : activeYouTubeFeed
-            ? youtubeFeedLabel(activeYouTubeFeed)
-            : "YouTube";
+    section === "youtube" &&
+    !!(youtubePlaylists || youtubeChannelId || youtubeFeedId);
+  const youtubeTitle = youtubePlaylists
+    ? "Playlists"
+    : youtubeChannelId
+      ? activeYouTubeChannel?.name ||
+        params.get("channel_name") ||
+        "Channel feed"
+      : youtubeFeedId === "linked"
+        ? "From your feeds"
+        : activeYouTubeFeed?.kind === "news"
+          ? "News"
+          : activeYouTubeFeed?.kind === "hype"
+            ? "Hyped"
+            : activeYouTubeFeed
+              ? youtubeFeedLabel(activeYouTubeFeed)
+              : "YouTube";
   const collectionContext =
     accountContext ||
     forYouContext ||
@@ -403,7 +409,8 @@ export function App() {
 
   function selectYouTube(selection: string) {
     const next = new URLSearchParams({ view: "youtube" });
-    if (selection === "linked") next.set("feed", "linked");
+    if (selection === "playlists") next.set("youtube_view", "playlists");
+    else if (selection === "linked") next.set("feed", "linked");
     else if (selection.startsWith("channel:"))
       next.set("channel", selection.slice(8));
     else if (selection.startsWith("feed:"))
@@ -444,13 +451,15 @@ export function App() {
       selectAccount={selectAccount}
       youtubeSources={youtubeSources.data}
       youtubeSelection={
-        params.get("channel")
-          ? `channel:${params.get("channel")}`
-          : params.get("feed") === "linked"
-            ? "linked"
-            : params.get("feed")
-              ? `feed:${params.get("feed")}`
-              : ""
+        youtubePlaylists
+          ? "playlists"
+          : params.get("channel")
+            ? `channel:${params.get("channel")}`
+            : params.get("feed") === "linked"
+              ? "linked"
+              : params.get("feed")
+                ? `feed:${params.get("feed")}`
+                : ""
       }
       selectYouTube={selectYouTube}
       mobileOpen={mobileOpen}
@@ -690,6 +699,10 @@ export function App() {
               {section === "youtube" || mixedVideoDetail ? (
                 !readingArticle && (
                   <YouTubeCollection
+                    collectPlaylist={(id) =>
+                      refresh.start({ kind: "youtube", playlist_id: id })
+                    }
+                    collectingPlaylist={!!refreshingHere || refresh.starting}
                     backLabel={mixedVideoDetail ? "Back to all" : undefined}
                     params={params}
                     navigate={navigate}
