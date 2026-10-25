@@ -456,3 +456,25 @@ async def test_non_authenticated_library_uses_bounded_oldest_known_checks(
     assert collect.await_args is not None
     assert collect.await_args.args[1].endswith("list=PLold")
     assert collect.await_args.kwargs["timeout_seconds"] <= 120
+
+
+async def test_failed_checks_do_not_starve_complete_playlists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 1)
+    collect = AsyncMock(return_value=capture(video()))
+    monkeypatch.setattr(playlist_browser, "collect_playlist", collect)
+    cards = {
+        "PLfailed": {**playlist_metadata("PLfailed", {}),
+                     "snapshot_hash": "", "checked_at": "2026-10-25"},
+        "PLold": {**playlist_metadata("PLold", {}),
+                  "snapshot_hash": "old", "checked_at": "2026-10-20"},
+    }
+    batches = [
+        batch async for batch in playlist_browser.collect_playlist_library(
+            AsyncMock(), YouTubeSettings(), cards, excluded=set(),
+        )
+    ]
+    assert batches
+    assert collect.await_args is not None
+    assert collect.await_args.args[1].endswith("list=PLold")

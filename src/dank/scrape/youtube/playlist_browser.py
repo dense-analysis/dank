@@ -196,12 +196,10 @@ async def _library_cards(
 def _check_order(
     metadata: dict[str, Any],
     known: Mapping[str, dict[str, Any]],
-) -> tuple[bool, str]:
+) -> str:
     previous = known.get(metadata["playlist_id"], {})
 
-    return bool(previous.get("snapshot_hash")), str(
-        previous.get("checked_at", ""),
-    )
+    return str(previous.get("checked_at", ""))
 
 
 async def collect_playlist_library(
