@@ -101,6 +101,7 @@ async def collect_playlist(
     entries: list[dict[str, Any]] = []
     capture = NetworkCapture(page, [r"youtube\.com/youtubei/v1/browse"])
     status, error_type = "complete", ""
+    exhausted = False
 
     try:
         async with asyncio.timeout(timeout_seconds):
@@ -125,11 +126,14 @@ async def collect_playlist(
 
             entries.extend(result.entries)
             await _collect_pages(page, capture, entries, result.continuation)
+            exhausted = True
             reported = metadata.get("reported_count")
 
             if reported is not None and reported > len(entries):
-                raise PlaylistIncomplete(
-                    "Playlist contains hidden or missing entries",
+                status = "partial"
+                error_type = (
+                    f"Playlist listing exhausted; {reported - len(entries)} "
+                    "entries not shown by YouTube"
                 )
     except Exception as error:
         status = "partial" if entries else "failed"
@@ -151,6 +155,7 @@ async def collect_playlist(
 
     return playlist_capture(
         identifier, metadata, entries, status=status, error_type=error_type,
+        exhausted=exhausted,
     )
 
 

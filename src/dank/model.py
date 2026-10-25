@@ -178,3 +178,5 @@ class YouTubePlaylistCapture(NamedTuple):
     status: str
     error_type: str
     checked_at: datetime.datetime
+    # All visible continuation pages arrived, even if the header counts more.
+    exhausted: bool = False

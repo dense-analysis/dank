@@ -376,6 +376,7 @@ def playlist_capture(
     *,
     status: str = "complete",
     error_type: str = "",
+    exhausted: bool = False,
 ) -> YouTubePlaylistCapture:
     entries = tuple(
         playlist_entry(renderer, position)
@@ -392,6 +393,7 @@ def playlist_capture(
         status,
         error_type,
         datetime.datetime.now(datetime.UTC),
+        exhausted=exhausted,
     )
 
 

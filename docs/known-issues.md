@@ -1116,8 +1116,12 @@ unavailable original pages still apply. See [scope tests](
   Counts and first pages are insufficient. Sorting, duplicates, additions,
   removals and title changes are covered by collector tests.
 - Checks preserve the previous snapshot on HTTP errors, repeated/stalled
-  continuations, hidden entries, unknown renderers or time/entry limits. The
-  first partial snapshot is usable but subsequent incomplete checks retain it.
+  continuations, unknown renderers or time/entry limits. The first partial
+  snapshot is usable; subsequent interrupted checks retain it. A fully exhausted
+  visible listing can still contain fewer entries than YouTube's header reports.
+  Such snapshots update their membership and order while remaining `partial`,
+  with the count described as entries not shown by YouTube. The cause is not
+  inferred as privacy, deletion or regional availability.
   Membership and ordinary video details are durable before a new snapshot
   pointer becomes visible. Changed snapshots do not trigger video downloads
   or automatic caption collection.
@@ -1127,8 +1131,8 @@ unavailable original pages still apply. See [scope tests](
   entries; use the individual refresh to target a deferred playlist.
 - Special system playlists such as **Saved Shorts** can use a Shorts grid
   instead of the supported playlist-video renderer. These are reported failed
-  rather than saved as an empty playlist. Hidden unavailable videos can also
-  make a check incomplete until YouTube exposes their placeholders.
+  rather than saved as an empty playlist. Unavailable placeholders are kept
+  when present; missing placeholders remain an explicit count gap.
 - `tests/scrape/test_youtube_playlists.py` covers order/sort hashes, duplicate
   occurrences, unavailable entries, full continuation traversal, repeated-token
   failure, unchanged reuse, partial preservation and pointer publication.

@@ -1573,8 +1573,11 @@ async def _prepare_youtube_playlists(
             continue
 
         row = _playlist_row(capture)
+        # A count gap is distinct from a stopped continuation chain: YouTube's
+        # fully observed visible order must keep updating despite that gap.
         preserve = bool(old and (
-            (capture.status != "complete" and old["snapshot_hash"])
+            (capture.status != "complete" and not capture.exhausted
+             and old["snapshot_hash"])
             or old["snapshot_hash"] == row["snapshot_hash"]
         ))
 

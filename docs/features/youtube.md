@@ -328,5 +328,8 @@ up to eight never-checked or oldest checked playlists within three minutes;
 an individual playlist refresh checks that playlist directly. Each listing has
 a two-minute, 10,000-entry safety limit. Older saved snapshots remain readable
 when a check fails or stops early. A new playlist can expose its first partial
-snapshot, clearly marked incomplete; later incomplete attempts retain it until
-a complete check succeeds. Removed videos disappear only after a complete check.
+snapshot, clearly marked incomplete. If every continuation finishes but the
+header reports more entries than YouTube shows, the visible snapshot still
+updates its membership and order; the count gap remains explicit. Interrupted
+checks retain the prior snapshot. Removed videos disappear only after every
+visible continuation has finished.

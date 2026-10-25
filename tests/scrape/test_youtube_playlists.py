@@ -319,6 +319,7 @@ async def test_repeated_continuation_keeps_partial_not_false_complete(
     )
     assert result.status == "partial"
     assert "Repeated" in result.error_type
+    assert not result.exhausted
     assert len(result.entries) == 1
 
 
@@ -332,11 +333,14 @@ async def test_short_grid_and_hidden_entries_are_not_complete_empty(
         AsyncMock(), URL, YouTubeSettings(),
     )
     assert result.status == "failed"
+    assert not result.exhausted
     install_browser(monkeypatch, initial([video()], reported=2))
     result = await playlist_browser.collect_playlist(
         AsyncMock(), URL, YouTubeSettings(),
     )
     assert result.status == "partial"
+    assert result.exhausted
+    assert "1 entries not shown by YouTube" in result.error_type
 
 
 class Client:
@@ -478,3 +482,56 @@ async def test_failed_checks_do_not_starve_complete_playlists(
     assert batches
     assert collect.await_args is not None
     assert collect.await_args.args[1].endswith("list=PLold")
+
+
+async def test_exhausted_visible_manifest_updates_despite_reported_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = Client()
+    first_entries = [video(), video("zyxwvutsrqp", occurrence="two")]
+    install_browser(monkeypatch, initial(first_entries, reported=3))
+    first = await playlist_browser.collect_playlist(
+        AsyncMock(), URL, YouTubeSettings(),
+    )
+    assert first.status == "partial" and first.exhausted
+    _, old_rows = await client.prepare(first)
+    client.previous = old_rows
+    reordered = [video("zyxwvutsrqp", occurrence="two"), video(),
+                 video("01234567890", occurrence="three")]
+    install_browser(monkeypatch, initial(reordered, reported=4))
+    current = await playlist_browser.collect_playlist(
+        AsyncMock(), URL, YouTubeSettings(),
+    )
+    assert current.status == "partial" and current.exhausted
+    batch, changed = await client.prepare(current)
+    assert len(batch.posts) == 3
+    assert changed[0]["snapshot_hash"] != old_rows[0]["snapshot_hash"]
+    assert changed[0]["entry_count"] == 3
+    assert changed[0]["reported_count"] == 4
+    assert changed[0]["status"] == "partial"
+    assert [entry["video_id"] for entry in client.tables[
+        "youtube_playlist_entries"
+    ][-3:]] == ["zyxwvutsrqp", "abcdefghijk", "01234567890"]
+    client.previous = changed
+    unchanged, checked = await client.prepare(current)
+    assert not unchanged.posts
+    assert checked[0]["snapshot_hash"] == changed[0]["snapshot_hash"]
+    interrupted, retained = await client.prepare(
+        capture(video(), status="partial"),
+    )
+    assert not interrupted.posts
+    assert retained[0]["snapshot_hash"] == changed[0]["snapshot_hash"]
+    assert retained[0]["entry_count"] == 3
+
+
+async def test_exhausted_visible_snapshot_can_replace_complete() -> None:
+    client = Client()
+    _, old = await client.prepare(capture(video()))
+    client.previous = old
+    visible = capture(video("zyxwvutsrqp"), status="partial")._replace(
+        exhausted=True,
+    )
+    changed, rows = await client.prepare(visible)
+    assert changed.posts
+    assert rows[0]["snapshot_hash"] != old[0]["snapshot_hash"]
+    assert rows[0]["status"] == "partial"
