@@ -535,3 +535,105 @@ async def test_exhausted_visible_snapshot_can_replace_complete() -> None:
     assert changed.posts
     assert rows[0]["snapshot_hash"] != old[0]["snapshot_hash"]
     assert rows[0]["status"] == "partial"
+
+
+
+def short_card(identifier: str, occurrence: str) -> dict[str, Any]:
+    return {"richItemRenderer": {"content": {"shortsLockupViewModel": {
+        "entityId": occurrence, "indexInCollection": 0,
+        "onTap": {"innertubeCommand": {"reelWatchEndpoint": {
+            "videoId": identifier, "playlistId": "YS",
+        }}},
+        "overlayMetadata": {"primaryText": {"content": "Saved Short"}},
+        "thumbnailViewModel": {"thumbnailViewModel": {"image": {"sources": [{
+            "url": "https://i.ytimg.com/short.jpg", "width": 270,
+        }]}}},
+    }}}}
+
+
+def shorts_initial(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "metadata": {"playlistMetadataRenderer": {"title": "Saved Shorts"}},
+        "header": {"playlistHeaderRenderer": {
+            "playlistId": "YS", "numVideosText": {"simpleText": "2 videos"},
+        }},
+        "contents": {"twoColumnBrowseResultsRenderer": {"tabs": [{
+            "tabRenderer": {"selected": True, "content": {
+                "sectionListRenderer": {"contents": [{"itemSectionRenderer": {
+                    "contents": [{"richGridRenderer": {"contents": cards}}],
+                }}]},
+            }},
+        }]}},
+    }
+
+
+async def test_saved_shorts_keeps_array_order_and_original_cards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cards = [short_card("hEOFhU8fD58", "first"),
+             short_card("vx8r0nubzsc", "second")]
+    initial_data = shorts_initial(cards)
+    install_browser(monkeypatch, initial_data)
+    result = await playlist_browser.collect_playlist(
+        AsyncMock(), "https://www.youtube.com/playlist?list=YS",
+        YouTubeSettings(),
+    )
+    assert result.status == "complete" and result.exhausted
+    assert [entry["position"] for entry in result.entries] == [1, 2]
+    assert [entry["video_id"] for entry in result.entries] == [
+        "hEOFhU8fD58", "vx8r0nubzsc",
+    ]
+    assert [entry["entry_id"] for entry in result.entries] == [
+        "first", "second",
+    ]
+    assert json.loads(result.entries[0]["payload"]) == cards[0][
+        "richItemRenderer"
+    ]["content"]
+    assert result.entries[0]["thumbnail_url"].endswith("short.jpg")
+    posts = playlist_posts(result)
+    assert json.loads(posts[0].payload)["kind"] == "short"
+    assert json.loads(posts[0].payload)["renderer"] == cards[0][
+        "richItemRenderer"
+    ]["content"]
+    assert not initial_playlist_page(
+        initial_data, identifier="PLother",
+    ).recognized
+
+
+def test_short_playlist_scope_and_continuations() -> None:
+    card = short_card("hEOFhU8fD58", "first")
+    continuation = {"onResponseReceivedActions": [{
+        "appendContinuationItemsAction": {
+            "targetId": "rich-grid-renderer", "continuationItems": [card],
+        },
+    }]}
+    assert continuation_playlist_page(continuation, identifier="YS").recognized
+    assert not continuation_playlist_page(
+        continuation, identifier="PLother",
+    ).recognized
+    wrong = short_card("vx8r0nubzsc", "other")
+    wrong["richItemRenderer"]["content"]["shortsLockupViewModel"][
+        "onTap"
+    ]["innertubeCommand"]["reelWatchEndpoint"]["playlistId"] = "PLsuggested"
+    assert not initial_playlist_page(
+        shorts_initial([card, wrong]), identifier="YS",
+    ).recognized
+
+
+async def test_partial_catalog_cards_are_persistable_before_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def discover(page: object, found: dict[str, dict[str, Any]]):
+        found["PLtest"] = playlist_metadata("PLtest", {})
+        raise playlist_browser.PlaylistIncomplete("catalog stalled")
+
+    monkeypatch.setattr(playlist_browser, "_library_cards", discover)
+    batches = playlist_browser.collect_playlist_library(
+        AsyncMock(), YouTubeSettings(authenticated=True), {}, excluded=set(),
+    )
+    first = await anext(batches)
+    assert first.youtube_playlists[0].playlist_id == "PLtest"
+    assert first.youtube_playlists[0].status == "not_collected"
+
+    with pytest.raises(playlist_browser.PlaylistIncomplete):
+        await anext(batches)

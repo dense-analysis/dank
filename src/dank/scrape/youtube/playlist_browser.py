@@ -45,6 +45,7 @@ async def _collect_pages(
     capture: NetworkCapture,
     entries: list[dict[str, Any]],
     token: str,
+    identifier: str,
 ) -> None:
     seen: set[str] = {token} if token else set()
     idle_since = asyncio.get_running_loop().time()
@@ -61,7 +62,9 @@ async def _collect_pages(
             if response.status >= 400:
                 raise PlaylistIncomplete("Playlist continuation HTTP failure")
 
-            result = continuation_playlist_page(json.loads(response.body))
+            result = continuation_playlist_page(
+                json.loads(response.body), identifier=identifier,
+            )
 
             if not result.recognized:
                 continue
@@ -119,13 +122,15 @@ async def collect_playlist(
                 identifier, initial, fallback=fallback,
             )
             metadata["payload"] = json.dumps(initial)
-            result = initial_playlist_page(initial)
+            result = initial_playlist_page(initial, identifier=identifier)
 
             if not result.recognized:
                 raise PlaylistIncomplete("Playlist renderer is unavailable")
 
             entries.extend(result.entries)
-            await _collect_pages(page, capture, entries, result.continuation)
+            await _collect_pages(
+                page, capture, entries, result.continuation, identifier,
+            )
             exhausted = True
             reported = metadata.get("reported_count")
 

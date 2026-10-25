@@ -1129,9 +1129,11 @@ unavailable original pages still apply. See [scope tests](
   run, with a three-minute total budget, a one-minute catalog budget and a
   1,000-card discovery guard. Per-playlist limits are two minutes and 10,000
   entries; use the individual refresh to target a deferred playlist.
-- Special system playlists such as **Saved Shorts** can use a Shorts grid
-  instead of the supported playlist-video renderer. These are reported failed
-  rather than saved as an empty playlist. Unavailable placeholders are kept
+- **Saved Shorts** uses a separate grid layout. Its captured array order is
+  retained only when the playlist header and every Shorts card identify the
+  requested playlist, excluding unrelated recommendation shelves. Original
+  Shorts renderers and occurrence IDs are retained. Other unknown layouts
+  fail rather than become empty snapshots. Unavailable placeholders are kept
   when present; missing placeholders remain an explicit count gap.
 - `tests/scrape/test_youtube_playlists.py` covers order/sort hashes, duplicate
   occurrences, unavailable entries, full continuation traversal, repeated-token

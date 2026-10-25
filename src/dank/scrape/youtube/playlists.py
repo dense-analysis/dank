@@ -249,33 +249,117 @@ def _page(contents: list[Any]) -> PlaylistPage:
     return PlaylistPage(tuple(entries), continuation, recognized=True)
 
 
-def initial_playlist_page(value: object) -> PlaylistPage:
+def _shorts_page(contents: list[Any], identifier: str) -> PlaylistPage:
+    entries: list[dict[str, Any]] = []
+
+    for item in contents:
+        data = as_dict(item)
+
+        if "continuationItemRenderer" in data:
+            continue
+
+        content = as_dict(as_dict(data.get("richItemRenderer")).get("content"))
+        renderer = as_dict(content.get("shortsLockupViewModel"))
+        command = as_dict(as_dict(renderer.get("onTap")).get(
+            "innertubeCommand",
+        ))
+        endpoint = as_dict(command.get("reelWatchEndpoint"))
+
+        if not identifier or endpoint.get("playlistId") != identifier:
+            return PlaylistPage((), "", recognized=False)
+
+        entries.append({"shortsLockupViewModel": renderer})
+
+    return PlaylistPage(tuple(entries), _page(contents).continuation,
+                        recognized=bool(entries))
+
+
+def _initial_shorts_page(value: object, identifier: str) -> PlaylistPage:
+    data = as_dict(value)
+    header = as_dict(as_dict(data.get("header")).get("playlistHeaderRenderer"))
+
+    if not identifier or header.get("playlistId") != identifier:
+        return PlaylistPage((), "", recognized=False)
+
+    browse = as_dict(as_dict(data.get("contents")).get(
+        "twoColumnBrowseResultsRenderer",
+    ))
+
+    for tab in browse.get("tabs", []):
+        tab = as_dict(as_dict(tab).get("tabRenderer"))
+
+        if tab.get("selected") is False:
+            continue
+
+        section = as_dict(as_dict(tab.get("content")).get(
+            "sectionListRenderer",
+        ))
+
+        for item in section.get("contents", []):
+            section_items = as_dict(as_dict(item).get("itemSectionRenderer"))
+
+            for child in section_items.get("contents", []):
+                grid = as_dict(as_dict(child).get("richGridRenderer"))
+                page = _shorts_page(grid.get("contents", []), identifier)
+
+                if page.recognized:
+                    return page
+
+    return PlaylistPage((), "", recognized=False)
+
+
+def initial_playlist_page(
+    value: object, *, identifier: str = "",
+) -> PlaylistPage:
     for node in objects(value):
         listing = as_dict(node.get("playlistVideoListRenderer"))
 
         if "contents" in listing:
             return _page(listing["contents"])
 
-    return PlaylistPage((), "", recognized=False)
+    return _initial_shorts_page(value, identifier)
 
 
-def continuation_playlist_page(value: object) -> PlaylistPage:
+def _continuation_action_page(
+    action: dict[str, Any], identifier: str,
+) -> PlaylistPage:
+    contents = action.get("continuationItems")
+    missing = PlaylistPage((), "", recognized=False)
+
+    if not isinstance(contents, list):
+        return missing
+
+    contents = cast(list[Any], contents)
+    page = _shorts_page(contents, identifier)
+
+    if page.recognized:
+        return page
+
+    if any("shortsLockupViewModel" in node for node in objects(contents)):
+        return missing
+
+    if ("playlist" in str(action.get("targetId", "")).casefold()
+            or any("playlistVideoRenderer" in as_dict(item)
+                   for item in contents)):
+        return _page(contents)
+
+    return missing
+
+
+def continuation_playlist_page(
+    value: object, *, identifier: str = "",
+) -> PlaylistPage:
     for node in objects(value):
         for key in (
             "appendContinuationItemsAction",
             "reloadContinuationItemsCommand",
         ):
-            action = as_dict(node.get(key))
-            contents = action.get("continuationItems")
+            page = _continuation_action_page(
+                as_dict(node.get(key)), identifier,
+            )
 
-            if isinstance(contents, list) and (
-                "playlist" in str(action.get("targetId", "")).casefold()
-                or any(
-                    "playlistVideoRenderer" in as_dict(item)
-                    for item in cast(list[object], contents)
-                )
-            ):
-                return _page(cast(list[Any], contents))
+            if page.recognized:
+                return page
 
         continuation = as_dict(node.get("playlistVideoListContinuation"))
 
@@ -296,6 +380,19 @@ def continuation_playlist_page(value: object) -> PlaylistPage:
 
 
 def playlist_entry(renderer: dict[str, Any], position: int) -> dict[str, Any]:
+    raw = renderer
+    short = as_dict(renderer.get("shortsLockupViewModel"))
+
+    if short:
+        command = as_dict(as_dict(short.get("onTap")).get("innertubeCommand"))
+        endpoint = as_dict(command.get("reelWatchEndpoint"))
+        renderer = {
+            "videoId": endpoint.get("videoId"),
+            "title": as_dict(short.get("overlayMetadata")).get("primaryText"),
+            "setVideoId": short.get("entityId"),
+            "thumbnail": short.get("thumbnailViewModel"),
+        }
+
     identifier = str(renderer.get("videoId", ""))
     title = text(renderer.get("title"))
     channel = _channel(renderer.get("shortBylineText"))
@@ -338,7 +435,7 @@ def playlist_entry(renderer: dict[str, Any], position: int) -> dict[str, Any]:
         "thumbnail_url": _thumbnail(renderer),
         "duration_seconds": float(duration) if duration is not None else None,
         "available": available,
-        "payload": json.dumps(renderer),
+        "payload": json.dumps(raw),
     }
 
 
@@ -406,9 +503,10 @@ def playlist_posts(capture: YouTubePlaylistCapture) -> list[RawPost]:
             continue
 
         renderer = json.loads(entry["payload"])
+        short = "shortsLockupViewModel" in renderer
         payload = {
             "schema_version": 1,
-            "kind": "video",
+            "kind": "short" if short else "video",
             "video_id": entry["video_id"],
             "title": entry["title"],
             "channel_id": entry["channel_id"],
@@ -417,7 +515,9 @@ def playlist_posts(capture: YouTubePlaylistCapture) -> list[RawPost]:
             "thumbnail_url": entry["thumbnail_url"],
             "duration_text": text(renderer.get("lengthText")),
             "detail_capture": {"status": "disabled"},
-            "renderer": {"playlistVideoRenderer": renderer},
+            "renderer": (
+                renderer if short else {"playlistVideoRenderer": renderer}
+            ),
             "discovery": {
                 "feed_url": capture.metadata["url"],
                 "feed_name": capture.metadata["title"],
