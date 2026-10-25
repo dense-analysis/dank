@@ -20,6 +20,7 @@ include_shorts = true
 include_posts = true
 authenticated = false
 homepage = false
+playlists = true
 hype = true
 news_tabs = ["top_stories", "business", "world"]
 region = "GB"
@@ -303,3 +304,29 @@ passwords and authenticator seeds remain in 1Password.
 
 Authenticated collection requires a valid saved session; it never silently
 collects a signed-out homepage. Public feeds remain signed out by default.
+
+## Playlists
+
+The **Playlists** sidebar entry shows saved playlist cards and opens each
+playlist in YouTube's captured order, including repeated videos and visible
+private/deleted placeholders. With `authenticated = true`, `playlists = true`
+(the default) discovers your saved `/feed/playlists` library using the separate
+YouTube session. Public playlist URLs in a source's `feed_urls` work without
+sign-in. Turning `playlists` off disables library discovery and revisits; explicit
+playlist URLs still collect.
+
+Refresh reads flat listing metadata and every available continuation. The
+snapshot hash includes playlist metadata, the selected sort label and ordered
+video occurrences, so reorderings and same-count replacements are detected.
+An unchanged hash updates the check time without saving more video discoveries
+or fetching video details, captions or media. DANK reads the saved sort setting;
+it never changes that setting on YouTube. A full manifest check is still needed
+because YouTube does not provide a verified cheap change token for these pages.
+
+Library discovery saves all observed cards first. Each library refresh checks
+up to eight never-checked or oldest checked playlists within three minutes;
+an individual playlist refresh checks that playlist directly. Each listing has
+a two-minute, 10,000-entry safety limit. Older saved snapshots remain readable
+when a check fails or stops early. A new playlist can expose its first partial
+snapshot, clearly marked incomplete; later incomplete attempts retain it until
+a complete check succeeds. Removed videos disappear only after a complete check.

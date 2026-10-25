@@ -1,5 +1,5 @@
 import datetime
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 
 class RawPost(NamedTuple):
@@ -167,3 +167,14 @@ class YouTubeChannelDiscovery(NamedTuple):
     observed_at: datetime.datetime
     request_url: str
     payload: str
+
+
+class YouTubePlaylistCapture(NamedTuple):
+    """A bounded listing check, retaining every ordered video occurrence."""
+
+    playlist_id: str
+    metadata: dict[str, Any]
+    entries: tuple[dict[str, Any], ...]
+    status: str
+    error_type: str
+    checked_at: datetime.datetime

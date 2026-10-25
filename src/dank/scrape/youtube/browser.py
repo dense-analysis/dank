@@ -17,6 +17,8 @@ SNAPSHOT_SCRIPT = """JSON.stringify((() => {
         'ytd-rich-item-renderer': 'richItemRenderer',
         'ytd-grid-video-renderer': 'gridVideoRenderer',
         'ytd-playlist-video-renderer': 'playlistVideoRenderer',
+        'ytd-playlist-renderer': 'playlistRenderer',
+        'ytd-grid-playlist-renderer': 'gridPlaylistRenderer',
         'ytd-reel-item-renderer': 'reelItemRenderer',
         'ytd-post-renderer': 'postRenderer',
         'ytd-backstage-post-renderer': 'backstagePostRenderer',

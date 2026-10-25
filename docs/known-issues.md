@@ -1104,3 +1104,31 @@ running DANK installation; provider blocks, configured collection limits and
 unavailable original pages still apply. See [scope tests](
 ../tests/web/test_reader_refresh_scope.py) and [job lifecycle tests](
 ../tests/web/test_reader_refresh.py).
+
+
+### YouTube playlist snapshots
+
+- Saved-library discovery uses the separate authenticated YouTube browser
+  session; public configured playlists do not need sign-in. It retains observed
+  cards if catalog traversal fails and never deletes a saved playlist merely
+  because it was absent from a later library listing.
+- A full ordered flat manifest is required to establish an unchanged hash.
+  Counts and first pages are insufficient. Sorting, duplicates, additions,
+  removals and title changes are covered by collector tests.
+- Checks preserve the previous snapshot on HTTP errors, repeated/stalled
+  continuations, hidden entries, unknown renderers or time/entry limits. The
+  first partial snapshot is usable but subsequent incomplete checks retain it.
+  Membership and ordinary video details are durable before a new snapshot
+  pointer becomes visible. Changed snapshots do not trigger video downloads
+  or automatic caption collection.
+- Library work rotates through up to eight oldest/never-checked playlists per
+  run, with a three-minute total budget, a one-minute catalog budget and a
+  1,000-card discovery guard. Per-playlist limits are two minutes and 10,000
+  entries; use the individual refresh to target a deferred playlist.
+- Special system playlists such as **Saved Shorts** can use a Shorts grid
+  instead of the supported playlist-video renderer. These are reported failed
+  rather than saved as an empty playlist. Hidden unavailable videos can also
+  make a check incomplete until YouTube exposes their placeholders.
+- `tests/scrape/test_youtube_playlists.py` covers order/sort hashes, duplicate
+  occurrences, unavailable entries, full continuation traversal, repeated-token
+  failure, unchanged reuse, partial preservation and pointer publication.

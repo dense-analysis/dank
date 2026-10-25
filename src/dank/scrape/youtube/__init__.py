@@ -47,6 +47,8 @@ from .payloads import (
     playlist_title,
     renderers,
 )
+from .playlist_browser import collect_playlist, collect_playlist_library
+from .playlists import playlist_id
 from .ytdlp_home import YtDlpHomeResult, collect_ytdlp_home
 
 logger = logging.getLogger(__name__)
@@ -555,6 +557,11 @@ async def _scrape_feed(
     settings: YouTubeSettings,
     known_ids: set[str],
 ) -> AsyncIterator[ScrapeBatch]:
+    if feed.kind == "playlist":
+        result = await collect_playlist(page, feed.url, settings)
+        yield ScrapeBatch([], [], youtube_playlists=(result,))
+        return
+
     if feed.kind == "home":
         batches: list[ScrapeBatch] = []
         failure: Exception | None = None
@@ -721,6 +728,7 @@ async def scrape_youtube_feeds(
     session: BrowserSession,
     *,
     known_ids: Mapping[str, set[str]] | None = None,
+    known_playlists: Mapping[str, dict[str, Any]] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     feeds = configured_feeds(settings.youtube, source)
     stats = current_source.get()
@@ -728,7 +736,11 @@ async def scrape_youtube_feeds(
     if stats is not None:
         stats.feed_urls = tuple(feed.url for feed in feeds)
 
-    if not feeds:
+    library = settings.youtube.playlists and (
+        settings.youtube.authenticated or bool(known_playlists)
+    )
+
+    if not feeds and not library:
         return
 
     async with asyncio.timeout(30):
@@ -753,6 +765,12 @@ async def scrape_youtube_feeds(
                     yield batch
             except Exception as error:
                 _collection_failure(feed.name, error)
+
+        async for batch in _saved_library_batches(
+            page, settings.youtube, feeds, known_playlists or {},
+            enabled=library,
+        ):
+            yield batch
     finally:
         try:
             if settings.youtube.authenticated:
@@ -770,3 +788,22 @@ async def scrape_youtube_feeds(
             logger.warning(
                 "Could not close YouTube tab (%s)", type(error).__name__,
             )
+
+
+async def _saved_library_batches(
+    page: zendriver.Tab, settings: YouTubeSettings,
+    feeds: tuple[YouTubeFeed, ...], known: Mapping[str, dict[str, Any]],
+    *, enabled: bool,
+) -> AsyncIterator[ScrapeBatch]:
+    if not enabled:
+        return
+
+    try:
+        async for batch in collect_playlist_library(
+            page, settings, known,
+            excluded={playlist_id(feed.url) for feed in feeds
+                      if feed.kind == "playlist"},
+        ):
+            yield batch
+    except Exception as error:
+        _collection_failure("Playlists", error)

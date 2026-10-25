@@ -261,6 +261,7 @@ async def test_truncated_home_keeps_posts_and_marks_source_partial(
     fixture.write_text("")
     settings = load_settings(fixture)._replace(youtube=YouTubeSettings(
         hype=False, news_tabs=(), homepage=True, authenticated=True,
+        playlists=False,
     ))
     source = SourceConfig("youtube.com", ())
     statistics = SourceMetrics(0, source)

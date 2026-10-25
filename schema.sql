@@ -413,7 +413,7 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(observed_at)
 ORDER BY (video_id, observed_at);
 
-CREATE TABLE IF NOT EXISTS youtube_playlists (
+CREATE TABLE IF NOT EXISTS dank.youtube_playlists (
     playlist_id String,
     title String,
     url String,
@@ -435,7 +435,7 @@ CREATE TABLE IF NOT EXISTS youtube_playlists (
 ENGINE = MergeTree
 ORDER BY (playlist_id, checked_at);
 
-CREATE TABLE IF NOT EXISTS youtube_playlist_entries (
+CREATE TABLE IF NOT EXISTS dank.youtube_playlist_entries (
     playlist_id String,
     snapshot_hash String,
     position UInt32,

@@ -40,6 +40,7 @@ from dank.model import (
     RawPost,
     RedditCommunityDiscovery,
     YouTubeChannelDiscovery,
+    YouTubePlaylistCapture,
 )
 from dank.progress import Progress
 from dank.references import reference_rows as post_reference_rows
@@ -87,6 +88,7 @@ from dank.scrape.x.session import LoginRequiredError
 from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
 from dank.scrape.youtube.metadata import fetch_video_metadata
+from dank.scrape.youtube.playlists import playlist_posts, snapshot_hash
 from dank.scrape.youtube.transcripts import fetch_video_transcript
 from dank.scrape.zendriver import (
     BrowserConfig,
@@ -862,6 +864,13 @@ async def _collect_source(
                     totals_seen=totals_seen, seen_articles=seen_articles,
                     target_post=target_post,
                 ):
+                    playlist_rows: list[dict[str, Any]] = []
+
+                    if batch.youtube_playlists:
+                        batch, playlist_rows = (
+                            await _prepare_youtube_playlists(client, batch)
+                        )
+
                     stats.discovered(
                         batch.post_count, len(batch.assets),
                         references=batch.reference_count,
@@ -884,6 +893,12 @@ async def _collect_source(
                     await _persist_youtube_discoveries(
                         client, batch.posts, str(history.run_id),
                     )
+                    if playlist_rows:
+                        # Publish only after membership and canonical details.
+                        await client.insert_rows(
+                            "youtube_playlists", playlist_rows,
+                        )
+
                     stats.counts["posts_saved"] += batch.post_count
                     stats.counts["post_references_saved"] += (
                         batch.reference_count
@@ -1179,8 +1194,15 @@ async def _discover_adapter_batches(
             )
         case SourceAdapter.YOUTUBE:
             known_ids = await _known_youtube_channel_ids(client)
+            saved_playlists = await client.fetch_json(
+                "SELECT * FROM youtube_playlists "
+                "ORDER BY checked_at DESC LIMIT 1 BY playlist_id",
+            )
+            known_playlists = {str(row["playlist_id"]): row
+                               for row in saved_playlists.rows}
             batches_iter = scrape_youtube_feeds(
                 settings, source, session, known_ids=known_ids,
+                known_playlists=known_playlists,
             )
         case SourceAdapter.REDDIT:
             batches_iter = await _reddit_listing_batches(
@@ -1510,6 +1532,79 @@ async def _persist_youtube_discoveries(
 
     if discoveries:
         await client.insert_rows("youtube_discoveries", discoveries)
+
+
+def _playlist_row(capture: YouTubePlaylistCapture) -> dict[str, Any]:
+    metadata = capture.metadata
+
+    return {
+        **{key: metadata.get(key, "") for key in (
+            "playlist_id", "title", "url", "description", "thumbnail_url",
+            "channel_id", "channel_name", "channel_url",
+            "sort_order", "payload",
+        )},
+        "reported_count": metadata.get("reported_count"),
+        "entry_count": len(capture.entries),
+        "snapshot_hash": (
+            snapshot_hash(metadata, capture.entries)
+            if capture.status in {"complete", "partial"} else ""
+        ),
+        "observed_at": capture.checked_at, "checked_at": capture.checked_at,
+        "status": capture.status, "error_type": capture.error_type,
+    }
+
+
+async def _prepare_youtube_playlists(
+    client: ClickHouseClient, batch: ScrapeBatch,
+) -> tuple[ScrapeBatch, list[dict[str, Any]]]:
+    previous_rows = await client.fetch_json(
+        "SELECT * FROM youtube_playlists WHERE playlist_id IN %(ids)s "
+        "ORDER BY checked_at DESC LIMIT 1 BY playlist_id",
+        {"ids": tuple(item.playlist_id for item in batch.youtube_playlists)},
+    )
+    previous = {str(row["playlist_id"]): row for row in previous_rows.rows}
+    posts = list(batch.posts)
+    metadata_rows: list[dict[str, Any]] = []
+
+    for capture in batch.youtube_playlists:
+        old = previous.get(capture.playlist_id)
+
+        if capture.status == "not_collected" and old:
+            continue
+
+        row = _playlist_row(capture)
+        preserve = bool(old and (
+            (capture.status != "complete" and old["snapshot_hash"])
+            or old["snapshot_hash"] == row["snapshot_hash"]
+        ))
+
+        if preserve and old is not None:
+            row = {**old, "checked_at": capture.checked_at,
+                   "status": capture.status, "error_type": capture.error_type}
+            row["observed_at"] = parse_datetime(old["observed_at"])
+        elif row["snapshot_hash"]:
+            # Insert all occurrences before publishing the snapshot pointer.
+            rows = [{**entry, "playlist_id": capture.playlist_id,
+                     "snapshot_hash": row["snapshot_hash"]}
+                    for entry in capture.entries]
+
+            for chunk in batched(rows, 1000):
+                await client.insert_rows(
+                    "youtube_playlist_entries", list(chunk),
+                )
+
+            posts.extend(playlist_posts(capture))
+
+        metadata_rows.append(row)
+
+        if capture.status in {"partial", "failed"}:
+            count("fetch_failures")
+            stats = current_source.get()
+
+            if stats is not None:
+                stats.error_type = "YouTubePlaylistIncomplete"
+
+    return batch._replace(posts=posts, youtube_playlists=()), metadata_rows
 
 
 async def _known_youtube_channel_ids(
@@ -2798,6 +2893,7 @@ async def collect_run_youtube_transcripts(
         "FROM youtube_transcripts GROUP BY video_id) AS t "
         "ON substring(d.item_id, 7) = t.video_id "
         "WHERE d.run_id = %(run)s AND startsWith(d.item_id, 'video:') "
+        "AND d.feed_kind != 'playlist' "
         "AND (t.video_id = '' OR (t.status != 'captured' "
         "AND t.retry_after <= now64(3))) ORDER BY video_id LIMIT %(limit)s",
         {"run": run_id, "limit": MAX_TRANSCRIPTS_PER_RUN},

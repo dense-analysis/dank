@@ -7,6 +7,7 @@ from dank.model import (
     RawPost,
     RedditCommunityDiscovery,
     YouTubeChannelDiscovery,
+    YouTubePlaylistCapture,
 )
 
 
@@ -24,6 +25,7 @@ class ScrapeBatch(NamedTuple):
     source_index: int = 0
     communities: tuple[RedditCommunityDiscovery, ...] = ()
     youtube_channels: tuple[YouTubeChannelDiscovery, ...] = ()
+    youtube_playlists: tuple[YouTubePlaylistCapture, ...] = ()
 
 
     @property
