@@ -475,6 +475,10 @@ export function isSource(value: unknown): value is Source {
       ["rss", "x", "reddit", "youtube", "hacker_news"].includes(
         String(value.kind),
       )) &&
+    (value.for_you_count === undefined ||
+      (typeof value.for_you_count === "number" &&
+        Number.isSafeInteger(value.for_you_count) &&
+        value.for_you_count >= 0)) &&
     (value.accounts === undefined ||
       (Array.isArray(value.accounts) &&
         value.accounts.every(

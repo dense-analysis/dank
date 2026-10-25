@@ -21,6 +21,7 @@ from dank.web.reader_flairs import (
     REDDIT_COMMUNITY_SQL as REDDIT_COMMUNITY_SQL,
 )
 from dank.web.reader_links import HN_LINKED_POSTS_SQL, RESOLVED_HN_POSTS_SQL
+from dank.web.reader_x_home import decode_home_cursor, home_listing
 
 POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, source"
@@ -47,6 +48,7 @@ class ReaderFilters(NamedTuple):
     x_view: str = "posts"
     platforms: tuple[str, ...] = ()
     blog_feed: str = ""
+    x_feed: str = ""
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -64,6 +66,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
         "account", "hn_filter", "x_view", "platform", "blog_feed",
+        "x_feed",
     }
 
     if unknown:
@@ -108,6 +111,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         community=query.get("community", "").strip().lower(),
         flairs=_flair_choices(query.getall("flair", [])),
         x_view=query.get("x_view", "posts"),
+        x_feed=query.get("x_feed", ""),
         account=query.get("account", "").strip().removeprefix("@").lower(),
         hn_filter=query.get(
             "hn_filter", "top50" if query.get("kind") == "hacker_news" else "",
@@ -188,10 +192,18 @@ def _validate(filters: ReaderFilters) -> None:
         raise ValueError("after must not be later than before")
 
     if filters.cursor:
-        decode_cursor(filters)
+        if filters.x_feed:
+            decode_home_cursor(filters)
+        else:
+            decode_cursor(filters)
 
 
 def _validate_collection_filters(filters: ReaderFilters) -> None:
+    if filters.x_feed and (
+        filters.kind != "x" or filters.x_feed != "for_you" or filters.account
+    ):
+        raise ValueError("x_feed requires kind=x, for_you and no account")
+
     if filters.kind not in {
         "", "all", "stories", "reddit", "x", "youtube", "hacker_news",
     }:
@@ -344,11 +356,26 @@ def build_query(
 
     order = "ASC" if filters.sort == "oldest" else "DESC"
     ordering = f"created_at {order}, domain {order}, post_id {order}"
+    table = "posts FINAL"
+    columns = POST_COLUMNS
+
+    if filters.x_feed:
+        table, home_params, home_condition = home_listing(filters)
+        params.update(home_params)
+        columns += ", recommended_at, recommendation_position"
+        position_order = "DESC" if filters.sort == "oldest" else "ASC"
+        ordering = (
+            f"recommended_at {order}, "
+            f"recommendation_position {position_order}, "
+            f"domain {order}, post_id {order}"
+        )
+
+        conditions.extend([home_condition] if home_condition else [])
 
     if filters.sort == "relevance":
         ordering = relevance_priority + "reader_score ASC, " + ordering
 
-    if filters.cursor:
+    if filters.cursor and not filters.x_feed:
         created_at, domain, post_id = decode_cursor(filters)
         params.update(cursor_time=created_at.astimezone(dt.UTC).replace(
             tzinfo=None,
@@ -382,8 +409,8 @@ def build_query(
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     prefix = "WITH " + ", ".join(expressions) + " " if expressions else ""
     query = (
-        f"{prefix}SELECT {POST_COLUMNS}, {score} AS reader_score "
-        "FROM posts FINAL"
+        f"{prefix}SELECT {columns}, {score} AS reader_score "
+        f"FROM {table}"
         f"{where} ORDER BY {ordering} LIMIT %(limit)s"
     )
     params["limit"] = filters.limit + 1
@@ -493,7 +520,8 @@ def _conditions(
 ) -> tuple[list[str], dict[str, Any]]:
     conditions, params = _collection_conditions(filters, sources)
 
-    if filters.kind == "x" and filters.x_view == "posts":
+    if (filters.kind == "x" and filters.x_view == "posts"
+            and not filters.x_feed):
         # Missing metadata is not proof of a reply.
         conditions.append(
             "(domain, post_id, toUnixTimestamp64Milli(updated_at)) NOT IN "

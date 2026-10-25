@@ -54,6 +54,7 @@ describe("contextual collection scope", () => {
       { kind: "reddit", community: "LocalLLaMA" },
     ],
     ["view=x&account=%40Reporter", { kind: "x", account: "reporter" }],
+    ["view=x&x_feed=for_you", { kind: "x", feed_id: "for_you" }],
     ["view=hacker_news&hn_filter=top10", { kind: "hacker_news" }],
     ["view=youtube", { kind: "youtube" }],
     ["view=youtube&channel=UC123", { kind: "youtube", channel_id: "UC123" }],
@@ -257,6 +258,7 @@ describe("refresh result destinations", () => {
       "view=reddit&community=LocalLLaMA",
     ],
     [{ kind: "x", account: "reporter" }, "view=x&account=reporter"],
+    [{ kind: "x", feed_id: "for_you" }, "view=x&x_feed=for_you"],
     [{ kind: "hacker_news" }, "view=hacker_news"],
     [{ kind: "youtube", channel_id: "UC123" }, "view=youtube&channel=UC123"],
     [

@@ -1012,6 +1012,28 @@ reason for a workaround is not lost. Keep credentials and full raw payloads
 out of this document; link to code/tests and summarize dated observations.
 
 
+### X For You recommendations
+
+The signed-in homepage has its own **X → For You** history. Collection listens
+only for `HomeTimeline`, preserves original items and their capture positions,
+and excludes ads, Following responses and nested quotes from feed membership.
+Bottom scrolling reaches pagination past tall media cards; collection remains
+bounded by post/scroll limits and a 90-second budget. Failed or empty captures
+report failure while retaining previously saved history. Sign-in uses the same
+private X profile as account collection; an expired session needs `make x-login`.
+
+Pagination pins the capture cutoff and deduplicates posts across appearances.
+An account refresh cannot remove earlier homepage membership. Search dates still
+refer to post publication. Homepage replies are included; conversation collection
+is separate. Tests cover membership, quotes, ads, modules, errors, pagination and
+refresh scopes in `tests/scrape/test_x_home.py`, `tests/web/test_reader_x_home.py`
+and `reader/tests/x-for-you.spec.ts`. X can change its endpoint or payload shape;
+the history is a saved sample, not every recommendation the site may serve.
+On 2026-10-25, a signed-in Docker refresh captured 155 recommendations plus
+quoted/context posts, processed 195 posts, and completed with zero fetch, parse
+or file failures. Two captures yielded 158 distinct readable recommendations;
+all six pages and a cursor spanning the refresh were checked for duplicates.
+
 ### X saved reply relationships
 
 X feeds default to Posts; Posts & replies keeps strict date ordering while

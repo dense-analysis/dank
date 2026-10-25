@@ -64,6 +64,8 @@ level = "INFO"
 
 # Sign in with make x-login MODE=native before collecting X accounts.
 # See docs/features/x.md for account and collection settings.
+# [x]
+# homepage = true # Include signed-in For You in normal scrapes.
 
 # Bounded conversation snapshots for each account's newest owned posts.
 # [x.conversation]

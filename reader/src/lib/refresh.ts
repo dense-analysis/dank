@@ -120,6 +120,11 @@ export function refreshContext(params: URLSearchParams) {
       scope.account = filters.account;
       label = `@${filters.account}`;
     }
+
+    if (filters.xFeed === "for_you") {
+      scope.feed_id = "for_you";
+      label = "X For You recommendations";
+    }
   }
 
   if (
@@ -184,7 +189,8 @@ export function refreshDestination(scope: RefreshScope): URLSearchParams {
   if (scope.community) params.set("community", scope.community);
   if (scope.account) params.set("account", scope.account);
   if (scope.channel_id) params.set("channel", scope.channel_id);
-  if (scope.feed_id) params.set("feed", scope.feed_id);
+  if (scope.feed_id)
+    params.set(scope.kind === "x" ? "x_feed" : "feed", scope.feed_id);
 
   return params;
 }

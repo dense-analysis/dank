@@ -65,6 +65,7 @@ level = "INFO"
 # Sign in with make x-login before collecting X accounts.
 # Optional collection limits; no X password belongs in this file.
 # [x]
+# homepage = true # Include signed-in For You in normal scrapes.
 # max_posts = 200
 # max_scrolls = 20
 # scroll_pause_seconds = 1.5

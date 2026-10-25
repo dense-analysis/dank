@@ -82,11 +82,17 @@ from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
 from dank.scrape.x import scrape_x_accounts, scrape_x_posts
 from dank.scrape.x.conversations import canonical_post_url
+from dank.scrape.x.home import scrape_x_for_you
+from dank.scrape.x.session import LoginRequiredError
 from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
 from dank.scrape.youtube.metadata import fetch_video_metadata
 from dank.scrape.youtube.transcripts import fetch_video_transcript
-from dank.scrape.zendriver import BrowserConfig, BrowserSession
+from dank.scrape.zendriver import (
+    BrowserConfig,
+    BrowserProfileBusyError,
+    BrowserSession,
+)
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
 from dank.youtube import VIDEO_ID, discovery_from_post, payload_object
@@ -1184,7 +1190,7 @@ async def _discover_adapter_batches(
                 settings, client, http_client, batches_iter, seen_articles,
             )
         case SourceAdapter.X:
-            batches_iter = scrape_x_accounts(
+            batches_iter = _x_listing_batches(
                 settings.x, source.accounts, session,
             )
         case SourceAdapter.RSS:
@@ -1195,6 +1201,23 @@ async def _discover_adapter_batches(
             )
 
     async for batch in batches_iter:
+        yield batch
+
+
+async def _x_listing_batches(
+    settings: XSettings, accounts: tuple[str, ...], session: BrowserSession,
+) -> AsyncIterator[ScrapeBatch]:
+    if settings.homepage:
+        try:
+            async for batch in scrape_x_for_you(settings, session):
+                yield batch
+        except (LoginRequiredError, BrowserProfileBusyError):
+            return
+
+    if not accounts and settings.homepage:
+        return
+
+    async for batch in scrape_x_accounts(settings, accounts, session):
         yield batch
 
 

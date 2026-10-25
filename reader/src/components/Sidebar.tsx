@@ -1,4 +1,4 @@
-import { Layers3, Rss, Settings2, X } from "lucide-react";
+import { Layers3, Rss, Settings2, Sparkles, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { RedditCommunity, Section, Source, XAccount } from "../lib/types";
 import type { YouTubeSources } from "../lib/youtubeCollection";
@@ -23,6 +23,7 @@ export function Sidebar({
   xEnabled,
   accounts,
   account,
+  forYouCount,
   selectAccount,
   youtubeSources,
   youtubeSelection,
@@ -43,6 +44,7 @@ export function Sidebar({
   xEnabled: boolean;
   accounts: XAccount[];
   account: string;
+  forYouCount: number;
   selectAccount: (account: string) => void;
   youtubeSources?: YouTubeSources;
   youtubeSelection: string;
@@ -106,30 +108,39 @@ export function Sidebar({
             selected={account}
             select={() => select("x")}
             selectItem={selectAccount}
-            items={accounts.map((item) => ({
-              id: item.handle,
-              label:
-                item.name.trim() &&
-                item.name.toLowerCase() !== item.handle.toLowerCase()
-                  ? item.name
-                  : `@${item.handle}`,
-              accessibleLabel:
-                item.name.trim() &&
-                item.name.toLowerCase() !== item.handle.toLowerCase()
+            items={[
+              {
+                id: "feed:for_you",
+                label: "For You",
+                title: "Saved X homepage recommendations",
+                count: forYouCount,
+                avatar: <Sparkles size={18} />,
+              },
+              ...accounts.map((item) => ({
+                id: item.handle,
+                label:
+                  item.name.trim() &&
+                  item.name.toLowerCase() !== item.handle.toLowerCase()
+                    ? item.name
+                    : `@${item.handle}`,
+                accessibleLabel:
+                  item.name.trim() &&
+                  item.name.toLowerCase() !== item.handle.toLowerCase()
+                    ? `${item.name} (@${item.handle})`
+                    : `@${item.handle}`,
+                title: item.name
                   ? `${item.name} (@${item.handle})`
                   : `@${item.handle}`,
-              title: item.name
-                ? `${item.name} (@${item.handle})`
-                : `@${item.handle}`,
-              count: item.count,
-              avatar: (
-                <IdentityAvatar
-                  name={item.handle}
-                  iconUrl={item.icon_url}
-                  kind="account"
-                />
-              ),
-            }))}
+                count: item.count,
+                avatar: (
+                  <IdentityAvatar
+                    name={item.handle}
+                    iconUrl={item.icon_url}
+                    kind="account"
+                  />
+                ),
+              })),
+            ]}
           />
         )}
         {redditEnabled && (

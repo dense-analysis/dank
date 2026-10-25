@@ -12,7 +12,7 @@ perception and evolving narratives.
 ## Features
 
 - [RSS and Atom feeds](docs/features/rss.md) — discover feeds and collect articles.
-- [X accounts](docs/features/x.md) — capture posts from configured accounts.
+- [X feeds](docs/features/x.md) — save For You recommendations and account posts.
 - [Reddit communities](docs/features/reddit.md) — collect ranked community posts.
 - [Hacker News](docs/features/hacker-news.md) — browse daily front-page stories and optional discussions.
 - [YouTube feeds](docs/features/youtube.md) — save recommendations and their context.

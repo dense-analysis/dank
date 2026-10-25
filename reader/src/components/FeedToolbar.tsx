@@ -36,7 +36,9 @@ export function FeedToolbar({
         : filters.kind === "x"
           ? filters.account
             ? `Search @${filters.account}`
-            : "Search X"
+            : filters.xFeed === "for_you"
+              ? "Search For You"
+              : "Search X"
           : filters.domains.length === 1
             ? `Search ${sourceLabel(filters.domains[0])}`
             : filters.kind === "stories"
@@ -76,7 +78,7 @@ export function FeedToolbar({
           change({ ...filters, q: "", sort: "newest" });
         }}
       />
-      {filters.kind === "x" && (
+      {filters.kind === "x" && !filters.xFeed && (
         <fieldset className="x-feed-selection" aria-label="X post selection">
           <legend className="visually-hidden">X post selection</legend>
           {(
@@ -115,8 +117,12 @@ export function FeedToolbar({
             change({ ...filters, sort: event.target.value as Filters["sort"] })
           }
         >
-          <option value="newest">Latest first</option>
-          <option value="oldest">Oldest first</option>
+          <option value="newest">
+            {filters.xFeed ? "Recent first" : "Latest first"}
+          </option>
+          <option value="oldest">
+            {filters.xFeed ? "Earliest first" : "Oldest first"}
+          </option>
           {filters.q && <option value="relevance">Most relevant</option>}
         </select>
       </div>

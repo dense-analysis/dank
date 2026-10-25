@@ -57,6 +57,7 @@ from dank.web.reader_reddit_history import preserve_reddit_archives
 from dank.web.reader_refresh import add_refresh_routes
 from dank.web.reader_source_icons import source_icon_url
 from dank.web.reader_x import post_x_content
+from dank.web.reader_x_home import HOME_CONDITION, encode_home_cursor
 from dank.web.reader_youtube import add_youtube_routes
 from dank.web.reader_youtube_feed import add_youtube_post_metadata
 
@@ -152,6 +153,14 @@ async def handle_sources(request: web.Request) -> web.Response:
             source["accounts"] = await source_accounts(
                 client, source["domain"], configured,
             )
+            home = await client.fetch_json(
+                "SELECT uniqExact(post_id) AS x_home_count FROM raw_posts "
+                "WHERE domain = %(domain)s AND " + HOME_CONDITION,
+                {"domain": source["domain"]},
+            )
+            source["for_you_count"] = (
+                int(home.rows[0]["x_home_count"]) if home.rows else 0
+            )
 
     return web.json_response({
         "sources": sources,
@@ -216,9 +225,15 @@ async def handle_posts(request: web.Request) -> web.Response:
 
     if has_more and filters.sort != "relevance":
         last = posts[-1]
-        cursor = encode_cursor(
-            filters, last.created_at, last.domain, last.post_id,
-        )
+        if filters.x_feed:
+            cursor = encode_home_cursor(
+                filters, result.rows[filters.limit - 1],
+                params["x_home_snapshot"],
+            )
+        else:
+            cursor = encode_cursor(
+                filters, last.created_at, last.domain, last.post_id,
+            )
 
     return web.json_response({
         "posts": await _post_payloads(

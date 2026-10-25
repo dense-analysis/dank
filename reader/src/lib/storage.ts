@@ -7,6 +7,7 @@ export const defaultFilters: Filters = {
   platforms: [],
   hnFilter: "top50",
   xView: "posts",
+  xFeed: "",
   community: "",
   account: "",
   q: "",

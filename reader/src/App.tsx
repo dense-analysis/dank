@@ -212,6 +212,7 @@ export function App() {
   const accountHasName =
     accountName.toLowerCase() !== accountHandle.toLowerCase();
   const accountContext = section === "x" && !!filters.account;
+  const forYouContext = section === "x" && filters.xFeed === "for_you";
   const communities = redditSources.flatMap(
     (source) => source.communities ?? [],
   );
@@ -243,7 +244,11 @@ export function App() {
             ? youtubeFeedLabel(activeYouTubeFeed)
             : "YouTube";
   const collectionContext =
-    accountContext || communityContext || youtubeContext || blogContext;
+    accountContext ||
+    forYouContext ||
+    communityContext ||
+    youtubeContext ||
+    blogContext;
   const visibleSources = sourcesForFeed(allSources, filters.kind).filter(
     (source) => filters.blogFeed !== "sources" || source.configured !== false,
   );
@@ -254,17 +259,20 @@ export function App() {
         ? "Settings"
         : section === "sources"
           ? "Sources"
-          : communityContext
-            ? `r/${communityName}`
-            : accountContext
-              ? accountHasName
-                ? accountName
-                : `@${accountHandle}`
-              : section === "stories"
-                ? blogTitle
-                : feedLabels[filters.kind];
+          : forYouContext
+            ? "For You"
+            : communityContext
+              ? `r/${communityName}`
+              : accountContext
+                ? accountHasName
+                  ? accountName
+                  : `@${accountHandle}`
+                : section === "stories"
+                  ? blogTitle
+                  : feedLabels[filters.kind];
   const overviewPlatform =
     !accountContext &&
+    !forYouContext &&
     !communityContext &&
     (section === "x" || section === "reddit")
       ? section
@@ -365,7 +373,12 @@ export function App() {
     select("reddit", { ...defaultFilters, community });
   }
   function selectAccount(account: string) {
-    select("x", { ...defaultFilters, account });
+    select(
+      "x",
+      account === "feed:for_you"
+        ? { ...defaultFilters, xFeed: "for_you" }
+        : { ...defaultFilters, account },
+    );
   }
   function selectBlog(selection: string) {
     if (selection.startsWith("source:")) {
@@ -416,7 +429,11 @@ export function App() {
       selectCommunity={selectCommunity}
       xEnabled={xSources.length > 0}
       accounts={accounts}
-      account={filters.account}
+      account={forYouContext ? "feed:for_you" : filters.account}
+      forYouCount={xSources.reduce(
+        (total, source) => total + (source.for_you_count ?? 0),
+        0,
+      )}
       selectAccount={selectAccount}
       youtubeSources={youtubeSources.data}
       youtubeSelection={
@@ -500,12 +517,12 @@ export function App() {
           back={
             collectionContext
               ? {
-                  label: `Back to ${blogContext ? "Blogs" : accountContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
+                  label: `Back to ${blogContext ? "Blogs" : accountContext || forYouContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
                   onClick: () =>
                     select(
                       blogContext
                         ? "stories"
-                        : accountContext
+                        : accountContext || forYouContext
                           ? "x"
                           : communityContext
                             ? "reddit"
@@ -521,6 +538,8 @@ export function App() {
                 iconUrl={activeBlogSource.icon_url}
                 kind="source"
               />
+            ) : forYouContext ? (
+              <PlatformIcon platform="x" size={23} />
             ) : accountContext ? (
               <IdentityAvatar
                 name={accountName}
@@ -633,6 +652,7 @@ export function App() {
               data-page-focus
             >
               {!accountContext &&
+                !forYouContext &&
                 !communityContext &&
                 section !== "youtube" &&
                 !mixedVideoDetail && (
@@ -722,6 +742,12 @@ export function App() {
                               ? "Posts from the source feeds you follow."
                               : "Your source feeds and discovered articles, together."
                         : "Your followed sources and discoveries, together."}
+                    </p>
+                  )}
+                  {forYouContext && (
+                    <p className="feed-description">
+                      Saved recommendations from your X homepage, ordered by
+                      when they were recommended. Refresh to collect more.
                     </p>
                   )}
                   <FeedToolbar
@@ -892,8 +918,9 @@ export function App() {
                           : "No stories found"}
                       </h2>
                       <p>
-                        Try a wider date range, fewer filters, or a different
-                        search.
+                        {forYouContext
+                          ? "Refresh to collect your For You recommendations using your saved X sign-in. If you have already collected, try fewer filters."
+                          : "Try a wider date range, fewer filters, or a different search."}
                       </p>
                       <button
                         type="button"

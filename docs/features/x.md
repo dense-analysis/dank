@@ -1,8 +1,8 @@
-# X account collection
+# X collection
 
 DANK collects posts from configured X accounts using a Chromium-based browser
 controlled by zendriver. It reads timeline data from the browser's network
-responses while visiting and scrolling account pages.
+responses while visiting and scrolling account pages and the For You homepage.
 
 ## Configure
 
@@ -14,6 +14,7 @@ settings apply to both modes:
 sources = [{ domain = "x.com", accounts = ["example", "another_account"] }]
 
 [x]
+homepage = true
 max_posts = 200
 max_scrolls = 20
 scroll_pause_seconds = 1.5
@@ -28,6 +29,30 @@ timeout_seconds = 30
 
 Sign in once using the command below. DANK reuses the saved browser session;
 X passwords and email credentials are not required in configuration.
+
+## For You recommendations
+
+Open **X → For You** in the [reader](http://127.0.0.1:8080/reader/?view=x&x_feed=for_you)
+and choose **Refresh** to save the signed-in homepage without visiting account
+timelines. Normal X scrapes include it by default; set `[x].homepage = false`
+to omit it from those runs. A source with `domain = "x.com"` and no accounts
+collects only For You. Refreshing an individual account skips the homepage.
+
+Each appearance saves its capture time, position and original timeline item.
+The reader keeps one card per recommended post across all captures, ordered by
+its most recent recommendation. Pagination retains its initial capture cutoff;
+new refreshes do not move items between pages. Search and publication-date
+filters apply to this saved history. Replies served in For You are included.
+Quotes remain embedded context unless independently recommended. Promoted posts,
+Following responses and unrelated suggestions are excluded.
+
+Homepage collection uses the configured post/scroll limits, stops after four
+idle bottom scrolls, and has a 90-second collection budget with 30-second browser
+steps. This is a bounded sample, not the entire infinite feed. Media and processing
+can add time. Errors retain already saved posts and report a failed or partial
+run; zero usable recommendations never count as a successful empty capture.
+
+## Account timelines
 
 The scraper visits accounts in order. `max_posts` is a per-account stopping
 threshold, so the final batch can exceed it. `max_scrolls` bounds scrolling;

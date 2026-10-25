@@ -24,7 +24,7 @@ LABELS = {
 }
 DETAIL_FIELDS: dict[str, set[str]] = {
     "all": set(), "rss": {"blog_feed"}, "reddit": {"community"},
-    "x": {"account"}, "hacker_news": set(),
+    "x": {"account", "feed_id"}, "hacker_news": set(),
     "youtube": {"channel_id", "feed_id"}, "post": {"domain", "post_id"},
 }
 
@@ -71,12 +71,32 @@ async def resolve_scope(
 
     selected = settings._replace(sources=sources)
 
+    selected, label = _x_settings(selected, scope, label)
+
     if kind == "youtube" and (scope.get("channel_id") or scope.get("feed_id")):
         selected, label = await _youtube_settings(selected, client, scope)
     elif scope.get("domains") and len(scope["domains"]) == 1:
         label = label if kind != "rss" else scope["domains"][0]
 
     return RefreshPlan(scope, label, selected)
+
+
+def _x_settings(
+    settings: Settings, scope: dict[str, Any], label: str,
+) -> tuple[Settings, str]:
+    if scope["kind"] != "x":
+        return settings, label
+
+    if scope.get("feed_id") == "for_you":
+        return settings._replace(
+            x=settings.x._replace(homepage=True),
+            sources=(settings.sources[0]._replace(accounts=()),),
+        ), "X For You"
+
+    if scope.get("account"):
+        settings = settings._replace(x=settings.x._replace(homepage=False))
+
+    return settings, label
 
 
 def _parse_scope(raw: object) -> dict[str, Any]:
@@ -175,6 +195,15 @@ def _normalize_details(scope: dict[str, Any]) -> None:
 
     if "channel_id" in scope and "feed_id" in scope:
         raise ValueError("Choose a YouTube channel or a feed, not both")
+
+    _validate_x_feed(scope)
+
+
+def _validate_x_feed(scope: dict[str, Any]) -> None:
+    if scope["kind"] == "x" and "feed_id" in scope and (
+        scope["feed_id"] != "for_you" or "account" in scope
+    ):
+        raise ValueError("Choose X For You or an account")
 
 
 def _selected_sources(

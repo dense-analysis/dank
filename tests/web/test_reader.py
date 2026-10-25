@@ -46,6 +46,9 @@ class FakeClickHouse:
         if "AS blog_external_count" in query:
             return QueryResult([{"blog_external_count": 4}])
 
+        if "AS x_home_count" in query:
+            return QueryResult([{"x_home_count": 0}])
+
         return QueryResult(self.results.pop(0))
 
 

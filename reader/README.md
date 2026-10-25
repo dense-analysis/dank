@@ -189,7 +189,12 @@ within reach while scrolling; tap outside the drawer to close it. Saved group
 choices still take precedence.
 
 Expand **X** to choose a configured account, including accounts with no posts
-yet. Each entry uses the account’s display name, collected post count and captured profile image,
+yet, or **For You** for saved homepage recommendations. For You keeps one card
+per recommended post across captures, ordered by when it was last recommended.
+Refresh collects only the homepage using the saved X session. Search and date
+filters remain available; replies served on the homepage are included.
+
+Account entries use the account’s display name, collected post count and captured profile image,
 with an initial when no image is available. X profile images load from its image
 host; Reddit icons use cached local assets. Account selection follows the post's
 handle, independently of the author filter, and stays in the URL through search

@@ -4,6 +4,24 @@ import { defaultFilters } from "./storage";
 import type { Filters } from "./types";
 
 describe("filter URLs", () => {
+  it("preserves For You through search and article navigation", () => {
+    const filters = parseFilters(
+      new URLSearchParams("view=x&x_feed=for_you&q=space"),
+    );
+    expect(parseFilters(filterParams(filters))).toEqual(filters);
+    expect(
+      articleParams(filterParams(filters), { domain: "x.com", id: "123" }).get(
+        "x_feed",
+      ),
+    ).toBe("for_you");
+    expect(
+      parseFilters(new URLSearchParams("view=reddit&x_feed=for_you")).xFeed,
+    ).toBe("");
+    expect(
+      parseFilters(new URLSearchParams("view=x&x_feed=for_you&account=alice"))
+        .xFeed,
+    ).toBe("");
+  });
   it.each(["all", "stories", "x", "reddit"] as const)(
     "round-trips the %s collection",
     (kind) => {

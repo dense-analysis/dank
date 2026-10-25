@@ -40,6 +40,7 @@ class XSettings(NamedTuple):
     scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
     onepassword: XOnePasswordSettings | None = None
     conversation: XConversationSettings = XConversationSettings()
+    homepage: bool = True
 
 
 class YouTubeOnePasswordSettings(NamedTuple):
@@ -841,6 +842,9 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     sources = _parse_sources(data.get("sources"))
     x_defaults = XSettings().scrape
 
+    if not isinstance(x_data.get("homepage", True), bool):
+        raise ConfigError("x.homepage must be a boolean")
+
     x_settings = XSettings(
         scrape=BrowserScrapeSettings(
             max_posts=int(x_data.get("max_posts", x_defaults.max_posts)),
@@ -851,6 +855,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         ),
         onepassword=_parse_x_onepassword(x_data.get("onepassword")),
         conversation=_parse_x_conversation(x_data.get("conversation", {})),
+        homepage=x_data.get("homepage", True),
     )
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}

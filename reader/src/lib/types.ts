@@ -144,6 +144,7 @@ export interface Source {
   icon_url?: string | null;
   kind?: "rss" | "x" | "reddit" | "youtube" | "hacker_news";
   accounts?: XAccount[];
+  for_you_count?: number;
   communities?: RedditCommunity[];
   flairs?: RedditFlair[];
   domain: string;
@@ -285,6 +286,7 @@ export interface Filters {
   platforms: FeedPlatform[];
   hnFilter: HackerNewsFilter;
   xView: "posts" | "replies";
+  xFeed: "" | "for_you";
   community: string;
   account: string;
   q: string;
