@@ -412,3 +412,43 @@ CREATE TABLE IF NOT EXISTS dank.youtube_transcripts (
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(observed_at)
 ORDER BY (video_id, observed_at);
+
+CREATE TABLE IF NOT EXISTS youtube_playlists (
+    playlist_id String,
+    title String,
+    url String,
+    description String,
+    thumbnail_url String,
+    channel_id String,
+    channel_name String,
+    channel_url String,
+    reported_count Nullable(UInt32),
+    entry_count UInt32,
+    sort_order String,
+    snapshot_hash String,
+    observed_at DateTime64(6, 'UTC'),
+    checked_at DateTime64(6, 'UTC'),
+    status LowCardinality(String),
+    error_type String,
+    payload String CODEC(ZSTD(3))
+)
+ENGINE = MergeTree
+ORDER BY (playlist_id, checked_at);
+
+CREATE TABLE IF NOT EXISTS youtube_playlist_entries (
+    playlist_id String,
+    snapshot_hash String,
+    position UInt32,
+    entry_id String,
+    video_id String,
+    title String,
+    channel_id String,
+    channel_name String,
+    channel_url String,
+    thumbnail_url String,
+    duration_seconds Nullable(Float64),
+    available Bool,
+    payload String CODEC(ZSTD(3))
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (playlist_id, snapshot_hash, position);

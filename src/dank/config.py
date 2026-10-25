@@ -59,6 +59,7 @@ class YouTubeSettings(NamedTuple):
     include_posts: bool = True
     authenticated: bool = False
     homepage: bool = False
+    playlists: bool = True
     hype: bool = True
     hype_playlists: tuple[tuple[str, str], ...] = ()
     news_tabs: tuple[str, ...] = ("top_stories", "business", "world")
@@ -990,7 +991,7 @@ def _parse_youtube_settings(value: object) -> YouTubeSettings:
     flags: dict[str, bool] = {}
 
     for key in ("scrape_videos", "include_shorts", "include_posts",
-                "authenticated", "homepage", "hype"):
+                "authenticated", "homepage", "playlists", "hype"):
         flag = data.get(key, getattr(defaults, key))
 
         if not isinstance(flag, bool):
