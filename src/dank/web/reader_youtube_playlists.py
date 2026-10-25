@@ -63,7 +63,7 @@ def parse_page(
     if playlist_id and not PLAYLIST_ID.fullmatch(playlist_id):
         raise ValueError("Invalid YouTube playlist identifier")
 
-    snapshot = dt.datetime.now(dt.UTC).isoformat()
+    snapshot = ""
     after = None
 
     if cursor := query.get("cursor", ""):
@@ -198,6 +198,24 @@ def _timestamp(value: object) -> str:
     return timestamp.isoformat() if timestamp else ""
 
 
+async def playlist_snapshot_time(
+    client: ClickHouseClient, playlist_id: str = "",
+) -> str:
+    # A capture can finish before its rows are published. Freeze on a persisted
+    # check, so publishing that in-flight capture cannot change a later page.
+    where = " WHERE playlist_id = %(playlist_id)s" if playlist_id else ""
+    result = await client.fetch_json(
+        "SELECT max(checked_at) AS snapshot_time FROM youtube_playlists"
+        + where,
+        {"playlist_id": playlist_id},
+    )
+    value = result.rows[0].get("snapshot_time") if result.rows else None
+
+    return _timestamp(value) or (
+        dt.datetime.fromtimestamp(0, dt.UTC).isoformat()
+    )
+
+
 async def handle_playlists(request: web.Request) -> web.Response:
     try:
         page = parse_page(request.query)
@@ -205,6 +223,10 @@ async def handle_playlists(request: web.Request) -> web.Response:
         return web.json_response({"error": str(error)}, status=400)
 
     client: ClickHouseClient = request.app["clickhouse"]
+
+    if not page.snapshot:
+        page = page._replace(snapshot=await playlist_snapshot_time(client))
+
     result = await client.fetch_json(*library_query(page))
     totals = await client.fetch_json(*library_query(page, count=True))
     rows = result.rows[:page.limit]
@@ -232,6 +254,12 @@ async def handle_playlist(request: web.Request) -> web.Response:
         return web.json_response({"error": str(error)}, status=400)
 
     client: ClickHouseClient = request.app["clickhouse"]
+
+    if not page.snapshot:
+        page = page._replace(
+            snapshot=await playlist_snapshot_time(client, playlist_id),
+        )
+
     result = await client.fetch_json(
         latest_playlists_query(individual=True),
         {"playlist_id": playlist_id, "snapshot": page.snapshot},
