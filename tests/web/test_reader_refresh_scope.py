@@ -516,3 +516,106 @@ async def test_empty_platform_intersection_never_broadens_scope(filters: Any):
 
     with pytest.raises(ValueError, match="No configured sources"):
         await resolve_scope(original, client(), {"kind": "all", **filters})
+
+
+async def test_playlist_refresh_targets_saved_playlist_without_default_feeds():
+    original = settings(SourceConfig("youtube.com", ("Alice",)))
+    original = original._replace(youtube=original.youtube._replace(
+        authenticated=True, homepage=True,
+    ))
+    storage = client([{"playlist_id": "PLsaved", "title": "Saved mix"}])
+    plan = await resolve_scope(original, storage, {
+        "kind": "youtube", "playlist_id": "PLsaved",
+    })
+    assert feed_urls(plan.settings) == [YOUTUBE + "/playlist?list=PLsaved"]
+    assert not plan.settings.youtube.playlists
+    assert not plan.settings.youtube.homepage
+    assert not plan.settings.youtube.hype
+    assert not plan.settings.youtube.news_tabs
+    assert plan.settings.youtube.authenticated
+    assert plan.label == "Saved mix"
+
+
+async def test_playlist_refresh_accepts_configured_playlist_before_capture():
+    original = settings(SourceConfig("youtube.com", (), feed_urls=(
+        YOUTUBE + "/playlist?list=PLconfigured",
+    )))
+    plan = await resolve_scope(original, client(), {
+        "kind": "youtube", "playlist_id": "PLconfigured",
+    })
+    assert feed_urls(plan.settings) == [
+        YOUTUBE + "/playlist?list=PLconfigured",
+    ]
+    assert not plan.settings.youtube.playlists
+
+
+async def test_playlist_library_leaves_saved_targets_to_bounded_collection():
+    original = settings(SourceConfig("youtube.com", ("Alice",), feed_urls=(
+        YOUTUBE + "/playlist?list=PLconfigured",
+    )))
+    original = original._replace(youtube=original.youtube._replace(
+        authenticated=True, homepage=True,
+    ))
+    plan = await resolve_scope(original, client([
+        {"playlist_id": "PLsaved", "title": "Saved mix"},
+    ]), {"kind": "youtube", "feed_id": "playlists"})
+    assert feed_urls(plan.settings) == [
+        YOUTUBE + "/playlist?list=PLconfigured",
+    ]
+    assert plan.settings.youtube.playlists
+    assert plan.settings.youtube.authenticated
+    assert not plan.settings.youtube.homepage
+    assert not plan.settings.youtube.hype
+    assert not plan.settings.youtube.news_tabs
+    assert plan.label == "Playlists"
+
+
+async def test_authenticated_empty_playlist_library_can_discover_saved_lists():
+    original = settings(SourceConfig("youtube.com", ("Alice",)))
+    original = original._replace(youtube=original.youtube._replace(
+        authenticated=True,
+    ))
+    plan = await resolve_scope(original, client(), {
+        "kind": "youtube", "feed_id": "playlists",
+    })
+    assert feed_urls(plan.settings) == []
+    assert plan.settings.youtube.playlists
+
+
+@pytest.mark.parametrize("scope", [
+    {"kind": "youtube", "playlist_id": "PLunknown"},
+    {"kind": "youtube", "feed_id": "playlists"},
+])
+async def test_unknown_playlist_targets_never_fall_back_to_home(scope: object):
+    original = settings(SourceConfig("youtube.com", ("Alice",)))
+
+    with pytest.raises(ValueError):
+        await resolve_scope(original, client(), scope)
+
+
+@pytest.mark.parametrize("scope", [
+    {"kind": "youtube", "playlist_id": "PLx", "channel_id": "UCx"},
+    {"kind": "youtube", "playlist_id": "PLx", "feed_id": "playlists"},
+    {"kind": "youtube", "playlist_id": "https://example.com/list"},
+])
+async def test_invalid_playlist_refresh_scopes_fail_before_database(
+    scope: object,
+):
+    storage = client()
+
+    with pytest.raises(ValueError):
+        await resolve_scope(settings(), storage, scope)
+
+    storage.fetch_json.assert_not_called()
+
+
+async def test_narrow_youtube_feed_refresh_never_also_collects_library():
+    original = settings(SourceConfig("youtube.com", ("Alice",)))
+    original = original._replace(youtube=original.youtube._replace(
+        authenticated=True, homepage=True, playlists=True,
+    ))
+    plan = await resolve_scope(original, client(), {
+        "kind": "youtube", "feed_id": YOUTUBE + "/",
+    })
+    assert not plan.settings.youtube.playlists
+    assert feed_urls(plan.settings) == [YOUTUBE + "/"]

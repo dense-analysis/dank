@@ -76,9 +76,17 @@ def add_youtube_routes(app: web.Application) -> None:
     app.router.add_get("/api/reader/youtube/sources", handle_youtube_sources)
     from dank.web.reader_youtube_channels import handle_youtube_channels
     from dank.web.reader_youtube_metadata import add_metadata_routes
+    from dank.web.reader_youtube_playlists import (
+        handle_playlist,
+        handle_playlists,
+    )
     from dank.web.reader_youtube_transcripts import add_transcript_routes
 
     app.router.add_get("/api/reader/youtube/channels", handle_youtube_channels)
+    app.router.add_get("/api/reader/youtube/playlists", handle_playlists)
+    app.router.add_get(
+        "/api/reader/youtube/playlists/{playlist_id}", handle_playlist,
+    )
     add_metadata_routes(app)
     add_transcript_routes(app)
 

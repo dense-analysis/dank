@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, NamedTuple, cast
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from dank.config import (
     Settings,
@@ -25,7 +25,8 @@ LABELS = {
 DETAIL_FIELDS: dict[str, set[str]] = {
     "all": set(), "rss": {"blog_feed"}, "reddit": {"community"},
     "x": {"account", "feed_id"}, "hacker_news": set(),
-    "youtube": {"channel_id", "feed_id"}, "post": {"domain", "post_id"},
+    "youtube": {"channel_id", "feed_id", "playlist_id"},
+    "post": {"domain", "post_id"},
 }
 
 
@@ -73,7 +74,9 @@ async def resolve_scope(
 
     selected, label = _x_settings(selected, scope, label)
 
-    if kind == "youtube" and (scope.get("channel_id") or scope.get("feed_id")):
+    if kind == "youtube" and any(scope.get(key) for key in (
+        "channel_id", "feed_id", "playlist_id",
+    )):
         selected, label = await _youtube_settings(selected, client, scope)
     elif scope.get("domains") and len(scope["domains"]) == 1:
         label = label if kind != "rss" else scope["domains"][0]
@@ -193,10 +196,20 @@ def _normalize_details(scope: dict[str, Any]) -> None:
         if not re.fullmatch(r"[a-z0-9_]{1,15}", scope["account"]):
             raise ValueError("Invalid X account")
 
-    if "channel_id" in scope and "feed_id" in scope:
-        raise ValueError("Choose a YouTube channel or a feed, not both")
-
+    _validate_youtube_target(scope)
     _validate_x_feed(scope)
+
+
+def _validate_youtube_target(scope: dict[str, Any]) -> None:
+    if scope["kind"] == "youtube" and sum(
+        key in scope for key in ("channel_id", "feed_id", "playlist_id")
+    ) > 1:
+        raise ValueError("Choose one YouTube channel, feed, or playlist")
+
+    if "playlist_id" in scope and not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,200}", scope["playlist_id"],
+    ):
+        raise ValueError("Invalid YouTube playlist identifier")
 
 
 def _validate_x_feed(scope: dict[str, Any]) -> None:
@@ -299,6 +312,9 @@ def _account_sources(
 async def _youtube_settings(
     settings: Settings, client: ClickHouseClient, scope: dict[str, Any],
 ) -> tuple[Settings, str]:
+    if scope.get("playlist_id") or scope.get("feed_id") == "playlists":
+        return await _playlist_settings(settings, client, scope)
+
     feeds = {
         feed.url: feed for source in settings.sources
         for feed in configured_feeds(settings.youtube, source)
@@ -318,7 +334,7 @@ async def _youtube_settings(
         adapters=(SourceAdapterConfig(SourceAdapter.YOUTUBE, urls),),
     )
     youtube = settings.youtube._replace(
-        news_tabs=(), hype=False, hype_playlists=(),
+        news_tabs=(), hype=False, hype_playlists=(), playlists=False,
         homepage=any(feed.kind == "home" for feed in selected),
     )
     regional = [feed for feed in selected
@@ -335,6 +351,53 @@ async def _youtube_settings(
     label = (
         "Recommendations" if selected[0].kind == "home" else selected[0].name
     )
+
+    return settings._replace(sources=(source,), youtube=youtube), label
+
+
+async def _playlist_settings(
+    settings: Settings, client: ClickHouseClient, scope: dict[str, Any],
+) -> tuple[Settings, str]:
+    configured = {
+        parse_qs(urlsplit(feed.url).query).get("list", [""])[0]
+        for source in settings.sources
+        for feed in configured_feeds(settings.youtube, source)
+        if feed.kind == "playlist"
+    }
+    playlist_id = str(scope.get("playlist_id") or "")
+    where = " WHERE playlist_id = %(playlist_id)s" if playlist_id else ""
+    saved = await client.fetch_json(
+        "SELECT playlist_id, title FROM youtube_playlists" + where
+        + " ORDER BY checked_at DESC LIMIT 1 BY playlist_id",
+        {"playlist_id": playlist_id},
+    )
+    known = {
+        str(row["playlist_id"]): str(row.get("title") or "Playlist")
+        for row in saved.rows
+        if re.fullmatch(r"[A-Za-z0-9_-]{1,200}", str(row["playlist_id"]))
+    }
+    targets = configured
+
+    if playlist_id:
+        if playlist_id not in configured | known.keys():
+            raise ValueError("This YouTube playlist has no saved target")
+
+        targets = {playlist_id}
+
+    if not targets and not known and not settings.youtube.authenticated:
+        raise ValueError("No saved or configured YouTube playlists to refresh")
+
+    urls = tuple("https://www.youtube.com/playlist?list=" + identifier
+                 for identifier in sorted(targets) if identifier)
+    source = settings.sources[0]._replace(
+        accounts=(), feed_urls=urls,
+        adapters=(SourceAdapterConfig(SourceAdapter.YOUTUBE, urls),),
+    )
+    youtube = settings.youtube._replace(
+        news_tabs=(), hype=False, hype_playlists=(), homepage=False,
+        playlists=not bool(playlist_id),
+    )
+    label = known.get(playlist_id, "Playlist") if playlist_id else "Playlists"
 
     return settings._replace(sources=(source,), youtube=youtube), label
 
