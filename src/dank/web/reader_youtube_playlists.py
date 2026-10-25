@@ -341,9 +341,12 @@ def _entry_row(row: dict[str, Any], observed_at: object) -> dict[str, Any]:
             else f"{minutes}:{remainder:02}"
         )
 
+    is_short = isinstance(payload.get("shortsLockupViewModel"), dict)
+
     return {
         "item_id": ("video:" + video_id if valid
                     else "unavailable:" + str(row["position"])),
-        "kind": "video", "observed_at": observed_at,
+        "kind": "short" if is_short else "video",
+        "observed_at": observed_at,
         "payload": json.dumps(payload),
     }

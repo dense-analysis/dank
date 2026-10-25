@@ -76,6 +76,17 @@ def request_for(
     return request
 
 
+def test_saved_shorts_playlist_entries_use_short_presentation():
+    renderer = {"overlayMetadata": {"primaryText": {"content": "Saved Short"}}}
+    row = saved_entry(
+        1, payload=json.dumps({"shortsLockupViewModel": renderer}),
+    )
+    adapted = playlists._entry_row(row, STAMP)  # pyright: ignore[reportPrivateUsage]
+
+    assert adapted["kind"] == "short"
+    assert json.loads(adapted["payload"])["shortsLockupViewModel"] == renderer
+
+
 def test_playlist_cursor_binds_search_target_and_microsecond_snapshot():
     cursor = playlists.playlist_cursor(
         "", "music", STAMP, ("saved music", "PLexample"),
