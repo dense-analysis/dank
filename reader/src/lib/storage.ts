@@ -8,6 +8,7 @@ export const defaultFilters: Filters = {
   hnFilter: "top50",
   xView: "posts",
   xFeed: "",
+  xTab: "posts",
   community: "",
   account: "",
   q: "",

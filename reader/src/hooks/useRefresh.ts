@@ -19,6 +19,7 @@ import {
 const dismissedKey = "dank-reader:refresh-dismissed:v1";
 const contentQueries = new Set([
   "posts",
+  "x-authors",
   "post",
   "sources",
   "youtube",

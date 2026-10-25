@@ -80,12 +80,13 @@ export function parseFilters(params: URLSearchParams): Filters {
         : [],
     xView:
       kind === "x" && params.get("x_view") === "replies" ? "replies" : "posts",
-    xFeed:
+    xFeed: kind === "x" && params.get("x_feed") === "for_you" ? "for_you" : "",
+    xTab:
       kind === "x" &&
       params.get("x_feed") === "for_you" &&
-      !params.get("account")
-        ? "for_you"
-        : "",
+      params.get("x_tab") === "authors"
+        ? "authors"
+        : "posts",
     hnFilter:
       kind === "hacker_news"
         ? parseHackerNewsFilter(params.get("hn_filter"))
@@ -128,8 +129,10 @@ export function filterParams(filters: Filters): URLSearchParams {
     params.set("blog_feed", filters.blogFeed);
   if (filters.kind === "x" && filters.xView === "replies")
     params.set("x_view", "replies");
-  if (filters.kind === "x" && filters.xFeed && !filters.account)
+  if (filters.kind === "x" && filters.xFeed)
     params.set("x_feed", filters.xFeed);
+  if (filters.kind === "x" && filters.xFeed && filters.xTab === "authors")
+    params.set("x_tab", "authors");
   if (filters.kind === "hacker_news") params.set("hn_filter", filters.hnFilter);
   if (filters.kind === "x" && filters.account.trim()) {
     params.set(

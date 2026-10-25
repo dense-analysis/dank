@@ -46,6 +46,17 @@ filters apply to this saved history. Replies served in For You are included.
 Quotes remain embedded context unless independently recommended. Promoted posts,
 Following responses and unrelated suggestions are excluded.
 
+Choose **Authors** to group this history by account handle, with distinct
+recommendation counts and up to three recent saved examples. Authors with the
+most matching posts appear first. Search and publication-date filters apply
+before grouping and pagination; missing author identities are counted separately.
+Counts describe saved recommended posts, not impressions or account-wide totals.
+
+Select an author to browse only their For You posts. The author chip clears that
+filter, and **Authors** returns to the groups while keeping search and dates.
+Opening an example and going Back preserves the Authors view. Refresh still
+collects the homepage; filtering does not add accounts to the collection settings.
+
 Homepage collection uses the configured post/scroll limits, stops after four
 idle bottom scrolls, and has a 90-second collection budget with 30-second browser
 steps. This is a bounded sample, not the entire infinite feed. Media and processing

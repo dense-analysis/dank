@@ -55,6 +55,10 @@ describe("contextual collection scope", () => {
     ],
     ["view=x&account=%40Reporter", { kind: "x", account: "reporter" }],
     ["view=x&x_feed=for_you", { kind: "x", feed_id: "for_you" }],
+    [
+      "view=x&x_feed=for_you&x_tab=authors&account=alice",
+      { kind: "x", feed_id: "for_you" },
+    ],
     ["view=hacker_news&hn_filter=top10", { kind: "hacker_news" }],
     ["view=youtube", { kind: "youtube" }],
     ["view=youtube&channel=UC123", { kind: "youtube", channel_id: "UC123" }],

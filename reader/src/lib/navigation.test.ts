@@ -20,7 +20,27 @@ describe("filter URLs", () => {
     expect(
       parseFilters(new URLSearchParams("view=x&x_feed=for_you&account=alice"))
         .xFeed,
-    ).toBe("");
+    ).toBe("for_you");
+  });
+  it("keeps Authors and selected handles in their For You context", () => {
+    const filters = parseFilters(
+      new URLSearchParams(
+        "view=x&x_feed=for_you&x_tab=authors&q=space&after=2026-10-01",
+      ),
+    );
+    expect(filters.xTab).toBe("authors");
+    expect(parseFilters(filterParams(filters))).toEqual(filters);
+    const selected = { ...filters, xTab: "posts" as const, account: "alice" };
+    expect(parseFilters(filterParams(selected))).toEqual(selected);
+    expect(
+      articleParams(filterParams(filters), { domain: "x.com", id: "123" }).get(
+        "x_tab",
+      ),
+    ).toBe("authors");
+    expect(
+      parseFilters(new URLSearchParams("view=x&x_tab=authors&account=alice"))
+        .xTab,
+    ).toBe("posts");
   });
   it.each(["all", "stories", "x", "reddit"] as const)(
     "round-trips the %s collection",

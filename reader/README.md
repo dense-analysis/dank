@@ -194,6 +194,14 @@ per recommended post across captures, ordered by when it was last recommended.
 Refresh collects only the homepage using the saved X session. Search and date
 filters remain available; replies served on the homepage are included.
 
+The **Authors** tab groups For You by account handle, ordered by distinct saved
+recommendation count, with up to three recent examples per author. Search and
+dates apply to counts and examples. Select an author to filter the Posts tab;
+remove the author chip or return to Authors to browse more. Example links and
+browser Back retain the current view and filters. Refresh continues to collect
+the homepage. These counts exclude quoted-only posts and repeated appearances;
+they are not impressions or complete account totals.
+
 Account entries use the account’s display name, collected post count and captured profile image,
 with an initial when no image is available. X profile images load from its image
 host; Reddit icons use cached local assets. Account selection follows the post's

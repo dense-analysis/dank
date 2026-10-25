@@ -53,6 +53,7 @@ export function FeedToolbar({
     filters.tags.length +
     filters.flairs.length +
     Number(!!filters.author) +
+    Number(!!filters.xFeed && !!filters.account) +
     Number(!!filters.after) +
     Number(!!filters.before);
   const tags = [...new Set(sources.flatMap((source) => source.tags))].sort();
@@ -62,6 +63,32 @@ export function FeedToolbar({
       : [];
   return (
     <div className="feed-tools">
+      {filters.xFeed === "for_you" && (
+        <fieldset className="x-feed-selection" aria-label="For You view">
+          <legend className="visually-hidden">For You view</legend>
+          {(
+            [
+              ["posts", "Posts"],
+              ["authors", "Authors"],
+            ] as const
+          ).map(([xTab, label]) => (
+            <button
+              key={xTab}
+              type="button"
+              aria-pressed={filters.xTab === xTab}
+              onClick={() =>
+                change({
+                  ...filters,
+                  xTab,
+                  account: xTab === "authors" ? "" : filters.account,
+                })
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+      )}
       <SearchField
         label={searchLabel}
         value={draft}
@@ -109,22 +136,31 @@ export function FeedToolbar({
           Filters
           {activeCount > 0 && <Count value={activeCount} />}
         </button>
-        <select
-          className="sort-select"
-          aria-label="Order stories"
-          value={filters.sort}
-          onChange={(event) =>
-            change({ ...filters, sort: event.target.value as Filters["sort"] })
-          }
-        >
-          <option value="newest">
-            {filters.xFeed ? "Recent first" : "Latest first"}
-          </option>
-          <option value="oldest">
-            {filters.xFeed ? "Earliest first" : "Oldest first"}
-          </option>
-          {filters.q && <option value="relevance">Most relevant</option>}
-        </select>
+        {filters.xFeed && filters.xTab === "authors" ? (
+          <span className="result-note x-author-order">
+            Most recommended first
+          </span>
+        ) : (
+          <select
+            className="sort-select"
+            aria-label="Order stories"
+            value={filters.sort}
+            onChange={(event) =>
+              change({
+                ...filters,
+                sort: event.target.value as Filters["sort"],
+              })
+            }
+          >
+            <option value="newest">
+              {filters.xFeed ? "Recent first" : "Latest first"}
+            </option>
+            <option value="oldest">
+              {filters.xFeed ? "Earliest first" : "Oldest first"}
+            </option>
+            {filters.q && <option value="relevance">Most relevant</option>}
+          </select>
+        )}
       </div>
       {expanded && (
         <div className="filter-panel">
@@ -144,6 +180,7 @@ export function FeedToolbar({
                   authorExact: false,
                   after: "",
                   before: "",
+                  account: filters.xFeed ? "" : filters.account,
                 })
               }
             >
@@ -299,6 +336,16 @@ export function FeedToolbar({
       {(filters.q || activeCount > 0) && (
         <fieldset className="active-filters" aria-label="Active filters">
           <span>{filters.q ? `Search: “${filters.q}”` : "Filtered view"}</span>
+          {filters.xFeed && filters.account && (
+            <button
+              type="button"
+              aria-label="Remove recommended author filter"
+              onClick={() => change({ ...filters, account: "" })}
+            >
+              @{filters.account}
+              <X size={12} />
+            </button>
+          )}
           {filters.author && (
             <button
               type="button"

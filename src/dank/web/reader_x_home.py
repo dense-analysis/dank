@@ -91,11 +91,13 @@ def encode_home_cursor(
     ).decode()
 
 
-def home_listing(filters: ReaderFilters) -> tuple[str, dict[str, Any], str]:
+def home_listing(
+    filters: ReaderFilters, snapshot_time: str | None = None,
+) -> tuple[str, dict[str, Any], str]:
     snapshot = (
         decode_home_cursor(filters).snapshot
         if filters.cursor
-        else dt.datetime.now(dt.UTC).isoformat()
+        else snapshot_time or dt.datetime.now(dt.UTC).isoformat()
     )
     params: dict[str, Any] = {"x_home_snapshot": snapshot}
     table = (

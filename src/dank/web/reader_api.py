@@ -57,6 +57,7 @@ from dank.web.reader_reddit_history import preserve_reddit_archives
 from dank.web.reader_refresh import add_refresh_routes
 from dank.web.reader_source_icons import source_icon_url
 from dank.web.reader_x import post_x_content
+from dank.web.reader_x_authors import handle_x_authors
 from dank.web.reader_x_home import HOME_CONDITION, encode_home_cursor
 from dank.web.reader_youtube import add_youtube_routes
 from dank.web.reader_youtube_feed import add_youtube_post_metadata
@@ -72,6 +73,7 @@ def add_reader_routes(app: web.Application) -> None:
     app.router.add_get("/api/reader/connections", handle_connections)
     app.router.add_get("/api/reader/connection", handle_connection)
     app.router.add_get("/api/reader/sources", handle_sources)
+    app.router.add_get("/api/reader/x/authors", handle_x_authors)
     app.router.add_get("/api/reader/posts", handle_posts)
     app.router.add_get("/api/reader/post", handle_post)
     app.router.add_get("/reader", handle_reader)

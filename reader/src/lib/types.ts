@@ -287,6 +287,7 @@ export interface Filters {
   hnFilter: HackerNewsFilter;
   xView: "posts" | "replies";
   xFeed: "" | "for_you";
+  xTab: "posts" | "authors";
   community: string;
   account: string;
   q: string;

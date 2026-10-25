@@ -87,19 +87,26 @@ export async function fetchSources(signal?: AbortSignal): Promise<{
   };
 }
 
-export async function fetchPosts(
-  filters: Filters,
-  cursor?: string | null,
-  signal?: AbortSignal,
-): Promise<PostPage> {
+export function postParams(filters: Filters, limit = "30"): URLSearchParams {
   const params = filterParams(filters);
   params.delete("view");
+  params.delete("x_tab");
   params.set("kind", filters.kind);
   if (filters.q.trim()) params.set("mode", "combined");
   // The API defaults to chronological order; the reader defaults search to relevance.
   if (filters.q.trim() && filters.sort === "relevance")
     params.set("sort", "relevance");
-  params.set("limit", "30");
+  params.set("limit", limit);
+
+  return params;
+}
+
+export async function fetchPosts(
+  filters: Filters,
+  cursor?: string | null,
+  signal?: AbortSignal,
+): Promise<PostPage> {
+  const params = postParams(filters);
   if (cursor) params.set("cursor", cursor);
 
   const body = await request(`/posts?${params.toString()}`, signal);

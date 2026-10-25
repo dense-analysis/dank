@@ -39,6 +39,7 @@ import { ReaderSettings } from "./components/ReaderSettings";
 import { RefreshStatus } from "./components/RefreshStatus";
 import { Sidebar } from "./components/Sidebar";
 import { SourcesView } from "./components/SourcesView";
+import { XAuthors } from "./components/XAuthors";
 import { XPostCard } from "./components/XPostCard";
 import { YouTubeCollection } from "./components/YouTubeCollection";
 import { YouTubePostCard } from "./components/YouTubePostCard";
@@ -119,6 +120,10 @@ export function App() {
   const feedSection =
     section !== "sources" && section !== "settings" && section !== "youtube";
   const filters = parseFilters(params);
+  const xAuthorsView =
+    filters.kind === "x" &&
+    filters.xFeed === "for_you" &&
+    filters.xTab === "authors";
   const mixedVideoDetail = section === "all" && !!params.get("youtube_item");
   const articleId = params.get("article");
   const articleDomain = params.get("article_source");
@@ -136,7 +141,7 @@ export function App() {
     queryFn: ({ pageParam, signal }) => fetchPosts(filters, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
-    enabled: feedSection,
+    enabled: feedSection && !xAuthorsView,
   });
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const { fetchNextPage, hasNextPage, isFetching, isError } = posts;
@@ -146,6 +151,7 @@ export function App() {
     if (
       !target ||
       !feedSection ||
+      xAuthorsView ||
       readingArticle ||
       !hasNextPage ||
       isFetching ||
@@ -166,6 +172,7 @@ export function App() {
     return () => observer.disconnect();
   }, [
     feedSection,
+    xAuthorsView,
     readingArticle,
     hasNextPage,
     isFetching,
@@ -211,7 +218,7 @@ export function App() {
   const accountName = activeAccount?.name || accountHandle;
   const accountHasName =
     accountName.toLowerCase() !== accountHandle.toLowerCase();
-  const accountContext = section === "x" && !!filters.account;
+  const accountContext = section === "x" && !!filters.account && !filters.xFeed;
   const forYouContext = section === "x" && filters.xFeed === "for_you";
   const communities = redditSources.flatMap(
     (source) => source.communities ?? [],
@@ -746,8 +753,9 @@ export function App() {
                   )}
                   {forYouContext && (
                     <p className="feed-description">
-                      Saved recommendations from your X homepage, ordered by
-                      when they were recommended. Refresh to collect more.
+                      {xAuthorsView
+                        ? "Explore the authors in your saved X homepage recommendations."
+                        : "Saved recommendations from your X homepage, ordered by when they were recommended. Refresh to collect more."}
                     </p>
                   )}
                   <FeedToolbar
@@ -766,21 +774,24 @@ export function App() {
                       }
                     />
                   )}
-                  <div className="timeline-label">
-                    <span>
-                      {filters.q
-                        ? "SEARCH RESULTS"
-                        : section === "reddit" ||
-                            section === "x" ||
-                            section === "hacker_news"
-                          ? "COLLECTED POSTS"
-                          : "LATEST"}
-                      {posts.isFetching && !posts.isPending && (
-                        <span className="updating">Updating…</span>
-                      )}
-                    </span>
-                  </div>
-                  {posts.isError &&
+                  {!xAuthorsView && (
+                    <div className="timeline-label">
+                      <span>
+                        {filters.q
+                          ? "SEARCH RESULTS"
+                          : section === "reddit" ||
+                              section === "x" ||
+                              section === "hacker_news"
+                            ? "COLLECTED POSTS"
+                            : "LATEST"}
+                        {posts.isFetching && !posts.isPending && (
+                          <span className="updating">Updating…</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {!xAuthorsView &&
+                    posts.isError &&
                     posts.data &&
                     !posts.isFetchNextPageError && (
                       <div className="error-banner" role="alert">
@@ -795,7 +806,14 @@ export function App() {
                         </button>
                       </div>
                     )}
-                  {posts.isPending ? (
+                  {xAuthorsView ? (
+                    <XAuthors
+                      filters={filters}
+                      params={params}
+                      navigate={(next) => navigate(next)}
+                      open={openPost}
+                    />
+                  ) : posts.isPending ? (
                     <Loading />
                   ) : posts.isError && !posts.data ? (
                     <ErrorState
@@ -925,20 +943,30 @@ export function App() {
                       <button
                         type="button"
                         className="secondary-button"
-                        onClick={() => select(section)}
+                        onClick={() =>
+                          forYouContext
+                            ? changeFilters({
+                                ...defaultFilters,
+                                kind: "x",
+                                xFeed: "for_you",
+                              })
+                            : select(section)
+                        }
                       >
-                        {section === "hacker_news"
-                          ? "Reset Hacker News filters"
-                          : section === "reddit" || section === "x"
-                            ? `Show all ${feedLabels[section]} posts`
-                            : section === "stories"
-                              ? "Show all blog articles"
-                              : "Show everything"}{" "}
+                        {forYouContext
+                          ? "Show all For You recommendations"
+                          : section === "hacker_news"
+                            ? "Reset Hacker News filters"
+                            : section === "reddit" || section === "x"
+                              ? `Show all ${feedLabels[section]} posts`
+                              : section === "stories"
+                                ? "Show all blog articles"
+                                : "Show everything"}{" "}
                         <ArrowRight size={14} />
                       </button>
                     </div>
                   )}
-                  {posts.hasNextPage && (
+                  {!xAuthorsView && posts.hasNextPage && (
                     <div className="load-more" ref={loadMoreRef}>
                       {posts.isFetchNextPageError ? (
                         <ErrorState
@@ -964,13 +992,14 @@ export function App() {
                       )}
                     </div>
                   )}
-                  {posts.data?.pages.some((page) => page.limited) && (
-                    <p className="result-note">
-                      Showing the top <Count value={timeline.length} /> matches.
-                      Narrow your search, or choose a chronological order to
-                      browse further.
-                    </p>
-                  )}
+                  {!xAuthorsView &&
+                    posts.data?.pages.some((page) => page.limited) && (
+                      <p className="result-note">
+                        Showing the top <Count value={timeline.length} />{" "}
+                        matches. Narrow your search, or choose a chronological
+                        order to browse further.
+                      </p>
+                    )}
                 </>
               )}
             </main>

@@ -62,7 +62,7 @@ def test_cursor_preserves_cutoff_and_position_and_cannot_cross_filters():
     [
         {"kind": "x", "x_feed": "following"},
         {"kind": "reddit", "x_feed": "for_you"},
-        {"kind": "x", "x_feed": "for_you", "account": "someone"},
+        {"kind": "x", "x_feed": "for_you", "account": "invalid/handle"},
     ],
 )
 def test_rejects_ambiguous_or_wrong_feed(query: dict[str, str]):

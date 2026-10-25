@@ -116,7 +116,7 @@ export function refreshContext(params: URLSearchParams) {
       label = `r/${filters.community}`;
     }
 
-    if (filters.account) {
+    if (filters.account && !filters.xFeed) {
       scope.account = filters.account;
       label = `@${filters.account}`;
     }

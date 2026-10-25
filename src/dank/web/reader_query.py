@@ -200,9 +200,9 @@ def _validate(filters: ReaderFilters) -> None:
 
 def _validate_collection_filters(filters: ReaderFilters) -> None:
     if filters.x_feed and (
-        filters.kind != "x" or filters.x_feed != "for_you" or filters.account
+        filters.kind != "x" or filters.x_feed != "for_you"
     ):
-        raise ValueError("x_feed requires kind=x, for_you and no account")
+        raise ValueError("x_feed requires kind=x and for_you")
 
     if filters.kind not in {
         "", "all", "stories", "reddit", "x", "youtube", "hacker_news",
@@ -303,6 +303,7 @@ def decode_cursor(filters: ReaderFilters) -> tuple[dt.datetime, str, str]:
 def build_query(
     filters: ReaderFilters, sources: tuple[SourceConfig, ...],
     embedding: tuple[float, ...] | None = None,
+    *, paginate: bool = True, snapshot_time: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     conditions, params = _conditions(filters, sources)
     score = "0"
@@ -360,7 +361,9 @@ def build_query(
     columns = POST_COLUMNS
 
     if filters.x_feed:
-        table, home_params, home_condition = home_listing(filters)
+        table, home_params, home_condition = home_listing(
+            filters, snapshot_time,
+        )
         params.update(home_params)
         columns += ", recommended_at, recommendation_position"
         position_order = "DESC" if filters.sort == "oldest" else "ASC"
@@ -408,10 +411,11 @@ def build_query(
 
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
     prefix = "WITH " + ", ".join(expressions) + " " if expressions else ""
+    pagination = f" ORDER BY {ordering} LIMIT %(limit)s" if paginate else ""
     query = (
         f"{prefix}SELECT {columns}, {score} AS reader_score "
         f"FROM {table}"
-        f"{where} ORDER BY {ordering} LIMIT %(limit)s"
+        f"{where}{pagination}"
     )
     params["limit"] = filters.limit + 1
 

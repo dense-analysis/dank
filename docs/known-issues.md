@@ -1014,6 +1014,14 @@ out of this document; link to code/tests and summarize dated observations.
 
 ### X For You recommendations
 
+**Authors** groups readable For You posts by saved handle, preserving distinct
+counts across repeated captures. Search and dates apply before grouping;
+pagination carries the original capture cutoff, with count/handle tie-breaking.
+Up to three recent examples reuse the saved-post reader adapter. Unattributed
+posts are reported separately. An author filter stays within For You and does
+not turn Refresh into an account crawl. Regression coverage is in
+`tests/web/test_reader_x_authors.py` and `reader/tests/x-authors.spec.ts`.
+
 The signed-in homepage has its own **X → For You** history. Collection listens
 only for `HomeTimeline`, preserves original items and their capture positions,
 and excludes ads, Following responses and nested quotes from feed membership.
