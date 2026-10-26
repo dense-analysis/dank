@@ -116,7 +116,7 @@ export function useRefresh(navigate: (params: URLSearchParams) => void) {
           const playlistId = destination.get("youtube_playlist");
           if (playlistId) {
             await client.fetchInfiniteQuery({
-              queryKey: ["youtube-playlist", playlistId],
+              queryKey: ["youtube-playlist", playlistId, ""],
               queryFn: ({ pageParam, signal }) =>
                 fetchYouTubePlaylist(playlistId, pageParam, signal),
               initialPageParam: undefined as string | undefined,

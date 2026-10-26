@@ -96,8 +96,10 @@ export async function fetchYouTubePlaylist(
   id: string,
   cursor?: string,
   signal?: AbortSignal,
+  q = "",
 ): Promise<YouTubePlaylistDetail> {
   const params = new URLSearchParams({ limit: "30" });
+  if (q) params.set("q", q);
   if (cursor) params.set("cursor", cursor);
   const body = await request(
     `/youtube/playlists/${encodeURIComponent(id)}?${params}`,

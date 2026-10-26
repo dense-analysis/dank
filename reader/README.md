@@ -364,6 +364,10 @@ The library defaults to **Recently added**, following YouTube's last captured
 library order, with **A–Z** available in the sort menu. The choice stays in the
 URL through search, opening a playlist and Back. Playlist cards and video lists
 load more automatically as you scroll; failed pages retain a retry control.
+Inside a playlist, search matches saved video titles and channel names across
+all saved entries, keeping their original positions and order. The search stays
+in the URL through video details and Back. The header back arrow returns to the
+library with its previous search and sort.
 
 Refresh checks the library or the selected playlist. Its captured count, last
 check, and incomplete or failed status stay visible; saved videos remain

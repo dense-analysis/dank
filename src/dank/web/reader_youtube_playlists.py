@@ -55,10 +55,10 @@ def parse_page(
     query: MultiMapping[str],
     playlist_id: str = "",
 ) -> PlaylistPage:
-    allowed = {"limit", "cursor"}
+    allowed = {"limit", "cursor", "q"}
 
     if not playlist_id:
-        allowed.update({"q", "sort"})
+        allowed.add("sort")
 
     if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
         raise ValueError("Unknown or repeated playlist filter")
@@ -310,6 +310,38 @@ async def handle_playlists(request: web.Request) -> web.Response:
     )
 
 
+def playlist_entries_query(
+    playlist_id: str, snapshot_hash: str, page: PlaylistPage,
+    *, count: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    conditions = ["playlist_id = %(playlist_id)s",
+                  "snapshot_hash = %(snapshot_hash)s"]
+    params: dict[str, Any] = {
+        "playlist_id": playlist_id, "snapshot_hash": snapshot_hash,
+    }
+
+    if page.q:
+        conditions.append(
+            "positionCaseInsensitiveUTF8(concat(title, ' ', channel_name, "
+            "' ', channel_url), %(q)s) > 0",
+        )
+        params["q"] = page.q
+
+    select, order = "count() AS total", ""
+
+    if not count:
+        select = "*"
+        conditions.append("position > %(after)s")
+        params.update(after=page.after or 0, limit=page.limit + 1)
+        order = " ORDER BY position ASC LIMIT %(limit)s"
+
+    return (
+        f"SELECT {select} FROM youtube_playlist_entries FINAL WHERE "
+        + " AND ".join(conditions) + order,
+        params,
+    )
+
+
 async def handle_playlist(request: web.Request) -> web.Response:
     playlist_id = request.match_info["playlist_id"]
 
@@ -335,26 +367,28 @@ async def handle_playlist(request: web.Request) -> web.Response:
 
     row = result.rows[0]
     metadata = playlist_metadata(row)
-    entries = await client.fetch_json(
-        "SELECT * FROM youtube_playlist_entries FINAL "
-        "WHERE playlist_id = %(playlist_id)s "
-        "AND snapshot_hash = %(snapshot_hash)s AND position > %(after)s "
-        "ORDER BY position ASC LIMIT %(limit)s",
-        {"playlist_id": playlist_id, "snapshot_hash": metadata["snapshot_id"],
-         "after": page.after or 0, "limit": page.limit + 1},
-    )
+    entries = await client.fetch_json(*playlist_entries_query(
+        playlist_id, metadata["snapshot_id"], page,
+    ))
+    total = metadata["collected_count"]
+
+    if page.q:
+        totals = await client.fetch_json(*playlist_entries_query(
+            playlist_id, metadata["snapshot_id"], page, count=True,
+        ))
+        total = int(totals.rows[0]["total"]) if totals.rows else 0
     rows = entries.rows[:page.limit]
     items = await playlist_items(request, rows, row)
     cursor = None
 
     if len(entries.rows) > page.limit and rows:
         cursor = playlist_cursor(
-            playlist_id, "", page.snapshot, int(rows[-1]["position"]),
+            playlist_id, page.q, page.snapshot, int(rows[-1]["position"]),
         )
 
     return web.json_response({
         "playlist": metadata, "items": items, "next_cursor": cursor,
-        "total": metadata["collected_count"],
+        "total": total,
     })
 
 

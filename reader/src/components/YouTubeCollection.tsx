@@ -425,7 +425,6 @@ export function YouTubeCollection({
         collectingPlaylist={collectingPlaylist}
         params={params}
         navigate={navigate}
-        backTo={backTo}
         open={open}
         href={href}
       />

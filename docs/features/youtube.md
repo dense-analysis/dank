@@ -319,6 +319,8 @@ saved library, with an **A–Z** alternative. A complete library refresh updates
 that ranking independently of individual playlist checks. Pagination keeps
 the captured ranking stable while browsing. Playlists absent from that library
 follow it alphabetically. Cards and playlist videos load more as you scroll.
+Inside a playlist, search matches saved video titles and channel names across
+the full saved snapshot, preserving playlist order and original positions.
 
 Playlist contents are collected through yt-dlp HTTP requests and pagination,
 using the verified session for private lists. Browser scrolling is used only

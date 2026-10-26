@@ -419,3 +419,76 @@ def test_library_defaults_to_source_order_and_binds_cursor_to_sort():
 
     with pytest.raises(ValueError):
         playlists.parse_page(MultiDict({"sort": "az"}), "PLid")
+
+
+def test_playlist_search_filters_saved_titles_and_channels_before_paging():
+    query = "O'Reilly 100%"
+    page = playlists.parse_page(MultiDict({"q": query}), "PLexample")
+    assert page.q == query
+    sql, params = playlists.playlist_entries_query(
+        "PLexample", "snapshot", page,
+    )
+    assert (
+        "concat(title" in sql
+        and "channel_name" in sql
+        and "channel_url" in sql
+    )
+    assert sql.index("positionCaseInsensitiveUTF8") < sql.index(
+        "ORDER BY position ASC",
+    )
+    assert params["q"] == query and params["snapshot_hash"] == "snapshot"
+    bound, _ = bind_query(sql, params)
+    assert "%(" not in bound
+    count_sql, count_params = playlists.playlist_entries_query(
+        "PLexample",
+        "snapshot",
+        page._replace(after=50),
+        count=True,
+    )
+    assert "positionCaseInsensitiveUTF8" in count_sql
+    assert "position >" not in count_sql and "LIMIT" not in count_sql
+    assert count_params["q"] == query
+    cursor = playlists.playlist_cursor("PLexample", query, STAMP, 77)
+    assert (
+        playlists.parse_page(
+            MultiDict({"q": query, "cursor": cursor}), "PLexample",
+        ).after
+        == 77
+    )
+
+    for changed in ("", "changed"):
+        with pytest.raises(ValueError):
+            playlists.parse_page(
+                MultiDict({"q": changed, "cursor": cursor}), "PLexample",
+            )
+
+
+async def test_playlist_search_keeps_total_and_original_positions(
+    tmp_path: Path,
+):
+    client = AsyncMock()
+    client.fetch_json.side_effect = [
+        QueryResult([{"snapshot_time": STAMP}]),
+        QueryResult([saved_playlist(entry_count=100)]),
+        QueryResult([saved_entry(34), saved_entry(89)]),
+        QueryResult([{"total": 2}]),
+        *[QueryResult([]) for _ in range(5)],
+    ]
+    response = await playlists.handle_playlist(
+        request_for(
+            "/api/reader/youtube/playlists/PLexample?q=Example&limit=1",
+            client,
+            tmp_path,
+            "PLexample",
+        ),
+    )
+    body = json.loads(response.text or "")
+    assert body["total"] == 2
+    assert body["playlist"]["collected_count"] == 100
+    assert [item["playlist_position"] for item in body["items"]] == [34]
+    assert playlists.parse_cursor(
+        body["next_cursor"], "PLexample", "Example",
+    ) == (STAMP, 34)
+    sql, params = client.fetch_json.call_args_list[2].args
+    assert params["q"] == "Example" and params["limit"] == 2
+    assert "ORDER BY position ASC" in sql

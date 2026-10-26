@@ -82,6 +82,7 @@ async function fixture(page: Page) {
     libraryPageSize: 30,
     libraryRequests: [] as { sort: string; cursor: string | null }[],
     pageSize: 2,
+    videoRequests: [] as { q: string; cursor: string | null }[],
     scopes: [] as RefreshScope[],
     jobs: [] as RefreshJob[],
   };
@@ -146,6 +147,13 @@ async function fixture(page: Page) {
       });
     }
     if (url.pathname.includes("/youtube/playlists/")) {
+      const q = url.searchParams.get("q") ?? "";
+      state.videoRequests.push({ q, cursor: url.searchParams.get("cursor") });
+      const matching = state.entries.filter((item) =>
+        `${item.title} ${item.channel.name} ${item.channel.url}`
+          .toLowerCase()
+          .includes(q.toLowerCase()),
+      );
       if (state.fail || (state.failMore && url.searchParams.has("cursor")))
         return route.fulfill({
           status: 503,
@@ -158,10 +166,10 @@ async function fixture(page: Page) {
             state.playlists.find((item) =>
               url.pathname.endsWith(`/${item.id}`),
             ) ?? state.playlists[0],
-          items: state.entries.slice(offset, offset + state.pageSize),
-          total: state.entries.length,
+          items: matching.slice(offset, offset + state.pageSize),
+          total: matching.length,
           next_cursor:
-            offset + state.pageSize < state.entries.length
+            offset + state.pageSize < matching.length
               ? String(offset + state.pageSize)
               : null,
         },
@@ -228,7 +236,7 @@ test("sidebar library to ordered playlist to video and Back preserves URL and du
     page.getByRole("heading", { name: playlist.title }),
   ).toBeVisible();
   await page
-    .getByRole("link", { name: "Back to playlists", exact: true })
+    .getByRole("button", { name: "Back to playlists", exact: true })
     .click();
   await expect(page).toHaveURL(/youtube_view=playlists$/);
 });
@@ -414,7 +422,7 @@ test("recent library order defaults, A–Z survives navigation, and scrolling lo
     page.getByRole("heading", { name: "Playlist 000", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("link", { name: "Back to playlists", exact: true })
+    .getByRole("button", { name: "Back to playlists", exact: true })
     .click();
   await page.reload();
   await expect(sort).toHaveValue("az");
@@ -460,4 +468,85 @@ test("failed automatic playlist pagination retains cards and waits for explicit 
     .getByRole("button", { name: "Retry playlists", exact: true })
     .click();
   await expect(cards).toHaveCount(35);
+});
+
+test("playlist video search covers unloaded titles and channels, preserving order and navigation", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.pageSize = 30;
+  state.entries = Array.from({ length: 80 }, (_, i) =>
+    entry(i + 1, `v${String(i).padStart(10, "0")}`, `Video ${i + 1}`),
+  );
+  state.entries[69] = entry(70, "latevideo01", "A distant telescope");
+  state.entries[74] = {
+    ...entry(75, "latevideo02", "Second discovery"),
+    channel: { ...playlist.channel, name: "Telescope Observatory" },
+  };
+  state.entries[79] = entry(80, "latevideo01", "A distant telescope");
+  state.playlists = [{ ...playlist, collected_count: 80, video_count: 80 }];
+  await page.goto(`${path}&q=journey&playlist_sort=az`);
+  await page.getByRole("link", { name: playlist.title, exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Back to playlists", exact: true }),
+  ).toHaveCount(0);
+  const search = page.getByRole("searchbox", {
+    name: "Search playlist videos",
+  });
+  await expect(search).toHaveValue("");
+  await expect(page.locator(".yt-playlist-entry")).toHaveCount(30);
+  await search.fill("TELESCOPE");
+  await search.press("Enter");
+  await expect(page).toHaveURL(/playlist_q=TELESCOPE/);
+  await expect(page.locator(".yt-playlist-position")).toHaveText([
+    "70",
+    "75",
+    "80",
+  ]);
+  await expect(
+    page.getByText("3 matching videos", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("link", { name: "Second discovery", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Back to playlist", exact: true })
+    .click();
+  await expect(search).toHaveValue("TELESCOPE");
+  await page.reload();
+  await expect(search).toHaveValue("TELESCOPE");
+  await expect(page.locator(".yt-playlist-position")).toHaveText([
+    "70",
+    "75",
+    "80",
+  ]);
+  state.pageSize = 1;
+  await search.fill("distant");
+  await search.press("Enter");
+  await page.locator(".yt-playlist-entry").last().scrollIntoViewIfNeeded();
+  await expect(page.locator(".yt-playlist-position")).toHaveText(["70", "80"]);
+  expect(
+    state.videoRequests.some(
+      (request) => request.q === "distant" && request.cursor === "1",
+    ),
+  ).toBe(true);
+  await search.fill("no-such-video");
+  await search.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "No videos match", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("0 matching videos", { exact: true }),
+  ).toBeVisible();
+  state.pageSize = 30;
+  await page.getByRole("button", { name: "Clear search", exact: true }).click();
+  await expect(search).toBeFocused();
+  await expect(page.locator(".yt-playlist-entry")).toHaveCount(30);
+  await page
+    .getByRole("button", { name: "Back to playlists", exact: true })
+    .click();
+  await expect(page).toHaveURL(/q=journey&playlist_sort=az$/);
+  await expect(
+    page.getByRole("searchbox", { name: "Search playlists" }),
+  ).toHaveValue("journey");
 });

@@ -1,12 +1,6 @@
 import "../youtube-playlists.css";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  ListVideo,
-  RefreshCw,
-  VideoOff,
-} from "lucide-react";
+import { ArrowUpRight, ListVideo, RefreshCw, VideoOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { safeUrl } from "../lib/urls";
 import { type YouTubeItem, youtubeImageUrl } from "../lib/youtubeCollection";
@@ -79,7 +73,6 @@ export function YouTubePlaylists({
   collectingPlaylist,
   params,
   navigate,
-  backTo,
   open,
   href,
 }: {
@@ -91,31 +84,34 @@ export function YouTubePlaylists({
     replace?: boolean,
     backTo?: string,
   ) => void;
-  backTo: (params: URLSearchParams) => void;
   open: (item: YouTubeItem) => void;
   href: (item: YouTubeItem) => string;
 }) {
   const id = params.get("youtube_playlist") ?? "";
-  const q = (params.get("q") ?? "").trim();
+  const libraryQuery = (params.get("q") ?? "").trim();
+  const videoQuery = (params.get("playlist_q") ?? "").trim();
+  const q = id ? videoQuery : libraryQuery;
   const sort: YouTubePlaylistSort =
     params.get("playlist_sort") === "az" ? "az" : "recent";
   const [search, setSearch] = useState(q);
   useEffect(() => setSearch(q), [q]);
   const library = useInfiniteQuery({
-    queryKey: ["youtube-playlists", q, sort],
+    queryKey: ["youtube-playlists", libraryQuery, sort],
     queryFn: ({ pageParam, signal }) =>
-      fetchYouTubePlaylists(q, pageParam, signal, sort),
+      fetchYouTubePlaylists(libraryQuery, pageParam, signal, sort),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !id,
   });
   const detail = useInfiniteQuery({
-    queryKey: ["youtube-playlist", id],
+    queryKey: ["youtube-playlist", id, videoQuery],
     queryFn: ({ pageParam, signal }) =>
-      fetchYouTubePlaylist(id, pageParam, signal),
+      fetchYouTubePlaylist(id, pageParam, signal, videoQuery),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !!id,
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === id ? previous : undefined,
   });
   const playlists = [
     ...new Map(
@@ -126,7 +122,9 @@ export function YouTubePlaylists({
   ];
   const playlist = detail.data?.pages[0]?.playlist;
   // Membership entries, including repeated video IDs, belong to YouTube's order.
-  const entries = detail.data?.pages.flatMap((page) => page.items) ?? [];
+  const entries = detail.isPlaceholderData
+    ? []
+    : (detail.data?.pages.flatMap((page) => page.items) ?? []);
   const query = id ? detail : library;
   const more = useRef<HTMLDivElement>(null);
   const { hasNextPage, isFetching, isError, fetchNextPage } = query;
@@ -153,88 +151,113 @@ export function YouTubePlaylists({
 
     return () => observer.disconnect();
   }, [hasNextPage, isFetching, isError, fetchNextPage]);
-  const libraryParams = new URLSearchParams(params);
-  libraryParams.delete("youtube_playlist");
-  libraryParams.delete("youtube_item");
+  function searchPlaylist(value: string) {
+    const next = new URLSearchParams(params);
+    const key = id ? "playlist_q" : "q";
+    if (value.trim()) next.set(key, value.trim());
+    else next.delete(key);
+    navigate(next);
+  }
 
   return (
     <div className="yt-collection yt-playlists">
       {id ? (
         <>
-          <ReaderLink
-            className="text-button yt-back"
-            href={`/reader/?${libraryParams}`}
-            onNavigate={() => backTo(libraryParams)}
-          >
-            <ArrowLeft size={16} /> Back to playlists
-          </ReaderLink>
           {playlist && (
-            <>
-              <div className="yt-playlist-heading">
-                <div className="yt-playlist-cover">
-                  <PlaylistImage
-                    key={playlist.thumbnail_url}
-                    playlist={playlist}
-                  />
-                </div>
-                <div className="yt-playlist-heading-text">
-                  <p className="eyebrow">YouTube playlist</p>
-                  <h2>{playlist.title || "Untitled playlist"}</h2>
-                  {playlist.channel.name && (
-                    <p className="yt-playlist-owner">{playlist.channel.name}</p>
-                  )}
-                  <p>
-                    <PlaylistCount playlist={playlist} /> ·{" "}
-                    {playlist.order || "YouTube order"}
-                  </p>
-                  <PlaylistStatus playlist={playlist} />
-                  {!playlist.snapshot_id &&
-                    !playlist.complete &&
-                    collectPlaylist && (
-                      <button
-                        type="button"
-                        className="secondary-button yt-playlist-collect"
-                        disabled={collectingPlaylist}
-                        onClick={() => collectPlaylist(playlist.id)}
-                      >
-                        <RefreshCw size={15} />
-                        {collectingPlaylist
-                          ? "Collecting playlist…"
-                          : "Collect playlist"}
-                      </button>
-                    )}
-                  {playlist.checked_at && (
-                    <p className="yt-playlist-checked">
-                      Last checked{" "}
-                      <time dateTime={playlist.checked_at}>
-                        {new Date(playlist.checked_at).toLocaleString()}
-                      </time>
-                    </p>
-                  )}
-                  {safeUrl(playlist.url) && (
-                    <SourceActions
-                      className="text-button"
-                      href={safeUrl(playlist.url)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      View playlist on YouTube <ArrowUpRight size={14} />
-                    </SourceActions>
-                  )}
-                </div>
+            <div className="yt-playlist-heading">
+              <div className="yt-playlist-cover">
+                <PlaylistImage
+                  key={playlist.thumbnail_url}
+                  playlist={playlist}
+                />
               </div>
-              {!entries.length && !detail.isPending && (
+              <div className="yt-playlist-heading-text">
+                <p className="eyebrow">YouTube playlist</p>
+                <h2>{playlist.title || "Untitled playlist"}</h2>
+                {playlist.channel.name && (
+                  <p className="yt-playlist-owner">{playlist.channel.name}</p>
+                )}
+                <p>
+                  <PlaylistCount playlist={playlist} /> ·{" "}
+                  {playlist.order || "YouTube order"}
+                </p>
+                <PlaylistStatus playlist={playlist} />
+                {!playlist.snapshot_id &&
+                  !playlist.complete &&
+                  collectPlaylist && (
+                    <button
+                      type="button"
+                      className="secondary-button yt-playlist-collect"
+                      disabled={collectingPlaylist}
+                      onClick={() => collectPlaylist(playlist.id)}
+                    >
+                      <RefreshCw size={15} />
+                      {collectingPlaylist
+                        ? "Collecting playlist…"
+                        : "Collect playlist"}
+                    </button>
+                  )}
+                {playlist.checked_at && (
+                  <p className="yt-playlist-checked">
+                    Last checked{" "}
+                    <time dateTime={playlist.checked_at}>
+                      {new Date(playlist.checked_at).toLocaleString()}
+                    </time>
+                  </p>
+                )}
+                {safeUrl(playlist.url) && (
+                  <SourceActions
+                    className="text-button"
+                    href={safeUrl(playlist.url)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View playlist on YouTube <ArrowUpRight size={14} />
+                  </SourceActions>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="yt-tools yt-playlist-search">
+            <SearchField
+              className="yt-search"
+              value={search}
+              onChange={setSearch}
+              onSubmit={() => searchPlaylist(search)}
+              onClear={() => {
+                setSearch("");
+                searchPlaylist("");
+              }}
+              placeholder="Search videos by title or channel"
+              label="Search playlist videos"
+            />
+          </div>
+          {playlist && !detail.isPlaceholderData && (
+            <>
+              {videoQuery && (
+                <p className="yt-playlist-results" role="status">
+                  <Count value={detail.data?.pages[0]?.total ?? 0} />{" "}
+                  {detail.data?.pages[0]?.total === 1
+                    ? "matching video"
+                    : "matching videos"}
+                </p>
+              )}
+              {!entries.length && !detail.isPending && !detail.isError && (
                 <div className="empty-state yt-empty">
                   <ListVideo size={30} />
                   <h2>
-                    {playlist.complete
-                      ? "This playlist is empty"
-                      : "No saved videos yet"}
+                    {videoQuery
+                      ? "No videos match"
+                      : playlist.complete
+                        ? "This playlist is empty"
+                        : "No saved videos yet"}
                   </h2>
                   <p>
-                    {playlist.complete
-                      ? "No videos were present in the captured playlist."
-                      : "Refresh this playlist to check its videos and order."}
+                    {videoQuery
+                      ? "Try a different video title or channel."
+                      : playlist.complete
+                        ? "No videos were present in the captured playlist."
+                        : "Refresh this playlist to check its videos and order."}
                   </p>
                 </div>
               )}
@@ -311,17 +334,10 @@ export function YouTubePlaylists({
               className="yt-search"
               value={search}
               onChange={setSearch}
-              onSubmit={() => {
-                const next = new URLSearchParams(params);
-                if (search.trim()) next.set("q", search.trim());
-                else next.delete("q");
-                navigate(next);
-              }}
+              onSubmit={() => searchPlaylist(search)}
               onClear={() => {
                 setSearch("");
-                const next = new URLSearchParams(params);
-                next.delete("q");
-                navigate(next);
+                searchPlaylist("");
               }}
               placeholder="Search playlists"
               label="Search playlists"
@@ -393,7 +409,7 @@ export function YouTubePlaylists({
           </div>
         </>
       )}
-      {query.isPending && (
+      {(query.isPending || query.isPlaceholderData) && (
         <p className="yt-playlist-loading" role="status">
           {id ? "Loading playlist videos…" : "Loading playlists…"}
         </p>

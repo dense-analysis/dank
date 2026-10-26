@@ -5,6 +5,11 @@
 .yt-playlist-search .yt-search {
   flex: 1 1 240px;
 }
+.yt-playlist-results {
+  margin: -14px 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .yt-playlist-search .sort-select {
   margin-left: 0;
   max-width: none;

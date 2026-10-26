@@ -230,6 +230,11 @@ export function App() {
   );
   const communityName = activeCommunity?.name ?? filters.community;
   const youtubePlaylists = params.get("youtube_view") === "playlists";
+  const youtubePlaylistDetail =
+    section === "youtube" &&
+    youtubePlaylists &&
+    !!params.get("youtube_playlist") &&
+    !params.get("youtube_item");
   const youtubeChannelId = params.get("channel");
   const youtubeFeedId = params.get("feed");
   const activeYouTubeChannel = youtubeSources.data?.channels.find(
@@ -419,6 +424,13 @@ export function App() {
     setMobileOpen(false);
   }
 
+  function backToPlaylists() {
+    const next = new URLSearchParams(params);
+    next.delete("youtube_playlist");
+    next.delete("playlist_q");
+    backTo(next);
+  }
+
   const sidebar = (
     <Sidebar
       section={section}
@@ -531,21 +543,23 @@ export function App() {
           openNavigation={() => setMobileOpen(true)}
           navigationOpen={mobileOpen}
           back={
-            collectionContext
-              ? {
-                  label: `Back to ${blogContext ? "Blogs" : accountContext || forYouContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
-                  onClick: () =>
-                    select(
-                      blogContext
-                        ? "stories"
-                        : accountContext || forYouContext
-                          ? "x"
-                          : communityContext
-                            ? "reddit"
-                            : "youtube",
-                    ),
-                }
-              : undefined
+            youtubePlaylistDetail
+              ? { label: "Back to playlists", onClick: backToPlaylists }
+              : collectionContext
+                ? {
+                    label: `Back to ${blogContext ? "Blogs" : accountContext || forYouContext ? "X posts" : communityContext ? "Reddit" : "YouTube"}`,
+                    onClick: () =>
+                      select(
+                        blogContext
+                          ? "stories"
+                          : accountContext || forYouContext
+                            ? "x"
+                            : communityContext
+                              ? "reddit"
+                              : "youtube",
+                      ),
+                  }
+                : undefined
           }
           avatar={
             activeBlogSource ? (
