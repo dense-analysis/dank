@@ -692,3 +692,15 @@ async def test_only_complete_authenticated_catalog_publishes_library_order(
         )
     ]
     assert empty[0].youtube_playlist_order == ()
+
+
+def test_playlist_posts_keep_listing_labels_without_changing_membership_hash():
+    raw = {**video(), "videoInfo": {"simpleText": "9.5K • 2d ago"}}
+    first = capture(raw)
+    payload = json.loads(playlist_posts(first)[0].payload)
+    assert payload["views_text"] == "9.5K views"
+    assert payload["published_text"] == "2d ago"
+    later = capture({**raw, "videoInfo": {"simpleText": "10K • 3d ago"}})
+    assert snapshot_hash(first.metadata, first.entries) == snapshot_hash(
+        later.metadata, later.entries,
+    )

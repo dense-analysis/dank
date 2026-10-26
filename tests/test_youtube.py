@@ -101,3 +101,82 @@ def test_feed_processing_keeps_text_safe_and_dates_honest() -> None:
         "<p>&lt;script&gt;unsafe&lt;/script&gt;</p><p>Second paragraph</p>"
     )
     assert convert_raw_youtube_post(raw._replace(payload="[]")) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "views", "published"),
+    [
+        (
+            {
+                "videoInfo": {
+                    "runs": [
+                        {"text": "9.5K"},
+                        {"text": " • "},
+                        {"text": "2d ago"},
+                    ],
+                },
+            },
+            "9.5K views",
+            "2d ago",
+        ),
+        (
+            {"videoInfo": {"simpleText": "84K · 10h ago"}},
+            "84K views",
+            "10h ago",
+        ),
+        ({"videoInfo": {"simpleText": "2y ago"}}, "", "2y ago"),
+        ({"videoInfo": {"simpleText": "No views"}}, "No views", ""),
+        (
+            {"videoInfo": {"simpleText": "1.2M • Streamed 3 days ago"}},
+            "1.2M views",
+            "Streamed 3 days ago",
+        ),
+        (
+            {
+                "viewCountText": {"simpleText": "1,234 views"},
+                "publishedTimeText": {"simpleText": "4 days ago"},
+                "videoInfo": {"simpleText": "84K • 10h ago"},
+            },
+            "1,234 views",
+            "4 days ago",
+        ),
+        (
+            {
+                "shortsLockupViewModel": {
+                    "overlayMetadata": {
+                        "secondaryText": {"content": "1.4M views"},
+                    },
+                },
+            },
+            "1.4M views",
+            "",
+        ),
+        (
+            {
+                "shortsLockupViewModel": {
+                    "overlayMetadata": {
+                        "secondaryText": {"content": "3 episodes"},
+                    },
+                },
+            },
+            "",
+            "",
+        ),
+        ({"videoInfo": {"simpleText": "2026"}}, "", ""),
+        ({"videoInfo": {"runs": None}}, "", ""),
+        ({}, "", ""),
+    ],
+)
+def test_playlist_labels_preserve_source_values_without_inventing_dates(
+    raw: object, views: str, published: str,
+):
+    from dank.youtube import playlist_listing_labels
+
+    assert playlist_listing_labels(raw) == {
+        "views_text": views,
+        "published_text": published,
+    }
+    assert playlist_listing_labels({"playlistVideoRenderer": raw}) == {
+        "views_text": views,
+        "published_text": published,
+    }

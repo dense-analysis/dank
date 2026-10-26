@@ -163,6 +163,7 @@
 .yt-playlist-entry .yt-card {
   display: grid;
   grid-template-columns: minmax(150px, 260px) minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   column-gap: 20px;
   align-content: start;
   padding: 12px;
@@ -172,7 +173,7 @@
 }
 .yt-playlist-entry .yt-card > .yt-thumbnail {
   grid-column: 1;
-  grid-row: 1 / span 5;
+  grid-row: 1 / -1;
   margin-bottom: 0;
 }
 .yt-playlist-entry .yt-card > h3,
@@ -182,9 +183,22 @@
   grid-column: 2;
 }
 .yt-playlist-entry .yt-card > h3 {
+  grid-row: 1;
   margin-top: 0;
 }
+.yt-playlist-entry .yt-card > .yt-channel {
+  grid-row: 2;
+}
+.yt-playlist-entry .yt-card > .yt-video-meta {
+  grid-row: 3;
+}
+.yt-playlist-entry .yt-card > .yt-player-actions {
+  grid-row: 4;
+  align-self: start;
+}
 .yt-playlist-entry .yt-card > .yt-card-footer {
+  grid-row: 5;
+  align-self: end;
   margin-top: 10px;
 }
 .yt-playlist-entry .yt-short .yt-thumbnail {
@@ -232,6 +246,7 @@
   }
   .yt-playlist-entry .yt-card {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
     padding: 10px;
   }
   .yt-playlist-entry .yt-card > .yt-thumbnail {
@@ -241,8 +256,11 @@
   }
   .yt-playlist-entry .yt-card > h3,
   .yt-playlist-entry .yt-card > p,
+  .yt-playlist-entry .yt-card > .yt-channel,
+  .yt-playlist-entry .yt-card > .yt-video-meta,
   .yt-playlist-entry .yt-card > .yt-card-footer,
   .yt-playlist-entry .yt-card > .yt-player-actions {
     grid-column: 1;
+    grid-row: auto;
   }
 }

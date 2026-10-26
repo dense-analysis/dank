@@ -550,3 +550,100 @@ test("playlist video search covers unloaded titles and channels, preserving orde
     page.getByRole("searchbox", { name: "Search playlists" }),
   ).toHaveValue("journey");
 });
+
+for (const width of [1440, 390]) {
+  test(`playlist footers sit at the card bottom and retain metadata at ${width}px`, async ({
+    page,
+  }) => {
+    const state = await fixture(page);
+    await page.route("https://www.youtube-nocookie.com/embed/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<html><body>Player</body></html>",
+      }),
+    );
+    state.pageSize = 10;
+    state.entries = [
+      {
+        ...entry(1, "aaaaaaaaaaa", "A video with saved listing information"),
+        views_text: "9.5K views",
+        published_text: "2d ago",
+      },
+      {
+        ...entry(
+          2,
+          "bbbbbbbbbbb",
+          "A longer title that should wrap safely without moving the actions into the middle of this card",
+        ),
+        channel: { id: "", name: "", url: "" },
+        views_text: "",
+        published_text: "",
+      },
+    ];
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`${path}&youtube_playlist=PLsaved`);
+    const cards = page.locator(".yt-playlist-entry .yt-card");
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first().locator(".yt-video-meta")).toHaveText(
+      "9.5K views · 2d ago",
+    );
+    await expect(cards.first().locator(".yt-video-meta")).toHaveAttribute(
+      "title",
+      /Captured/,
+    );
+    for (const card of await cards.all()) {
+      const layout = await card.evaluate((node) => {
+        const card = node.getBoundingClientRect();
+        const footer = node
+          .querySelector(".yt-card-footer")
+          ?.getBoundingClientRect();
+        const meta = node
+          .querySelector(".yt-video-meta")
+          ?.getBoundingClientRect();
+        const title = node.querySelector("h3")?.getBoundingClientRect();
+        if (!footer || !meta || !title)
+          throw new Error("Missing card sections");
+        return {
+          gap: card.bottom - footer.bottom,
+          ordered: title.bottom <= meta.top && meta.bottom <= footer.top,
+        };
+      });
+      expect(layout.gap).toBeGreaterThanOrEqual(9);
+      expect(layout.gap).toBeLessThan(17);
+      expect(layout.ordered).toBe(true);
+    }
+    await cards
+      .first()
+      .getByRole("button", {
+        name: "Play A video with saved listing information",
+        exact: true,
+      })
+      .click();
+    await expect(cards.first().locator(".yt-player-actions")).toBeVisible();
+    const playing = await cards.first().evaluate((node) => {
+      const card = node.getBoundingClientRect();
+      const footer = node
+        .querySelector(".yt-card-footer")
+        ?.getBoundingClientRect();
+      const controls = node
+        .querySelector(".yt-player-actions")
+        ?.getBoundingClientRect();
+      if (!footer || !controls) throw new Error("Missing playback footer");
+      return {
+        gap: card.bottom - footer.bottom,
+        separate: controls.bottom <= footer.top,
+      };
+    });
+    expect(playing.gap).toBeLessThan(17);
+    expect(playing.separate).toBe(true);
+    await cards
+      .first()
+      .getByRole("button", { name: "Close video", exact: true })
+      .click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}

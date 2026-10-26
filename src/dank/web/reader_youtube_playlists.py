@@ -17,7 +17,7 @@ from dank.web.reader_youtube import (  # pyright: ignore[reportPrivateUsage]
     youtube_items,
 )
 from dank.web.reader_youtube_query import YouTubeFilters
-from dank.youtube import VIDEO_ID, payload_object
+from dank.youtube import VIDEO_ID, payload_object, playlist_listing_labels
 
 PLAYLIST_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 PAGE_LIMIT = 100
@@ -421,6 +421,7 @@ def _entry_row(row: dict[str, Any], observed_at: object) -> dict[str, Any]:
     video_id = str(row["video_id"])
     valid = bool(VIDEO_ID.fullmatch(video_id))
     payload = payload_object(row.get("payload"))
+    payload.update(playlist_listing_labels(payload))
     payload.update({
         key: row.get(key) or payload.get(key) or "" for key in (
             "title", "channel_id", "channel_name", "channel_url",

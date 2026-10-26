@@ -492,3 +492,17 @@ async def test_playlist_search_keeps_total_and_original_positions(
     sql, params = client.fetch_json.call_args_list[2].args
     assert params["q"] == "Example" and params["limit"] == 2
     assert "ORDER BY position ASC" in sql
+
+
+def test_existing_playlist_rows_expose_saved_views_and_publication_age():
+    raw = {
+        "videoInfo": {
+            "runs": [{"text": "84K"}, {"text": " • "}, {"text": "10h ago"}],
+        },
+    }
+    row = saved_entry(1, payload=json.dumps(raw))
+    adapted = playlists._entry_row(row, STAMP)  # pyright: ignore[reportPrivateUsage]
+    payload = json.loads(adapted["payload"])
+    assert payload["views_text"] == "84K views"
+    assert payload["published_text"] == "10h ago"
+    assert payload["videoInfo"] == raw["videoInfo"]

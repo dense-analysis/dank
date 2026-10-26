@@ -321,6 +321,9 @@ the captured ranking stable while browsing. Playlists absent from that library
 follow it alphabetically. Cards and playlist videos load more as you scroll.
 Inside a playlist, search matches saved video titles and channel names across
 the full saved snapshot, preserving playlist order and original positions.
+Cards also show the listing's saved views and publication-age labels when
+available. These can be read from existing snapshots without visiting video
+pages; the labels describe the capture, not live counts or exact timestamps.
 
 Playlist contents are collected through yt-dlp HTTP requests and pagination,
 using the verified session for private lists. Browser scrolling is used only

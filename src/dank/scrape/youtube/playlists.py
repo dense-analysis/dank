@@ -11,7 +11,7 @@ from typing import Any, NamedTuple, cast
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from dank.model import RawPost, YouTubePlaylistCapture
-from dank.youtube import VIDEO_ID
+from dank.youtube import VIDEO_ID, playlist_listing_labels
 
 from .payloads import ORIGIN, as_dict, objects, playlist_title, text
 
@@ -514,6 +514,7 @@ def playlist_posts(capture: YouTubePlaylistCapture) -> list[RawPost]:
             "channel_url": entry["channel_url"],
             "thumbnail_url": entry["thumbnail_url"],
             "duration_text": text(renderer.get("lengthText")),
+            **playlist_listing_labels(renderer),
             "detail_capture": {"status": "disabled"},
             "renderer": (
                 renderer if short else {"playlistVideoRenderer": renderer}

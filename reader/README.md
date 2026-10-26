@@ -368,6 +368,8 @@ Inside a playlist, search matches saved video titles and channel names across
 all saved entries, keeping their original positions and order. The search stays
 in the URL through video details and Back. The header back arrow returns to the
 library with its previous search and sort.
+Playlist cards show saved view counts and publication-age labels when YouTube
+includes them in the listing. Hover the metadata for its capture time.
 
 Refresh checks the library or the selected playlist. Its captured count, last
 check, and incomplete or failed status stay visible; saved videos remain

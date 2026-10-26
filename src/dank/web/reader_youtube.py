@@ -30,7 +30,7 @@ from dank.web.reader_youtube_query import (
     youtube_cursor_snapshot,
 )
 from dank.web.reader_youtube_sources import configured_sources
-from dank.youtube import VIDEO_ID, payload_object
+from dank.youtube import VIDEO_ID, payload_object, playlist_listing_labels
 
 MAX_ITEM_DISCOVERIES = 100
 MAX_ITEM_REFERENCES = 100
@@ -199,6 +199,7 @@ async def youtube_items(
 
 def _item(row: dict[str, Any]) -> dict[str, Any]:
     payload = payload_object(row.get("payload"))
+    labels = playlist_listing_labels(payload.get("renderer"))
     item_id = str(row["item_id"])
     is_video = item_id.startswith("video:")
     video_id = item_id.removeprefix("video:") if is_video else None
@@ -228,8 +229,10 @@ def _item(row: dict[str, Any]) -> dict[str, Any]:
         "thumbnail_variants": [],
         "video_url": None,
         "duration_text": str(payload.get("duration_text") or ""),
-        "views_text": str(payload.get("views_text") or ""),
-        "published_text": str(payload.get("published_text") or ""),
+        "views_text": str(payload.get("views_text") or labels["views_text"]),
+        "published_text": str(
+            payload.get("published_text") or labels["published_text"],
+        ),
         "observed_at": _timestamp(row.get("observed_at")),
         "metadata_capture": {
             "status": (

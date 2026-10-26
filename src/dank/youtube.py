@@ -83,6 +83,72 @@ def payload_object(value: object) -> dict[str, Any]:
     return cast(dict[str, Any], data) if isinstance(data, dict) else {}
 
 
+def _listing_text(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+
+    data = payload_object(value)
+
+    for key in ("simpleText", "content"):
+        if isinstance(data.get(key), str):
+            return str(data[key]).strip()
+
+    runs = data.get("runs")
+
+    if not isinstance(runs, list):
+        return ""
+
+    return "".join(
+        part
+        for run in cast(list[object], runs)
+        if isinstance(part := payload_object(run).get("text"), str)
+    ).strip()
+
+
+def _view_label(value: str, *, bare: bool = False) -> str:
+    if re.fullmatch(r"no views", value, re.IGNORECASE):
+        return value
+
+    match = re.fullmatch(
+        r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*"
+        r"(?:K|M|B|thousand|million|billion)?"
+        r"(?:\s+(views?|watching(?: now)?))?", value, re.IGNORECASE,
+    )
+
+    if match and (match[1] or bare):
+        return value if match[1] else value + " views"
+
+    return ""
+
+
+def playlist_listing_labels(value: object) -> dict[str, str]:
+    """Read saved labels without inventing dates or fetching video details."""
+    data = payload_object(value)
+    data = payload_object(data.get("playlistVideoRenderer")) or data
+    short = payload_object(data.get("shortsLockupViewModel"))
+    views = _listing_text(data.get("viewCountText")) or _listing_text(
+        data.get("shortViewCountText"),
+    )
+    views = _view_label(views, bare=True)
+    published = _listing_text(data.get("publishedTimeText"))
+    parts = [part.strip() for part in re.split(
+        r"[•·]", _listing_text(data.get("videoInfo")),
+    ) if part.strip()]
+
+    if not views and parts:
+        views = _view_label(parts[0], bare=len(parts) > 1)
+
+    if not views:
+        overlay = payload_object(short.get("overlayMetadata"))
+        views = _view_label(_listing_text(overlay.get("secondaryText")))
+
+    if not published:
+        published = next((part for part in parts
+                          if re.search(r"\bago\b", part, re.IGNORECASE)), "")
+
+    return {"views_text": views, "published_text": published}
+
+
 def discovery_from_post(post: RawPost, run_id: str) -> YouTubeDiscovery:
     payload = payload_object(post.payload)
     discovery = payload_object(payload.get("discovery"))

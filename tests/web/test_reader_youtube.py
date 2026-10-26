@@ -552,3 +552,25 @@ def test_home_history_rejects_invalid_or_earlier_cutoff(snapshot: str):
 
     with pytest.raises(ValueError, match="Invalid cursor"):
         decode_youtube_cursor(filters._replace(cursor=cursor))
+
+
+def test_legacy_playlist_discovery_reuses_listing_labels():
+    from dank.web.reader_youtube import (
+        _item,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    payload: dict[str, Any] = {
+        "renderer": {
+            "playlistVideoRenderer": {
+                "videoInfo": {"simpleText": "9.5K • 2d ago"},
+            },
+        },
+    }
+    row = {"item_id": "video:aaaaaaaaaaa", "payload": json.dumps(payload)}
+    item = _item(row)
+    assert item["views_text"] == "9.5K views"
+    assert item["published_text"] == "2d ago"
+    payload.update(views_text="12K views", published_text="1 day ago")
+    current = _item({**row, "payload": json.dumps(payload)})
+    assert current["views_text"] == "12K views"
+    assert current["published_text"] == "1 day ago"

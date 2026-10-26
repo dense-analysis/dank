@@ -1,5 +1,6 @@
 import { ArrowUpRight, Check, Info, Link2, Play, X } from "lucide-react";
 import { useState } from "react";
+import { dateLabel } from "../lib/timestamps";
 import { safeUrl } from "../lib/urls";
 import { youtubeEmbedUrl } from "../lib/youtube";
 import {
@@ -188,7 +189,20 @@ export function YouTubeCard({
           {item.channel.name && (
             <p className="yt-channel">{item.channel.name}</p>
           )}
-          <p className="yt-video-meta" title={item.views_text || undefined}>
+          <p
+            className="yt-video-meta"
+            title={
+              [
+                item.views_text,
+                item.published_text,
+                item.observed_at
+                  ? `Captured ${dateLabel(item.observed_at)}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            }
+          >
             {[views, item.published_text].filter(Boolean).join(" · ") ||
               "Discovered in your collected feeds"}
           </p>

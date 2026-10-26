@@ -1105,6 +1105,11 @@ unavailable original pages still apply. See [scope tests](
 
 ### YouTube playlist snapshots
 
+- Cards read view counts and publication-age labels from saved listing
+  renderers, including older snapshots. Missing fields remain unknown; no
+  per-video request is added. Rounded counts and relative ages describe the
+  capture time shown on hover. These changing labels do not invalidate the
+  membership hash or trigger repeated processing of unchanged playlists.
 - Playlist contents use an isolated yt-dlp worker; browser scrolling remains
   responsible for saved-library discovery and its Recently added order.
   The pinned extractor owns HTTP and pagination; a selected-tab/continuation
