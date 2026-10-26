@@ -28,24 +28,37 @@ class PlaylistPage(NamedTuple):
     q: str = ""
     snapshot: str = ""
     after: tuple[str, str] | int | None = None
+    sort: str = "recent"
 
 
 def playlist_cursor(
-    identity: str, query: str, snapshot: str,
+    identity: str,
+    query: str,
+    snapshot: str,
     after: tuple[str, str] | int,
+    sort: str = "recent",
 ) -> str:
-    return base64.urlsafe_b64encode(json.dumps([
-        identity, query, snapshot, after,
-    ]).encode()).decode()
+    return base64.urlsafe_b64encode(
+        json.dumps(
+            [
+                identity,
+                query,
+                snapshot,
+                after,
+                sort,
+            ],
+        ).encode(),
+    ).decode()
 
 
 def parse_page(
-    query: MultiMapping[str], playlist_id: str = "",
+    query: MultiMapping[str],
+    playlist_id: str = "",
 ) -> PlaylistPage:
     allowed = {"limit", "cursor"}
 
     if not playlist_id:
-        allowed.add("q")
+        allowed.update({"q", "sort"})
 
     if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
         raise ValueError("Unknown or repeated playlist filter")
@@ -56,6 +69,10 @@ def parse_page(
         raise ValueError("Playlist limit must be an integer") from None
 
     search = query.get("q", "").strip()
+    sort = query.get("sort", "recent")
+
+    if sort not in {"recent", "az"}:
+        raise ValueError("Playlist sort must be recent or az")
 
     if not 1 <= limit <= PAGE_LIMIT or len(search) > 2000:
         raise ValueError("Invalid playlist limit or search")
@@ -67,28 +84,35 @@ def parse_page(
     after = None
 
     if cursor := query.get("cursor", ""):
-        snapshot, after = parse_cursor(cursor, playlist_id, search)
+        snapshot, after = parse_cursor(cursor, playlist_id, search, sort)
 
-    return PlaylistPage(limit, search, snapshot, after)
+    return PlaylistPage(limit, search, snapshot, after, sort)
 
 
 def parse_cursor(
-    cursor: str, identity: str, query: str,
+    cursor: str,
+    identity: str,
+    query: str,
+    sort: str = "recent",
 ) -> tuple[str, tuple[str, str] | int]:
     try:
         if len(cursor) > 16384:
             raise ValueError
 
-        decoded: object = json.loads(base64.b64decode(
-            cursor, altchars=b"-_", validate=True,
-        ))
+        decoded: object = json.loads(
+            base64.b64decode(
+                cursor,
+                altchars=b"-_",
+                validate=True,
+            ),
+        )
 
         if not isinstance(decoded, list):
             raise ValueError
 
         values = cast(list[Any], decoded)
 
-        if len(values) != 4:
+        if len(values) != 5 or values[4] != sort:
             raise ValueError
 
         if values[:2] != [identity, query] or not isinstance(values[2], str):
@@ -137,33 +161,55 @@ def latest_playlists_query(*, individual: bool = False) -> str:
 
 
 def library_query(
-    page: PlaylistPage, *, count: bool = False,
+    page: PlaylistPage,
+    *,
+    count: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     params: dict[str, Any] = {"snapshot": page.snapshot}
     conditions: list[str] = []
 
     if page.q:
-        conditions.append("positionCaseInsensitiveUTF8(concat(title, ' ', "
-                          "description, ' ', channel_name), %(q)s) > 0")
+        conditions.append(
+            "positionCaseInsensitiveUTF8(concat(title, ' ', "
+            "description, ' ', channel_name), %(q)s) > 0",
+        )
         params["q"] = page.q
 
     if isinstance(page.after, tuple) and not count:
-        conditions.append("(lowerUTF8(title), playlist_id) > "
-                          "(%(after_title)s, %(after_id)s)")
-        params.update(after_title=page.after[0], after_id=page.after[1])
+        conditions.append(
+            "(sort_key, playlist_id) > (%(after_key)s, %(after_id)s)",
+        )
+        params.update(after_key=page.after[0], after_id=page.after[1])
 
-    select = ("count() AS total" if count
-              else "*, lowerUTF8(title) AS sort_title")
+    select = "count() AS total" if count else "*"
     where = " WHERE " + " AND ".join(conditions) if conditions else ""
-    order = "" if count else (
-        " ORDER BY sort_title ASC, playlist_id ASC LIMIT %(limit)s"
+    order = (
+        ""
+        if count
+        else (" ORDER BY sort_key ASC, playlist_id ASC LIMIT %(limit)s")
     )
     params["limit"] = page.limit + 1
 
-    return (
-        f"SELECT {select} FROM ({latest_playlists_query()}){where}{order}",
-        params,
-    )
+    key = "lowerUTF8(title)"
+
+    if page.sort == "recent":
+        library = (
+            "SELECT any(playlist_ids) FROM (SELECT playlist_ids "
+            "FROM youtube_playlist_library WHERE observed_at <= "
+            "parseDateTime64BestEffort(%(snapshot)s, 6) "
+            "ORDER BY observed_at DESC LIMIT 1)"
+        )
+        rank = f"indexOf(({library}), playlist_id)"
+        # Source positions are authoritative. Archived/configured playlists
+        # absent from that library follow it alphabetically.
+        key = (
+            f"concat(leftPad(toString(if({rank} = 0, 4294967295, "
+            f"{rank})), 10, '0'), lowerUTF8(title))"
+        )
+
+    ordered = f"SELECT *, {key} AS sort_key FROM ({latest_playlists_query()})"
+
+    return f"SELECT {select} FROM ({ordered}){where}{order}", params
 
 
 def playlist_metadata(row: dict[str, Any]) -> dict[str, Any]:
@@ -199,16 +245,26 @@ def _timestamp(value: object) -> str:
 
 
 async def playlist_snapshot_time(
-    client: ClickHouseClient, playlist_id: str = "",
+    client: ClickHouseClient,
+    playlist_id: str = "",
 ) -> str:
     # A capture can finish before its rows are published. Freeze on a persisted
     # check, so publishing that in-flight capture cannot change a later page.
     where = " WHERE playlist_id = %(playlist_id)s" if playlist_id else ""
-    result = await client.fetch_json(
+    query = (
         "SELECT max(checked_at) AS snapshot_time FROM youtube_playlists"
-        + where,
-        {"playlist_id": playlist_id},
+        + where
     )
+
+    if not playlist_id:
+        query = (
+            "SELECT max(snapshot_time) AS snapshot_time FROM ("
+            + query
+            + " UNION ALL SELECT max(observed_at) AS snapshot_time "
+            "FROM youtube_playlist_library)"
+        )
+
+    result = await client.fetch_json(query, {"playlist_id": playlist_id})
     value = result.rows[0].get("snapshot_time") if result.rows else None
 
     return _timestamp(value) or (
@@ -229,20 +285,29 @@ async def handle_playlists(request: web.Request) -> web.Response:
 
     result = await client.fetch_json(*library_query(page))
     totals = await client.fetch_json(*library_query(page, count=True))
-    rows = result.rows[:page.limit]
+    rows = result.rows[: page.limit]
     cursor = None
 
     if len(result.rows) > page.limit and rows:
         last = rows[-1]
-        cursor = playlist_cursor("", page.q, page.snapshot, (
-            str(last["sort_title"]), str(last["playlist_id"]),
-        ))
+        cursor = playlist_cursor(
+            "",
+            page.q,
+            page.snapshot,
+            (
+                str(last["sort_key"]),
+                str(last["playlist_id"]),
+            ),
+            page.sort,
+        )
 
-    return web.json_response({
-        "playlists": [playlist_metadata(row) for row in rows],
-        "total": int(totals.rows[0]["total"]) if totals.rows else 0,
-        "next_cursor": cursor,
-    })
+    return web.json_response(
+        {
+            "playlists": [playlist_metadata(row) for row in rows],
+            "total": int(totals.rows[0]["total"]) if totals.rows else 0,
+            "next_cursor": cursor,
+        },
+    )
 
 
 async def handle_playlist(request: web.Request) -> web.Response:

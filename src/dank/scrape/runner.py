@@ -899,6 +899,11 @@ async def _collect_source(
                             "youtube_playlists", playlist_rows,
                         )
 
+                    if batch.youtube_playlist_order is not None:
+                        await _persist_youtube_playlist_order(
+                            client, batch.youtube_playlist_order,
+                        )
+
                     stats.counts["posts_saved"] += batch.post_count
                     stats.counts["post_references_saved"] += (
                         batch.reference_count
@@ -1608,6 +1613,17 @@ async def _prepare_youtube_playlists(
                 stats.error_type = "YouTubePlaylistIncomplete"
 
     return batch._replace(posts=posts, youtube_playlists=()), metadata_rows
+
+
+async def _persist_youtube_playlist_order(
+    client: ClickHouseClient, playlist_ids: tuple[str, ...],
+) -> None:
+    # Publish the complete library order after its cards exist. Individual
+    # playlist checks cannot change this ranking or its pagination cutoff.
+    await client.insert_rows("youtube_playlist_library", [{
+        "observed_at": datetime.datetime.now(datetime.UTC),
+        "playlist_ids": list(playlist_ids),
+    }])
 
 
 async def _known_youtube_channel_ids(

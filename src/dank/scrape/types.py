@@ -26,6 +26,7 @@ class ScrapeBatch(NamedTuple):
     communities: tuple[RedditCommunityDiscovery, ...] = ()
     youtube_channels: tuple[YouTubeChannelDiscovery, ...] = ()
     youtube_playlists: tuple[YouTubePlaylistCapture, ...] = ()
+    youtube_playlist_order: tuple[str, ...] | None = None
 
 
     @property

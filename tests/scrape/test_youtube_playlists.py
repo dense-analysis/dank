@@ -537,7 +537,6 @@ async def test_exhausted_visible_snapshot_can_replace_complete() -> None:
     assert rows[0]["status"] == "partial"
 
 
-
 def short_card(identifier: str, occurrence: str) -> dict[str, Any]:
     return {"richItemRenderer": {"content": {"shortsLockupViewModel": {
         "entityId": occurrence, "indexInCollection": 0,
@@ -629,11 +628,67 @@ async def test_partial_catalog_cards_are_persistable_before_failure(
 
     monkeypatch.setattr(playlist_browser, "_library_cards", discover)
     batches = playlist_browser.collect_playlist_library(
-        AsyncMock(), YouTubeSettings(authenticated=True), {}, excluded=set(),
+        AsyncMock(),
+        YouTubeSettings(authenticated=True),
+        {},
+        excluded=set(),
     )
     first = await anext(batches)
     assert first.youtube_playlists[0].playlist_id == "PLtest"
     assert first.youtube_playlists[0].status == "not_collected"
+    assert first.youtube_playlist_order is None
 
     with pytest.raises(playlist_browser.PlaylistIncomplete):
         await anext(batches)
+
+
+async def test_only_complete_authenticated_catalog_publishes_library_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cards = (playlist_metadata("PLz", {}), playlist_metadata("PLa", {}))
+    monkeypatch.setattr(
+        playlist_browser, "_library_cards", AsyncMock(return_value=cards),
+    )
+    monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 0)
+    batches = [
+        batch
+        async for batch in playlist_browser.collect_playlist_library(
+            AsyncMock(),
+            YouTubeSettings(authenticated=True),
+            {},
+            excluded=set(),
+        )
+    ]
+    order = batches[0].youtube_playlist_order
+    assert order is not None
+    assert order == ("PLz", "PLa")
+    client = AsyncMock()
+    await runner._persist_youtube_playlist_order(  # pyright: ignore[reportPrivateUsage]
+        client,
+        order,
+    )
+    table, rows = client.insert_rows.call_args.args
+    assert table == "youtube_playlist_library"
+    assert rows[0]["playlist_ids"] == ["PLz", "PLa"]
+    assert isinstance(rows[0]["observed_at"], datetime.datetime)
+    unsigned = [
+        batch
+        async for batch in playlist_browser.collect_playlist_library(
+            AsyncMock(),
+            YouTubeSettings(),
+            {c["playlist_id"]: c for c in cards},
+            excluded=set(),
+        )
+    ]
+    assert unsigned[0].youtube_playlist_order is None
+
+    monkeypatch.setattr(
+        playlist_browser, "_library_cards", AsyncMock(return_value=()),
+    )
+    empty = [
+        batch async for batch in playlist_browser.collect_playlist_library(
+            AsyncMock(), YouTubeSettings(authenticated=True), {},
+            excluded=set(),
+        )
+    ]
+    assert empty[0].youtube_playlist_order == ()

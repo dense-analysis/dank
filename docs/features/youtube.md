@@ -315,6 +315,12 @@ YouTube session. Public playlist URLs in a source's `feed_urls` work without
 sign-in. Turning `playlists` off disables library discovery and revisits; explicit
 playlist URLs still collect.
 
+The library defaults to **Recently added**, using the order from YouTube's
+saved library, with an **A–Z** alternative. A complete library refresh updates
+that ranking independently of individual playlist checks. Pagination keeps
+the captured ranking stable while browsing. Playlists absent from that library
+follow it alphabetically. Cards and playlist videos load more as you scroll.
+
 Refresh reads flat listing metadata and every available continuation. The
 snapshot hash includes playlist metadata, the selected sort label and ordered
 video occurrences, so reorderings and same-count replacements are detected.

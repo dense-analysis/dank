@@ -1108,6 +1108,11 @@ unavailable original pages still apply. See [scope tests](
 
 ### YouTube playlist snapshots
 
+- Library ranking is published only after a complete authenticated catalog
+  traversal. A partial catalog keeps the previous order; checking one playlist
+  does not move it to the top. Recently added follows YouTube's captured library
+  order, not collection timestamps. The ranking and sort choice are pinned
+  during pagination; playlists absent from the captured catalog follow it A–Z.
 - Saved-library discovery uses the separate authenticated YouTube browser
   session; public configured playlists do not need sign-in. It retains observed
   cards if catalog traversal fails and never deletes a saved playlist merely

@@ -435,6 +435,13 @@ CREATE TABLE IF NOT EXISTS dank.youtube_playlists (
 ENGINE = MergeTree
 ORDER BY (playlist_id, checked_at);
 
+CREATE TABLE IF NOT EXISTS dank.youtube_playlist_library (
+    observed_at DateTime64(6, 'UTC'),
+    playlist_ids Array(String)
+)
+ENGINE = MergeTree
+ORDER BY observed_at;
+
 CREATE TABLE IF NOT EXISTS dank.youtube_playlist_entries (
     playlist_id String,
     snapshot_hash String,

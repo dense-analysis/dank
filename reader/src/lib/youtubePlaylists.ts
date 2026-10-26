@@ -2,6 +2,8 @@ import { request } from "./api";
 import { isRecord } from "./validation";
 import { isYouTubeItem, type YouTubeItem } from "./youtubeCollection";
 
+export type YouTubePlaylistSort = "recent" | "az";
+
 export interface YouTubePlaylist {
   id: string;
   title: string;
@@ -72,8 +74,9 @@ export async function fetchYouTubePlaylists(
   q = "",
   cursor?: string,
   signal?: AbortSignal,
+  sort: YouTubePlaylistSort = "recent",
 ): Promise<YouTubePlaylistPage> {
-  const params = new URLSearchParams({ limit: "30" });
+  const params = new URLSearchParams({ limit: "30", sort });
   if (q) params.set("q", q);
   if (cursor) params.set("cursor", cursor);
   const body = await request(`/youtube/playlists?${params}`, signal);

@@ -360,7 +360,10 @@ See [Hacker News collection settings](../docs/features/hacker-news.md).
 library under YouTube. Open a playlist to browse its saved videos in the order
 YouTube returned, including repeated videos and explicit unavailable entries.
 Playlist and video links preserve the selected playlist through reload and Back.
-The playlist view uses source order rather than the ordinary feed sort.
+The library defaults to **Recently added**, following YouTube's last captured
+library order, with **A–Z** available in the sort menu. The choice stays in the
+URL through search, opening a playlist and Back. Playlist cards and video lists
+load more automatically as you scroll; failed pages retain a retry control.
 
 Refresh checks the library or the selected playlist. Its captured count, last
 check, and incomplete or failed status stay visible; saved videos remain

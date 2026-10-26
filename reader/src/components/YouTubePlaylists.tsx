@@ -1,20 +1,20 @@
 import "../youtube-playlists.css";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
-  ArrowDown,
   ArrowLeft,
   ArrowUpRight,
   ListVideo,
   RefreshCw,
   VideoOff,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { safeUrl } from "../lib/urls";
 import { type YouTubeItem, youtubeImageUrl } from "../lib/youtubeCollection";
 import {
   fetchYouTubePlaylist,
   fetchYouTubePlaylists,
   type YouTubePlaylist,
+  type YouTubePlaylistSort,
 } from "../lib/youtubePlaylists";
 import { Count } from "./Count";
 import { NavigableCard } from "./NavigableCard";
@@ -97,12 +97,14 @@ export function YouTubePlaylists({
 }) {
   const id = params.get("youtube_playlist") ?? "";
   const q = (params.get("q") ?? "").trim();
+  const sort: YouTubePlaylistSort =
+    params.get("playlist_sort") === "az" ? "az" : "recent";
   const [search, setSearch] = useState(q);
   useEffect(() => setSearch(q), [q]);
   const library = useInfiniteQuery({
-    queryKey: ["youtube-playlists", q],
+    queryKey: ["youtube-playlists", q, sort],
     queryFn: ({ pageParam, signal }) =>
-      fetchYouTubePlaylists(q, pageParam, signal),
+      fetchYouTubePlaylists(q, pageParam, signal, sort),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !id,
@@ -126,6 +128,31 @@ export function YouTubePlaylists({
   // Membership entries, including repeated video IDs, belong to YouTube's order.
   const entries = detail.data?.pages.flatMap((page) => page.items) ?? [];
   const query = id ? detail : library;
+  const more = useRef<HTMLDivElement>(null);
+  const { hasNextPage, isFetching, isError, fetchNextPage } = query;
+  useEffect(() => {
+    if (
+      !more.current ||
+      !hasNextPage ||
+      isFetching ||
+      isError ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          void fetchNextPage({ cancelRefetch: false });
+        }
+      },
+      { rootMargin: "0px 0px 240px 0px" },
+    );
+    observer.observe(more.current);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetching, isError, fetchNextPage]);
   const libraryParams = new URLSearchParams(params);
   libraryParams.delete("youtube_playlist");
   libraryParams.delete("youtube_item");
@@ -265,6 +292,21 @@ export function YouTubePlaylists({
             </div>
           </div>
           <div className="yt-tools yt-playlist-search">
+            <select
+              className="sort-select"
+              aria-label="Sort playlists"
+              value={sort}
+              onChange={(event) => {
+                const next = new URLSearchParams(params);
+                if (event.target.value === "az")
+                  next.set("playlist_sort", "az");
+                else next.delete("playlist_sort");
+                navigate(next);
+              }}
+            >
+              <option value="recent">Recently added</option>
+              <option value="az">A–Z</option>
+            </select>
             <SearchField
               className="yt-search"
               value={search}
@@ -345,13 +387,6 @@ export function YouTubePlaylists({
                       </span>
                     )}
                   </p>
-                  <ReaderLink
-                    className="text-button"
-                    href={target}
-                    onNavigate={visit}
-                  >
-                    View playlist <ArrowUpRight size={13} />
-                  </ReaderLink>
                 </NavigableCard>
               );
             })}
@@ -379,21 +414,15 @@ export function YouTubePlaylists({
           </button>
         </div>
       )}
-      {query.hasNextPage && (
-        <div className="load-more">
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={query.isFetching}
-            onClick={() => void query.fetchNextPage({ cancelRefetch: false })}
-          >
+      {query.hasNextPage && !query.isError && (
+        <div className="load-more" ref={more}>
+          <span role="status">
             {query.isFetchingNextPage
-              ? "Loading…"
-              : id
-                ? "More videos"
-                : "More playlists"}
-            <ArrowDown size={15} />
-          </button>
+              ? id
+                ? "Loading more videos…"
+                : "Loading more playlists…"
+              : "Scroll for more"}
+          </span>
         </div>
       )}
     </div>

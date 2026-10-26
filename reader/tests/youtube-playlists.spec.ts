@@ -78,6 +78,9 @@ async function fixture(page: Page) {
     ],
     fail: false,
     failMore: false,
+    failLibraryMore: false,
+    libraryPageSize: 30,
+    libraryRequests: [] as { sort: string; cursor: string | null }[],
     pageSize: 2,
     scopes: [] as RefreshScope[],
     jobs: [] as RefreshJob[],
@@ -116,7 +119,10 @@ async function fixture(page: Page) {
         json: { feeds: [], channels: [], total: 0, linked_count: 0 },
       });
     if (url.pathname.endsWith("/youtube/playlists")) {
-      if (state.fail)
+      const cursor = url.searchParams.get("cursor");
+      const sort = url.searchParams.get("sort") ?? "recent";
+      state.libraryRequests.push({ sort, cursor });
+      if (state.fail || (state.failLibraryMore && cursor))
         return route.fulfill({
           status: 503,
           json: { detail: "Playlists temporarily unavailable" },
@@ -126,8 +132,17 @@ async function fixture(page: Page) {
           .toLowerCase()
           .includes((url.searchParams.get("q") ?? "").toLowerCase()),
       );
+      if (sort === "az") rows.sort((a, b) => a.title.localeCompare(b.title));
+      const offset = Number(cursor ?? 0);
       return route.fulfill({
-        json: { playlists: rows, total: rows.length, next_cursor: null },
+        json: {
+          playlists: rows.slice(offset, offset + state.libraryPageSize),
+          total: rows.length,
+          next_cursor:
+            offset + state.libraryPageSize < rows.length
+              ? String(offset + state.libraryPageSize)
+              : null,
+        },
       });
     }
     if (url.pathname.includes("/youtube/playlists/")) {
@@ -139,7 +154,10 @@ async function fixture(page: Page) {
       const offset = Number(url.searchParams.get("cursor") ?? 0);
       return route.fulfill({
         json: {
-          playlist: state.playlists[0],
+          playlist:
+            state.playlists.find((item) =>
+              url.pathname.endsWith(`/${item.id}`),
+            ) ?? state.playlists[0],
           items: state.entries.slice(offset, offset + state.pageSize),
           total: state.entries.length,
           next_cursor:
@@ -177,11 +195,7 @@ test("sidebar library to ordered playlist to video and Back preserves URL and du
   await expect(page).toHaveURL(/youtube_view=playlists/);
   await page.getByRole("link", { name: playlist.title, exact: true }).click();
   await expect(page).toHaveURL(/youtube_playlist=PLsaved/);
-  await expect(page.locator(".yt-playlist-entry h3")).toHaveText([
-    "Second release, first in playlist",
-    "First release, second in playlist",
-  ]);
-  await page.getByRole("button", { name: "More videos" }).click();
+  await page.locator(".yt-playlist-entry").last().scrollIntoViewIfNeeded();
   await expect(page.locator(".yt-playlist-entry h3")).toHaveText([
     "Second release, first in playlist",
     "First release, second in playlist",
@@ -265,10 +279,10 @@ test("search, empty library, partial capture and pagination failures stay explic
   ).toBeVisible();
   await page.getByRole("button", { name: "Clear search" }).click();
   state.playlists = [{ ...playlist, complete: false, status: "partial" }];
+  state.failMore = true;
   await page.getByRole("link", { name: playlist.title, exact: true }).click();
   await expect(page.getByText(/Partial playlist\. Some videos/)).toBeVisible();
-  state.failMore = true;
-  await page.getByRole("button", { name: "More videos" }).click();
+  await page.locator(".yt-playlist-entry").last().scrollIntoViewIfNeeded();
   await expect(
     page
       .getByRole("alert")
@@ -369,4 +383,81 @@ test("library failure can retry and playlist cards retain native background link
     path: "test-results/youtube-playlist-desktop.png",
     fullPage: true,
   });
+});
+
+test("recent library order defaults, A–Z survives navigation, and scrolling loads every page", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.playlists = Array.from({ length: 65 }, (_, i) => ({
+    ...playlist,
+    id: `PL${64 - i}`,
+    title: `Playlist ${String(64 - i).padStart(3, "0")}`,
+  }));
+  await page.goto(path);
+  const cards = page.locator(".yt-playlist-card");
+  const sort = page.getByRole("combobox", { name: "Sort playlists" });
+  await expect(sort).toHaveValue("recent");
+  await expect(cards).toHaveCount(30);
+  await expect(cards.first().locator("h3")).toHaveText("Playlist 064");
+  await expect(page.getByRole("link", { name: /^View playlist/ })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "More playlists" }),
+  ).toHaveCount(0);
+  await sort.selectOption("az");
+  await expect(page).toHaveURL(/playlist_sort=az/);
+  await expect(cards.first().locator("h3")).toHaveText("Playlist 000");
+  await cards.first().locator(".yt-playlist-artwork").click();
+  await expect(
+    page.getByRole("heading", { name: "Playlist 000", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("link", { name: "Back to playlists", exact: true })
+    .click();
+  await page.reload();
+  await expect(sort).toHaveValue("az");
+  await expect(cards.first().locator("h3")).toHaveText("Playlist 000");
+  await sort.selectOption("recent");
+  await expect(cards.first().locator("h3")).toHaveText("Playlist 064");
+  await cards.last().scrollIntoViewIfNeeded();
+  await expect(cards).toHaveCount(60);
+  await cards.last().scrollIntoViewIfNeeded();
+  await expect(cards).toHaveCount(65);
+  await expect(cards.last().locator("h3")).toHaveText("Playlist 000");
+  await expect(page.locator(".load-more")).toHaveCount(0);
+  expect(
+    state.libraryRequests.some((r) => r.sort === "recent" && r.cursor === "60"),
+  ).toBe(true);
+});
+
+test("failed automatic playlist pagination retains cards and waits for explicit retry", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.playlists = Array.from({ length: 35 }, (_, i) => ({
+    ...playlist,
+    id: `PL${i}`,
+    title: `List ${i}`,
+  }));
+  state.failLibraryMore = true;
+  await page.goto(path);
+  const cards = page.locator(".yt-playlist-card");
+  await expect(cards).toHaveCount(30);
+  await cards.last().scrollIntoViewIfNeeded();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Playlists temporarily unavailable" }),
+  ).toBeVisible();
+  await expect(cards).toHaveCount(30);
+  const attempts = state.libraryRequests.length;
+  await page.waitForTimeout(500);
+  expect(state.libraryRequests.length).toBe(attempts);
+  state.failLibraryMore = false;
+  await page
+    .getByRole("button", { name: "Retry playlists", exact: true })
+    .click();
+  await expect(cards).toHaveCount(35);
 });

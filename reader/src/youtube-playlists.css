@@ -1,5 +1,20 @@
 .yt-playlist-search {
   margin-bottom: 30px;
+  flex-wrap: wrap;
+}
+.yt-playlist-search .yt-search {
+  flex: 1 1 240px;
+}
+.yt-playlist-search .sort-select {
+  margin-left: 0;
+  max-width: none;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 .yt-playlist-grid {
   display: grid;

@@ -125,7 +125,7 @@ export function useRefresh(navigate: (params: URLSearchParams) => void) {
             });
           } else {
             await client.fetchInfiniteQuery({
-              queryKey: ["youtube-playlists", ""],
+              queryKey: ["youtube-playlists", "", "recent"],
               queryFn: ({ pageParam, signal }) =>
                 fetchYouTubePlaylists("", pageParam, signal),
               initialPageParam: undefined as string | undefined,

@@ -25,7 +25,7 @@ def saved_playlist(**changes: Any) -> dict[str, Any]:
     return {
         "playlist_id": "PLexample",
         "title": "Saved music",
-        "sort_title": "saved music",
+        "sort_key": "0000000001saved music",
         "url": "https://www.youtube.com/playlist?list=PLexample",
         "description": "Saved playlist",
         "thumbnail_url": "https://i.ytimg.com/example.jpg",
@@ -89,7 +89,10 @@ def test_saved_shorts_playlist_entries_use_short_presentation():
 
 def test_playlist_cursor_binds_search_target_and_microsecond_snapshot():
     cursor = playlists.playlist_cursor(
-        "", "music", STAMP, ("saved music", "PLexample"),
+        "",
+        "music",
+        STAMP,
+        ("saved music", "PLexample"),
     )
     page = playlists.parse_page(
         MultiDict({"cursor": cursor, "q": "music", "limit": "1"}),
@@ -99,13 +102,13 @@ def test_playlist_cursor_binds_search_target_and_microsecond_snapshot():
     sql, params = playlists.library_query(page)
     assert "parseDateTime64BestEffort(%(snapshot)s, 6)" in sql
     assert sql.index("checked_at <=") < sql.index("LIMIT 1 BY playlist_id")
-    assert "(lowerUTF8(title), playlist_id) >" in sql
+    assert "(sort_key, playlist_id) >" in sql
     assert params["limit"] == 2
     assert params["snapshot"] == STAMP
     bound, _ = bind_query(sql, params)
     assert "%(" not in bound
     count_sql, _ = playlists.library_query(page, count=True)
-    assert "after_title" not in count_sql
+    assert "after_key" not in count_sql
 
     with pytest.raises(ValueError):
         playlists.parse_page(MultiDict({"cursor": cursor, "q": "changed"}))
@@ -183,10 +186,11 @@ async def test_library_reports_count_status_and_next_cursor(tmp_path: Path):
     assert body["next_cursor"]
     snapshot, after = playlists.parse_cursor(body["next_cursor"], "", "")
     assert snapshot == STAMP
-    assert "SELECT max(checked_at)" in (
-        client.fetch_json.call_args_list[0].args[0]
+    assert (
+        "SELECT max(checked_at)"
+        in (client.fetch_json.call_args_list[0].args[0])
     )
-    assert after == ("saved music", "PLexample")
+    assert after == ("0000000001saved music", "PLexample")
 
 
 async def test_detail_retains_duplicate_occurrences_and_unavailable_positions(
@@ -389,3 +393,29 @@ async def test_empty_library_uses_valid_persisted_cutoff(tmp_path: Path):
     assert dt.datetime.fromisoformat(params["snapshot"]) == (
         dt.datetime.fromtimestamp(0, dt.UTC)
     )
+
+
+def test_library_defaults_to_source_order_and_binds_cursor_to_sort():
+    recent = playlists.parse_page(MultiDict())
+    assert recent.sort == "recent"
+    sql, params = playlists.library_query(recent._replace(snapshot=STAMP))
+    assert "youtube_playlist_library" in sql
+    assert "observed_at <=" in sql
+    assert "indexOf(" in sql
+    bound, _ = bind_query(sql, params)
+    assert "%(" not in bound
+    alphabetical = playlists.parse_page(MultiDict({"sort": "az"}))
+    sql, _ = playlists.library_query(alphabetical._replace(snapshot=STAMP))
+    assert "lowerUTF8(title) AS sort_key" in sql
+    assert "indexOf(" not in sql
+    cursor = playlists.playlist_cursor("", "", STAMP, ("music", "PLid"), "az")
+    assert (
+        playlists.parse_page(MultiDict({"sort": "az", "cursor": cursor})).sort
+        == "az"
+    )
+
+    with pytest.raises(ValueError):
+        playlists.parse_page(MultiDict({"cursor": cursor}))
+
+    with pytest.raises(ValueError):
+        playlists.parse_page(MultiDict({"sort": "az"}), "PLid")

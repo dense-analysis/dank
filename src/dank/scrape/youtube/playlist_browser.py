@@ -236,11 +236,17 @@ async def collect_playlist_library(
         cards = tuple(known.values())
 
     # Persist the complete catalog before bounded per-playlist work begins.
-    yield ScrapeBatch([], [], youtube_playlists=tuple(
-        playlist_capture(card["playlist_id"], playlist_metadata(
-            card["playlist_id"], {}, fallback=card,
-        ), (), status="not_collected") for card in cards
-    ))
+    yield ScrapeBatch(
+        [], [], youtube_playlists=tuple(
+            playlist_capture(card["playlist_id"], playlist_metadata(
+                card["playlist_id"], {}, fallback=card,
+            ), (), status="not_collected") for card in cards
+        ),
+        youtube_playlist_order=(
+            tuple(card["playlist_id"] for card in cards)
+            if settings.authenticated and failure is None else None
+        ),
+    )
     if failure is not None:
         raise failure
 
