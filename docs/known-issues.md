@@ -179,20 +179,19 @@ later feeds to continue. Already persisted appearances remain available.
 Channel latest-video listings stop after consecutive known items; this heuristic
 does not apply to ranked or personalized feeds.
 
-Signed-in homepage **Recommendations** runs Chromium and yt-dlp concurrently
-against one cookie snapshot, with a shared 30-second listing deadline including
-snapshot preparation. A verified, already-loaded homepage is reused. Chromium
-scrolls to the bottom of each loaded batch with varied 0.3–0.65 second pauses,
-a 2,000-item guard and 200-scroll guard. Its stable bottom/end and stalled
-continuation checks remain two and eight seconds respectively. Browser startup
-and authentication precede this budget; media, captions and indexing follow it.
+Signed-in homepage **Recommendations** uses yt-dlp only, with a 30-second
+listing budget and 2,000-renderer guard. Chromium verifies the existing session
+and supplies cookies in memory; no browser recommendation scrolling or fallback
+runs during normal collection. Browser startup and authentication precede this
+budget; media, captions and indexing follow it. The comparison command still
+supports explicitly comparing browser and yt-dlp captures.
 
 The isolated yt-dlp worker observes original initial/continuation responses
 before flattening, so Shorts and community posts remain available. Shelf
 ancestry and exclusion flags follow observed continuation tokens; an unknown
 token stops that method as incomplete rather than guessing the shelf. Whole
-news/Playables/ad subtrees are pruned before normalization, and both methods
-reject live/upcoming videos. Ordinary news or gaming recommendations outside
+news/Playables/ad subtrees are pruned before normalization, and normalization
+rejects live/upcoming videos. Ordinary news or gaming recommendations outside
 excluded shelves remain eligible. Changed renderer shapes, shelf headings or
 pinned extractor hooks may still require updates.
 
@@ -216,17 +215,15 @@ identities remain explicit rather than inferred from display names. See
 [channel API regressions](../tests/web/test_reader_youtube_channels.py) and
 [reader acceptance tests](../reader/tests/youtube-collection.spec.ts).
 
-The merged output contains one row per video/post ID and one set of asset
-references. Browser order is retained, followed by new yt-dlp identities. An
-explicit Shorts renderer takes precedence over a generic video classification.
-`recommendation_captures` preserves each accepted method's original renderer,
-shelf, source position and observation time. Timeout, stall or failure in either
-method keeps all collected results and records partial status; cancellation
-stops both methods and reaps the yt-dlp worker. No flat item lacking raw shelf
-provenance is admitted to the library. See
-[parallel regressions](../tests/scrape/test_youtube_parallel_home.py),
+The output contains one row per video/post ID and one set of asset references,
+in yt-dlp order. An explicit Shorts renderer takes precedence over a generic
+video classification. `recommendation_captures` preserves original renderers,
+shelves and source positions, with `collection_methods = ["yt_dlp"]` on new
+captures. Failed or timed-out extraction retains partial results; cancellation
+kills and reaps the worker. Flat entries lacking shelf provenance are not used.
+See [method regressions](../tests/scrape/test_youtube_parallel_home.py),
 [worker cleanup](../tests/scrape/test_youtube_ytdlp_home.py) and
-[browser exclusions](../tests/scrape/test_youtube_recommendations.py).
+[browser comparison exclusions](../tests/scrape/test_youtube_recommendations.py).
 
 **Live merged capture, 2026-10-23:** Chromium returned 378 identities and the
 raw yt-dlp path returned 369, with 273 shared. Both completed; deduplication
@@ -1108,6 +1105,19 @@ unavailable original pages still apply. See [scope tests](
 
 ### YouTube playlist snapshots
 
+- Playlist contents use an isolated yt-dlp worker; browser scrolling remains
+  responsible for saved-library discovery and its Recently added order.
+  The pinned extractor owns HTTP and pagination; a selected-tab/continuation
+  observer retains original occurrence IDs, duplicates, sort settings and raw
+  payloads before flat extraction drops them. No watch pages are extracted.
+- The extra yt-dlp unavailable-video reload is disabled to preserve the selected
+  visible manifest and sort setting. Visible unavailable placeholders are kept;
+  a header/manifest count gap remains partial and can still update when every
+  continuation finishes. Unknown, repeated or interrupted continuations cannot
+  replace the previous saved snapshot. There is no browser contents fallback.
+- The signed-in browser session is verified before cookies are passed to either
+  yt-dlp collector through private pipes. Cookies are not written to worker
+  files, arguments or logs. A stale session fails explicitly.
 - Library ranking is published only after a complete authenticated catalog
   traversal. A partial catalog keeps the previous order; checking one playlist
   does not move it to the top. Recently added follows YouTube's captured library
@@ -1143,3 +1153,9 @@ unavailable original pages still apply. See [scope tests](
 - `tests/scrape/test_youtube_playlists.py` covers order/sort hashes, duplicate
   occurrences, unavailable entries, full continuation traversal, repeated-token
   failure, unchanged reuse, partial preservation and pointer publication.
+- `tests/scrape/test_youtube_ytdlp_playlists.py` checks the pinned extractor,
+  excludes suggested-video continuations, and covers worker failures and empty
+  snapshots. Live checks on 2026-10-26 matched browser order and hashes for
+  Office (2 entries), Saved Shorts (2) and Artificial Intelligence (1,955).
+  That large listing took 13.3 seconds with yt-dlp versus 28.6 with Chromium;
+  the 15-entry source count gap remained explicit in both captures.

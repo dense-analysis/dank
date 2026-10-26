@@ -74,16 +74,14 @@ sections. Each appearance retains its feed, tab, shelf heading, position,
 region, observation time and original source renderer. The same video can
 therefore have several discoveries without becoming several video identities.
 
-Signed-in **Recommendations** collects through Chromium and yt-dlp in parallel
-with a shared 30-second listing budget. The verified homepage is reused when
-available. yt-dlp's original response renderers retain shelf ancestry, Shorts
-and posts before its flat extraction removes that context. Both paths exclude
-news shelves, Playables, ads, live and upcoming videos. Duplicate video/post IDs
-are saved once, with the accepted method-specific renderers and shelf/rank
-observations retained. Browser order comes first, followed by additional
-items from yt-dlp. A timeout or failed method preserves merged results and
-marks the collection partial. Startup, media, captions and indexing add time
-outside the listing budget.
+Signed-in **Recommendations** uses metadata-only yt-dlp with a 30-second listing
+budget. Chromium verifies the saved session and supplies cookies in memory;
+recommendation collection does not scroll Chromium or fall back to its feed.
+Original yt-dlp response renderers retain shelf context and any Shorts or posts
+that it returns. News shelves, Playables, ads, live and upcoming videos are
+excluded. Duplicate identities are saved once in yt-dlp order with their source
+observations. Timeouts and failures preserve usable partial results. Startup,
+media, captions and indexing add time outside the listing budget.
 
 **Recommendations** shows all saved homepage captures, with one card per item,
 ordered by when it was most recently recommended. Pagination keeps the original
@@ -225,7 +223,8 @@ make youtube-compare ARGS='--timeout 30'
 ```
 
 Add `MODE=native` for native execution. This diagnostic compares the browser
-and flat yt-dlp baseline; normal Recommendations uses raw renderers from both.
+and flat yt-dlp baseline; normal Recommendations uses only yt-dlp, retaining
+its raw renderers for filtering and provenance.
 The browser and metadata-only yt-dlp `:ytrec` collector start together with the same authenticated cookie snapshot
 and region. Each has a four-minute ceiling by default. The report separates
 browser warmup from collection time and records start skew, stop reasons,
@@ -321,7 +320,10 @@ that ranking independently of individual playlist checks. Pagination keeps
 the captured ranking stable while browsing. Playlists absent from that library
 follow it alphabetically. Cards and playlist videos load more as you scroll.
 
-Refresh reads flat listing metadata and every available continuation. The
+Playlist contents are collected through yt-dlp HTTP requests and pagination,
+using the verified session for private lists. Browser scrolling is used only
+for the library catalog. Contents collection reads listing metadata and every
+available continuation; it never visits individual watch pages. The
 snapshot hash includes playlist metadata, the selected sort label and ordered
 video occurrences, so reorderings and same-count replacements are detected.
 An unchanged hash updates the check time without saving more video discoveries

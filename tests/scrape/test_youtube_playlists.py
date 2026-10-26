@@ -434,7 +434,7 @@ async def test_non_authenticated_library_uses_bounded_oldest_known_checks(
 ) -> None:
     monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 1)
     collect = AsyncMock(return_value=capture(video()))
-    monkeypatch.setattr(playlist_browser, "collect_playlist", collect)
+    monkeypatch.setattr(playlist_browser, "collect_ytdlp_playlist", collect)
     cards = {
         "PLnew": {
             **playlist_metadata("PLnew", {}),
@@ -467,7 +467,7 @@ async def test_failed_checks_do_not_starve_complete_playlists(
 ) -> None:
     monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 1)
     collect = AsyncMock(return_value=capture(video()))
-    monkeypatch.setattr(playlist_browser, "collect_playlist", collect)
+    monkeypatch.setattr(playlist_browser, "collect_ytdlp_playlist", collect)
     cards = {
         "PLfailed": {**playlist_metadata("PLfailed", {}),
                      "snapshot_hash": "", "checked_at": "2026-10-25"},

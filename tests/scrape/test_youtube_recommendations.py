@@ -10,13 +10,12 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from dank.config import BrowserScrapeSettings, YouTubeSettings
-from dank.model import RawPost
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.youtube import (
     FeedCapture,
     YouTubeFeedError,
     _candidates,  # pyright: ignore[reportPrivateUsage]
-    _scrape_feed,  # pyright: ignore[reportPrivateUsage]
+    collect_browser_home,
 )
 from dank.scrape.youtube.feeds import describe_feed
 from dank.scrape.youtube.payloads import YouTubeFeed
@@ -100,7 +99,7 @@ def _install_listing(
     return AsyncMock(), capture
 
 
-async def test_budget_preserves_items_without_canceling_consumer(
+async def test_browser_budget_preserves_collected_items(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
 ) -> None:
     page, capture = _install_listing(monkeypatch)
@@ -112,14 +111,14 @@ async def test_budget_preserves_items_without_canceling_consumer(
     monkeypatch.setattr("dank.scrape.youtube.snapshot", stalled_snapshot)
     caplog.set_level(logging.INFO, logger="dank.scrape.youtube")
     started = asyncio.get_running_loop().time()
-    posts: list[RawPost] = []
+    batches: list[ScrapeBatch] = []
 
     with pytest.raises(YouTubeFeedError, match="incomplete: time budget"):
-        async for batch in _scrape_feed(page, HOME, YouTubeSettings(), set()):
-            posts.extend(batch.posts)
-            await asyncio.sleep(0.06)
+        await collect_browser_home(page, HOME, YouTubeSettings(), batches)
 
-    assert [post.post_id for post in posts] == ["video:normal00001"]
+    assert [post.post_id for batch in batches for post in batch.posts] == [
+        "video:normal00001",
+    ]
     assert asyncio.get_running_loop().time() - started < 0.5
     assert "reason=time budget" in caplog.text
     capture.stop.assert_awaited_once()
@@ -139,9 +138,7 @@ async def test_budget_includes_navigation_and_reports_empty_timeout(
     )
 
     with pytest.raises(YouTubeFeedError, match="time budget"):
-        _ = [batch async for batch in _scrape_feed(
-            page, HOME, YouTubeSettings(), set(),
-        )]
+        await collect_browser_home(page, HOME, YouTubeSettings(), [])
 
     page.evaluate.assert_not_awaited()
     capture.stop.assert_awaited_once()
@@ -161,8 +158,7 @@ async def test_home_ends_on_stable_bottom_and_reports_stall_separately(
     batches: list[ScrapeBatch] = []
 
     try:
-        async for batch in _scrape_feed(page, HOME, YouTubeSettings(), set()):
-            batches.append(batch)
+        await collect_browser_home(page, HOME, YouTubeSettings(), batches)
     except YouTubeFeedError as error:
         assert continuation
         assert "incomplete: repeated stall" in str(error)
@@ -187,9 +183,7 @@ async def test_home_does_not_stop_while_excluded_responses_arrive(
                                "1", "Fetch")
     capture.drain.side_effect = [[response]] * 7 + [[]] * 10
     caplog.set_level(logging.INFO, logger="dank.scrape.youtube")
-    _ = [batch async for batch in _scrape_feed(
-        page, HOME, YouTubeSettings(), set(),
-    )]
+    await collect_browser_home(page, HOME, YouTubeSettings(), [])
     assert page.evaluate.await_count == 9
     assert "reason=end of feed" in caplog.text
 
@@ -202,13 +196,14 @@ async def test_home_retains_batch_before_later_http_error(
         "https://www.youtube.com/youtubei/v1/browse", 429,
         "application/json", "{}", "1", "Fetch",
     )]]
-    posts: list[RawPost] = []
+    batches: list[ScrapeBatch] = []
 
     with pytest.raises(YouTubeFeedError, match="HTTP 429"):
-        async for batch in _scrape_feed(page, HOME, YouTubeSettings(), set()):
-            posts.extend(batch.posts)
+        await collect_browser_home(page, HOME, YouTubeSettings(), batches)
 
-    assert [post.post_id for post in posts] == ["video:normal00001"]
+    assert [post.post_id for batch in batches for post in batch.posts] == [
+        "video:normal00001",
+    ]
     capture.stop.assert_awaited_once()
 
 
@@ -223,9 +218,8 @@ async def test_home_uses_timed_pass_instead_of_generic_feed_limits(
     settings = YouTubeSettings(scrape=BrowserScrapeSettings(
         max_posts=1, max_scrolls=0, scroll_pause_seconds=100,
     ))
-    batches = [batch async for batch in _scrape_feed(
-        page, HOME, settings, set(),
-    )]
+    batches: list[ScrapeBatch] = []
+    await collect_browser_home(page, HOME, settings, batches)
     assert sum(len(batch.posts) for batch in batches) == 250
     assert page.evaluate.await_count > 0
 
@@ -253,7 +247,17 @@ async def test_truncated_home_keeps_posts_and_marks_source_partial(
     from dank.scrape.youtube import scrape_youtube_feeds
 
     page, _ = _install_listing(monkeypatch)
-    monkeypatch.setattr("dank.scrape.youtube.HOME_SCROLL_LIMIT", 0)
+    from dank.scrape.youtube.ytdlp_home import YtDlpHomeResult
+    from dank.scrape.youtube.ytdlp_renderers import HomeRenderer
+
+    monkeypatch.setattr("dank.scrape.youtube.session_cookies", AsyncMock(
+        return_value=[],
+    ))
+    monkeypatch.setattr("dank.scrape.youtube.collect_ytdlp_home", AsyncMock(
+        return_value=YtDlpHomeResult((), 0.1, 0.01, "timeout", renderers=(
+            HomeRenderer("videoRenderer", {"videoId": "normal00001"}, ""),
+        )),
+    ))
     monkeypatch.setattr(
         "dank.scrape.youtube._verify_saved_session", AsyncMock(),
     )

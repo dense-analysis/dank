@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
-from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,7 +14,6 @@ import yt_dlp
 from dank.config import YouTubeSettings
 from dank.model import RawPost
 from dank.scrape import youtube
-from dank.scrape.types import ScrapeBatch
 from dank.scrape.youtube.home_merge import merge_home_posts
 from dank.scrape.youtube.payloads import YouTubeFeed, normalize_renderer
 from dank.scrape.youtube.ytdlp_home import YtDlpHomeResult
@@ -189,214 +187,105 @@ def test_merge_keeps_short_category_on_duplicate_video_identity() -> None:
     assert len(payload["recommendation_captures"]) == 2
 
 
-def setup_parallel(monkeypatch: pytest.MonkeyPatch) -> Any:
+def setup_home() -> Any:
     cookie = SimpleNamespace(domain=".youtube.com", to_json=lambda: {
         "name": "SID", "value": "synthetic-cookie", "domain": ".youtube.com",
     })
-    page = SimpleNamespace(send=AsyncMock(return_value=[cookie]))
-    monkeypatch.setattr(youtube, "snapshot", AsyncMock(return_value={
-        "url": HOME.url, "signed_in": True,
-        "initial": video("aaaaaaaaaaa"),
-    }))
 
-    return page
+    return SimpleNamespace(send=AsyncMock(return_value=[cookie]))
 
 
-async def test_parallel_methods_start_together_merge_and_reuse_loaded_home(
+async def test_recommendations_use_only_ytdlp_and_keep_source_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    page = setup_parallel(monkeypatch)
-    started = [asyncio.Event(), asyncio.Event()]
-    budgets: list[float] = []
-
-    async def browser(
-        page: Any, feed: Any, settings: Any, batches: list[ScrapeBatch],
-        **kwargs: Any,
-    ) -> None:
-        started[0].set()
-        await asyncio.wait_for(started[1].wait(), 1)
-        budgets.append(kwargs["timeout_seconds"])
-        assert kwargs["initial_state"]["signed_in"]
-        batches.append(ScrapeBatch([raw_post("aaaaaaaaaaa")], []))
-
-    async def ytdlp(cookies: Any, **kwargs: Any) -> YtDlpHomeResult:
-        started[1].set()
-        await asyncio.wait_for(started[0].wait(), 1)
-        assert kwargs["include_renderers"]
-        assert cookies[0]["value"] == "synthetic-cookie"
-        budgets.append(kwargs["timeout_seconds"])
-
-        return YtDlpHomeResult((), 0.1, 0.01, "completed", renderers=(
-            HomeRenderer("videoRenderer", {"videoId": "aaaaaaaaaaa"}, ""),
-            HomeRenderer("reelItemRenderer", {"videoId": "bbbbbbbbbbb"},
-                         "Shorts", ("Shorts",)),
-        ))
-
-    monkeypatch.setattr(youtube, "_collect_home_feed", browser)
-    monkeypatch.setattr(youtube, "collect_ytdlp_home", ytdlp)
-    batches = [batch async for batch in youtube._scrape_feed(  # type: ignore
+    page = setup_home()
+    browser = AsyncMock(side_effect=AssertionError("Must not scroll home"))
+    monkeypatch.setattr(youtube, "collect_browser_home", browser)
+    result = YtDlpHomeResult((), 0.1, 0.01, "completed", renderers=(
+        HomeRenderer("videoRenderer", {"videoId": "aaaaaaaaaaa"}, ""),
+        HomeRenderer("reelItemRenderer", {"videoId": "bbbbbbbbbbb"},
+                     "Shorts", ("Shorts",)),
+    ))
+    collect = AsyncMock(return_value=result)
+    monkeypatch.setattr(youtube, "collect_ytdlp_home", collect)
+    batches = [batch async for batch in youtube._scrape_feed(  # pyright: ignore[reportPrivateUsage]
         page, HOME, SETTINGS, set(),
     )]
-    assert budgets[0] == budgets[1] <= 30
+    browser.assert_not_awaited()
+    assert collect.await_count == 1
+    assert collect.await_args is not None
+    assert collect.await_args.kwargs["include_renderers"]
+    assert 0 < collect.await_args.kwargs["timeout_seconds"] <= 30
     assert {post.post_id for post in batches[0].posts} == {
         "video:aaaaaaaaaaa", "video:bbbbbbbbbbb",
     }
+    assert all(json.loads(post.payload)["collection_methods"] == ["yt_dlp"]
+               for post in batches[0].posts)
 
 
-@pytest.mark.parametrize("failed_method", ["browser", "yt_dlp"])
-async def test_one_failed_method_retains_both_partial_outputs(
-    monkeypatch: pytest.MonkeyPatch, failed_method: str,
+@pytest.mark.parametrize("outcome", ["timeout", "failed", "item_limit"])
+async def test_incomplete_ytdlp_keeps_partial_results_without_browser_fallback(
+    monkeypatch: pytest.MonkeyPatch, outcome: Any,
 ) -> None:
-    page = setup_parallel(monkeypatch)
-
-    async def browser(
-        page: Any, feed: Any, settings: Any, batches: list[ScrapeBatch],
-        **kwargs: Any,
-    ) -> None:
-        batches.append(ScrapeBatch([raw_post("aaaaaaaaaaa")], []))
-
-        if failed_method == "browser":
-            raise youtube.YouTubeFeedIncomplete("time budget")
-
-    result = YtDlpHomeResult(
-        (), 0.1, 0.01, "timeout" if failed_method == "yt_dlp" else "completed",
-        renderers=(HomeRenderer("videoRenderer", {"videoId": "bbbbbbbbbbb"},
-                                ""),),
-    )
-    monkeypatch.setattr(youtube, "_collect_home_feed", browser)
+    browser = AsyncMock(side_effect=AssertionError("Must not scroll home"))
+    monkeypatch.setattr(youtube, "collect_browser_home", browser)
+    result = YtDlpHomeResult((), 0.1, 0.01, outcome, renderers=(
+        HomeRenderer("videoRenderer", {"videoId": "aaaaaaaaaaa"}, ""),
+    ))
     monkeypatch.setattr(youtube, "collect_ytdlp_home", AsyncMock(
         return_value=result,
     ))
     saved: list[RawPost] = []
 
     with pytest.raises(youtube.YouTubeFeedIncomplete):
-        async for batch in youtube._scrape_feed(  # type: ignore
-            page, HOME, SETTINGS, set(),
+        async for batch in youtube._scrape_feed(  # pyright: ignore[reportPrivateUsage]
+            setup_home(), HOME, SETTINGS, set(),
         ):
             saved.extend(batch.posts)
 
-    assert {post.post_id for post in saved} == {
-        "video:aaaaaaaaaaa", "video:bbbbbbbbbbb",
-    }
+    browser.assert_not_awaited()
+    assert [post.post_id for post in saved] == ["video:aaaaaaaaaaa"]
 
 
-async def test_parallel_cancellation_closes_both_collectors(
+async def test_empty_ytdlp_results_fail_without_browser_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    page = setup_parallel(monkeypatch)
-    started = [asyncio.Event(), asyncio.Event()]
-    closed = [asyncio.Event(), asyncio.Event()]
+    browser = AsyncMock(side_effect=AssertionError("Must not scroll home"))
+    monkeypatch.setattr(youtube, "collect_browser_home", browser)
+    monkeypatch.setattr(youtube, "collect_ytdlp_home", AsyncMock(
+        return_value=YtDlpHomeResult((), 0.1, None, "failed"),
+    ))
 
-    async def method(index: int, *args: Any, **kwargs: Any) -> Any:
-        started[index].set()
+    with pytest.raises(youtube.YouTubeFeedError):
+        async for _ in youtube._scrape_feed(  # pyright: ignore[reportPrivateUsage]
+            setup_home(), HOME, SETTINGS, set(),
+        ):
+            pytest.fail("Empty failed capture must not produce a batch")
+
+    browser.assert_not_awaited()
+
+
+async def test_ytdlp_cancellation_without_browser_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started, closed = asyncio.Event(), asyncio.Event()
+
+    async def method(*args: Any, **kwargs: Any) -> Any:
+        started.set()
 
         try:
             await asyncio.Event().wait()
         finally:
-            closed[index].set()
+            closed.set()
 
-    monkeypatch.setattr(youtube, "_collect_home_feed",
-                        partial(method, 0))
-    monkeypatch.setattr(youtube, "collect_ytdlp_home",
-                        partial(method, 1))
-    task = asyncio.create_task(youtube._collect_parallel_home(  # type: ignore
-        page, HOME, SETTINGS, [],
+    monkeypatch.setattr(youtube, "collect_ytdlp_home", method)
+    task = asyncio.create_task(youtube._collect_ytdlp_home(  # pyright: ignore[reportPrivateUsage]
+        setup_home(), HOME, SETTINGS, [],
     ))
-    await asyncio.wait_for(asyncio.gather(*(x.wait() for x in started)), 1)
+    await asyncio.wait_for(started.wait(), 1)
     task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert all(event.is_set() for event in closed)
-
-
-async def test_deadline_keeps_browser_buffer_and_completed_ytdlp_results(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    page = setup_parallel(monkeypatch)
-    monkeypatch.setattr(youtube, "HOME_BUDGET_SECONDS", 0.05)
-    network = AsyncMock()
-    network.drain.return_value = []
-    monkeypatch.setattr(youtube, "NetworkCapture", Mock(return_value=network))
-
-    async def delayed_scroll(*args: Any) -> None:
-        await asyncio.sleep(10)
-
-    page.evaluate = AsyncMock(side_effect=delayed_scroll)
-    result = YtDlpHomeResult((), 0.01, 0.001, "completed", renderers=(
-        HomeRenderer("videoRenderer", {"videoId": "bbbbbbbbbbb"}, ""),
-    ))
-    monkeypatch.setattr(youtube, "collect_ytdlp_home", AsyncMock(
-        return_value=result,
-    ))
-    saved: list[RawPost] = []
-    started = asyncio.get_running_loop().time()
-
-    with pytest.raises(youtube.YouTubeFeedIncomplete):
-        async for batch in youtube._scrape_feed(  # type: ignore
-            page, HOME, SETTINGS, set(),
-        ):
-            saved.extend(batch.posts)
-
-    assert asyncio.get_running_loop().time() - started < 0.5
-    assert {post.post_id for post in saved} == {
-        "video:aaaaaaaaaaa", "video:bbbbbbbbbbb",
-    }
-    network.stop.assert_awaited_once()
-
-
-def test_excluded_appearance_does_not_suppress_allowed_duplicate() -> None:
-    emitted: list[dict[str, Any]] = []
-    capture = HomeResponseCapture(emitted.append, 100)
-    item = video("aaaaaaaaaaa")
-    capture.observe([
-        {"richShelfRenderer": {
-            "title": {"simpleText": "Top News"}, "contents": [item],
-        }},
-        {"richShelfRenderer": {
-            "endpoint": {"browseEndpoint": {
-                "browseId": "FEgaming_playables",
-            }}, "contents": [item],
-        }},
-        item,
-    ])
-    assert len(emitted) == 1
-    assert emitted[0]["shelf"] == ""
-    assert emitted[0]["raw"]["videoId"] == "aaaaaaaaaaa"
-
-
-async def test_bad_ytdlp_renderer_preserves_browser_and_valid_ytdlp_posts(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    page = setup_parallel(monkeypatch)
-
-    async def browser(
-        page: Any, feed: Any, settings: Any, batches: list[ScrapeBatch],
-        **kwargs: Any,
-    ) -> None:
-        batches.append(ScrapeBatch([raw_post("aaaaaaaaaaa")], []))
-
-    result = YtDlpHomeResult((), 0.1, 0.01, "completed", renderers=(
-        HomeRenderer("videoRenderer", {
-            "videoId": "ccccccccccc", "thumbnail": {"thumbnails": [{
-                "url": "https://images.example/thumb.jpg", "width": "invalid",
-            }]},
-        }, ""),
-        HomeRenderer("videoRenderer", {"videoId": "bbbbbbbbbbb"}, ""),
-    ))
-    monkeypatch.setattr(youtube, "_collect_home_feed", browser)
-    monkeypatch.setattr(youtube, "collect_ytdlp_home", AsyncMock(
-        return_value=result,
-    ))
-    saved: list[RawPost] = []
-
-    with pytest.raises(youtube.YouTubeFeedIncomplete):
-        async for batch in youtube._scrape_feed(  # type: ignore
-            page, HOME, SETTINGS, set(),
-        ):
-            saved.extend(batch.posts)
-
-    assert {post.post_id for post in saved} == {
-        "video:aaaaaaaaaaa", "video:bbbbbbbbbbb",
-    }
+    assert closed.is_set()

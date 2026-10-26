@@ -1,4 +1,4 @@
-"""Isolated metadata-only :ytrec capture for comparison with the browser."""
+"""Isolated metadata-only recommendation capture through yt-dlp."""
 
 from __future__ import annotations
 
@@ -7,19 +7,23 @@ import json
 import re
 import sys
 from collections.abc import Mapping, Sequence
-from http.cookiejar import Cookie, CookieJar
+from http.cookiejar import CookieJar
 from typing import Any, Literal, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
 from .payloads import POST_RENDERERS, VIDEO_RENDERERS
 from .ytdlp_renderers import HomeRenderer, RendererLimitReached
+from .ytdlp_worker import (
+    WorkerLogger,
+    cookie_jar as _cookie_jar,
+    cookie_records as _cookie_records,
+    emit as _emit,
+    has_youtube_session as _youtube_session,
+    run_worker,
+)
 
 MAX_TIMEOUT_SECONDS = 240.0
 MAX_ENTRIES = 10000
-MAX_EVENT_BYTES = 2 * 1024 * 1024
-AUTH_COOKIE_NAMES = {
-    "SID", "SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID",
-}
 LIMITATIONS = (
     "Flat entries omit shelf provenance; news shelves cannot be reliably "
     "excluded from this comparison capture.",
@@ -82,29 +86,6 @@ def classify_entry(raw: dict[str, Any], position: int) -> YtDlpHomeEntry:
         position, raw,
     )
 
-
-def _cookie_records(
-    cookies: Sequence[Mapping[str, object]] | CookieJar,
-) -> list[dict[str, object]]:
-    if isinstance(cookies, CookieJar):
-        return [{
-            "name": cookie.name, "value": cookie.value,
-            "domain": cookie.domain, "path": cookie.path,
-            "secure": cookie.secure, "expires": cookie.expires,
-            "httpOnly": cookie.has_nonstandard_attr("HttpOnly"),
-        } for cookie in cookies]
-
-    return [dict(cookie) for cookie in cookies]
-
-
-def _youtube_session(cookies: list[dict[str, object]]) -> bool:
-    return any(
-        cookie.get("name") in AUTH_COOKIE_NAMES and cookie.get("value")
-        and str(cookie.get("domain", "")).lstrip(".") in {
-            "youtube.com", "www.youtube.com",
-        }
-        for cookie in cookies
-    )
 
 
 def _renderer(event: dict[str, Any]) -> HomeRenderer:
@@ -210,35 +191,15 @@ async def collect_ytdlp_home(
     loop = asyncio.get_running_loop()
     started = loop.time()
     capture = _Capture(started)
-    process: asyncio.subprocess.Process | None = None
-
     try:
-        async with asyncio.timeout(timeout_seconds):
-            process = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", __name__, "--worker",
-                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, limit=MAX_EVENT_BYTES,
-            )
-            assert process.stdin is not None
-            assert process.stdout is not None
-            process.stdin.write(json.dumps({
-                "cookies": records, "max_entries": max_entries,
-                "region": region, "include_renderers": include_renderers,
-            }).encode())
-            await process.stdin.drain()
-            process.stdin.close()
-            records.clear()
+        returncode = await run_worker(__name__, {
+            "cookies": records, "max_entries": max_entries,
+            "region": region, "include_renderers": include_renderers,
+        }, timeout_seconds, lambda event: capture.consume(event, loop.time()))
 
-            while line := await process.stdout.readline():
-                event = cast(dict[str, Any], json.loads(line))
-
-                capture.consume(event, loop.time())
-
-            await process.wait()
-
-            if process.returncode != 0:
-                capture.outcome = "failed"
-                capture.error_type = capture.error_type or "WorkerExit"
+        if returncode != 0:
+            capture.outcome = "failed"
+            capture.error_type = capture.error_type or "WorkerExit"
     except TimeoutError:
         capture.outcome, capture.error_type = "timeout", "TimeoutError"
     except (ValueError, OSError, KeyError, TypeError) as error:
@@ -246,71 +207,12 @@ async def collect_ytdlp_home(
     finally:
         records.clear()
 
-        if process is not None and process.returncode is None:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-
-            await process.wait()
-
     return capture.result(loop.time())
 
 
-def _cookie_jar(records: list[dict[str, Any]]) -> CookieJar:
-    from yt_dlp.cookies import YoutubeDLCookieJar
-
-    jar = YoutubeDLCookieJar()
-
-    for record in records:
-        domain = str(record["domain"])
-
-        if not any(domain.lstrip(".") == host or domain.endswith("." + host)
-                   for host in ("youtube.com", "google.com")):
-            continue
-
-        expires = record.get("expires")
-        expiry = int(expires) if isinstance(expires, (int, float)) else 0
-        jar.set_cookie(Cookie(
-            version=0, name=str(record["name"]), value=str(record["value"]),
-            port=None, port_specified=False, domain=domain,
-            domain_specified=domain.startswith("."),
-            domain_initial_dot=domain.startswith("."),
-            path=str(record.get("path") or "/"), path_specified=True,
-            secure=bool(record.get("secure", True)),
-            expires=expiry if expiry > 0 else None, discard=expiry <= 0,
-            comment=None, comment_url=None,
-            rest={"HttpOnly": ""} if record.get("httpOnly") else {},
-            rfc2109=False,
-        ))
-
-    return jar
-
-
-def _emit(event: dict[str, Any]) -> None:
-    print(json.dumps(event, separators=(",", ":"), default=str), flush=True)
-
-
-class _WorkerLogger:
-    """Provider messages can contain private request data; emit categories."""
-
-    def debug(self, message: str) -> None:
-        if "feed looping" in message.casefold():
-            _emit({"event": "warning", "category": "repeated_continuation"})
-
-    def warning(self, message: str) -> None:
-        category = (
-            "expired_session" if "cookies are no longer valid"
-            in message.casefold() else "extractor_warning"
-        )
-        _emit({"event": "warning", "category": category})
-
-    def error(self, message: str) -> None:
-        category = (
-            "feed_redirected_to_home" if "redirected to youtube.com home"
-            in message.casefold() else "extractor_error"
-        )
-        _emit({"event": "warning", "category": category})
+class _WorkerLogger(WorkerLogger):
+    def __init__(self) -> None:
+        super().__init__(_emit)
 
 
 def _run_worker() -> None:

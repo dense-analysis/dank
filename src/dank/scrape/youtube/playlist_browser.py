@@ -25,6 +25,7 @@ from .playlists import (
     playlist_id,
     playlist_metadata,
 )
+from .ytdlp_playlists import collect_playlist as collect_ytdlp_playlist
 
 logger = logging.getLogger(__name__)
 # Listing-only budgets keep a large saved library from blocking other sources.
@@ -261,7 +262,7 @@ async def collect_playlist_library(
         if remaining < 3:
             break
 
-        result = await collect_playlist(
+        result = await collect_ytdlp_playlist(
             page, card["url"], settings, fallback=card,
             timeout_seconds=min(remaining, PLAYLIST_TIMEOUT_SECONDS),
         )

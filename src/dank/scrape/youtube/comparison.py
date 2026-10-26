@@ -16,8 +16,8 @@ from dank.scrape.types import ScrapeBatch
 from dank.scrape.youtube import (
     YouTubeFeedError,
     YouTubeFeedIncomplete,
-    _collect_home_feed,  # pyright: ignore[reportPrivateUsage]
     _localized,  # pyright: ignore[reportPrivateUsage]
+    collect_browser_home as _collect_home_feed,
 )
 from dank.scrape.zendriver import BrowserConfig, BrowserSession
 from dank.youtube_session import (
