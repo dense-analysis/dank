@@ -55,7 +55,7 @@ Its normal interface only exposes the viewer's country. An explicit playlist
 lets DANK collect a separately discovered destination; changing `region` alone
 is not a verified way to choose another country's Hype. Playlist URL longevity
 is unverified. Saved ranks, IDs and capture times support comparison across
-runs; see the [follow-up](../known-issues.md#youtube-feed-discovery).
+runs; see the [freshness verification task](https://linear.app/dense-analysis/issue/DEN-34/verify-regional-hype-playlist-freshness-across-days).
 
 ## Collect and read
 
@@ -152,6 +152,9 @@ or use **Try transcript again**. The reader distinguishes unavailable captions
 from failed retrieval. Caption collection is bounded to 40 seconds per video,
 and a failed request stops the remaining transcript checks for that scrape.
 It does not download audio, generate speech-to-text, or collect comments.
+Future [caption search](https://linear.app/dense-analysis/issue/DEN-40/include-saved-youtube-captions-in-semantic-search) and
+[video-detail collection](https://linear.app/dense-analysis/issue/DEN-41/scope-youtube-description-and-comment-collection)
+are tracked in the backlog.
 
 ## Thumbnail and title history
 

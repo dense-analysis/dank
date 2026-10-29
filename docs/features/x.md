@@ -310,11 +310,9 @@ excluded from Posts. The reader links up to 200 related saved posts and 20
 ancestor levels, with explicit missing-context or limit notices. Saved links
 supplement discussion archives without claiming a new or complete capture.
 
-Future X reader improvements may include configurable timeline reply previews
-(for example, the top 10 collected replies, with an explicit ranking and limit)
-and a bundled Threads view. These are deferred options, not current collection
-or display guarantees. Reply collection coverage must remain visible separately
-from how the reader chooses to display saved replies.
+Deferred ideas are tracked in Linear: [reply previews](https://linear.app/dense-analysis/issue/DEN-38/explore-configurable-x-reply-previews)
+and [Threads](https://linear.app/dense-analysis/issue/DEN-39/explore-a-bundled-x-threads-view). Current display choices do not change
+the coverage of saved replies or discussion archives.
 
 ## Rebuild saved posts
 

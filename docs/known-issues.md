@@ -3,8 +3,9 @@
 Use this register to understand collection-quality problems, the handling
 already in place, and the gaps that remain. Detailed commands live in the
 linked feature guides; live outcomes live in [run history and logs](features/history.md).
+Track outstanding work and future ideas in [Linear](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
 
-Last reviewed: **2026-10-17**, against the implementation on `main`.
+Open-work consolidation: **2026-10-27**. Observations below retain their original dates.
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
@@ -16,6 +17,25 @@ interrupted results as needing attention. A result with saved content can also
 be ready to view; this does not mean collection succeeded completely. Submission,
 progress and update-loading errors stay visible while details are collapsed.
 See [refresh browser tests](../reader/tests/refresh.spec.ts).
+
+## Source edits require an app restart
+
+The reader loads settings at startup and passes that snapshot to refresh jobs.
+Docker also copies the mounted TOML into the container at startup. Editing the
+host file does not update the sidebar or a refresh launched by the running app.
+A successful refresh therefore does not mean newly added sources were attempted.
+
+On 2026-10-26, X run `ea85d21b-e2e9-4369-b75e-febdc7335b82` saved 1,343 posts
+from the previous 37-account list after `JDM4NC` was added to the host config.
+The new account had no run entry or saved posts. DANK's internal source resolver
+accepted it from the host config but rejected it from the container's old copy.
+Recreating the app and refreshing only that account saved 28 posts, including
+21 owned by the account; the reader returned 20 in its default Posts view.
+
+After source edits, recreate Docker's app with
+`make web ARGS='--force-recreate dank'`, or restart the native viewer, then
+refresh the new source. Proposed [source management in the app](https://linear.app/dense-analysis/issue/DEN-23/apply-saved-source-changes-without-restarting-dank)
+would persist source definitions and make saved changes available without a restart.
 
 ## Blocked Reddit collection and cancellation
 
@@ -76,8 +96,8 @@ saved source/time history without expanding that source's other references;
 its dashed connection is distinct from hyperlink arrows and reference counts.
 The current social post shows verified publication and its gap from discovery,
 using neither post collection nor article download time as a publication fallback.
-Before/after, exact ties and unavailable timing remain explicit. See [feature details and future analysis](
-features/collection-provenance.md), [collection tests](
+Before/after, exact ties and unavailable timing remain explicit. See [feature details](
+features/collection-provenance.md), the [source novelty proposal](https://linear.app/dense-analysis/issue/DEN-37/explore-source-novelty-and-a-repost-index), [collection tests](
 ../tests/scrape/test_reddit_linked_articles.py), and [provenance tests](
 ../tests/web/test_reader_provenance.py).
 
@@ -167,8 +187,8 @@ video downloads off by default. Shelf headings, rank and playlist identity come
 from YouTube; country codes record the configured regional context and capture
 times record when DANK observed the listing.
 Separate discovery records preserve repeated appearances across feeds and runs.
-Descriptions and comments remain deferred; feed snapshots are separate from
-caption captures. Live and upcoming broadcasts are excluded.
+Descriptions and comments are not collected; [video-detail collection](https://linear.app/dense-analysis/issue/DEN-41/scope-youtube-description-and-comment-collection) is a deferred idea. Feed snapshots
+are separate from caption captures. Live and upcoming broadcasts are excluded.
 
 The browser follows Hype's regional **Top 100 → View all** link, expands News
 sections and uses bounded scrolling. The UK playlist fallback is used only for
@@ -288,23 +308,12 @@ snapshot is idempotent. Interrupted imports require inspection before retry
 because raw posts are append-only. The comparison command remains read-only.
 See [import regressions](../tests/scrape/test_youtube_comparison_import.py).
 
-- [ ] **P2: Verify regional Hype playlist freshness across days.** The configured
-  US playlist was supplied after viewing Hype through a US VPN on 2026-10-17.
-  A same-day public yt-dlp metadata check returned **United States's top hyped
-  videos** with 100 items. This verifies its current identity, not future
-  freshness. DANK follows it directly while GB still discovers **View all**.
-  [YouTube documents](https://support.google.com/youtube/answer/15334500?hl=en)
-  country-specific rankings updated about every few minutes, but does not
-  promise stable playlist URLs or cross-country selection. No daily-only update
-  schedule is assumed. Compare each region's saved playlist IDs, ordered video
-  IDs/ranks and capture times over several days, including a weekly boundary.
-  Unchanged captures warrant checking against that country's live leaderboard;
-  they do not alone prove staleness. If the URL rotates or the playlist freezes,
-  implement regional discovery using a verified country-specific session/network
-  path. There is no automatic stale verdict or region-switch guarantee yet.
-  [Configuration tests](../tests/test_youtube_config.py) and
-  [collection tests](../tests/scrape/test_youtube_collection.py) cover distinct
-  regions, direct playlist selection and retained snapshot context.
+Regional playlist freshness remains unverified across days. The US playlist
+was identified through a US VPN and returned 100 US Hype items on 2026-10-17;
+GB uses discovered View all. Unchanged snapshots alone do not establish staleness,
+and changing `region` is not a verified country-switch mechanism. The
+[multi-day verification task](https://linear.app/dense-analysis/issue/DEN-34/verify-regional-hype-playlist-freshness-across-days) owns
+the follow-up; saved IDs, ranks and capture times provide the evidence.
 
 Signed-out runs use a temporary profile; optional signed-in runs use YouTube's
 own saved profile and require a valid session. Neither shares X's or Reddit's
@@ -405,7 +414,8 @@ original caption JSON, track metadata, language, origin and timing; successes
 are reused indefinitely. Missing tracks wait one day, failed retrieval waits one
 hour. Read-only transcript requests never contact YouTube. On-demand collection
 is serialized per local web process with a bounded wait; requests from separate
-scraper/server processes can still overlap.
+scraper/server processes can still overlap. See the [cross-process coordination
+task](https://linear.app/dense-analysis/issue/DEN-36/coordinate-transcript-collection-across-processes).
 
 YouTube may block caption discovery or return empty/invalid caption responses.
 These are failures, not evidence that captions do not exist. Each attempt has a
@@ -414,7 +424,8 @@ cancellation. A failed attempt stops further transcript collection in that scrap
 Only JSON3 tracks are supported, preferring English then the original language,
 and creator-provided over automatic within each language. Machine translations
 are excluded. Automatic captions can contain errors; saved text is not a verified
-verbatim transcription. Saved captions are not yet included in semantic search.
+verbatim transcription. Saved captions are not included in semantic search;
+track that idea under [search saved captions](https://linear.app/dense-analysis/issue/DEN-40/include-saved-youtube-captions-in-semantic-search).
 
 Validation includes track choice, parsing, negative caching, current-run scoping,
 read-only access, first-open collection and desktop/mobile rendering. A live
@@ -559,7 +570,9 @@ saved-page retry (`16a5ec3f-c06c-49c4-b090-b04b1317624e`) recovered 81 older
 captures outside the current feeds, leaving five older Register captures
 incomplete after bounded recovery. Original payloads remain available.
 
-## Latest full-scrape check
+<a id="latest-full-scrape-check"></a>
+
+## Full-scrape check: 2026-10-17
 
 On **2026-10-17**, Docker run `19bb2610-7163-4591-ba27-f409be8eaa69`
 used `851e95a` and the existing 55-source configuration. It exited normally after
@@ -603,10 +616,15 @@ publisher-media failures recurred on Wikimedia, Microsoft, `shkspr.mobi` and
 Internet Archive. All **63 fetch failures** were RSS-related. The four HTTP 429
 responses were attempts on one Order Order article. The Register's feed now
 returned a verification page, preventing collection of its articles; Niche
-Gamer's feeds remained blocked by 403 responses. Publisher recovery, smaller X
-video variants, browser progress and bounded media jobs remain on the task list below.
+Gamer's feeds remained blocked by 403 responses. This is historical evidence;
+later publisher repairs are recorded above. Remaining recovery, media and
+progress work is tracked in [collection reliability](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
 
 ## Full-scrape improvement tasks
+
+This section retains the original incident and completed fixes. Outstanding
+actions are tracked only in [collection reliability](https://linear.app/dense-analysis/project/dank-de00db7ebbb2);
+these historical results do not reopen already-shipped work.
 
 These follow-ups came from run `3024d25d-d50e-4cde-be87-4b8e70224e22`
 on 2026-10-17 (Europe/London), using commit `0e0de9a`. Its archived log is
@@ -661,7 +679,8 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   log. The source/run outcome was partial, with no lost completed
   batches. This verifies persistence and continuation, not complete Reddit
   coverage. The empty-state recognizer is regression-tested against the message
-  observed in the standalone listing check. Pagination remains open below.
+  observed in the standalone listing check. Later pagination verification is
+  recorded below.
 - [x] **P1: Collect X timelines before refreshing discussions.** The full check
   `8d54ed62` spent about 55s refreshing five discussions after its first 10s
   timeline. Normal scrapes now collect timelines only. `--x-details` separately
@@ -700,15 +719,6 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   bounded cleanup and login/cancellation behavior. A separate bounded refresh
   (`9061e460`) selected and saved two discussions in 24.8s without any timeline
   visits: one captured, one partial with 22 replies/context and a remaining cursor.
-- [ ] **P2: Diagnose the recurring X browser timeout.** Both the X-only check
-  `03ccaaa1` and full run `19bb2610` timed out after 30s at account 21,
-  `lexfridman`. Restarting the browser with the saved session collected 32 posts
-  on retry in both runs and allowed later accounts to continue. Recovery is
-  working; the logs do not distinguish an account-specific problem from browser
-  lifetime or navigation/transport failure. Capture the failed browser stage and
-  compare the account in a fresh browser and a different position in the pass.
-  Done when the trigger is reproduced and addressed without weakening deadlines
-  or hiding failed attempts.
 - [x] **P2: Distinguish ID-only X references from readable posts.** The three
   reference-only Tweet objects from `03ccaaa1` remain in `raw_posts`, with their
   original payloads. New run/source counters separate post captures from
@@ -750,7 +760,8 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   that those communities were unavailable or empty. Listing/pagination and
   thread requests now preserve HTTP status and Retry-After. A 429 counts as a
   rate-limit failure. The initial 30-second cooldown was insufficient; the
-  current five-minute Reddit cooldown is described below.
+  then-used five-minute Reddit cooldown is historical; the blocked-collection
+  update above describes current run-level deferral.
   Waiting for that cooldown is separate from the detail-page read deadline.
   JSON endpoint denials still allow the existing public rendered-thread fallback.
   After a rate-limited detail visit, the remaining details in that batch are
@@ -848,13 +859,6 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   no published/partial files. A saved Register article's previously failed video
   was also downloaded and persisted through the normal configured Docker path.
   This establishes these samples, not universal YouTube availability.
-- [ ] **P2: Expose browser-stage progress.** Browser detail work is absent from
-  HTTP-active counters, and source-history counters are finalized only at source
-  end. Heartbeats stayed at zero active HTTP/media while Reddit worked on posts.
-  Add meaningful account/community/detail progress and distinguish buffered
-  records from durable rows. Done when a heartbeat identifies active browser
-  work, waiting and stalled work without inspecting network traffic.
-  [Progress metrics](../src/dank/scrape/metrics.py).
 - [x] **P2: Count known media size exclusions as skips.** Five Reddit GIFs of
   roughly 15–46 MB exceeded the configured 10 MiB cap and were previously counted
   as failures. Oversized estimates, HTTP headers/streams and completed media files
@@ -864,48 +868,6 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   downloads, missing/incorrect headers, cleanup and a completed source outcome.
   [Size-limit tests](../tests/scrape/test_media_limits.py),
   [outcome counters](../src/dank/scrape/assets/__init__.py).
-- [ ] **P2: Choose smaller X video variants and retain per-asset outcomes.**
-  YouTube now selects fitting complete formats and classifies known size aborts
-  as skips. X still selects the largest variant before applying the size policy;
-  prefer a smaller eligible variant where available. Raw references retain only
-  the URL/path, not a durable per-asset outcome reason.
-  [Variant selection](../src/dank/scrape/x/payloads.py).
-- [ ] **P2: Classify failed publisher media and make retries selective.** Runs
-  `8d54ed62` and `19bb2610` each logged five Wikimedia image 403s, two Microsoft
-  image 403s, three `shkspr.mobi` favicon 401s and an Internet Archive connection
-  failure. The header, referrer and Archive-link repairs above recover those
-  cases; Microsoft's two missing images remain publisher-side 404s. Durable
-  per-asset reason/status and selective media retries remain follow-ups. Let a scoped
-  retry revisit unavailable media without recollecting every source; investigate
-  each host before assuming stale URLs or an authentication requirement.
-  [Media pipeline](../src/dank/scrape/assets/http.py).
-- [ ] **P2: Make blocked feed/article recovery actionable.** Niche Gamer's feeds
-  returned 403; article fetches also failed across several publishers, and
-  Order Order exhausted its 429 retries. Run `19bb2610` also logged article
-  403s for Ars Technica (20 URLs), Etsy (20), Netflix Tech Blog (10), LWN (6)
-  and Microsoft (1), plus connection failures after redirects from `postgr.es`
-  to `stormatics.tech` and `dbadevops.com`. The Register previously returned 15
-  article verification pages; in `19bb2610` its feed itself returned a verification
-  page, so no articles were collected. Previously saved articles remain stored.
-  Retain host/status and retry eligibility
-  in a source summary, distinguish retained feed text from a fetched article,
-  and review supported feed alternatives. Done when operators can identify
-  affected sources and choose a scoped retry or configuration change without
-  searching the whole log. Existing access restrictions may remain.
-- [ ] **P2: Bound and cancel yt-dlp jobs.** Code inspection shows downloads run
-  through `asyncio.to_thread` without a DANK-owned overall deadline; cancelling
-  an await does not stop the worker. Network reads now have a 15-second timeout
-  and extraction/download/fragment retries are limited to one, but this does not
-  bound the entire job or a stuck FFmpeg process. This is a potential stall risk, not an
-  observed yt-dlp hang in this run. Add a bounded, cancellable execution model.
-  Done when an intentionally stalled downloader releases its media slot, cleans
-  partial output and permits graceful shutdown within a tested deadline.
-- [ ] **P3: Reduce routine network log noise.** Full GraphQL query parameters
-  and Reddit telemetry responses obscure warnings and useful stage messages.
-  Keep account/community progress and aggregate capture counts at INFO; move
-  detailed network diagnostics to DEBUG with sensitive URL data omitted.
-  Done when a normal run can be audited without hundreds of transport lines.
-
 ## What the reader tells us
 
 There are currently **two collection-quality pills**:
@@ -951,21 +913,24 @@ and recovery commands use that configured source identity.
 
 These are implemented safeguards or known limitations across sources. Generic
 test fixtures establish behavior, not an incident at a particular publisher.
+Related work is tracked under [feed/article recovery](https://linear.app/dense-analysis/issue/DEN-31/make-feed-and-article-recovery-actionable),
+[media outcomes](https://linear.app/dense-analysis/issue/DEN-30/persist-media-outcomes-and-support-selective-retries),
+and [processing outcomes](https://linear.app/dense-analysis/issue/DEN-35/record-durable-processing-outcomes-per-post-and-capture).
 
-| Problem | Handling today | Limit / follow-up |
+| Problem | Handling today | Current limit |
 | --- | --- | --- |
 | Graph connections can lose provenance or misattribute links in page chrome and embedded foreign posts | A separate evidence index extracts owned post text, structured HN/Reddit comments with verified ancestry, scoped publisher bodies and identifiable article comments. X quotes, recommendation payloads, comment author/reply controls and self-links are excluded. URL aliases resolve collected destinations; publisher path/query meaning is preserved, and only saved YouTube metadata supplies video titles. Raw captures are unchanged. | **Saved evidence only.** The first startup scans the archive once in 64-row batches; future collection/processing writes evidence at the persistence boundary. Graphs show up to 100 occurrences in each direction with totals; older evidence retains its date and exact lookup. Only processed origins are navigable; newer unprocessed evidence is withheld. Missing raw ownership fields, uncollected comments, unsupported article layouts and X replies not saved as standalone posts remain outside coverage. No semantic, sentiment or topic relationships are inferred. [Extraction tests](../tests/test_references.py), [API and migration tests](../tests/web/test_reader_connections.py). |
 | Article fetch fails, times out or returns an empty body | By default the entry is skipped. With `keep_feed_on_fetch_failure = true`, the feed entry is retained with `page_fetch_status: "failed"`. Warnings record the URL and available error detail. | Retention is opt-in. The raw flag does not retain a structured HTTP status or detailed reason; inspect logs for that. `--retry-failed-pages` is manual, not a scheduled retry. [RSS guide](features/rss.md#article-fetch-failures). |
 | HTTP 429 / host cooldown | RSS/homepage requests have up to three retries with 2/4/8-second backoff; `Retry-After` and shared per-host cooldowns are respected within the 30-second wait limits. | Other HTTP errors and timeouts do not get those same-run retries. Direct-media 429s start a cooldown but that download is not retried in the same run. [Limits](features/rss.md#rate-limits), [tests](../tests/scrape/test_fetch_logging.py). |
 | Missing or malformed feeds | Explicit feed URLs can bypass discovery. Fetch/parse failures are counted and logged; a source without usable feeds is reported as skipped or failed according to its counters. | An unavailable or invalid feed yields no entries to retain, and therefore may produce no reader card or pill. A valid empty feed can complete with zero posts. [History](features/history.md#what-is-recorded), [runner tests](../tests/scrape/test_scrape_runner.py). |
 | Browser profile stays locked after a Docker scrape | Chromium gets up to five seconds to exit normally before driver cleanup, allowing it to remove its singleton links. | **Handled for normal shutdown.** Two consecutive one-off Docker scrapes on 2026-10-16 reused a profile and left no singleton links while preserving profile data. Crashes or forced termination may still leave a lock; verify that its owner is gone before clearing stale links. [Browser lifecycle tests](../tests/scrape/test_browser_session.py). |
-| X stalls while Reddit waits for the shared browser | X and Reddit use separate browser processes, persistent profiles and per-site locks. X keeps its existing login profile; Reddit starts with its own profile. X browser startup/navigation and scroll steps have 30-second budgets; a timeout records a fetch failure, closes its browser and stops that X source. | **Cross-site blocking removed; X driver waits bounded.** A Docker run inspected on 2026-10-17 had saved 826 RSS posts and no X posts before X stopped responding and Reddit remained queued. The run was cancelled with saved rows intact. Regression tests verify Reddit persistence while X waits, same-site serialization, separate media cookie paths, timeout reporting and capture-handler cleanup. [Runner tests](../tests/scrape/test_scrape_history.py), [X tests](../tests/scrape/test_x_collection.py), [concurrency](features/history.md#concurrency). Both sites still use the configured source-worker limit. These bounds do not retry failed accounts or impose an overall run deadline. |
+| X stalls while Reddit waits for the shared browser | X and Reddit use separate browser processes, persistent profiles and per-site locks. X keeps its existing login profile; Reddit starts with its own profile. X browser startup/navigation and scroll steps have 30-second budgets; a timeout closes the owned browser and retries that account once, continuing after a second failure. Sign-in/profile-lock failures and unsafe cleanup still stop X. | **Cross-site blocking removed; X driver waits bounded.** A Docker run inspected on 2026-10-17 had saved 826 RSS posts and no X posts before X stopped responding and Reddit remained queued. The run was cancelled with saved rows intact. Regression tests verify Reddit persistence while X waits, same-site serialization, separate media cookie paths, timeout reporting and capture-handler cleanup. [Runner tests](../tests/scrape/test_scrape_history.py), [X tests](../tests/scrape/test_x_collection.py), [concurrency](features/history.md#concurrency). Both sites still use the configured source-worker limit. Account retries are bounded; there is no overall run deadline. The recurring timeout diagnosis is tracked in the [backlog](https://linear.app/dense-analysis/issue/DEN-27/diagnose-the-recurring-x-browser-timeout). |
 | X account pages display posts but collection captures none | Capture recognizes `UserOriginalsTimeline` as well as the older account timeline endpoints; it still excludes the personalized home timeline. | **Observed endpoint change handled.** On 2026-10-17 a saved session in headless Docker received 27 parseable posts from `UserOriginalsTimeline`, which the old capture filter ignored. After the fix, a single-account Docker scrape saved 33 X posts in 6.4 seconds with no fetch failures; media downloads were disabled. No new login was needed. This establishes that headless collection can work with that session, not that X will always accept it. [Capture regression tests](../tests/scrape/test_x_collection.py). Future endpoint or payload changes may need another update. |
 | Large HTTP header fields | Direct HTTP requests allow header fields up to 16 KiB, including redirect responses. | Larger fields still fail. This is a parser-limit fix, not an access-control workaround. [Regression tests](../tests/scrape/test_http_header_limits.py). |
 | X text repeats, links disappear or attachments are absent | Processing prefers full note text, escapes literal text, preserves paragraphs and expands saved URL entities. Reader cards and detail share post content, link cards and ordered media; matching local files take precedence over captured X URLs. Metadata uses the exact processed capture rather than a newer pending scrape. | **Saved content recoverable.** The 2026-10-17 `@3blue1brown` example already contained its YouTube destination, card title and thumbnail; stripping trailing short links and requiring downloaded assets hid them. Use the [X reprocessing command](features/x.md#reading-saved-posts) to rebuild saved records. Remote media can expire; unsupported video formats retain their poster and original-post link. Missing raw metadata falls back to processed text and saved media. Reply, repost, like and view counts describe that same capture; missing or malformed counts remain unknown rather than zero. Conversation snapshots are collected separately with bounded detail browsing; reprocessing alone fetches neither conversations nor missing media. [Processing tests](../tests/process/test_process_x.py), [content tests](../tests/test_x_content.py), [reader tests](../tests/web/test_reader_x.py). |
 | X, YouTube or Reddit video keeps playing outside the reading view | A shared reader controller pauses the previous player when another starts, and pauses a player when it leaves the viewport or the reader navigates. Pausing preserves position; returning to view requires manual resume. Feed and opened-post players share the latest per-video position within the reader tab, including backward seeks. Reloading clears this navigation state. Reddit cards and opened posts share the same controller, including HLS and verified MP4 fallbacks; delayed loading cannot restart a cancelled player. | **Reader behavior covered.** YouTube is controlled through its iframe message channel, restricted to the matching frame and origin. The bridge waits for readiness before starting, cancels stale starts, and cleans up listeners and polling. This provider protocol may change; unavailable embeds retain **Watch on YouTube**. [Playback lifecycle tests](../reader/src/lib/playback.test.ts), [browser coverage](../reader/tests/youtube.spec.ts), [navigation handoff tests](../reader/tests/playback-position.spec.ts). |
 | Reddit video URLs repeat or portrait players have large side bars | The reader hides only raw references matching a displayed clip, including archived copies and signed URL variants. Failure restores the reference; descriptive links and unrelated clips stay visible. Player sizing uses poster dimensions before playback, then the video's intrinsic dimensions. | **Existing saved posts supported.** The API retains the original clip URL beside local media. Missing or incorrect posters are corrected when video metadata loads; streams still load only on demand. [Reader tests](../reader/tests/reddit-video-layout.spec.ts), [URL matching tests](../reader/src/lib/redditText.test.ts). |
-| X conversations contain only part of the replies or thread context | Collection saves bounded, focal-post-validated `TweetDetail` snapshots after account timelines, or for selected saved posts via `--x-post`. Parent context and replies are archived together; ads, nested quotes and unrelated recommendations are excluded from conversation slots. The reader retains earlier snapshots when a later attempt fails or skips detail capture. | **Partial coverage is explicit.** Budgets, remaining cursors, hidden branches, missing context and reply-count shortfalls mark snapshots partial. Missing responses, sign-in failures and HTTP failures never claim zero replies or completeness. A live signed-in Docker check on 2026-10-17 saved 22 related posts from a validated detail response and correctly reported a remaining cursor. Capture does not expand hidden branches or download extra reply media; remote media may expire. [Conversation guide](features/x.md#conversation-snapshots), [collector tests](../tests/scrape/test_x_conversations.py), [CLI tests](../tests/scrape/test_x_conversation_cli.py). |
+| X conversations contain only part of the replies or thread context | Collection saves bounded, focal-post-validated `TweetDetail` snapshots in a separate `--x-details` pass, or for selected saved posts via `--x-post`. Parent context and replies are archived together; ads, nested quotes and unrelated recommendations are excluded from conversation slots. The reader retains earlier snapshots when a later attempt fails or skips detail capture. | **Partial coverage is explicit.** Budgets, remaining cursors, hidden branches, missing context and reply-count shortfalls mark snapshots partial. Missing responses, sign-in failures and HTTP failures never claim zero replies or completeness. A live signed-in Docker check on 2026-10-17 saved 22 related posts from a validated detail response and correctly reported a remaining cursor. Capture does not expand hidden branches or download extra reply media; remote media may expire. [Conversation guide](features/x.md#conversation-snapshots), [collector tests](../tests/scrape/test_x_conversations.py), [CLI tests](../tests/scrape/test_x_conversation_cli.py). |
 | Flattened feeds, lost figures/captions, relative URLs | Full plain-text feeds recover structure only from complete ordered text matches. Supported figures between matching sibling blocks are retained. WordPress caption containers become figures; final response URLs and valid HTML base URLs resolve links/media. | Formatted feeds stay authoritative; incomplete matches stay unchanged. Older captures without redirect metadata may need a fresh scrape. These rules do not validate every page layout. [Processing behavior](features/processing.md), [caption tests](../tests/test_readable_html.py), [redirect tests](../tests/scrape/test_rss_redirects.py). |
 | Missing or failed media downloads | Failed direct HTTP downloads remove partial files; absent local files are omitted from processed assets. `files_failed` and `media_skipped` distinguish failures from reference-only, disabled and known size-excluded downloads. | Media failure alone does not trigger **Incomplete scrape**. An article may remain readable with remote images or unavailable media. Configured size limits can also prevent downloads. [Media guide](features/media.md), [asset tests](../tests/scrape/test_scrape_assets.py). |
 | Extensionless images, observed on Microsoft Community Hub and `shkspr.mobi` | Downloaded PNG and WebP images with no filename type are recognized from their signatures, letting the reader use local copies. Known filename types stay authoritative. | **Handled for PNG and WebP.** Other unknown formats remain unclassified. Existing asset processing is incremental; already-processed unknown metadata needs a refreshed raw asset. This does not discover or download embedded media automatically. [Media guide](features/media.md), [classification and reader tests](../tests/process/test_process_assets.py). |
@@ -1007,6 +972,8 @@ row only for a distinct problem. Keep proposed or unmerged fixes visibly
 separate from shipped handling, and retain useful resolved cases so the
 reason for a workaround is not lost. Keep credentials and full raw payloads
 out of this document; link to code/tests and summarize dated observations.
+Put action checklists and future proposals in [Linear](https://linear.app/dense-analysis/project/dank-de00db7ebbb2), linking
+back here for evidence. Keep only current behavior and recovery guidance here.
 
 
 ### X For You recommendations

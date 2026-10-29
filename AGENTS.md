@@ -63,6 +63,10 @@ indirection.
   differ. Extract functions, components, or modules to make ownership clearer;
   keep abstractions proportional to the problem being solved.
 * Implement tests, especially unit tests for data processing.
+* Track outstanding work and future ideas in the
+  [DANK Linear project](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
+  Keep status, priority and action checklists there; repository docs describe
+  shipped behavior, operational workarounds and verification evidence.
 * When changing collection/processing failure handling, quality indicators, or
   source-specific workarounds, update `docs/known-issues.md` with the current
   behavior, remaining limits, and relevant evidence or tests.

@@ -58,6 +58,7 @@ existing account/listing options. RSS composition currently supports publishers
 and Hacker News. Reddit, X and YouTube RSS normalization and additional adapters
 such as standalone yt-dlp discovery are not implemented. Unsupported combinations
 fail configuration validation rather than silently selecting another collector.
+Track extensions under [additional source adapters](https://linear.app/dense-analysis/issue/DEN-42/evaluate-additional-source-adapters).
 
 Without `adapters`, existing source routing is unchanged, except that explicit
 HN `feed_urls` now select RSS. An explicit adapter list replaces the defaults;

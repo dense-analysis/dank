@@ -3,6 +3,7 @@
 DANK's new reader frontend: compact stories, focused articles, combined search,
 source filters and reading preferences. The original viewer remains
 at `/`; the new reader lives at `/reader/`. Both belong to this repository.
+Track outstanding work and future ideas in the [DANK project in Linear](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
 
 ## Develop
 

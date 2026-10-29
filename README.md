@@ -26,6 +26,7 @@ perception and evolving narratives.
 
 See [known collection and processing issues](docs/known-issues.md) for reader
 status meanings, source-specific problems, current handling and recovery gaps.
+Track outstanding work and future ideas in the [DANK project in Linear](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
 
 ## Choose how to run
 

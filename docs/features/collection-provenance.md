@@ -129,31 +129,7 @@ links nor discovery order establish copying, influence or causation.
 
 ## Future analysis: source novelty and a repost index
 
-A future analysis view could compare how often communities or feeds introduce
-articles that DANK has not seen, and how quickly they reference already known
-articles. Useful candidates include:
-
-- The share of links with independent discovery before their post's known
-  publication time, matching the eye indicator.
-- Separately, the share already observed elsewhere before DANK collected this
-  source's link: a possible **repost index** based on collection order. These
-  two comparisons must not be combined; only the first establishes that DANK
-  already knew the destination when the linking post was published.
-- Median observed delay from the first known source to this source, with ties
-  reported separately.
-- New-to-DANK article share, repeated links within a community, and coverage by
-  publisher or topic.
-
-This is a future feature consideration, not an implemented score. Define the
-unit explicitly before calculating it: unique article/source observations over
-a stated window, separate from repeated scraping, comments and within-source
-duplicates. Show the number of eligible observations and unknown or unmatched
-links beside any ratio.
-
-Polling frequency, ranking filters, selected communities, outages, access
-failures, archive imports and when a source was first enabled all bias observed
-order. Comparisons need collection coverage and comparable time windows;
-publication dates and post dates should be separate dimensions. A late
-collection is not evidence that a community copied a story or lacks original
-reporting. Preserve the underlying evidence and uncertainty before considering
-ranking feeds as leading or repost-heavy.
+The proposal and its measurement safeguards are tracked in the
+[product backlog](https://linear.app/dense-analysis/issue/DEN-37/explore-source-novelty-and-a-repost-index).
+The collection indicators and graph history described above are implemented;
+source-comparison scores are not.
