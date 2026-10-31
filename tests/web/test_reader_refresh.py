@@ -255,8 +255,9 @@ async def test_https_proxy_requests_still_require_matching_origin(
     app["clickhouse"] = AsyncMock()
     request = make_mocked_request(
         "POST", "/api/reader/refresh", app=app,
+        # What the proxy sends once it has checked the https:// origin.
         headers={"Content-Type": "application/json", "Host": "dank.local",
-                 "X-Forwarded-Proto": "https", "Origin": "https://dank.local"},
+                 "X-Forwarded-Proto": "https", "Origin": "http://dank.local"},
     )
     monkeypatch.setattr(type(request), "json", AsyncMock(
         return_value={"scope": {"kind": "all"}},

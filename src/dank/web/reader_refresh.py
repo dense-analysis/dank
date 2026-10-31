@@ -371,11 +371,12 @@ async def handle_refresh(request: web.Request) -> web.Response:
         return web.json_response({"jobs": list(reversed(manager.jobs))})
 
     origin = request.headers.get("Origin")
-    # The local HTTPS proxy preserves Host and supplies the external scheme.
-    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
 
+    # The local HTTPS proxy checks the browser's https:// origin itself,
+    # then rewrites it to http:// for this server, so compare with the
+    # scheme this server sees rather than X-Forwarded-Proto.
     if request.headers.get("Sec-Fetch-Site") == "cross-site" or (
-        origin is not None and origin != f"{scheme}://{request.host}"
+        origin is not None and origin != f"{request.scheme}://{request.host}"
     ):
         raise web.HTTPForbidden(reason="Same-origin request required")
 
