@@ -135,7 +135,7 @@ def create_app(settings: Settings, *, page_size: int) -> web.Application:
 
     app = web.Application()
     static_dir = _static_dir()
-    assets_dir = _assets_dir(settings)
+    assets_dir = assets_path(settings)
     # Keep assets discovered after the first startup immediately readable.
     assets_dir.mkdir(parents=True, exist_ok=True)
     templates = _template_environment()
@@ -190,19 +190,9 @@ async def _clickhouse_context(app: web.Application):
     app["clickhouse"] = client
 
     try:
-        schema = pathlib.Path(__file__).parents[1] / "storage/reddit.sql"
-        for statement in schema.read_text().split(";"):
-            if statement.strip():
-                await client.execute(statement)
-        from dank.web.reader_youtube import ensure_youtube_storage
+        from dank.web.startup import prepare_clickhouse
 
-        await ensure_youtube_storage(client)
-        from dank.web.reader_links import ensure_link_storage
-
-        await ensure_link_storage(client)
-        from dank.web.reader_reference_index import ensure_reference_storage
-
-        await ensure_reference_storage(client)
+        await prepare_clickhouse(client)
         yield
     finally:
         await client.__aexit__(None, None, None)
@@ -999,7 +989,7 @@ def _format_display_datetime(value: datetime.datetime) -> str:
     return value.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def _assets_dir(settings: Settings) -> pathlib.Path:
+def assets_path(settings: Settings) -> pathlib.Path:
     return (settings.data_dir / "assets").expanduser().resolve()
 
 

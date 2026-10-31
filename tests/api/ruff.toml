@@ -1,0 +1,10 @@
+# The root settings, plus one ban for API tests.
+extend = "../../pyproject.toml"
+# Share the root cache instead of keeping one beside this file.
+cache-dir = "../../.ruff_cache"
+
+[lint]
+extend-select = ["TID251"]
+
+[lint.flake8-tidy-imports.banned-api]
+"unittest.mock".msg = "Fake the port, or write an integration test."

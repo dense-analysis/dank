@@ -30,19 +30,6 @@ class Account(AccountIdentity):
     count: int
 
 
-def source_kind(domain: str) -> str:
-    if domain in X_DOMAINS:
-        return "x"
-
-    if domain == "youtube.com":
-        return "youtube"
-
-    if domain == "news.ycombinator.com":
-        return "hacker_news"
-
-    return "reddit" if domain == "reddit.com" else "rss"
-
-
 async def source_accounts(
     client: ClickHouseClient, domain: str, configured: tuple[str, ...],
 ) -> list[Account]:

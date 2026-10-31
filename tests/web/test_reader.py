@@ -267,61 +267,6 @@ async def test_combined_embedding_unavailable_is_an_explicit_error(
     assert fake.calls == []
 
 
-async def test_sources_include_empty_configured_and_collected_sources(
-    app: web.Application,
-) -> None:
-    app["clickhouse"] = FakeClickHouse([
-        {"domain": "politics.example", "count": 3},
-        {"domain": "old.example", "count": 7},
-    ])
-    response = await request(app, "/api/reader/sources")
-    data = json.loads(response.text or "")
-    assert response.status == 200
-    assert data["total_posts"] == 10
-    assert data["blog_external_count"] == 4
-    assert data["sources"][0] == {
-        "icon_url": "/api/reader/source-icon?domain=empty.example",
-        "domain": "empty.example", "name": "empty.example",
-        "tags": ["culture"], "count": 0, "kind": "rss", "configured": True,
-    }
-    assert data["sources"][1]["configured"] is False
-    assert data["sources"][2]["configured"] is True
-    assert data["sources"][1]["tags"] == []
-    assert data["sources"][2]["tags"] == ["politics"]
-
-
-async def test_x_sources_include_configured_accounts_and_exclude_other_authors(
-    app: web.Application,
-) -> None:
-    state = app["state"]
-    app["state"] = state._replace(settings=state.settings._replace(sources=(
-        SourceConfig("x.com", ("@WatcherGuru", "Empty_Account")),
-    )))
-    icon = "https://pbs.twimg.com/profile_images/123/profile_normal.png"
-    app["clickhouse"] = FakeClickHouse(
-        [{"domain": "x.com", "count": 9},
-         {"domain": "reddit.com", "count": 3}],
-        [{"handle": "watcherguru", "count": 7},
-         {"handle": "oldaccount", "count": 2}],
-        [{"domain": "x.com", "handle": "watcherguru", "profile": json.dumps({
-            "core": {"screen_name": "WatcherGuru", "name": "Watcher.Guru"},
-            "avatar": {"image_url": icon},
-        })}],
-    )
-    response = await request(app, "/api/reader/sources")
-    data = json.loads(response.text or "")
-    assert response.status == 200
-    assert data["total_posts"] == 12
-    assert data["sources"][0]["kind"] == "reddit"
-    assert data["sources"][1]["kind"] == "x"
-    assert data["sources"][1]["accounts"] == [
-        {"handle": "empty_account", "name": "empty_account", "count": 0,
-         "icon_url": None, "total_posts": None},
-        {"handle": "watcherguru", "name": "Watcher.Guru", "count": 7,
-         "icon_url": icon, "total_posts": None},
-    ]
-
-
 async def test_x_account_api_keeps_search_and_returns_a_bound_cursor(
     app: web.Application,
 ) -> None:
@@ -350,33 +295,6 @@ async def test_x_account_api_keeps_search_and_returns_a_bound_cursor(
         + "&cursor=" + data["next_cursor"].replace("=", "%3D"),
     )
     assert response.status == 400
-
-
-async def test_reddit_sources_include_configured_empty_communities(
-    app: web.Application,
-) -> None:
-    state = app["state"]
-    app["state"] = state._replace(settings=state.settings._replace(sources=(
-        SourceConfig("reddit.com", (), feed_urls=(
-            "https://www.reddit.com/r/LocalLLaMA/",
-            "https://www.reddit.com/r/accelerate/",
-        )),
-    )))
-    fake = FakeClickHouse(
-        [{"domain": "reddit.com", "count": 7}],
-        [{"community": "localllama", "count": 7}], [], [], [],
-    )
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/sources")
-    data = json.loads(response.text or "")
-    assert response.status == 200
-    assert data["sources"][0]["kind"] == "reddit"
-    assert data["sources"][0]["communities"] == [
-        {"name": "accelerate", "count": 0, "icon_url": None,
-         "flairs": [], "post_total": None},
-        {"name": "LocalLLaMA", "count": 7, "icon_url": None,
-         "flairs": [], "post_total": None},
-    ]
 
 
 def test_reddit_filters_are_separate_parameterized_and_case_insensitive():

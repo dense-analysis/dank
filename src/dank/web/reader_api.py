@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from dank.api.sources.model import source_kind
 from dank.html_utils import PAGE_CHALLENGE_PATTERN, remove_page_noise
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import (
@@ -29,10 +30,7 @@ from dank.web.app import (
     _search_embedding,  # pyright: ignore[reportPrivateUsage]
     _summarize_html,  # pyright: ignore[reportPrivateUsage]
 )
-from dank.web.reader_accounts import (
-    source_accounts,
-    source_kind,
-)
+from dank.web.reader_accounts import source_accounts
 from dank.web.reader_blogs import external_blog_count
 from dank.web.reader_communities import community_icons, community_totals
 from dank.web.reader_connections import handle_connection, handle_connections

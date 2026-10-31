@@ -80,8 +80,13 @@ def main() -> None:
         action="store_true",
         help="Disable hot code reloading",
     )
+    parser.add_argument(
+        "--server",
+        choices=("aiohttp", "fastapi"),
+        default="aiohttp",
+        help="Server to run while routes move to FastAPI (default: aiohttp)",
+    )
     args = parser.parse_args()
-    settings = load_settings(args.config)
     page_size = args.limit
 
     if page_size <= 0:
@@ -89,6 +94,13 @@ def main() -> None:
 
     if page_size > MAX_PAGE_SIZE:
         page_size = MAX_PAGE_SIZE
+
+    if args.server == "fastapi":
+        _serve_fastapi(args, page_size)
+
+        return
+
+    settings = load_settings(args.config)
 
     if not args.no_reload:
         _start_reloader()
@@ -99,6 +111,17 @@ def main() -> None:
         host=args.host,
         port=args.port,
         print=_terminal_print,
+    )
+
+
+def _serve_fastapi(args: argparse.Namespace, page_size: int) -> None:
+    # Imported here so the default aiohttp server doesn't load FastAPI.
+    from dank.api.serve import ServeOptions, serve
+
+    _terminal_print(f"API docs: http://{args.host}:{args.port}/api/docs")
+    serve(
+        ServeOptions(args.config, args.host, args.port, page_size),
+        reload=not args.no_reload,
     )
 
 

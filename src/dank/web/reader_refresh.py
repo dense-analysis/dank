@@ -10,8 +10,8 @@ import os
 import pathlib
 import signal
 import uuid
-from collections.abc import AsyncIterator
-from contextlib import suppress
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Any, cast
@@ -353,13 +353,22 @@ def add_refresh_routes(app: web.Application) -> None:
 
 
 async def refresh_context(app: web.Application) -> AsyncIterator[None]:
-    manager = RefreshManager(app["state"].settings)
+    async with running_refresh(app["state"].settings) as manager:
+        app[REFRESH_MANAGER] = manager
+        yield
+
+
+@asynccontextmanager
+async def running_refresh(
+    settings: Settings,
+) -> AsyncGenerator[RefreshManager]:
+    """Restore saved jobs and run the worker; on exit, stop the workers."""
+    manager = RefreshManager(settings)
     manager.restore()
-    app[REFRESH_MANAGER] = manager
     manager.worker = asyncio.create_task(manager.run())
 
     try:
-        yield
+        yield manager
     finally:
         await manager.close()
 

@@ -1,18 +1,15 @@
 import datetime as dt
 import json
-import pathlib
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from aiohttp.test_utils import make_mocked_request
 from multidict import MultiDict
 
-from dank.config import HackerNewsFilter, SourceConfig, load_settings
+from dank.api.sources.model import source_kind
+from dank.config import HackerNewsFilter, SourceConfig
 from dank.storage.clickhouse import QueryResult
-from dank.web.app import PostRow, create_app
-from dank.web.reader_accounts import source_kind
-from dank.web.reader_api import handle_sources
+from dank.web.app import PostRow
 from dank.web.reader_hacker_news import add_hacker_news_metadata
 from dank.web.reader_query import (
     ReaderFilters,
@@ -102,25 +99,6 @@ def test_hacker_news_is_a_separate_source_kind():
     ))
     assert "source IN ('rss', 'linked_article', 'hacker_news')" in query
     assert "blog_domains" not in params
-
-
-async def test_hacker_news_source_has_readable_name(tmp_path: pathlib.Path):
-    settings = load_settings("config.example.toml")._replace(
-        sources=(SourceConfig(POST.domain, ()),), data_dir=tmp_path,
-    )
-    app = create_app(settings, page_size=50)
-    client = AsyncMock()
-    client.fetch_json.side_effect = [
-        QueryResult([{"domain": POST.domain, "count": 3}]),
-        QueryResult([{"blog_external_count": 1}]),
-    ]
-    app["clickhouse"] = client
-    response = await handle_sources(make_mocked_request(
-        "GET", "/api/reader/sources", app=app,
-    ))
-    source = json.loads(response.text or "")["sources"][0]
-    assert source["name"] == "Hacker News"
-    assert source["kind"] == "hacker_news"
 
 
 async def test_listing_metadata_uses_exact_version_and_no_comment_history():

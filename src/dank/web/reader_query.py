@@ -11,8 +11,9 @@ from typing import Any, NamedTuple, cast
 
 from multidict import MultiMapping
 
+from dank.api.sources.model import source_kind
 from dank.config import HackerNewsFilter, SourceConfig
-from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS, source_kind
+from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS
 from dank.web.reader_blogs import BLOG_CONDITION, EXTERNAL_BLOG_CONDITION
 from dank.web.reader_flairs import (
     FLAIR_WHITESPACE_PATTERN,

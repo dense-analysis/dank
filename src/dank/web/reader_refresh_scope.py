@@ -6,6 +6,7 @@ import re
 from typing import Any, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
+from dank.api.sources.model import source_kind
 from dank.config import (
     Settings,
     SourceAdapter,
@@ -15,7 +16,6 @@ from dank.config import (
 from dank.scrape.youtube.feeds import configured_feeds
 from dank.scrape.youtube.payloads import YouTubeFeed
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.reader_accounts import source_kind
 from dank.youtube import VIDEO_ID
 
 LABELS = {
