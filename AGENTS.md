@@ -67,6 +67,13 @@ indirection.
   [DANK Linear project](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
   Keep status, priority and action checklists there; repository docs describe
   shipped behavior, operational workarounds and verification evidence.
+* Keep Linear statuses current as work moves, so the project shows what is
+  going on. Move an issue and its parent to In Progress when work starts, to
+  In Review while it waits on a pull request or the user's review, and to Done
+  once it is merged into `main`. When closing an issue, comment with the
+  commits, how it was verified, any differences from the issue and whether it
+  is pushed. Move issues it unblocks from Backlog to To Do, and record
+  follow-up work as issues rather than only in chat.
 * When changing collection/processing failure handling, quality indicators, or
   source-specific workarounds, update `docs/known-issues.md` with the current
   behavior, remaining limits, and relevant evidence or tests.
