@@ -10,7 +10,8 @@ uv run web --server fastapi --no-reload --port 8081
 ```
 
 `web` keeps its other flags (`--config`, `--host`, `--port`, `--limit`,
-`--no-reload`). Ported so far: `GET /api/reader/sources`. OpenAPI is served at
+`--no-reload`). Ported so far: `GET /api/reader/sources`, `/posts`, `/post`,
+`/x/authors`, `/connections` and `/connection`. OpenAPI is served at
 `/api/openapi.json`, with interactive docs at `/api/docs`.
 
 ## Shape
@@ -33,7 +34,7 @@ src/dank/
   api/
     app.py               create_app(): routers, error handlers, guard, headers
     lifespan.py          Resources, opened at startup and closed at shutdown
-    deps.py              ResourcesDep, SettingsDep
+    deps.py              ResourcesDep, SettingsDep, single_values
     errors.py            the error envelope
     guards.py            same-origin JSON rule for unsafe methods
     headers.py           Cache-Control defaults, HEAD for every GET
@@ -47,6 +48,21 @@ src/dank/
       model.py           SourceSummary, XActivity, summarize(), source_kind()
       clickhouse.py      ClickHouseCollectionStats
       config_catalog.py  ConfigSourceCatalog, over Settings.sources
+    posts/
+      router.py          GET /api/reader/posts, /post and /x/authors
+      schemas.py         Query models; PostOut, PostDetailOut, XAuthorsResponse
+      deps.py            picks the adapters; tests override them here
+      service.py         PostService, ports PostStore, SearchEmbeddings, Clock
+      model.py           ReaderFilters, reader_filters(), cursors, PostRow
+      clickhouse.py      ClickHousePostStore, over the reader helpers
+      embeddings.py      CachedSearchEmbeddings: cache first, model in a thread
+    connections/
+      router.py          GET /api/reader/connections and /connection
+      schemas.py         Query models; ConnectionsResponse, ConnectionOut
+      deps.py            picks the adapter; tests override it here
+      service.py         ConnectionService, port ConnectionStore
+      model.py           ConnectionScope, ConnectionKey and their rules
+      clickhouse.py      ClickHouseConnectionStore, over the reader helpers
 ```
 
 A feature skips files it has nothing for: no `model.py` without rules, no
@@ -63,7 +79,8 @@ adapter without I/O.
 3. **Pydantic at the edge, NamedTuples inside.** Request and response models
    extend `ApiModel` (`extra="forbid"`, frozen). Routes never return dicts or
    NamedTuples, and services never take Pydantic models. A convention test
-   checks through OpenAPI that every route returns a strict model.
+   checks through OpenAPI that every route returns a strict model. Wide
+   projections are the one exception inside; see Projections.
 4. **Controllers are thin.** A route lets Pydantic parse the input, calls one
    service method and shapes the result: no SQL, no `try`/`except`, no
    business rules. Routes are plain functions on an `APIRouter`.
@@ -71,8 +88,8 @@ adapter without I/O.
    database, the clock, a model, the network or a subprocess. Pure code calls
    pure code directly. Adapters match a port by shape and never inherit.
 6. **Repositories for writes, read stores for reads.** ClickHouse reads go
-   through read stores that return domain values, never rows. Postgres app
-   state, starting with the source catalog, gets repositories.
+   through read stores that return domain values or projections, never rows.
+   Postgres app state, starting with the source catalog, gets repositories.
 7. **One aggregate, one transaction.** A repository method opens and commits
    its own transaction. There is no unit-of-work class until a use case must
    change two aggregates together.
@@ -114,6 +131,51 @@ Validation errors use 400 rather than FastAPI's 422, as the aiohttp server
 does. A route that needs resources but runs without the lifespan, such as a
 test missing a dependency override, answers 503.
 
+## Query models
+
+A route takes its query as `Annotated[Model, Query()]`, which gives OpenAPI one
+parameter per field. The model extends `ApiModel`.
+
+- **Repeatable keys** are `tuple[str, ...]` fields.
+- **Unknown keys** fail through `extra="forbid"`. A route that has always
+  ignored them says so with `extra="ignore"`.
+- **Repeated scalar keys** need `dependencies=[Depends(single_values(Model))]`
+  on the route. Starlette keeps only a key's last value, so Pydantic never sees
+  the repeat.
+- **Shape is Pydantic's.** Types and closed sets of values fail as
+  `invalid_request` and name their field in `fields`.
+- **Rules are the domain's.** A rule across fields, or one whose wording the
+  reader shows, lives in `model.py` and raises `InvalidInput`, so `error` keeps
+  that wording. The model hands its values to the rule from a method such as
+  `query.filters()`, called by the route.
+- **Keep a field as text when Pydantic is looser than the rule.** Pydantic takes
+  `5.0` as an integer and a timestamp as a date. Run a `BeforeValidator` on the
+  rule, or validate the text in the domain. `InvalidInput` is a `ValueError`, so
+  validators and aiohttp's handlers can both call the same rule.
+- **Absent can differ from empty.** Use `| None = None` when sending a key empty
+  must fail while leaving it out is fine.
+
+## Projections
+
+Posts and connections are the exception to NamedTuples inside. The helpers in
+`dank/web/reader_*.py` build one deeply nested, JSON-shaped dict per post for
+both servers, with keys that are absent rather than null. A copy of that shape
+as NamedTuples would have to round-trip through those dicts until aiohttp goes,
+so `model.py` names the dict (`PostPayload`) and `schemas.py` gives it its
+contract. Revisit this once DEN-51 removes aiohttp.
+
+To keep absent fields absent:
+
+- Declare a field that may be absent with a `None` default, and one that is
+  always present, even as null, without a default.
+- Build the response with `model_validate` on the dict, so a missing key stays
+  unset. Don't pass `None` for it.
+- Set `response_model_exclude_unset=True` on the route.
+
+The models forbid unknown keys, so a helper that gains a field answers 503 until
+its schema declares it. Compare both servers over real data when a schema
+changes, because fixtures miss what scrapes actually saved.
+
 ## Same-origin rule
 
 `guards.same_origin_json` runs before every route and acts only on unsafe
@@ -130,7 +192,8 @@ behind the proxy.
 ## Headers
 
 - `/api/*` responses get `Cache-Control: no-store` unless the route sets its
-  own.
+  own. Starlette answers unexpected errors outside every middleware, so that
+  handler sets the header itself.
 - `/static/*` and HTML responses get the aiohttp server's no-cache headers.
 - `HEAD` runs the matching `GET` route and drops the body.
 
@@ -166,15 +229,29 @@ there by `tests/api/ruff.toml`.
 
   Each test gets a new database with `schema.sql` and the startup steps
   applied, and drops it afterwards. The network guard allows that one address.
+- **Projection tests** do the same over HTTP: the real router and service, with
+  the real store swapped in for the fake. Each test states its rows and checks
+  the JSON, as in `tests/api/posts/test_payloads.py`.
 
 Rules: no `AsyncMock`, `patch` or `monkeypatch.setattr` on DANK modules; no
 assertions on SQL text, call counts or call order. A test that needs a patch
 points to a missing port.
 
-While both servers exist, `tests/api/sources/test_parity.py` starts each one
-over the same seeded database and compares the JSON. The one intended
-difference: when `reddit.com` has posts but no configured communities, FastAPI
-still returns empty `communities` and `flairs` lists.
+While both servers exist, each feature's `test_parity.py` uses
+`tests/api/parity.py` to start both over the same seeded database and compares
+the parsed JSON. It also checks that both accept and reject the same queries.
+Semantic search reads `web_embedding_cache`, so no test loads the model; date
+those rows from the clock, because the table's TTL drops old ones. For You
+cursors hold the moment each server was asked, so compare them without it.
+
+The intended differences:
+
+- Invalid queries answer with the error envelope. `error` keeps its wording when
+  a rule rejects the query, and is generic when Pydantic does.
+- `/api/reader/post` with a repeated `domain` or `id` uses the last value, not
+  the first.
+- When `reddit.com` has posts but no configured communities, `/sources` still
+  returns empty `communities` and `flairs` lists.
 
 ## Porting a route
 
@@ -186,9 +263,9 @@ still returns empty `communities` and `flairs` lists.
    values.
 4. Write the use case in `service.py`, gathering independent reads.
 5. Declare query, body and response models in `schemas.py`, extending
-   `ApiModel`.
+   `ApiModel`. See Query models and Projections.
 6. Write the route, wire adapters in `deps.py`, and mount the router in
-   `app.py`.
+   `app.py`. Add `single_values` if the route takes a query model.
 7. Add the route to the parity test, and delete the mock-based tests the new
    ones replace.
 8. Cover any new SQL with adapter tests in the ClickHouse lane.

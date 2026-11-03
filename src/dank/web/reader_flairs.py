@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from dank.api.posts.model import MAX_FLAIR_LENGTH as MAX_FLAIR_LENGTH
 from dank.storage.clickhouse import ClickHouseClient
 
-MAX_FLAIR_LENGTH = 300
 # Match Python str.strip() without trimming individual UTF-8 bytes.
 FLAIR_WHITESPACE_PATTERN = (
     r"^[\s\p{Z}\x{000B}\x{001C}-\x{001F}\x{0085}]+"

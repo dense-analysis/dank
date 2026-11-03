@@ -2,10 +2,12 @@
 
 from fastapi import Depends, FastAPI
 
+from dank.api.connections.router import router as connections_router
 from dank.api.errors import EXCEPTION_HANDLERS
 from dank.api.guards import same_origin_json
 from dank.api.headers import ApiHeaders
 from dank.api.lifespan import lifespan
+from dank.api.posts.router import router as posts_router
 from dank.api.sources.router import router as sources_router
 from dank.config import Settings
 
@@ -25,5 +27,7 @@ def create_app(settings: Settings, *, page_size: int) -> FastAPI:
     )
     app.add_middleware(ApiHeaders)
     app.include_router(sources_router)
+    app.include_router(posts_router)
+    app.include_router(connections_router)
 
     return app

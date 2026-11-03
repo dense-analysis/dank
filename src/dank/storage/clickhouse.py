@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from collections.abc import Iterable
 from types import TracebackType
 from typing import Any, NamedTuple, cast
@@ -9,6 +8,7 @@ import clickhouse_connect
 from clickhouse_connect.driver.asyncclient import AsyncClient
 
 from dank.config import ClickHouseSettings
+from dank.model import parse_datetime as parse_datetime
 
 
 class QueryResult(NamedTuple):
@@ -156,17 +156,3 @@ class ClickHouseClient:
             return tuple(float(item) for item in numeric_values)
 
         return value
-
-
-def parse_datetime(value: Any) -> datetime.datetime | None:
-    if isinstance(value, str) and value:
-        try:
-            value = datetime.datetime.fromisoformat(value)
-        except ValueError:
-            return None
-
-    if isinstance(value, datetime.datetime):
-        # ClickHouse's UTC columns can be returned as naive datetimes.
-        return value if value.tzinfo else value.replace(tzinfo=datetime.UTC)
-
-    return None

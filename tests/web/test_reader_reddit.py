@@ -1,24 +1,8 @@
 from __future__ import annotations
 
-import json
-import pathlib
-from typing import Any
-
 import pytest
-from aiohttp import web
-from test_reader import FakeClickHouse, request, row
 
-from dank.config import load_settings
-from dank.web.app import create_app
 from dank.web.reader_reddit import comment_capture, videos
-
-
-@pytest.fixture
-def app(tmp_path: pathlib.Path) -> web.Application:
-    settings = load_settings("config.example.toml")._replace(data_dir=tmp_path)
-
-    return create_app(settings, page_size=50)
-
 
 PERMALINK = "https://www.reddit.com/r/python/comments/abc/title/"
 VIDEO = "https://v.redd.it/abc/HLSPlaylist.m3u8"
@@ -163,57 +147,6 @@ def test_video_rejects_unsafe_sources(url: str):
     assert videos({"media": [{"url": url, "asset_type": "video"}]}, {}) == []
 
 
-@pytest.mark.parametrize("kind", ["all", "reddit"])
-async def test_feed_videos_match_detail_without_loading_comments(
-    app: web.Application, kind: str,
-):
-    post = row("reddit.com", "t3_abc")
-    post.update(
-        source="reddit",
-        url=PERMALINK,
-        html=f'<p><img src="{POSTER}"></p><p>Context.</p>',
-    )
-    snapshot = {
-        "num_comments": 10,
-        "media": [
-            {
-                "url": VIDEO,
-                "asset_type": "video",
-                "poster_url": POSTER,
-            },
-        ],
-        "comment_capture": {
-            "status": "captured",
-            "sort": "best",
-            "limit": 50,
-            "comments": [{"id": "a", "body": "Hello"}],
-        },
-    }
-    results: list[list[dict[str, Any]]] = [
-        [post],
-        [],
-        [{"post_id": "t3_abc", "payload": json.dumps(snapshot)}],
-        [],
-    ]
-    app["clickhouse"] = FakeClickHouse(*results)
-    response = await request(
-        app, "/api/reader/post?domain=reddit.com&id=t3_abc",
-    )
-    assert response.status == 200
-    detail = json.loads(response.text or "")
-    assert detail["reddit"]["comment_capture"]["status"] == "captured"
-    assert detail["reddit"]["video"]["url"] == VIDEO
-    assert detail["thumbnail"] == POSTER
-    assert "<img" not in detail["html"] and "Context." in detail["html"]
-    app["clickhouse"] = FakeClickHouse(*results)
-    response = await request(app, f"/api/reader/posts?kind={kind}")
-    listing = json.loads(response.text or "")["posts"][0]
-    assert "comment_capture" not in listing["reddit"]
-    assert listing["reddit"]["video"] == detail["reddit"]["video"]
-    assert listing["reddit"]["videos"] == detail["reddit"]["videos"]
-    assert listing["thumbnail"] == POSTER
-
-
 def test_signed_reddit_urls_reuse_the_archived_video_after_refresh():
     snapshot = {"media": [{
         "asset_type": "video", "url": VIDEO + "?a=new-signature",
@@ -321,33 +254,4 @@ def test_image_sources_survive_local_archiving_and_invalid_media_is_ignored(
     assert images(snapshot, urls) == [{
         "url": "/assets/image.jpg" if local else source,
         "source_url": source,
-    }]
-
-
-@pytest.mark.parametrize("kind", ["all", "reddit", "detail"])
-async def test_image_reference_metadata_reaches_feeds_and_opened_posts(
-    app: web.Application, tmp_path: pathlib.Path, kind: str,
-):
-    source = "https://i.redd.it/image.jpg"
-    image_file = tmp_path / "assets" / "image.jpg"
-    image_file.touch()
-    post = row("reddit.com", "t3_abc")
-    post.update(source="reddit", url=PERMALINK,
-                html=f'<p><img src="{source}"></p>')
-    snapshot = {"media": [{"asset_type": "photo", "url": source}]}
-    app["clickhouse"] = FakeClickHouse(
-        [post],
-        [{"domain": "reddit.com", "post_id": "t3_abc", "url": source,
-          "local_path": str(image_file), "content_type": "image/jpeg",
-          "size_bytes": 0}],
-        [{"post_id": "t3_abc", "payload": json.dumps(snapshot)}], [],
-    )
-    path = "/api/reader/post?domain=reddit.com&id=t3_abc" if kind == "detail" \
-        else f"/api/reader/posts?kind={kind}"
-    response = await request(app, path)
-    assert response.status == 200
-    result = json.loads(response.text or "")
-    payload = result if kind == "detail" else result["posts"][0]
-    assert payload["reddit"]["images"] == [{
-        "url": "/assets/image.jpg", "source_url": source,
     }]

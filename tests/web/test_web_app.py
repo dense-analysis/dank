@@ -6,6 +6,7 @@ from typing import Any, NamedTuple, cast
 
 import pytest
 
+from dank.storage.clickhouse import QueryResult
 from dank.web import app as web_app  # pyright: ignore[reportPrivateUsage]
 
 
@@ -116,37 +117,22 @@ async def test_search_embedding_uses_cache_when_available(
                 "Should not recompute embeddings on cache hit",
             )
 
-    async def fake_load_cached_embedding(
-        clickhouse_client: Any,
-        *,
-        model_name: str,
-        search_text: str,
-    ) -> tuple[float, ...] | None:
-        assert model_name == "model-a"
-        assert search_text == "hello"
-        return (0.4, 0.6)
+    class _CacheHit:
+        async def fetch_json(
+            self, query: str, params: dict[str, str],
+        ) -> QueryResult:
+            assert params == {"model_name": "model-a", "search_text": "hello"}
 
-    async def fake_store_cached_embedding(**kwargs: Any) -> None:
-        raise AssertionError("Should not write cache on cache hit")
+            return QueryResult([{"embedding": [0.4, 0.6]}])
 
     monkeypatch.setattr(
         web_app,
         "get_embedding_model",
         lambda: _DummyEmbedder(),
     )
-    monkeypatch.setattr(
-        web_app,
-        "_load_cached_embedding",
-        fake_load_cached_embedding,
-    )
-    monkeypatch.setattr(
-        web_app,
-        "_store_cached_embedding",
-        fake_store_cached_embedding,
-    )
 
     result = await web_app._search_embedding(  # pyright: ignore[reportPrivateUsage]
-        clickhouse_client=cast(Any, object()),
+        clickhouse_client=cast(Any, _CacheHit()),
         search_text="hello",
     )
 

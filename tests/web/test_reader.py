@@ -4,7 +4,6 @@ import datetime as dt
 import json
 import pathlib
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
@@ -17,6 +16,7 @@ from dank.process.rss import convert_raw_post
 from dank.storage.clickhouse import QueryResult
 from dank.web import reader_api
 from dank.web.app import AssetRow, PostRow, create_app
+from dank.web.reader_posts import post_payload
 from dank.web.reader_query import (
     ReaderFilters,
     build_query,
@@ -217,86 +217,6 @@ def test_combined_search_prioritizes_literal_then_title_matches() -> None:
         build_query(filters, ())
 
 
-async def test_combined_posts_requests_embedding_and_reports_relevance_cap(
-    app: web.Application, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    embed = AsyncMock(return_value=(1.0, 0.0))
-    monkeypatch.setattr(reader_api, "_search_embedding", embed)
-    fake = FakeClickHouse([row("b.example"), row("a.example")], [], [])
-    app["clickhouse"] = fake
-    response = await request(
-        app,
-        "/api/reader/posts?q=article&mode=combined&sort=relevance&limit=1",
-    )
-    data = json.loads(response.text or "")
-    embed.assert_awaited_once_with(fake, search_text="article")
-    assert response.status == 200
-    assert len(data["posts"]) == 1
-    assert data["limited"] is True
-    assert data["next_cursor"] is None
-    assert fake.calls[0][1]["embedding"] == [1.0, 0.0]
-    assert "reader_literal_match DESC" in fake.calls[0][0]
-
-
-@pytest.mark.parametrize("mode", ["words", "meaning", "combined"])
-async def test_browsing_needs_no_embedding(
-    mode: str, app: web.Application, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    embed = AsyncMock(side_effect=RuntimeError("Embedding unavailable"))
-    monkeypatch.setattr(reader_api, "_search_embedding", embed)
-    fake = FakeClickHouse([])
-    app["clickhouse"] = fake
-    response = await request(app, f"/api/reader/posts?mode={mode}")
-    assert response.status == 200
-    embed.assert_not_awaited()
-    assert "cosineDistance" not in fake.calls[0][0]
-
-
-@pytest.mark.parametrize("embedding", [None, ()])
-async def test_combined_embedding_unavailable_is_an_explicit_error(
-    embedding: tuple[float, ...] | None, app: web.Application,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    embed = AsyncMock(return_value=embedding)
-    monkeypatch.setattr(reader_api, "_search_embedding", embed)
-    fake = FakeClickHouse([])
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/posts?q=article&mode=combined")
-    assert response.status == 503
-    assert "error" in json.loads(response.text or "")
-    assert fake.calls == []
-
-
-async def test_x_account_api_keeps_search_and_returns_a_bound_cursor(
-    app: web.Application,
-) -> None:
-    first = row("x.com", "2")
-    first.update(url="https://x.com/Example/status/2", source="x")
-    second = row("x.com", "1")
-    second.update(url="https://x.com/Example/status/1", source="x")
-    fake = FakeClickHouse([first, second], [], [], [])
-    app["clickhouse"] = fake
-    path = "/api/reader/posts?kind=x&account=Example&q=article&limit=1"
-    response = await request(app, path)
-    data = json.loads(response.text or "")
-    assert response.status == 200
-    assert len(data["posts"]) == 1
-    assert data["posts"][0]["domain"] == "x.com"
-    assert fake.calls[0][1]["account"] == "example"
-    assert fake.calls[0][1]["term_0"] == "article"
-    filters = parse_filters(MultiDict({
-        "kind": "x", "account": "EXAMPLE", "q": "article", "limit": "1",
-        "cursor": data["next_cursor"],
-    }))
-    assert decode_cursor(filters)[1:] == ("x.com", "2")
-
-    response = await request(
-        app, path.replace("account=Example", "account=other")
-        + "&cursor=" + data["next_cursor"].replace("=", "%3D"),
-    )
-    assert response.status == 400
-
-
 def test_reddit_filters_are_separate_parameterized_and_case_insensitive():
     filters = parse_filters(MultiDict({
         "kind": "reddit", "community": "LocalLLaMA", "q": "model",
@@ -331,181 +251,6 @@ def test_reddit_cursor_cannot_leak_across_communities():
         decode_cursor(filters._replace(community="localllama", cursor=token))
 
 
-async def test_reddit_metadata_uses_processed_snapshot_and_retains_safe_html(
-    app: web.Application,
-) -> None:
-    post = row("reddit.com", "t3_abc")
-    post.update(
-        source="reddit",
-        url="https://www.reddit.com/r/LocalLLaMA/comments/abc/model/",
-        html='<p>Body</p><script>alert(1)</script>',
-    )
-    fake = FakeClickHouse([post], [], [{
-        "post_id": "t3_abc", "payload": json.dumps({
-            "subreddit": "other", "score": 123, "num_comments": 42,
-            "link_flair_text": "Discussion",
-        }),
-    }], [])
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/posts?kind=reddit")
-    data = json.loads(response.text or "")
-    assert response.status == 200
-    assert data["posts"][0]["reddit"] == {
-        "community": "LocalLLaMA", "score": 123, "comments": 42,
-        "flair": "Discussion", "icon_url": None,
-        "video": None, "videos": [],
-    }
-    assert "<script>" not in data["posts"][0]["html"]
-    assert "ORDER BY scraped_at DESC LIMIT 1 BY post_id" in fake.calls[2][0]
-    assert fake.calls[2][1] == {
-        "reddit_versions": [("t3_abc", 1791462645123)],
-    }
-    assert "toUnixTimestamp64Milli(scraped_at)" in fake.calls[2][0]
-
-
-@pytest.mark.parametrize("payload", [
-    "broken", "[]", '{"score":true}',
-    '{"score":9007199254740992,"num_comments":-1}',
-])
-async def test_reddit_posts_remain_readable_without_valid_metadata(
-    app: web.Application, payload: str,
-) -> None:
-    post = row("reddit.com", "t3_abc")
-    post["url"] = "https://www.reddit.com/r/python/comments/abc/title/"
-    post["source"] = "reddit"
-    app["clickhouse"] = FakeClickHouse([post], [], [{
-        "post_id": "t3_abc", "payload": payload,
-    }], [])
-    response = await request(app, "/api/reader/posts?kind=reddit")
-    assert response.status == 200
-    metadata = json.loads(response.text or "")["posts"][0]["reddit"]
-    assert metadata["score"] is None
-    assert metadata["comments"] is None
-    assert metadata["community"] == "python"
-
-
-async def test_posts_paginate_without_cross_domain_asset_collisions(
-    app: web.Application, tmp_path: pathlib.Path,
-) -> None:
-    assets = tmp_path / "assets"
-    assets.mkdir(exist_ok=True)
-    (assets / "b.jpg").touch()
-    article = row("b.example")
-    article["html"] = '<img src="https://example.com/b.jpg"><p>Body</p>'
-    fake = FakeClickHouse(
-        [row("c.example"), article, row("a.example")],
-        [{"domain": "b.example", "post_id": "same",
-          "url": "https://example.com/b.jpg",
-          "local_path": str(assets / "b.jpg"), "content_type": "image/jpeg",
-          "size_bytes": 0}],
-        [{"domain": "b.example", "post_id": "same"}],
-    )
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/posts?limit=2")
-    data = json.loads(response.text or "")
-    assert response.status == 200
-    assert len(data["posts"]) == 2
-    assert data["posts"][0]["thumbnail"] is None
-    assert data["posts"][1]["thumbnail"] == "/assets/b.jpg"
-    assert data["posts"][1]["media"][0]["content_type"] == "image/jpeg"
-    assert data["posts"][0]["collection_incomplete"] is False
-    assert data["posts"][1]["collection_incomplete"] is True
-    assert fake.calls[1][1]["post_keys"] == [
-        ("c.example", "same"), ("b.example", "same"),
-    ]
-    assert fake.calls[2][1]["post_versions"] == [
-        (domain, "same", 1791462645123)
-        for domain in ("c.example", "b.example")
-    ]
-    assert data["next_cursor"]
-    assert data["limited"] is False
-    filters = ReaderFilters(limit=2, cursor=data["next_cursor"])
-    assert decode_cursor(filters)[1:] == ("b.example", "same")
-
-
-async def test_relevance_reports_capped_results(app: web.Application) -> None:
-    app["clickhouse"] = FakeClickHouse(
-        [row("b.example"), row("a.example")], [], [],
-    )
-    response = await request(
-        app, "/api/reader/posts?q=article&sort=relevance&limit=1",
-    )
-    data = json.loads(response.text or "")
-    assert len(data["posts"]) == 1
-    assert data["limited"] is True
-    assert data["next_cursor"] is None
-
-
-async def test_empty_page_has_no_cursor(app: web.Application) -> None:
-    app["clickhouse"] = FakeClickHouse([])
-    response = await request(app, "/api/reader/posts")
-    assert json.loads(response.text or "") == {
-        "posts": [], "next_cursor": None, "limited": False,
-    }
-
-
-async def test_post_detail_returns_direct_object_and_not_found(
-    app: web.Application,
-) -> None:
-    fake = FakeClickHouse([row("a.example")], [], [], [])
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/post?domain=a.example&id=same")
-    assert json.loads(response.text or "")["id"] == "same"
-    assert fake.calls[0][1] == {"domain": "a.example", "post_id": "same"}
-    missing = await request(app, "/api/reader/post?domain=missing&id=missing")
-    assert missing.status == 404
-
-
-@pytest.mark.parametrize("failed", [True, False])
-async def test_article_with_text_reports_its_page_capture_failure(
-    app: web.Application, *, failed: bool,
-) -> None:
-    article = row("a.example")
-    failure = [{"domain": "a.example", "post_id": "same"}] if failed else []
-    fake = FakeClickHouse([article], [], failure)
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/post?domain=a.example&id=same")
-    data = json.loads(response.text or "")
-
-    assert response.status == 200
-    assert data["html"] == article["html"]
-    assert data["collection_incomplete"] is failed
-    assert fake.calls[2][1]["post_versions"] == [
-        ("a.example", "same", 1791462645123),
-    ]
-
-
-async def test_social_post_does_not_need_rss_page_capture(
-    app: web.Application,
-) -> None:
-    article = {**row("x.com"), "source": "x"}
-    fake = FakeClickHouse([article], [], [])
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/post?domain=x.com&id=same")
-
-    assert response.status == 200
-    assert json.loads(response.text or "")["collection_incomplete"] is False
-    assert len(fake.calls) == 4
-    assert "link_post_keys" in fake.calls[-1][1]
-    assert all("page_fetch_status" not in query for query, _ in fake.calls)
-
-
-async def test_invalid_requests_are_json_errors(app: web.Application) -> None:
-    response = await request(app, "/api/reader/posts?limit=broken")
-    assert response.status == 400
-    assert "error" in json.loads(response.text or "")
-    response = await request(app, "/api/reader/post")
-    assert response.status == 400
-
-
-async def test_backend_failure_is_explicit_503(app: web.Application) -> None:
-    app["clickhouse"] = FakeClickHouse()
-    response = await request(app, "/api/reader/posts")
-    assert response.status == 503
-    assert "error" in json.loads(response.text or "")
-    assert response.headers["Cache-Control"] == "no-store"
-
-
 def test_article_sanitization_safe_urls_and_thumbnail(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -516,13 +261,13 @@ def test_article_sanitization_safe_urls_and_thumbnail(
                    '<img src="https://[broken"><img src="/article.jpg" '
                    'onerror="alert(1)"><p>Readable &amp; clear</p>',
                    now, now, "rss")
-    payload = reader_api.post_payload(post, [], tmp_path)
+    payload = post_payload(post, [], tmp_path)
     assert "script" not in payload["html"]
     assert "javascript:" not in payload["html"]
     assert "onerror" not in payload["html"]
     assert payload["thumbnail"] == "https://example.com/article.jpg"
     assert "Readable & clear" in payload["excerpt"]
-    unsafe = reader_api.post_payload(
+    unsafe = post_payload(
         post._replace(url="javascript:alert(1)"), [], tmp_path,
     )
     assert unsafe["url"] == ""
@@ -538,7 +283,7 @@ def test_reader_payload_retains_table_groups_and_merged_cells(
         "example.com", "table", "https://example.com/table", "", "Table",
         body, now, now, "rss",
     )
-    payload = reader_api.post_payload(post, [], tmp_path)
+    payload = post_payload(post, [], tmp_path)
     assert '<th colspan="2" scope="colgroup">' in payload["html"]
     assert '<th rowspan="2" scope="rowgroup">' in payload["html"]
     assert '<caption>Benchmark comparison</caption>' in payload["html"]
@@ -563,12 +308,12 @@ def test_body_lead_image_wins_and_downloaded_images_are_reused(
                    '<img src="/logo.svg"><img src="/author-photo.jpg">'
                    '<img src="/lead.jpg" alt="A &amp; B"><p>Story</p>',
                    now, now, "rss")
-    payload = reader_api.post_payload(post, assets, tmp_path)
+    payload = post_payload(post, assets, tmp_path)
     assert payload["thumbnail"] == "/assets/lead.jpg"
     assert '<img src="/assets/lead.jpg" alt="A &amp; B">' in payload["html"]
     assert "https://example.com/lead.jpg" not in payload["html"]
     assert "unrelated.jpg" not in payload["html"]
-    no_image = reader_api.post_payload(
+    no_image = post_payload(
         post._replace(html="<p>No lead image</p>"), assets, tmp_path,
     )
     assert no_image["thumbnail"] is None
@@ -589,7 +334,7 @@ def test_stored_wordpress_caption_reaches_reader_without_reprocessing(
     )
     image = tmp_path / "image.png"
     image.touch()
-    payload = reader_api.post_payload(post, [AssetRow(
+    payload = post_payload(post, [AssetRow(
         "caption", "https://example.com/image.png", str(image), "image/png", 0,
     )], tmp_path)
 
@@ -626,7 +371,7 @@ def test_recovered_figure_reaches_reader_with_caption_and_local_image(
         processed.domain, processed.post_id, processed.url, processed.author,
         processed.title, processed.html, now, now, processed.source,
     )
-    payload = reader_api.post_payload(post, [AssetRow(
+    payload = post_payload(post, [AssetRow(
         "figure", "https://example.com/diagram.png", str(image),
         "image/png", 0,
     )], tmp_path)

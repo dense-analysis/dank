@@ -2,67 +2,29 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
-import json
-import re
-from typing import Any, cast
+import pathlib
+from typing import Any
 
 from aiohttp import web
 from multidict import MultiDict
 
+from dank.api.posts.model import (
+    author_cursor,
+    parse_author_cursor,
+    require_author_feed,
+)
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import (
     _parse_post_row,  # pyright: ignore[reportPrivateUsage]
     _search_embedding,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.web.reader_accounts import X_ACCOUNT_SQL
-from dank.web.reader_query import ReaderFilters, build_query, parse_filters
+from dank.web.reader_posts import post_payloads
+from dank.web.reader_query import build_query, parse_filters
 
-AUTHOR_PAGE_LIMIT = 50
 AUTHOR_EXAMPLES = 3
 KNOWN_AUTHOR = "handle != '' AND handle != 'i'"
-
-
-def author_cursor(
-    filters: ReaderFilters, snapshot: str, count: int, handle: str,
-) -> str:
-    return base64.urlsafe_b64encode(json.dumps([
-        "x-authors", filters.signature(), snapshot, count, handle,
-    ]).encode()).decode()
-
-
-def parse_author_cursor(
-    filters: ReaderFilters, cursor: str,
-) -> tuple[str, int, str]:
-    try:
-        if len(cursor) > 8192:
-            raise ValueError
-
-        decoded: object = json.loads(base64.b64decode(
-            cursor, altchars=b"-_", validate=True,
-        ))
-
-        if not isinstance(decoded, list):
-            raise ValueError
-
-        raw = cast(list[Any], decoded)
-
-        if (len(raw) != 5 or raw[:2] != ["x-authors", filters.signature()]
-                or not isinstance(raw[2], str)
-                or type(raw[3]) is not int or not 1 <= raw[3] < 2**53
-                or not isinstance(raw[4], str)
-                or not re.fullmatch(r"[a-z0-9_]{1,15}", raw[4])):
-            raise ValueError
-
-        snapshot = dt.datetime.fromisoformat(raw[2])
-
-        if snapshot.tzinfo is None:
-            raise ValueError
-
-        return snapshot.astimezone(dt.UTC).isoformat(), raw[3], raw[4]
-    except (ValueError, TypeError, UnicodeError):
-        raise ValueError("Invalid author cursor for these filters") from None
 
 
 def author_query(
@@ -101,9 +63,7 @@ async def handle_x_authors(request: web.Request) -> web.Response:
         query.setdefault("limit", "20")
         filters = parse_filters(query)
 
-        if filters.x_feed != "for_you" or filters.limit > AUTHOR_PAGE_LIMIT:
-            raise ValueError("Authors require X For You and a limit up to 50")
-
+        require_author_feed(filters)
         snapshot = dt.datetime.now(dt.UTC).isoformat()
         after = None
 
@@ -134,8 +94,10 @@ async def handle_x_authors(request: web.Request) -> web.Response:
         f"countIf(NOT ({KNOWN_AUTHOR})) AS unattributed_posts FROM ({base})",
         params,
     )
-    examples = await author_examples(request, rows, base, params, filters.q)
-    authors = [_author(row, examples.get(str(row["handle"]), []))
+    examples = await author_examples(
+        client, state.assets_dir, rows, base, params, filters.q,
+    )
+    authors = [author_view(row, examples.get(str(row["handle"]), []))
                for row in rows]
     next_cursor = (
         author_cursor(filters, snapshot, int(rows[-1]["count"]),
@@ -152,18 +114,12 @@ async def handle_x_authors(request: web.Request) -> web.Response:
 
 
 async def author_examples(
-    request: web.Request, rows: list[dict[str, Any]], base: str,
-    params: dict[str, Any], search: str,
+    client: ClickHouseClient, assets_dir: pathlib.Path,
+    rows: list[dict[str, Any]], base: str, params: dict[str, Any], search: str,
 ) -> dict[str, list[dict[str, Any]]]:
     if not rows:
         return {}
 
-    # Use the normal saved-content adapter, including its HTML/media boundary.
-    from dank.web.reader_api import (
-        _post_payloads,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    client: ClickHouseClient = request.app["clickhouse"]
     result = await client.fetch_json(
         f"SELECT * FROM ({base}) WHERE handle IN %(author_handles)s "
         "ORDER BY recommended_at DESC, recommendation_position ASC, "
@@ -171,9 +127,10 @@ async def author_examples(
         {**params, "author_handles": tuple(row["handle"] for row in rows),
          "examples": AUTHOR_EXAMPLES},
     )
-    posts = await _post_payloads(
+    # Use the normal saved-content adapter, including its HTML/media boundary.
+    posts = await post_payloads(
         client, [_parse_post_row(row) for row in result.rows],
-        request.app["state"].assets_dir, search,
+        assets_dir, search,
     )
     handles = {(str(row["domain"]), str(row["post_id"])): str(row["handle"])
                for row in result.rows}
@@ -186,7 +143,7 @@ async def author_examples(
     return grouped
 
 
-def _author(
+def author_view(
     row: dict[str, Any], posts: list[dict[str, Any]],
 ) -> dict[str, Any]:
     identity: dict[str, Any] = posts[0].get("x", {}) if posts else {}

@@ -1,22 +1,12 @@
-"""Both servers answer GET /api/reader/sources with the same JSON.
-
-Each server starts for real, with its own startup work, over one seeded
-throwaway database. Deleted with the aiohttp server in DEN-51.
-"""
+"""Both servers answer GET /api/reader/sources with the same JSON."""
 
 import datetime as dt
-import pathlib
-import tempfile
 from typing import Any
 
-import aiohttp
 import pytest
-from aiohttp import web
 
-from dank.api.app import create_app as create_api_app
 from dank.config import ClickHouseSettings, Settings, SourceConfig
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import create_app as create_aiohttp_app
 from tests.api.clickhouse import (
     COLLECTED_AT,
     insert,
@@ -25,7 +15,7 @@ from tests.api.clickhouse import (
     reddit_url,
     x_url,
 )
-from tests.api.client import BASE_URL, serving
+from tests.api.parity import both_servers
 
 pytestmark = pytest.mark.clickhouse
 
@@ -74,36 +64,15 @@ async def seed(client: ClickHouseClient) -> None:
     }])
 
 
-async def from_aiohttp(settings: Settings) -> Any:
-    runner = web.AppRunner(create_aiohttp_app(settings, page_size=50))
-    # Runs the aiohttp startup contexts against the throwaway database.
-    await runner.setup()
+async def responses(settings: Settings) -> tuple[Any, Any]:
+    async with both_servers(settings) as (old, new):
+        (old_status, expected), (new_status, actual) = (
+            await old(PATH), await new(PATH),
+        )
 
-    try:
-        # A Unix socket, since tests may only dial ClickHouse over TCP.
-        with tempfile.TemporaryDirectory() as directory:
-            path = str(pathlib.Path(directory) / "web.sock")
-            await web.UnixSite(runner, path).start()
-            connector = aiohttp.UnixConnector(path=path)
+    assert (old_status, new_status) == (200, 200)
 
-            async with (
-                aiohttp.ClientSession(connector=connector) as session,
-                session.get(BASE_URL + PATH) as response,
-            ):
-                assert response.status == 200
-
-                return await response.json()
-    finally:
-        await runner.cleanup()
-
-
-async def from_fastapi(settings: Settings) -> Any:
-    async with serving(create_api_app(settings, page_size=50)) as client:
-        response = await client.get(PATH)
-
-    assert response.status_code == 200
-
-    return response.json()
+    return expected, actual
 
 
 async def test_both_servers_return_the_same_sources(
@@ -116,8 +85,7 @@ async def test_both_servers_return_the_same_sources(
         clickhouse=clickhouse_settings, sources=(*CONFIGURED, REDDIT),
     )
 
-    expected = await from_aiohttp(configured)
-    actual = await from_fastapi(configured)
+    expected, actual = await responses(configured)
 
     assert actual == expected
     assert {source["kind"] for source in actual["sources"]} == {
@@ -135,8 +103,7 @@ async def test_unconfigured_reddit_is_the_one_difference(
         clickhouse=clickhouse_settings, sources=CONFIGURED,
     )
 
-    expected = await from_aiohttp(configured)
-    actual = await from_fastapi(configured)
+    expected, actual = await responses(configured)
     [reddit] = [
         source for source in expected["sources"]
         if source["domain"] == "reddit.com"

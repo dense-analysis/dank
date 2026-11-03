@@ -8,12 +8,12 @@ import pytest
 
 from dank.storage.clickhouse import QueryResult
 from dank.web.app import PostRow
-from dank.web.reader_api import post_payload
 from dank.web.reader_links import (
     RESOLVED_HN_POSTS_SQL,
     add_post_links,
     ensure_link_storage,
 )
+from dank.web.reader_posts import post_payload
 
 NOW = dt.datetime(2026, 10, 17, 19, 30, tzinfo=dt.UTC)
 

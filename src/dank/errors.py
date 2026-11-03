@@ -9,7 +9,7 @@ class DankError(Exception):
     code = "error"
 
 
-class InvalidInput(DankError):
+class InvalidInput(DankError, ValueError):
     code = "invalid_input"
 
 

@@ -1,23 +1,16 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 from multidict import MultiDict
-from test_reader import FakeClickHouse, request
 from test_reader_x_conversation import (
     archive,
     project,
-    raw_row,
-    saved_row,
     selected,
     tweet,
 )
 
-from dank.config import load_settings
-from dank.storage.clickhouse import QueryResult
-from dank.web.app import create_app
 from dank.web.reader_query import (
     ReaderFilters,
     build_query,
@@ -139,40 +132,3 @@ def test_missing_parent_cycle_and_budget_never_claim_complete_thread() -> None:
     assert result["replies"] == []
     result = connect(tweet("100"), [], limited=True)
     assert result["local_posts_limited"]
-
-
-class SavedPostsClient(FakeClickHouse):
-    async def fetch_json(
-        self, query: str, params: dict[str, Any] | None = None,
-    ) -> QueryResult:
-        if params and "x_parent_keys" in params:
-            self.calls.append((query, params))
-
-            return QueryResult([saved_row()])
-
-        if params and "x_thread_domain" in params:
-            self.calls.append((query, params))
-
-            return QueryResult([raw_row(tweet("100"))])
-
-        return await super().fetch_json(query, params)
-
-
-async def test_detail_connects_saved_parent_without_discussion() -> None:
-    app = create_app(load_settings("config.example.toml"), page_size=50)
-    payload = tweet("101", "100")
-    fake = SavedPostsClient([saved_row("101")], [], [raw_row(payload)], [], [])
-    app["clickhouse"] = fake
-    response = await request(app, "/api/reader/post?domain=x.com&id=101")
-    assert response.status == 200
-    post = json.loads(response.text or "")
-    assert post["x"]["reply_to"]["collected"]
-    assert post["x"]["reply_to"]["id"] == "100"
-    capture = post["x"]["conversation"]
-    assert capture["status"] == "not_collected"
-    assert capture["context"][0]["id"] == "100"
-    query, params = next(
-        call for call in fake.calls if "x_thread_domain" in call[1]
-    )
-    assert "NOT is_reference" in query and "updated_at" in query
-    assert params["x_thread_limit"] == 201

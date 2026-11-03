@@ -7,7 +7,7 @@ import pytest
 from dank.model import RawAsset
 from dank.process.assets import convert_raw_asset
 from dank.web.app import AssetRow, PostRow
-from dank.web.reader_api import post_payload
+from dank.web.reader_posts import post_payload
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8A"

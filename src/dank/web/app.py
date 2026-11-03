@@ -11,6 +11,8 @@ import bleach
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from dank.api.posts.embeddings import CachedSearchEmbeddings
+from dank.api.posts.model import PostRow as PostRow
 from dank.config import Settings
 from dank.embeddings import get_embedding_model
 from dank.html_utils import html_text, remove_page_noise
@@ -99,18 +101,6 @@ ALLOWED_ATTRIBUTES = {
     "col": ["span"],
     "colgroup": ["span"],
 }
-
-
-class PostRow(NamedTuple):
-    domain: str
-    post_id: str
-    url: str
-    author: str
-    title: str
-    html: str
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
-    source: str
 
 
 class AssetRow(NamedTuple):
@@ -514,77 +504,9 @@ async def _search_embedding(
     *,
     search_text: str,
 ) -> tuple[float, ...] | None:
-    embedder = get_embedding_model()
-    model_name = embedder.model_name
-    cached_embedding = await _load_cached_embedding(
-        clickhouse_client,
-        model_name=model_name,
-        search_text=search_text,
-    )
-
-    if cached_embedding is not None:
-        return cached_embedding
-
-    embeddings = await asyncio.to_thread(embedder.embed_texts, [search_text])
-
-    if not embeddings:
-        return None
-
-    embedding = embeddings[0]
-    await _store_cached_embedding(
-        clickhouse_client,
-        model_name=model_name,
-        search_text=search_text,
-        embedding=embedding,
-    )
-
-    return embedding
-
-
-async def _load_cached_embedding(
-    clickhouse_client: ClickHouseClient,
-    *,
-    model_name: str,
-    search_text: str,
-) -> tuple[float, ...] | None:
-    query = (
-        "SELECT embedding FROM web_embedding_cache FINAL "
-        "WHERE model_name = %(model_name)s "
-        "AND search_text = %(search_text)s "
-        "ORDER BY created_at DESC "
-        "LIMIT 1"
-    )
-    result = await clickhouse_client.fetch_json(
-        query,
-        {
-            "model_name": model_name,
-            "search_text": search_text,
-        },
-    )
-
-    # Convert the embedding from a list of numbers to a tuple of floats.
-    return (
-        tuple(float(item) for item in result.rows[0]["embedding"])
-        if result.rows else
-        None
-    )
-
-
-async def _store_cached_embedding(
-    clickhouse_client: ClickHouseClient,
-    *,
-    model_name: str,
-    search_text: str,
-    embedding: tuple[float, ...],
-) -> None:
-    row = {
-        "model_name": model_name,
-        "search_text": search_text,
-        "embedding": [float(value) for value in embedding],
-        "created_at": datetime.datetime.now(datetime.UTC),
-    }
-
-    await clickhouse_client.insert_rows("web_embedding_cache", [row])
+    return await CachedSearchEmbeddings(
+        clickhouse_client, get_embedding_model,
+    ).embed(search_text)
 
 
 async def _fetch_post(

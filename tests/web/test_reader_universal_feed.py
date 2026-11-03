@@ -11,10 +11,8 @@ from multidict import MultiDict
 from dank.config import SourceConfig
 from dank.storage.clickhouse import QueryResult
 from dank.web.app import PostRow
-from dank.web.reader_api import (
-    _post_payloads,  # pyright: ignore[reportPrivateUsage]
-)
 from dank.web.reader_links import HN_LINKED_POSTS_SQL, RESOLVED_HN_POSTS_SQL
+from dank.web.reader_posts import post_payloads
 from dank.web.reader_query import (
     ReaderFilters,
     build_query,
@@ -217,7 +215,7 @@ async def test_generic_posts_payload_includes_saved_video_preview(
             return QueryResult([])
 
     stamp = dt.datetime(2026, 10, 22, tzinfo=dt.UTC)
-    posts = await _post_payloads(cast(Any, Client()), [PostRow(
+    posts = await post_payloads(cast(Any, Client()), [PostRow(
         "youtube.com", "video:abcdefghijk",
         "https://youtube.com/watch?v=abcdefghijk", "Saved channel", "Video",
         "", stamp, stamp, "youtube",

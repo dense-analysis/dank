@@ -4,42 +4,27 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from typing import Any
 
 from aiohttp import web
 from multidict import MultiMapping
 
-from dank.links import normalized_url
+from dank.api.connections.model import connection_key, connection_scope
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.youtube import canonical_video_id
 
 MAX_CONNECTIONS = 100
 POST_FIELDS = "domain, post_id AS id, url, title, source"
-CONNECTION_SOURCES = {"reddit", "hacker_news", "x", "youtube", "rss"}
-SOURCE_ALIASES = {
-    "twitter": "x", "twitter.com": "x", "x.com": "x", "reddit.com": "reddit",
-    "news.ycombinator.com": "hacker_news", "hckrnews.com": "hacker_news",
-    "youtube.com": "youtube",
-}
 
 
 def _context(query: MultiMapping[str]) -> dict[str, str]:
-    source = query.get("source", "").strip().lower().removeprefix("www.")
-    source = SOURCE_ALIASES.get(source, source)
-    community = query.get("community", "").strip().lower()
+    scope = connection_scope(
+        "", "", query.get("source", ""), query.get("community", ""),
+    )
 
-    if source and source not in CONNECTION_SOURCES:
-        raise ValueError("Invalid connection source")
-
-    if community and (source != "reddit"
-                      or not re.fullmatch(r"[a-z0-9_]{2,21}", community)):
-        raise ValueError(
-            "community requires source=reddit and a community name",
-        )
-
-    return {key: value for key, value in (("source", source),
-                                         ("community", community)) if value}
+    return {key: value for key, value in (("source", scope.source),
+                                         ("community", scope.community))
+            if value}
 
 
 def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
@@ -66,27 +51,17 @@ def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
 
         return params
 
-    target = query.get("target", "")
-    canonical = normalized_url(target) if len(target) <= 8192 else None
-    kind = query.get("kind", "")
-    reference_id = query.get("reference_id", "")
+    key = connection_key(
+        params["domain"], params["id"], query.get("target", ""),
+        query.get("kind", ""), query.get("reference_id", ""),
+        query.get("observed_at", ""),
+    )
+    params.update(
+        target=key.target, kind=key.kind, reference_id=key.reference_id,
+    )
 
-    if (canonical is None or kind not in {"post", "comment"}
-            or len(reference_id) > 2000
-            or (kind == "comment" and not reference_id)
-            or (kind == "post" and reference_id)):
-        raise ValueError("A valid target, kind and reference_id are required")
-
-    params.update(target=canonical, kind=kind, reference_id=reference_id)
-    observed = query.get("observed_at", "")
-
-    if observed:
-        stamp = parse_datetime(observed)
-
-        if stamp is None:
-            raise ValueError("Invalid observed_at timestamp")
-
-        params["observed_at"] = stamp.isoformat()
+    if key.observed_at:
+        params["observed_at"] = key.observed_at
 
     return params
 
@@ -362,29 +337,39 @@ async def handle_connections(request: web.Request) -> web.Response:
     return web.json_response(data)
 
 
-async def handle_connection(request: web.Request) -> web.Response:
-    try:
-        params = _parameters(request.query, single=True)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    client: ClickHouseClient = request.app["clickhouse"]
+async def saved_connection(
+    client: ClickHouseClient, params: dict[str, Any],
+) -> dict[str, Any] | None:
     result = await client.fetch_json(
         connection_query(single=True, observed="observed_at" in params),
         {**params, "limit": 1},
     )
 
     if not result.rows:
-        return web.json_response(
-            {"error": "Saved evidence not found"}, status=404,
-        )
+        return None
 
     targets = await _targets(
         client, [params["target"]], (params["domain"], params["id"]),
     )
     videos = await _videos(client, [params["target"]])
 
-    return web.json_response(_connection(
+    return _connection(
         result.rows[0], incoming=False, target=targets.get(params["target"]),
         videos=videos,
-    ))
+    )
+
+
+async def handle_connection(request: web.Request) -> web.Response:
+    try:
+        params = _parameters(request.query, single=True)
+    except ValueError as error:
+        return web.json_response({"error": str(error)}, status=400)
+
+    data = await saved_connection(request.app["clickhouse"], params)
+
+    if data is None:
+        return web.json_response(
+            {"error": "Saved evidence not found"}, status=404,
+        )
+
+    return web.json_response(data)

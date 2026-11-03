@@ -180,3 +180,17 @@ class YouTubePlaylistCapture(NamedTuple):
     checked_at: datetime.datetime
     # All visible continuation pages arrived, even if the header counts more.
     exhausted: bool = False
+
+
+def parse_datetime(value: Any) -> datetime.datetime | None:
+    if isinstance(value, str) and value:
+        try:
+            value = datetime.datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    if isinstance(value, datetime.datetime):
+        # ClickHouse's UTC columns can be returned as naive datetimes.
+        return value if value.tzinfo else value.replace(tzinfo=datetime.UTC)
+
+    return None

@@ -2,8 +2,8 @@ import datetime as dt
 import pathlib
 
 from dank.web.app import PostRow
-from dank.web.reader_api import post_payload
 from dank.web.reader_excerpt import search_excerpt
+from dank.web.reader_posts import post_payload
 
 
 def test_excerpt_finds_a_later_passage_with_more_matching_terms() -> None:

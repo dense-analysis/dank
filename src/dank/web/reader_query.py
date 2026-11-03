@@ -2,64 +2,33 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
-import hashlib
-import json
-import re
-from typing import Any, NamedTuple, cast
+from typing import Any
 
 from multidict import MultiMapping
 
+from dank.api.posts.model import (
+    FilterInput,
+    ReaderFilters,
+    decode_cursor as decode_cursor,
+    encode_cursor as encode_cursor,
+    reader_filters,
+)
 from dank.api.sources.model import source_kind
-from dank.config import HackerNewsFilter, SourceConfig
+from dank.config import SourceConfig
 from dank.web.reader_accounts import X_ACCOUNT_SQL, X_DOMAINS
 from dank.web.reader_blogs import BLOG_CONDITION, EXTERNAL_BLOG_CONDITION
 from dank.web.reader_flairs import (
     FLAIR_WHITESPACE_PATTERN,
     LATEST_REDDIT_FLAIRS_SQL,
-    MAX_FLAIR_LENGTH,
     REDDIT_COMMUNITY_SQL as REDDIT_COMMUNITY_SQL,
 )
 from dank.web.reader_links import HN_LINKED_POSTS_SQL, RESOLVED_HN_POSTS_SQL
-from dank.web.reader_x_home import decode_home_cursor, home_listing
+from dank.web.reader_x_home import home_listing
 
 POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, source"
 )
-
-
-class ReaderFilters(NamedTuple):
-    q: str = ""
-    mode: str = "words"
-    sort: str = "newest"
-    domains: tuple[str, ...] = ()
-    tags: tuple[str, ...] = ()
-    author: str = ""
-    author_match: str = "contains"
-    after: dt.datetime | None = None
-    before: dt.datetime | None = None
-    limit: int = 30
-    cursor: str = ""
-    kind: str = ""
-    community: str = ""
-    flairs: tuple[str, ...] = ()
-    account: str = ""
-    hn_filter: str = ""
-    x_view: str = "posts"
-    platforms: tuple[str, ...] = ()
-    blog_feed: str = ""
-    x_feed: str = ""
-
-    def signature(self) -> str:
-        # Bind cursors to filters, while allowing page-size changes.
-        values = self._asdict()
-        values.pop("cursor")
-        values.pop("limit")
-
-        return hashlib.sha256(
-            json.dumps(values, sort_keys=True, default=str).encode(),
-        ).hexdigest()[:24]
 
 
 def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
@@ -77,228 +46,28 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         if len(query.getall(key)) != 1:
             raise ValueError(f"{key} must appear only once")
 
-    if "hn_filter" in query and (
-        query.get("kind") != "hacker_news"
-        or query["hn_filter"] not in HackerNewsFilter
-    ):
-        raise ValueError("hn_filter requires a valid Hacker News ranking")
-
-    if "x_view" in query and query.get("kind") != "x":
-        raise ValueError("x_view requires kind=x")
-
-    if "blog_feed" in query and (
-        query.get("kind") != "stories"
-        or query["blog_feed"] not in {"sources", "external"}
-    ):
-        raise ValueError(
-            "blog_feed requires kind=stories and sources or external",
-        )
-
-    filters = ReaderFilters(
-        q=query.get("q", "").strip(),
+    return reader_filters(FilterInput(
+        q=query.get("q", ""),
         mode=query.get("mode", "words"),
         sort=query.get("sort", "newest"),
-        domains=_choices(query.getall("domain", [])),
-        tags=_choices(query.getall("tag", [])),
-        platforms=_choices(query.getall("platform", [])),
-        blog_feed=query.get("blog_feed", ""),
-        author=query.get("author", "").strip(),
+        domains=query.getall("domain", []),
+        tags=query.getall("tag", []),
+        platforms=query.getall("platform", []),
+        flairs=query.getall("flair", []),
+        author=query.get("author", ""),
         author_match=query.get("author_match", "contains"),
-        after=_date(query.get("after", "")),
-        before=_date(query.get("before", "")),
-        limit=_limit(query.get("limit", "30")),
+        after=query.get("after", ""),
+        before=query.get("before", ""),
+        limit=query.get("limit", "30"),
         cursor=query.get("cursor", ""),
         kind=query.get("kind", ""),
-        community=query.get("community", "").strip().lower(),
-        flairs=_flair_choices(query.getall("flair", [])),
-        x_view=query.get("x_view", "posts"),
+        community=query.get("community", ""),
+        account=query.get("account", ""),
         x_feed=query.get("x_feed", ""),
-        account=query.get("account", "").strip().removeprefix("@").lower(),
-        hn_filter=query.get(
-            "hn_filter", "top50" if query.get("kind") == "hacker_news" else "",
-        ),
-    )
-    _validate(filters)
-
-    return filters
-
-
-def _choices(values: list[str]) -> tuple[str, ...]:
-    if len(values) > 100 or any(not v.strip() or len(v) > 253 for v in values):
-        raise ValueError("Source and tag filters must be nonempty and bounded")
-
-    return tuple(sorted({value.strip().lower() for value in values}))
-
-
-def _flair_choices(values: list[str]) -> tuple[str, ...]:
-    if len(values) > 100 or any(
-        not value.strip() or len(value) > MAX_FLAIR_LENGTH for value in values
-    ):
-        raise ValueError("Flair filters must be nonempty and bounded")
-
-    return tuple(sorted({value.strip() for value in values}))
-
-
-def _date(value: str) -> dt.datetime | None:
-    if not value:
-        return None
-
-    try:
-        date = dt.date.fromisoformat(value)
-
-        if date.isoformat() != value or not 1900 <= date.year <= 2298:
-            raise ValueError
-    except ValueError:
-        raise ValueError(
-            "Dates must be YYYY-MM-DD between 1900 and 2298",
-        ) from None
-
-    return dt.datetime.combine(date, dt.time(), tzinfo=dt.UTC)
-
-
-def _limit(value: str) -> int:
-    try:
-        limit = int(value)
-    except ValueError:
-        raise ValueError("limit must be an integer from 1 to 100") from None
-
-    if not 1 <= limit <= 100:
-        raise ValueError("limit must be an integer from 1 to 100")
-
-    return limit
-
-
-def _validate(filters: ReaderFilters) -> None:
-    _validate_collection_filters(filters)
-
-    if filters.mode not in {"words", "meaning", "combined"}:
-        raise ValueError("mode must be words, meaning or combined")
-
-    if filters.sort not in {"newest", "oldest", "relevance"}:
-        raise ValueError("sort must be newest, oldest or relevance")
-
-    if filters.sort == "relevance" and not filters.q:
-        raise ValueError("Relevance ordering requires a search")
-
-    if len(filters.q) > 2000 or len(filters.q.split()) > 50:
-        raise ValueError("Search is limited to 2000 characters and 50 terms")
-
-    if len(filters.author) > 300:
-        raise ValueError("Author filter is limited to 300 characters")
-
-    if filters.author_match not in {"contains", "exact"}:
-        raise ValueError("author_match must be contains or exact")
-
-    if filters.after and filters.before and filters.after > filters.before:
-        raise ValueError("after must not be later than before")
-
-    if filters.cursor:
-        if filters.x_feed:
-            decode_home_cursor(filters)
-        else:
-            decode_cursor(filters)
-
-
-def _validate_collection_filters(filters: ReaderFilters) -> None:
-    if filters.x_feed and (
-        filters.kind != "x" or filters.x_feed != "for_you"
-    ):
-        raise ValueError("x_feed requires kind=x and for_you")
-
-    if filters.kind not in {
-        "", "all", "stories", "reddit", "x", "youtube", "hacker_news",
-    }:
-        raise ValueError(
-            "kind must be all, stories, reddit, x, youtube or hacker_news",
-        )
-
-    if filters.platforms and (
-        filters.kind not in {"", "all"}
-        or set(filters.platforms) - {
-            "stories", "reddit", "x", "youtube", "hacker_news",
-        }
-    ):
-        raise ValueError(
-            "platform requires kind=all and stories, reddit, x, "
-            "youtube or hacker_news",
-        )
-
-    if filters.blog_feed and (
-        filters.kind != "stories"
-        or filters.blog_feed not in {"sources", "external"}
-    ):
-        raise ValueError(
-            "blog_feed requires kind=stories and sources or external",
-        )
-
-    if filters.hn_filter and (
-        filters.kind != "hacker_news"
-        or filters.hn_filter not in HackerNewsFilter
-    ):
-        raise ValueError(
-            "hn_filter requires kind=hacker_news and "
-            "top10, top20, top50 or all",
-        )
-
-    if filters.x_view not in {"posts", "replies"}:
-        raise ValueError("x_view must be posts or replies")
-
-    if filters.account and (
-        filters.kind != "x"
-        or not re.fullmatch(r"[a-z0-9_]{1,15}", filters.account)
-    ):
-        raise ValueError("account requires kind=x and an account handle")
-
-    if filters.community and (
-        filters.kind != "reddit"
-        or not re.fullmatch(r"[a-z0-9_]{2,21}", filters.community)
-    ):
-        raise ValueError("community requires kind=reddit and a community name")
-
-    if filters.flairs and filters.kind != "reddit":
-        raise ValueError("flair requires kind=reddit")
-
-
-def encode_cursor(
-    filters: ReaderFilters, created_at: dt.datetime, domain: str, post_id: str,
-) -> str:
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=dt.UTC)
-
-    payload = [1, filters.signature(), created_at.isoformat(), domain, post_id]
-
-    return base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-
-
-def decode_cursor(filters: ReaderFilters) -> tuple[dt.datetime, str, str]:
-    try:
-        if len(filters.cursor) > 8192 or filters.sort == "relevance":
-            raise ValueError
-
-        raw: object = json.loads(base64.b64decode(
-            filters.cursor, altchars=b"-_", validate=True,
-        ))
-
-        if not isinstance(raw, list):
-            raise ValueError
-
-        payload = cast(list[object], raw)
-
-        if (
-            len(payload) != 5
-            or payload[0] != 1 or payload[1] != filters.signature()
-            or not all(isinstance(value, str) for value in payload[2:])
-        ):
-            raise ValueError
-
-        created_at = dt.datetime.fromisoformat(cast(str, payload[2]))
-
-        if created_at.tzinfo is None:
-            raise ValueError
-
-        return created_at, cast(str, payload[3]), cast(str, payload[4])
-    except (ValueError, TypeError, UnicodeError):
-        raise ValueError("Invalid cursor for these filters") from None
+        hn_filter=query.get("hn_filter"),
+        x_view=query.get("x_view"),
+        blog_feed=query.get("blog_feed"),
+    ))
 
 
 def build_query(

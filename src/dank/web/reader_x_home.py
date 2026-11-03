@@ -2,93 +2,33 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
-import json
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import Any
 
-if TYPE_CHECKING:
-    from dank.web.reader_query import ReaderFilters
+from dank.api.posts.model import (
+    ReaderFilters,
+    Recommendation,
+    decode_home_cursor,
+    encode_home_cursor as home_cursor,
+)
 
 HOME_CONDITION = (
     "JSONExtractString(payload, 'dank_x_home', 'feed') = 'for_you'"
 )
 
 
-class HomeCursor(NamedTuple):
-    snapshot: str
-    observed_at: str
-    position: int
-    domain: str
-    post_id: str
-
-
-def decode_home_cursor(filters: ReaderFilters) -> HomeCursor:
-    try:
-        if len(filters.cursor) > 8192 or filters.sort == "relevance":
-            raise ValueError
-
-        values = json.loads(
-            base64.b64decode(filters.cursor, altchars=b"-_", validate=True),
-        )
-
-        if (
-            not isinstance(values, list)
-            or len(cast(list[Any], values)) != 7
-            or cast(list[Any], values)[:2] != [2, filters.signature()]
-        ):
-            raise ValueError
-
-        snapshot, observed, position, domain, post_id = (
-            cast(list[Any], values)[2:]
-        )
-
-        if not all(
-            isinstance(value, str)
-            for value in (snapshot, observed, domain, post_id)
-        ):
-            raise ValueError
-
-        cutoff, captured = (
-            dt.datetime.fromisoformat(snapshot),
-            dt.datetime.fromisoformat(observed),
-        )
-
-        if (
-            cutoff.tzinfo is None
-            or captured.tzinfo is None
-            or captured > cutoff
-            or type(position) is not int
-            or not 1 <= position <= 2**31
-        ):
-            raise ValueError
-
-        return HomeCursor(snapshot, observed, position, domain, post_id)
-    except (ValueError, TypeError, UnicodeError):
-        raise ValueError("Invalid cursor for these filters") from None
-
-
 def encode_home_cursor(
     filters: ReaderFilters, row: dict[str, Any], snapshot: str,
 ) -> str:
-    observed = str(row["recommended_at"]).replace(" ", "T")
-
-    if dt.datetime.fromisoformat(observed).tzinfo is None:
-        observed += "+00:00"
-
-    return base64.urlsafe_b64encode(
-        json.dumps(
-            [
-                2,
-                filters.signature(),
-                snapshot,
-                observed,
-                int(row["recommendation_position"]),
-                str(row["domain"]),
-                str(row["post_id"]),
-            ],
-        ).encode(),
-    ).decode()
+    return home_cursor(
+        filters,
+        Recommendation(
+            str(row["recommended_at"]), int(row["recommendation_position"]),
+        ),
+        str(row["domain"]),
+        str(row["post_id"]),
+        snapshot,
+    )
 
 
 def home_listing(
