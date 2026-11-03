@@ -1,6 +1,8 @@
 .venv
 *.pyc
 config.toml
+/postgres-password
+/backups/
 *.egg-info
 *.json
 *.xml

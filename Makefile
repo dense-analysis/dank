@@ -3,6 +3,9 @@ MODE ?= docker
 COMPOSE ?= docker compose
 UV ?= uv
 ARGS ?=
+FILE ?=
+# The Compose service's role and database.
+POSTGRES_ARGS := --username=dank --dbname=dank
 
 ifeq ($(MODE),docker)
 CONFIG_TEMPLATE := config.example.toml
@@ -22,7 +25,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare
+.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore
 
 help:
 	@printf '%s\n' \
@@ -38,8 +41,10 @@ help:
 		'  query           Run clickhouse-query; pass -q and SQL through ARGS' \
 		'  embed           Run embed-text; pass quoted text through ARGS' \
 		'  download-model  Cache an embedding model' \
-		'  config          Create missing config.toml for the selected mode' \
+		'  config          Create missing config.toml and postgres-password' \
 		'  down, logs      Stop or view logs for the Docker stack' \
+		'  postgres-dump   Save the Docker Postgres database under backups/' \
+		'  postgres-restore  Restore a dump into it; pass FILE=backups/<name>.dump' \
 		'' \
 		'ARGS goes to the application command, or to Compose for Docker up/web.' \
 		'Existing configuration is preserved; MODE does not convert it.'
@@ -48,6 +53,10 @@ config:
 	@set -e; if [ ! -e config.toml ]; then \
 		(umask 077; cp -n $(CONFIG_TEMPLATE) config.toml); \
 		printf '%s\n' 'Created config.toml for $(MODE). Edit sources there before scraping.'; \
+	fi; \
+	if [ ! -e postgres-password ]; then \
+		(umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > postgres-password); \
+		printf '%s\n' 'Created postgres-password with a random password.'; \
 	fi
 
 # Preserve literal dollar signs in arguments, including regex end anchors.
@@ -84,9 +93,28 @@ down:
 
 logs:
 	$(COMPOSE) logs --follow $(value ARGS)
+
+# Write beside the final name so a failed dump can't pass for a backup.
+postgres-dump:
+	@set -e; umask 077; mkdir -p backups; \
+	dump="backups/postgres-$$(date -u '+%Y%m%dT%H%M%SZ').dump"; \
+	$(COMPOSE) exec -T postgres pg_dump $(POSTGRES_ARGS) --format=custom > "$$dump.partial"; \
+	mv "$$dump.partial" "$$dump"; \
+	printf 'Saved %s\n' "$$dump"
+
+postgres-restore:
+	@if [ -z '$(value FILE)' ]; then \
+		printf '%s\n' 'Pass the dump to restore: make postgres-restore FILE=backups/<name>.dump' >&2; \
+		exit 2; \
+	fi
+	$(COMPOSE) exec -T postgres pg_restore $(POSTGRES_ARGS) --clean --if-exists --no-owner --single-transaction < '$(value FILE)'
 else
 down logs:
 	@printf '%s\n' '$@ manages Docker services; use MODE=docker.' >&2
 	@printf '%s\n' 'For native runs, stop the viewer with Ctrl+C and use its configured log file.' >&2
+	@exit 2
+
+postgres-dump postgres-restore:
+	@printf '%s\n' '$@ manages the Docker Postgres. For your own server, use pg_dump and pg_restore; see docs/setup.md.' >&2
 	@exit 2
 endif

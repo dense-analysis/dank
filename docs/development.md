@@ -1,8 +1,8 @@
 # Development
 
 Use [native or Docker setup](setup.md) to run the application. The checks below
-need no live ClickHouse server, browser login or private configuration. The
-default tests use fixtures and block external network access.
+need no live ClickHouse or Postgres server, browser login or private
+configuration. The default tests use fixtures and block external network access.
 
 ## Native checks
 
@@ -83,6 +83,24 @@ Select its config and viewer port explicitly:
 make web MODE=native ARGS='--config task-config.toml --port 8081'
 ```
 
+Worktrees sharing a Postgres server each use their own database, as they do on
+a shared ClickHouse server, so a task's writes and schema changes can't reach
+another's. `make config` gives each worktree a new random `postgres-password`,
+which doesn't match the shared role, so point at the file that does:
+
+```toml
+[postgres]
+host = "localhost"
+database = "dank_my_task"
+password_file = "../main/postgres-password"
+```
+
+Create the database once, connected as your server's administrator:
+
+```sh
+createdb --owner=dank dank_my_task
+```
+
 For Docker, give each stack a distinct project name and host port. Create an
 ignored `compose.local.yaml` override (Compose 2.24.4 or later):
 
@@ -101,4 +119,4 @@ docker compose -p dank-my-task -f compose.yaml -f compose.local.yaml ps
 ```
 
 Each Compose project has separate database, data and model-cache volumes. Each
-checkout keeps its own ignored `config.toml`.
+checkout keeps its own ignored `config.toml` and `postgres-password`.

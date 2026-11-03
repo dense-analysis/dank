@@ -18,6 +18,15 @@ password = ""
 secure = false
 use_http = true
 
+[postgres]
+# Your own server; see docs/setup.md#postgres-on-your-own-server.
+host = "localhost"
+port = 5432
+database = "dank"
+user = "dank"
+# Holds only the password. make config creates a random one if it is missing.
+password_file = "postgres-password"
+
 [media]
 # Use ["image"] for images only, or [] to keep references without downloads.
 download_types = ["image", "audio", "video"]

@@ -16,7 +16,8 @@ You should stick to using the following libraries for scraping.
 
 Configuration lives in `config.toml` and should never be committed. You must
 never read the values from `config.toml`, only pass them on to internal
-functions in code for running DANK.
+functions in code for running DANK. Treat the Git-ignored `postgres-password`
+file the same way, and never put its contents in logs or error messages.
 
 ## Architecture
 
@@ -120,3 +121,7 @@ where you have a complex series of nested if statements.
 
 You have access to a local ClickHouse database during development default
 ClickHouse credentials on Port 9000, and you can use that for your operations.
+
+App state goes in Postgres and collected content stays in ClickHouse. See
+`docs/features/database.md`. Each worktree needs its own Postgres database on a
+shared server; see `docs/development.md`.

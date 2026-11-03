@@ -20,6 +20,15 @@ password = ""
 secure = false
 use_http = true
 
+[postgres]
+# Compose service; these match the built-in defaults.
+host = "postgres"
+port = 5432
+database = "dank"
+user = "dank"
+# make config creates this file. The password never belongs in this config.
+password_file = "postgres-password"
+
 [media]
 # Use ["image"] for images only, or [] to keep references without downloads.
 download_types = ["image", "audio", "video"]

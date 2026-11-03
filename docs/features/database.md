@@ -5,6 +5,20 @@ files remain in the [asset directory](media.md). Native runs connect to your
 configured ClickHouse instance; Docker provides a database and creates its
 tables automatically. See [setup](../setup.md) for both modes.
 
+## Where data lives
+
+| Store | Holds |
+| --- | --- |
+| ClickHouse | Collected and processed content, and scrape history |
+| Postgres | Nothing yet; reserved for app state people edit, which has to be exactly right |
+| `storage.data_dir` | Downloaded media, browser profiles, reader refresh jobs and logs |
+| `config.toml` | Sources and settings |
+
+Postgres runs beside ClickHouse so app state can move there, starting with the
+source catalog. Collected content stays in ClickHouse, and no transaction spans
+the two. See [setup](../setup.md#back-up-and-upgrade-postgres) to back up
+Postgres.
+
 ## Tables
 
 | Table | Contents |

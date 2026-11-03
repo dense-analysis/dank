@@ -21,11 +21,38 @@ services:
         hard: 262144
     restart: unless-stopped
 
+  postgres:
+    # Major versions change only by dump and restore; see docs/setup.md.
+    image: postgres:18
+    environment:
+      # These apply only to an empty volume and match the defaults in
+      # dank.config. The database is reachable only on the Compose network.
+      POSTGRES_DB: dank
+      POSTGRES_USER: dank
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      # Postgres 18+ images keep their data in 18/docker beneath this directory.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      # TCP, because the image's temporary init server answers only on a socket.
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=dank", "--dbname=dank"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
   dank:
     build: .
     depends_on:
       clickhouse:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+    secrets:
+      - postgres_password
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -48,7 +75,12 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+secrets:
+  postgres_password:
+    file: ./postgres-password
+
 volumes:
   clickhouse_data:
+  postgres_data:
   dank_data:
   model_cache:

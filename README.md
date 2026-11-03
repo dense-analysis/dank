@@ -22,7 +22,7 @@ perception and evolving narratives.
 - [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
 - [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
-- [Database queries](docs/features/database.md) — inspect collected and processed data.
+- [Stored data and queries](docs/features/database.md) — see which data lives where and inspect it.
 
 See [known collection and processing issues](docs/known-issues.md) for reader
 status meanings, source-specific problems, current handling and recovery gaps.
@@ -54,8 +54,8 @@ make up
 ```
 
 This creates missing configuration from `config.example.toml`, builds the
-application, starts ClickHouse, initialises its tables and starts the viewer.
-Python, Chromium and media tools are included in the image.
+application, starts ClickHouse and Postgres, initialises ClickHouse's tables and
+starts the viewer. Python, Chromium and media tools are included in the image.
 
 Open [localhost:8080](http://127.0.0.1:8080) for either mode. The supplied
 configuration templates start with an empty source list.
@@ -122,8 +122,10 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make query` | Run `clickhouse-query` with arguments from `ARGS` |
 | `make embed` | Run `embed-text` with text from `ARGS` |
 | `make download-model` | Cache the embedding model |
-| `make config` | Create missing configuration for the selected mode |
+| `make config` | Create missing configuration for the selected mode, and `postgres-password` |
 | `make down`, `make logs` | Stop or inspect the Docker stack; Docker mode only |
+| `make postgres-dump` | Save the Docker Postgres database under `backups/`; Docker mode only |
+| `make postgres-restore FILE=<dump>` | Restore a saved dump into it; Docker mode only |
 
 **Native**
 
@@ -148,7 +150,8 @@ disables hot reload by default. `COMPOSE` and `UV` can override the launchers.
 ## Configuration and storage
 
 Use `make config MODE=native` for a new native setup or `make config` for
-Docker. These copy the matching example template. Configuration is ignored
+Docker. These copy the matching example template and create a private
+`postgres-password` file with a random password. Both are ignored
 by Git. Existing files are preserved, but switching modes requires the matching database host,
 browser path and data location; copying a template does not migrate data.
 
@@ -167,9 +170,11 @@ make web MODE=native
 make web ARGS='--force-recreate dank'
 ```
 
-Native runs use your local ClickHouse and files. Docker stores database files,
-assets, browser profile and model cache in named volumes. Use `make logs` and
-`make down` to inspect and stop the Docker stack; `make down` preserves volumes.
+Native runs use your local ClickHouse and files, and can point at
+[your own Postgres server](docs/setup.md#postgres-on-your-own-server). Docker
+stores database files, assets, browser profile and model cache in named volumes.
+Use `make logs` and `make down` to inspect and stop the Docker stack; `make down`
+preserves volumes.
 
 See [setup](docs/setup.md) for both modes, or
 [development](docs/development.md) for native and container checks.

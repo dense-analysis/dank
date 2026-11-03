@@ -145,6 +145,20 @@ class ClickHouseSettings(NamedTuple):
     use_http: bool
 
 
+class PostgresSettings(NamedTuple):
+    """Connection details whose defaults match the Compose service.
+
+    Settings hold only the password's path, so printing them can't reveal it.
+    """
+
+    host: str = "postgres"
+    port: int = 5432
+    database: str = "dank"
+    user: str = "dank"
+    # Relative to the working directory: the checkout, or /app in a container.
+    password_file: pathlib.Path = pathlib.Path("postgres-password")
+
+
 class SourceAdapter(StrEnum):
     RSS = "rss"
     HACKER_NEWS = "hacker_news"
@@ -218,6 +232,7 @@ class Settings(NamedTuple):
     reddit: RedditSettings = RedditSettings()
     youtube: YouTubeSettings = YouTubeSettings()
     hacker_news: HackerNewsSettings = HackerNewsSettings()
+    postgres: PostgresSettings = PostgresSettings()
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -736,6 +751,83 @@ def _parse_scrape_settings(value: object) -> ScrapeSettings:
     return ScrapeSettings(**values)
 
 
+def _parse_postgres_settings(value: object) -> PostgresSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError("postgres must be a table")
+
+    # Report no values: a misplaced password must not reach an error message.
+    if set(data) - set(PostgresSettings._fields):
+        raise ConfigError(
+            "postgres accepts only host, port, database, user and "
+            "password_file; keep the password in password_file",
+        )
+
+    defaults = PostgresSettings()
+    names: dict[str, str] = {}
+
+    for key in ("host", "database", "user"):
+        name = data.get(key, getattr(defaults, key))
+
+        if (not isinstance(name, str) or not name or name != name.strip()
+                or any(ord(char) < 32 or ord(char) == 127 for char in name)):
+            raise ConfigError(
+                f"postgres.{key} must be a non-empty string without "
+                "surrounding spaces or control characters",
+            )
+
+        names[key] = name
+
+    # Longer identifiers are truncated silently, which could let two
+    # worktrees' database names collide.
+    # https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+    for key in ("database", "user"):
+        if len(names[key].encode()) > 63:
+            raise ConfigError(f"postgres.{key} must be at most 63 bytes")
+
+    port = data.get("port", defaults.port)
+
+    if (not isinstance(port, int) or isinstance(port, bool)
+            or not 1 <= port <= 65535):
+        raise ConfigError("postgres.port must be an integer from 1 to 65535")
+
+    password_file = _parse_path(
+        data.get("password_file", str(defaults.password_file)),
+    )
+
+    if password_file is None:
+        raise ConfigError("postgres.password_file must be a non-empty path")
+
+    return PostgresSettings(**names, port=port, password_file=password_file)
+
+
+def read_postgres_password(settings: PostgresSettings) -> str:
+    """Read the password when connecting, so only callers ever hold it.
+
+    Only trailing newlines are removed, matching what the Postgres image's
+    entrypoint does with POSTGRES_PASSWORD_FILE at initialization.
+    """
+    path = settings.password_file
+
+    try:
+        password = path.read_bytes().decode().rstrip("\n")
+    except OSError as error:
+        raise ConfigError(
+            f"Cannot read postgres.password_file {path}: {error.strerror}",
+        ) from None
+    except UnicodeDecodeError:
+        # The decode error's own message quotes bytes from the file.
+        raise ConfigError(
+            f"postgres.password_file {path} must be UTF-8 text",
+        ) from None
+
+    if not password:
+        raise ConfigError(f"postgres.password_file {path} is empty")
+
+    return password
+
+
 def _parse_path(value: object) -> pathlib.Path | None:
     """Return either a path from a trimmed string or None."""
     if isinstance(value, str) and (value := value.strip()):
@@ -941,6 +1033,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         reddit=_parse_reddit_settings(data.get("reddit", {})),
         youtube=_parse_youtube_settings(data.get("youtube", {})),
         hacker_news=_parse_hacker_news_settings(data.get("hacker_news", {})),
+        postgres=_parse_postgres_settings(data.get("postgres", {})),
     )
 
 
