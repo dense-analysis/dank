@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import threading
 from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
 from dank.embedding_vectors import PRECOMPUTED_TEXT_VECTORS, Vector
 
 MODEL_NAME = "sentence-transformers/paraphrase-MiniLM-L3-v2"
+# Loading changes process-wide state in transformers, so concurrent loads fail
+# with "Cannot copy out of meta tensor", even for separate instances.
+_MODEL_LOAD_LOCK = threading.Lock()
 
 # Avoid loading sentence transfomers until needed.
 if TYPE_CHECKING:
@@ -27,15 +31,21 @@ class EmbeddingModel:
         self.local_files_only = local_files_only
 
     def _get_model(self) -> SentenceTransformer:
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
+        if self._model is not None:
+            return self._model
 
-            self._model = SentenceTransformer(
-                self.model_name,
-                device=self.device,
-                local_files_only=self.local_files_only,
-            )
-            self._model.eval()
+        with _MODEL_LOAD_LOCK:
+            if self._model is None:
+                from sentence_transformers import SentenceTransformer
+
+                model = SentenceTransformer(
+                    self.model_name,
+                    device=self.device,
+                    local_files_only=self.local_files_only,
+                )
+                model.eval()
+                # Published last, because the check above skips the lock.
+                self._model = model
 
         return self._model
 
