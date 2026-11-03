@@ -89,6 +89,8 @@ async def test_unexpected_errors_answer_503_and_are_logged(
         "code": "unavailable",
         "fields": [],
     })
+    # Starlette answers these outside every middleware, ApiHeaders included.
+    assert response.headers["cache-control"] == "no-store"
     assert "Request failed: /api/probe/broken" in caplog.text
 
 

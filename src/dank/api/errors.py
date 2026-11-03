@@ -72,7 +72,11 @@ async def unexpected_error(
 ) -> JSONResponse:
     logger.error("Request failed: %s", request.url.path, exc_info=error)
 
-    return envelope(503, UNAVAILABLE, "unavailable")
+    # Starlette runs this handler outside every middleware, so ApiHeaders
+    # can't add the header that keeps a failure out of the browser's cache.
+    return envelope(
+        503, UNAVAILABLE, "unavailable", headers={"cache-control": "no-store"},
+    )
 
 
 type ExceptionHandler = Callable[
