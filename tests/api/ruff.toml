@@ -2,6 +2,9 @@
 extend = "../../pyproject.toml"
 # Share the root cache instead of keeping one beside this file.
 cache-dir = "../../.ruff_cache"
+# Paths here are relative to this file, so name the root's, or import sorting
+# takes dank for a third-party package.
+src = ["../..", "../../src"]
 
 [lint]
 extend-select = ["TID251"]
