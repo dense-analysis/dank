@@ -402,13 +402,17 @@ async def test_for_you_authors_match_apart_from_each_servers_snapshot(
     "/api/reader/x/authors?kind=x&x_feed=for_you&q=space",
     "/api/reader/x/authors?kind=x&x_feed=for_you&q=space&mode=meaning",
     "/api/reader/x/authors?kind=x&x_feed=for_you&author=alice",
+    "/api/reader/x/authors?kind=x&x_feed=for_you&account=alice",
 ])
 async def test_filtered_authors_match(
     servers: tuple[Get, Get], path: str,
 ) -> None:
     old, new = servers
-    (_, expected), (_, actual) = await old(path), await new(path)
+    (old_status, expected), (new_status, actual) = (
+        await old(path), await new(path),
+    )
 
+    assert (old_status, new_status) == (200, 200)
     assert actual == expected
 
 

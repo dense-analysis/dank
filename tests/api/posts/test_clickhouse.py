@@ -179,6 +179,24 @@ async def test_authors_rank_by_count_and_disambiguate_shared_names(
     assert second["next_cursor"] is None
 
 
+async def test_authors_can_narrow_to_one_account(
+    client: AsyncClient, clickhouse: ClickHouseClient,
+) -> None:
+    await seed_home(
+        clickhouse, home_post("1", "alice", 1), home_post("2", "bob", 2),
+    )
+
+    response = await client.get(
+        "/api/reader/x/authors?kind=x&x_feed=for_you&account=@Alice",
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["total"] == 1
+    assert [item["handle"] for item in body["authors"]] == ["alice"]
+    assert [item["id"] for item in body["authors"][0]["posts"]] == ["1"]
+
+
 async def test_authors_show_only_a_few_example_posts(
     client: AsyncClient, clickhouse: ClickHouseClient,
 ) -> None:

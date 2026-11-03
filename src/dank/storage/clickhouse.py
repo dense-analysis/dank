@@ -6,6 +6,9 @@ from typing import Any, NamedTuple, cast
 
 import clickhouse_connect
 from clickhouse_connect.driver.asyncclient import AsyncClient
+from clickhouse_connect.driver.binding import (
+    finalize_query,  # type: ignore
+)
 
 from dank.config import ClickHouseSettings
 from dank.model import parse_datetime as parse_datetime
@@ -109,8 +112,7 @@ class ClickHouseClient:
         params: dict[str, Any] | None,
     ) -> None:
         await self._ensure_client().command(  # type: ignore
-            query,
-            parameters=params,
+            self._bound(query, params),
         )
 
     async def _query(
@@ -119,9 +121,17 @@ class ClickHouseClient:
         params: dict[str, Any] | None,
     ):
         return await self._ensure_client().query(  # type: ignore
-            query,
-            parameters=params,
+            self._bound(query, params),
         )
+
+    def _bound(self, query: str, params: dict[str, Any] | None) -> str:
+        # Given parameters, the driver reads any SQL matching {.+:.+} as using
+        # server-side binds and leaves %(name)s unformatted. Two regex
+        # quantifiers around a URL scheme match that. DANK only uses %(name)s,
+        # so format here and never give the driver that choice.
+        server_tz = self._ensure_client().client.server_tz  # type: ignore
+
+        return finalize_query(query, params, server_tz)  # type: ignore
 
     def _ensure_client(self) -> AsyncClient:
         if self._client is None:
