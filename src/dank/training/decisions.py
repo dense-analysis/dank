@@ -5,13 +5,18 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
+import re
+from collections.abc import Mapping
 from typing import Any, cast
 
 import aiohttp
 
 from dank.category_config import Category, CategorySettings
 from dank.model import PostTrainingData
+
+logger = logging.getLogger(__name__)
 
 OPENAI_DECISIONS_URL = "https://api.openai.com/v1/decisions"
 # Limits for input_json, defined by the Decisions API.
@@ -23,6 +28,10 @@ MAX_RETRY_DELAY_SECONDS = 30.0
 
 class TrainingError(RuntimeError):
     """Safe to log: never includes credentials or remote response bodies."""
+
+
+class AnswerError(TrainingError):
+    """Invalid evidence or answer for one post; other posts may continue."""
 
 
 def scoring_request(
@@ -38,10 +47,10 @@ def scoring_request(
             separators=(",", ":"),
         ).encode("utf-8")
     except (TypeError, ValueError):
-        raise TrainingError("Post evidence is not valid JSON") from None
+        raise AnswerError("Post evidence is not valid JSON") from None
 
     if len(encoded) > MAX_JSON_BYTES:
-        raise TrainingError("Post evidence exceeds Decisions JSON limits")
+        raise AnswerError("Post evidence exceeds Decisions JSON limits")
 
     prefix = (
         "Evaluate how well the supplied post matches each requested category. "
@@ -101,26 +110,37 @@ def parse_scores(
         data.get("answers"),
         list,
     ):
-        raise TrainingError("OpenAI returned malformed Decisions answers")
+        raise AnswerError("OpenAI returned malformed Decisions answers")
 
     expected = {category.name for category in categories}
     scores: dict[str, float] = {}
+    seen: set[str] = set()
+    refused = 0
 
     for raw in cast(list[object], data["answers"]):
         answer = cast(dict[str, Any], raw)
 
-        if not isinstance(raw, dict) or answer.get("type") != "predicate":
-            raise TrainingError(
-                "OpenAI refused or returned a non-predicate answer",
+        if not isinstance(raw, dict):
+            raise AnswerError(
+                "OpenAI returned a malformed answer",
             )
 
         name = answer.get("name")
         probability = answer.get("probability")
 
-        if not isinstance(name, str) or name not in expected or name in scores:
-            raise TrainingError(
+        if not isinstance(name, str) or name not in expected or name in seen:
+            raise AnswerError(
                 "OpenAI returned unexpected or duplicate categories",
             )
+
+        seen.add(name)
+
+        if answer.get("type") == "refusal":
+            refused += 1
+            continue
+
+        if answer.get("type") != "predicate":
+            raise AnswerError("OpenAI returned an unexpected answer type")
 
         if (
             isinstance(probability, bool)
@@ -128,14 +148,21 @@ def parse_scores(
             or not math.isfinite(probability)
             or not 0 <= probability <= 1
         ):
-            raise TrainingError(
+            raise AnswerError(
                 "OpenAI returned an invalid category probability",
             )
 
         scores[name] = float(probability)
 
-    if set(scores) != expected:
-        raise TrainingError("OpenAI returned incomplete category answers")
+    if seen != expected:
+        raise AnswerError("OpenAI returned incomplete category answers")
+
+    if refused:
+        logger.warning(
+            "OpenAI Decisions refusal refused=%d answered=%d; "
+            "refused categories are omitted, not scored as zero",
+            refused, len(scores),
+        )
 
     return scores
 
@@ -153,6 +180,35 @@ def retry_delay(value: str, attempt: int) -> float:
     )
 
 
+def log_response(status: int, headers: Mapping[str, str], attempt: int) -> str:
+    request_id = headers.get("x-request-id", "")
+    request_id = (
+        request_id if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", request_id)
+        else "unknown"
+    )
+    logger.info(
+        "OpenAI Decisions response status=%d attempt=%d request_id=%s",
+        status, attempt, request_id,
+    )
+
+    if status == 429:
+        # Numeric counters help diagnose TPM versus request limits.
+        counters: dict[str, int] = {}
+
+        for header in (
+            "x-ratelimit-limit-tokens", "x-ratelimit-remaining-tokens",
+            "x-ratelimit-limit-requests", "x-ratelimit-remaining-requests",
+        ):
+            value = headers.get(header, "")
+
+            if re.fullmatch(r"[0-9]{1,20}", value):
+                counters[header] = int(value)
+
+        logger.warning("OpenAI rate limit counters=%s", counters)
+
+    return request_id
+
+
 async def score_post(
     session: aiohttp.ClientSession,
     post: PostTrainingData,
@@ -166,6 +222,8 @@ async def score_post(
     )
 
     for attempt in range(MAX_ATTEMPTS):
+        reason = "connection"
+
         try:
             async with session.post(
                 OPENAI_DECISIONS_URL,
@@ -176,27 +234,42 @@ async def score_post(
                 },
                 allow_redirects=False,
             ) as response:
+                request_id = log_response(
+                    response.status, response.headers, attempt + 1,
+                )
+
                 if response.status == 429 or response.status >= 500:
                     if attempt == MAX_ATTEMPTS - 1:
-                        raise TrainingError("OpenAI scoring retries exhausted")
+                        raise TrainingError(
+                            "OpenAI scoring retries exhausted "
+                            f"(HTTP {response.status}, "
+                            f"request_id={request_id})",
+                        )
 
+                    reason = f"HTTP {response.status}"
                     delay = retry_delay(
                         response.headers.get("Retry-After", ""),
                         attempt,
                     )
                 elif response.status != 200:
                     raise TrainingError(
-                        f"OpenAI scoring failed (HTTP {response.status})",
+                        f"OpenAI scoring failed (HTTP {response.status}, "
+                        f"request_id={request_id})",
                     )
                 else:
                     try:
                         data = await response.json()
                     except (ValueError, aiohttp.ContentTypeError):
-                        raise TrainingError(
+                        raise AnswerError(
                             "OpenAI returned invalid JSON",
                         ) from None
 
-                    return parse_scores(cast(object, data), categories)
+                    try:
+                        return parse_scores(cast(object, data), categories)
+                    except AnswerError as error:
+                        raise AnswerError(
+                            f"{error} (HTTP 200, request_id={request_id})",
+                        ) from None
         except (aiohttp.ClientError, TimeoutError):
             if attempt == MAX_ATTEMPTS - 1:
                 raise TrainingError(
@@ -205,6 +278,12 @@ async def score_post(
 
             delay = 2.0**attempt
 
+        logger.warning(
+            "OpenAI Decisions retry attempt=%d/%d delay_seconds=%.1f "
+            "reason=%s",
+            attempt + 1, MAX_ATTEMPTS, delay,
+            reason,
+        )
         await asyncio.sleep(delay)
 
     raise TrainingError("OpenAI scoring retries exhausted")

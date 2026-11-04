@@ -153,10 +153,15 @@ def test_configuration_parses_toml_types() -> None:
 
 async def test_transport_retries_without_leaking_errors(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     session = MagicMock()
-    failure = MagicMock(status=429, headers={"Retry-After": "0"})
-    success = MagicMock(status=200)
+    failure = MagicMock(status=429, headers={
+        "Retry-After": "0", "x-ratelimit-remaining-tokens": "0",
+        "x-ratelimit-remaining-requests": "12",
+        "x-ratelimit-limit-tokens": "private-credential",
+    })
+    success = MagicMock(status=200, headers={})
     success.json = AsyncMock(
         return_value=response({"science": 1, "software": 0}),
     )
@@ -173,13 +178,19 @@ async def test_transport_retries_without_leaking_errors(
     )
     assert result == {"science": 1, "software": 0}
     assert session.post.call_count == 2
+    assert "HTTP 429" in caplog.text
+    assert "'x-ratelimit-remaining-tokens': 0" in caplog.text
+    assert "'x-ratelimit-remaining-requests': 12" in caplog.text
+    assert "private-credential" not in caplog.text
     assert session.post.call_args.kwargs["allow_redirects"] is False
 
 
 async def test_transport_rejects_permanent_http_errors() -> None:
     session = MagicMock()
     context = MagicMock()
-    context.__aenter__ = AsyncMock(return_value=MagicMock(status=401))
+    context.__aenter__ = AsyncMock(
+        return_value=MagicMock(status=401, headers={}),
+    )
     session.post.return_value = context
 
     with pytest.raises(TrainingError, match="HTTP 401"):
@@ -254,3 +265,44 @@ def test_category_description_changes_only_the_question() -> None:
     assert before["questions"][0] != after["questions"][0]
     assert "New meaning" in after["questions"][0]["instructions"]
     assert before["questions"][1:] == after["questions"][1:]
+
+
+@pytest.mark.parametrize("all_refused", [False, True])
+def test_refusals_keep_valid_scores_without_logging_content(
+    *, all_refused: bool, caplog: pytest.LogCaptureFixture,
+) -> None:
+    data = response({"science": 0.9, "software": 0.2})
+    data["answers"][1] = {
+        "type": "refusal", "name": "software", "refusal": "private evidence",
+    }
+
+    if all_refused:
+        data["answers"][0] = {"type": "refusal", "name": "science"}
+
+    assert parse_scores(data, DEFINITIONS) == (
+        {} if all_refused else {"science": 0.9}
+    )
+    assert "refused=" in caplog.text
+    assert "private evidence" not in caplog.text
+
+
+async def test_success_diagnostics_include_request_id_and_not_evidence(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="dank.training.decisions")
+    session = MagicMock()
+    reply = MagicMock(status=200, headers={"x-request-id": "req_test"})
+    reply.json = AsyncMock(return_value={"answers": [
+        {"type": "choice", "name": "science", "text": "private evidence"},
+    ]})
+    session.post.return_value.__aenter__ = AsyncMock(return_value=reply)
+
+    with pytest.raises(TrainingError, match="HTTP 200, request_id=req_test"):
+        await score_post(
+            cast(Any, session), training_data(), DEFINITIONS,
+            CategorySettings(),
+        )
+
+    assert "status=200" in caplog.text
+    assert "req_test" in caplog.text
+    assert "private evidence" not in caplog.text

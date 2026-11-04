@@ -44,8 +44,11 @@ It pages through saved posts in domain/ID order, skipping examples whose
 vector, algorithm and category already exist. Requests run with bounded
 concurrency and retry transient network errors, HTTP 429 and 5xx up to three
 attempts. Successful sibling requests are persisted before a failure ends the
-command with nonzero status. Refusals, missing or duplicate answers, malformed scores,
-missing categories, nonfinite values and values outside [0, 1] are rejected.
+command with nonzero status. Explicit per-category refusals are logged and omitted while valid sibling scores
+are saved; even a fully refused post counts toward the invocation limit. Refused
+categories are not saved as zero and may be requested again on a later run.
+Missing or duplicate answers, malformed scores,
+missing categories, nonfinite values and values outside [0, 1] cause that post to be skipped.
 
 The JSON input is a `PostTrainingData` TypedDict with exactly `url`, `author`,
 `title` (up to 512 characters), and `html` (up to `max_content_chars`). HTML
@@ -53,7 +56,12 @@ markup is preserved. Embeddings and their algorithm names stay local and
 are used only to select and persist training examples. The Decisions prompt
 explicitly requests independent confidence between 0 and 1 for each category,
 returned as predicate probability. Post fields are framed as untrusted data
-in a developer message. Input and remote error bodies are not logged.
+in a developer message. HTTP status, bounded request IDs, retry delays and refusal counts are logged.
+Input, refusal text and remote error bodies are not logged. HTTP 429 follows
+the bounded retry path; a refusal in HTTP 200 is a separate outcome and does
+not identify a particular safety policy. Exhausted retries still stop the run.
+Invalid evidence or malformed answers
+are logged and skipped per post, counting toward the invocation limit.
 Training incurs API charges; DANK does not fine-tune an OpenAI model.
 
 Training orchestration, the CLI and Decisions requests live in `dank.training`.

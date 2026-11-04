@@ -1213,3 +1213,26 @@ storage fakes and run with plain `make test`, without a ClickHouse server.
 They check query filters/bindings and processing behavior; they do not execute
 SQL against ClickHouse. Transport replies are simulated; no live paid OpenAI
 call was made.
+
+
+## Category training refusals and rate limits
+
+Decisions can return an explicit refusal for individual category questions in
+an HTTP 200 response. Training omits these scores and persists valid sibling
+answers, continuing to later posts. Fully refused posts count toward the run
+limit; refusals are not durable records and can be requested again on a later
+run. Refusal counts are logged without remote refusal text or post evidence.
+Invalid evidence and malformed answers are logged and skipped per post, counting
+toward the invocation limit. Later posts continue. Tests in
+`tests/training/test_runner.py` verify this with concurrency set to one so
+the later request starts after the failure.
+The response alone does not identify a specific safety policy.
+
+HTTP 429 and server failures follow the bounded three-attempt retry policy,
+using Retry-After where available (delays capped at 30 seconds). Exhausted
+retries still stop training after successful concurrent
+siblings have been persisted. Logs include status, attempt, bounded request ID
+and retry delay; historical conflated refusal/non-predicate errors cannot
+establish the exact answer type retroactively. Tests in
+`tests/training/test_decisions.py` cover partial/full refusals, safe diagnostics,
+malformed responses and bounded HTTP retries. No live paid request was used.

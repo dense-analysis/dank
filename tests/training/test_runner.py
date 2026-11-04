@@ -12,6 +12,7 @@ from dank.category_config import Category, CategorySettings
 from dank.model import Post, PostTrainingData
 from dank.storage.clickhouse import ClickHouseClient, QueryResult
 from dank.training.decisions import (
+    AnswerError,
     TrainingError,
 )
 from dank.training.runner import (
@@ -201,3 +202,49 @@ async def test_zero_confidence_is_not_inserted(confidence: float) -> None:
     else:
         assert storage.examples == []
         client.insert_rows.assert_not_awaited()
+
+
+async def test_training_continues_after_full_and_partial_refusals() -> None:
+    storage = FakeTrainingClient([
+        embedded_post(vector=(1, i))._replace(
+            post_id=str(i), html="<p>Body</p>", html_embedding=(1, i),
+        ) for i in range(2)
+    ])
+    scorer = MagicMock()
+    scorer.score = AsyncMock(side_effect=[{}, {"science": 0.9}])
+    trained = await _train_posts(
+        cast(ClickHouseClient, storage), scorer,
+        CategorySettings(definitions=DEFINITIONS, concurrency=1),
+        ["example.com"],
+        since=datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC), limit=2,
+    )
+    assert trained == 2
+    assert scorer.score.call_count == 2
+    assert len(storage.examples) == 1
+    assert storage.examples[0]["category"] == "science"
+    assert storage.examples[0]["confidence"] == 0.9
+
+
+async def test_invalid_answer_does_not_stop_later_posts(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    storage = FakeTrainingClient([
+        embedded_post(vector=(1, i))._replace(post_id=str(i))
+        for i in range(2)
+    ])
+    scorer = MagicMock()
+    scorer.score = AsyncMock(side_effect=[
+        AnswerError("OpenAI returned an unexpected answer type"),
+        {"science": 0.9},
+    ])
+    trained = await _train_posts(
+        cast(ClickHouseClient, storage), scorer,
+        CategorySettings(definitions=DEFINITIONS, concurrency=1),
+        ["example.com"],
+        since=datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC), limit=2,
+    )
+    assert trained == 2
+    assert scorer.score.call_count == 2
+    assert len(storage.examples) == 1
+    assert storage.examples[0]["embedding"] == [1.0, 1.0]
+    assert "Skipping category training post" in caplog.text

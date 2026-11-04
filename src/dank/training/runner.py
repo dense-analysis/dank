@@ -14,7 +14,7 @@ from dank.config import Settings
 from dank.model import Post, PostTrainingData, parse_datetime
 from dank.progress import Progress
 from dank.storage.clickhouse import ClickHouseClient
-from dank.training.decisions import CategoryScorer
+from dank.training.decisions import AnswerError, CategoryScorer
 
 logger = logging.getLogger(__name__)
 # Bound title evidence consistently with the local embedding input.
@@ -207,7 +207,16 @@ async def _train_example(
         "title": row.title[:MAX_TITLE_CHARS],
         "html": row.html[: config.max_content_chars],
     }
-    scores = await scorer.score(payload, missing)
+    try:
+        scores = await scorer.score(payload, missing)
+    except AnswerError as error:
+        logger.warning(
+            "Skipping category training post domain=%s post_id=%s: %s",
+            row.domain, row.post_id, error,
+        )
+
+        # Failed evidence still consumes budget, bounding work per invocation.
+        return True
     rows = [
         {
             "embedding": list(vector),
