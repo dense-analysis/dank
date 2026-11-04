@@ -36,7 +36,7 @@ a post can match several or none.
 Training selects configured domains, optionally filtered with `--domains`
 (a regex), and posts updated within `--age` (default `24h`, or `all`).
 `--limit` is a positive maximum number of posts newly labelled per invocation
-(default 100), including posts with partially missing category scores.
+(default 10,000), including posts with partially missing category scores.
 Decisions currently supports only `gpt-6-luna`, and configuration accepts up
 to 400 categories per request. JSON evidence must fit the API limits of
 256 KiB. The four string fields stay below its 10,000-value limit.

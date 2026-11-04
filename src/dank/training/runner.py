@@ -25,7 +25,7 @@ async def run_train(
     settings: Settings,
     *,
     age: str = "24h",
-    limit: int = 100,
+    limit: int = 10_000,
     domain_regex: re.Pattern[str] | None = None,
 ) -> int:
     config = settings.categories

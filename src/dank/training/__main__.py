@@ -18,8 +18,8 @@ def main() -> None:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
-        help="Maximum posts to label (default: 100)",
+        default=10_000,
+        help="Maximum posts to label (default: 10,000)",
     )
     parser.add_argument(
         "--domains",
