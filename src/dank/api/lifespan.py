@@ -15,6 +15,7 @@ from dank.db.engine import async_engine, async_sessions
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import assets_path
 from dank.web.reader_refresh import RefreshManager, running_refresh
+from dank.web.reader_source_icons import SourceIconCache
 from dank.web.startup import prepare_clickhouse, prepare_postgres
 
 type Lifespan = Callable[
@@ -29,6 +30,7 @@ class Resources(NamedTuple):
     clickhouse: ClickHouseClient
     postgres: async_sessionmaker[AsyncSession]
     refresh: RefreshManager
+    source_icons: SourceIconCache
     assets_dir: pathlib.Path
     page_size: int
 
@@ -56,6 +58,7 @@ def lifespan(settings: Settings, *, page_size: int) -> Lifespan:
                         clickhouse=clickhouse,
                         postgres=async_sessions(postgres),
                         refresh=refresh,
+                        source_icons=SourceIconCache(assets_dir),
                         assets_dir=assets_dir,
                         page_size=page_size,
                     )}

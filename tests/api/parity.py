@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import pathlib
 import tempfile
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, NamedTuple, Protocol
 
 import aiohttp
 from aiohttp import web
+from yarl import URL
 
 from dank.api.app import create_app as create_api_app
 from dank.config import Settings
@@ -23,8 +24,28 @@ from tests.api.client import BASE_URL, serving
 type Get = Callable[[str], Awaitable[tuple[int, Any]]]
 
 
+class Exchange(NamedTuple):
+    """A whole response, for routes that answer with more than JSON."""
+
+    status: int
+    headers: Mapping[str, str]
+    body: bytes
+
+
+class Fetch(Protocol):
+    def __call__(
+        self,
+        target: str,
+        *,
+        method: str = "GET",
+        headers: Mapping[str, str] | None = None,
+    ) -> Awaitable[Exchange]: ...
+
+
 @asynccontextmanager
-async def aiohttp_server(settings: Settings) -> AsyncGenerator[Get]:
+async def aiohttp_session(
+    settings: Settings,
+) -> AsyncGenerator[aiohttp.ClientSession]:
     runner = web.AppRunner(create_aiohttp_app(settings, page_size=50))
     # Runs the aiohttp startup contexts against the throwaway database.
     await runner.setup()
@@ -37,14 +58,20 @@ async def aiohttp_server(settings: Settings) -> AsyncGenerator[Get]:
             connector = aiohttp.UnixConnector(path=path)
 
             async with aiohttp.ClientSession(connector=connector) as session:
-
-                async def get(target: str) -> tuple[int, Any]:
-                    async with session.get(BASE_URL + target) as response:
-                        return response.status, await response.json()
-
-                yield get
+                yield session
     finally:
         await runner.cleanup()
+
+
+@asynccontextmanager
+async def aiohttp_server(settings: Settings) -> AsyncGenerator[Get]:
+    async with aiohttp_session(settings) as session:
+
+        async def get(target: str) -> tuple[int, Any]:
+            async with session.get(BASE_URL + target) as response:
+                return response.status, await response.json()
+
+        yield get
 
 
 @asynccontextmanager
@@ -66,4 +93,51 @@ async def both_servers(settings: Settings) -> AsyncGenerator[tuple[Get, Get]]:
         aiohttp_server(settings) as old,
         fastapi_server(settings) as new,
     ):
+        yield old, new
+
+
+@asynccontextmanager
+async def both_servers_whole(
+    settings: Settings,
+) -> AsyncGenerator[tuple[Fetch, Fetch]]:
+    """(aiohttp, FastAPI) fetches of whole responses over the same database."""
+    async with (
+        aiohttp_session(settings) as session,
+        serving(create_api_app(settings, page_size=50)) as client,
+    ):
+
+        async def old(
+            target: str,
+            *,
+            method: str = "GET",
+            headers: Mapping[str, str] | None = None,
+        ) -> Exchange:
+            async with session.request(
+                method,
+                # As sent, so that an escaped traversal reaches the server.
+                URL(BASE_URL + target, encoded=True),
+                headers=headers,
+                allow_redirects=False,
+            ) as response:
+                return Exchange(
+                    response.status,
+                    {
+                        key.lower(): value
+                        for key, value in response.headers.items()
+                    },
+                    await response.read(),
+                )
+
+        async def new(
+            target: str,
+            *,
+            method: str = "GET",
+            headers: Mapping[str, str] | None = None,
+        ) -> Exchange:
+            response = await client.request(method, target, headers=headers)
+
+            return Exchange(
+                response.status_code, response.headers, response.content,
+            )
+
         yield old, new

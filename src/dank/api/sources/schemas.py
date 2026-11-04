@@ -11,13 +11,13 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from dank.api.schemas import ApiModel
+from dank.api.source_icons.model import source_icon_url
 from dank.api.sources.model import (
     Overview,
     RedditActivity,
     SourceSummary,
     XActivity,
 )
-from dank.web.reader_source_icons import source_icon_url
 
 
 class XAccountOut(ApiModel):

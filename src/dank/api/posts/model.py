@@ -43,6 +43,14 @@ class PostRow(NamedTuple):
     source: str
 
 
+class AssetRow(NamedTuple):
+    post_id: str
+    url: str
+    local_path: str
+    content_type: str
+    size_bytes: int
+
+
 class Recommendation(NamedTuple):
     """Where a post last appeared in the saved For You feed."""
 

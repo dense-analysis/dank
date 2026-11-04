@@ -1,0 +1,43 @@
+"""A small reader build, static folder and data assets for the file routes."""
+
+import pathlib
+
+import pytest
+from fastapi import FastAPI
+
+from dank.api.app import create_app
+from dank.api.files.static import FileRoots
+from dank.config import Settings
+from dank.web.app import assets_path
+
+INDEX = "<!doctype html><title>Reader</title>"
+BUNDLE = "console.log('reader');"
+
+
+@pytest.fixture
+def roots(tmp_path: pathlib.Path) -> FileRoots:
+    reader = tmp_path / "dist"
+    (reader / "assets").mkdir(parents=True)
+    (reader / "index.html").write_text(INDEX)
+    (reader / "assets" / "index-abc.js").write_text(BUNDLE)
+    (reader / "icon.svg").write_text("<svg/>")
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "app.css").write_text("body { color: black; }")
+
+    return FileRoots(reader=reader, static=static)
+
+
+@pytest.fixture
+def assets(settings: Settings) -> pathlib.Path:
+    directory = assets_path(settings)
+    directory.mkdir(parents=True)
+
+    return directory
+
+
+@pytest.fixture
+def app(
+    settings: Settings, roots: FileRoots, assets: pathlib.Path,
+) -> FastAPI:
+    return create_app(settings, page_size=50, roots=roots)

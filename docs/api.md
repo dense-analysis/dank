@@ -1,6 +1,6 @@
 # API
 
-DANK's JSON API is moving from aiohttp to FastAPI, one route group at a time.
+DANK's web server is moving from aiohttp to FastAPI, one route group at a time.
 The FastAPI app lives in `src/dank/api/`. The aiohttp server in
 `src/dank/web/` stays the default until every route has moved.
 
@@ -11,8 +11,9 @@ uv run web --server fastapi --no-reload --port 8081
 
 `web` keeps its other flags (`--config`, `--host`, `--port`, `--limit`,
 `--no-reload`). Ported so far: `GET /api/reader/sources`, `/posts`, `/post`,
-`/x/authors`, `/connections` and `/connection`. OpenAPI is served at
-`/api/openapi.json`, with interactive docs at `/api/docs`.
+`/x/authors`, `/connections`, `/connection` and `/source-icon`, plus the pages
+and files: `/`, `/post`, `/reader`, `/assets/` and `/static/`. OpenAPI is served
+at `/api/openapi.json`, with interactive docs at `/api/docs`.
 
 ## Shape
 
@@ -63,6 +64,25 @@ src/dank/
       service.py         ConnectionService, port ConnectionStore
       model.py           ConnectionScope, ConnectionKey and their rules
       clickhouse.py      ClickHouseConnectionStore, over the reader helpers
+    source_icons/
+      router.py          GET /api/reader/source-icon, a PNG
+      schemas.py         SourceIconQuery
+      deps.py            picks the adapters; tests override them here
+      service.py         SourceIconService, ports IconCache, CollectedDomains
+      model.py           source_icon_url(), which domains may have an icon
+      clickhouse.py      ClickHouseCollectedDomains
+    viewer/
+      router.py          GET / and /post, the legacy pages
+      schemas.py         Query models; the pages have no response models
+      deps.py            picks the adapter; tests override it here
+      service.py         ViewerService, port ViewerStore
+      model.py           IndexFilters and the forgiving query rules
+      clickhouse.py      ClickHouseViewerStore
+      pages.py           ViewerPages, rendering templates/ with Jinja2
+    files/
+      router.py          GET /reader, the redirect to /reader/
+      static.py          ReaderFiles, FileRoots, the /assets, /static and /reader mounts
+      model.py           client_route(), which paths load the reader
 ```
 
 A feature skips files it has nothing for: no `model.py` without rules, no
@@ -80,7 +100,8 @@ adapter without I/O.
    extend `ApiModel` (`extra="forbid"`, frozen). Routes never return dicts or
    NamedTuples, and services never take Pydantic models. A convention test
    checks through OpenAPI that every route returns a strict model. Wide
-   projections are the one exception inside; see Projections.
+   projections are the one exception inside; see Projections. Pages and files
+   have no JSON to model; see Pages and files.
 4. **Controllers are thin.** A route lets Pydantic parse the input, calls one
    service method and shapes the result: no SQL, no `try`/`except`, no
    business rules. Routes are plain functions on an `APIRouter`.
@@ -104,8 +125,9 @@ adapter without I/O.
 
 ## Errors
 
-Every error has the same body. `error` is a message the reader can show,
-`code` is stable for clients to match on, and `fields` lists invalid inputs:
+Every error under `/api/` has the same body. `error` is a message the reader can
+show, `code` is stable for clients to match on, and `fields` lists invalid
+inputs:
 
 ```json
 {
@@ -131,6 +153,9 @@ Every error has the same body. `error` is a message the reader can show,
 Validation errors use 400 rather than FastAPI's 422, as the aiohttp server
 does. A route that needs resources but runs without the lifespan, such as a
 test missing a dependency override, answers 503.
+
+Everywhere else, the same errors answer with the same status and `error` as
+plain text. No page or file has ever answered in JSON.
 
 ## Query models
 
@@ -196,7 +221,37 @@ behind the proxy.
   own. Starlette answers unexpected errors outside every middleware, so that
   handler sets the header itself.
 - `/static/*` and HTML responses get the aiohttp server's no-cache headers.
-- `HEAD` runs the matching `GET` route and drops the body.
+- `HEAD` runs the matching `GET` route and drops the body, except on the file
+  mounts, which answer it themselves. Run as a `GET`, a `HEAD` on a video would
+  read the whole file only to throw it away.
+
+## Pages and files
+
+These routes answer with HTML, files or images, so they have no response model.
+The legacy pages and `/reader` stay out of OpenAPI with
+`include_in_schema=False`. `/api/reader/source-icon` stays in and declares
+`image/png`.
+
+`/assets/`, `/static/` and `/reader/` are Starlette `StaticFiles` mounts, which
+meet what audio and video need, as `tests/api/files` checks over HTTP: single and
+open-ended ranges, `If-Range`, `If-None-Match`, `If-Modified-Since`, 416 past the
+end, and `HEAD` without reading the file. No responder of our own was needed.
+`ReaderFiles` adds only what is the reader's:
+
+- A missing path falls back to `index.html` only if it has no extension and stays
+  inside the build, so a missing bundle answers 404 rather than HTML.
+- `index.html` is `no-store` even on a 304, which has no content type for the HTML
+  header rule to catch.
+- A checkout with no reader build answers 404 rather than failing.
+
+`/reader` redirects with a relative `Location`, because behind the HTTPS proxy
+this server sees plain HTTP. For the same reason `redirect_slashes` is off, as it
+effectively was under aiohttp: `/post/` is a 404, not a redirect to an `http://`
+address.
+
+`/` and `/post` take their query as text and read it in `viewer/model.py`, because
+they have always forgiven what they can't read: a bad `limit` means the default.
+`/post` still needs its two keys, and says so in plain text.
 
 ## Startup and shutdown
 
@@ -244,6 +299,7 @@ the parsed JSON. It also checks that both accept and reject the same queries.
 Semantic search reads `web_embedding_cache`, so no test loads the model; date
 those rows from the clock, because the table's TTL drops old ones. For You
 cursors hold the moment each server was asked, so compare them without it.
+`both_servers_whole` gives whole responses instead, for what isn't JSON.
 
 The intended differences:
 
@@ -253,6 +309,22 @@ The intended differences:
   the first.
 - When `reddit.com` has posts but no configured communities, `/sources` still
   returns empty `communities` and `flairs` lists.
+- Under `/assets/` and `/static/`, a directory answers 404 rather than 403. Neither
+  lists it.
+- Several ranges in one request answer 206 with `multipart/byteranges` rather than
+  416, and a `Range` that makes no sense answers 400 rather than 416. Browsers
+  seek with single ranges, so neither affects playback.
+- ETags have a different format, a fractional modified time rounds down rather
+  than up, and a 304 carries fewer headers. Each server's own validators
+  revalidate against it, so only a switch between the servers forces one refetch.
+- Text files name their charset: `text/css; charset=utf-8`.
+- Unknown pages, and missing files under `/reader/`, say `Not Found`.
+- A failure behind `/` or `/post` answers a plain 503 rather than aiohttp's 500.
+- A permission error on a file answers 401 rather than 403.
+- `/reader/index.html` and the entry page get the full no-cache headers rather
+  than `no-store` alone.
+- `/`, `/post` and `/api/reader/source-icon` use the last value of a repeated key,
+  not the first.
 
 ## Porting a route
 

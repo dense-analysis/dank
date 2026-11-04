@@ -68,6 +68,31 @@ async def test_unknown_paths_and_methods_use_the_envelope(
     )
 
 
+async def test_pages_and_files_answer_errors_in_plain_text(
+    client: AsyncClient,
+) -> None:
+    missing = await client.get("/nope")
+    wrong = await client.delete("/")
+
+    assert (missing.status_code, missing.text) == (404, "Not Found")
+    assert missing.headers["content-type"] == "text/plain; charset=utf-8"
+    assert wrong.status_code == 405
+    assert wrong.headers["content-type"] == "text/plain; charset=utf-8"
+
+
+@pytest.mark.parametrize("path", [
+    "/post/", "/assets", "/static", "/api/probe/", "/api/reader/sources/",
+])
+async def test_a_trailing_slash_is_a_different_path_and_never_redirects(
+    client: AsyncClient, path: str,
+) -> None:
+    # An automatic redirect would name this server's scheme, which behind the
+    # HTTPS proxy is plain HTTP.
+    response = await client.get(path)
+
+    assert response.status_code == 404
+
+
 async def test_domain_errors_choose_their_status(client: AsyncClient) -> None:
     missing = await client.get("/api/probe/missing")
     stale = await client.get("/api/probe/stale")
@@ -191,7 +216,14 @@ def test_every_route_returns_a_strict_model(settings: Settings) -> None:
             response for status, response in operation["responses"].items()
             if status.startswith("2")
         )
-        ref = success["content"]["application/json"]["schema"]["$ref"]
 
         assert path.startswith("/api/"), path
+
+        # The one route that isn't JSON. The reader only links to it.
+        if path == "/api/reader/source-icon":
+            assert set(success["content"]) == {"image/png"}
+
+            continue
+
+        ref = success["content"]["application/json"]["schema"]["$ref"]
         assert schemas[ref.rsplit("/", 1)[1]]["additionalProperties"] is False

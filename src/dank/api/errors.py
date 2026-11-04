@@ -1,4 +1,7 @@
-"""One error shape for the API: {"error", "code", "fields"}."""
+"""One error shape for the API: {"error", "code", "fields"}.
+
+Pages and files answer in plain text, as they always have.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.exceptions import HTTPException
 
 from dank.api.schemas import ErrorBody, FieldError
@@ -31,7 +34,7 @@ CODE_BY_STATUS: Mapping[int, str] = {
 UNAVAILABLE = "The collection is unavailable. Please try again."
 
 
-async def domain_error(request: Request, error: DankError) -> JSONResponse:
+async def domain_error(request: Request, error: DankError) -> Response:
     status = next(
         (
             status for kind, status in STATUS_BY_ERROR.items()
@@ -40,20 +43,24 @@ async def domain_error(request: Request, error: DankError) -> JSONResponse:
         500,
     )
 
-    return envelope(status, str(error), error.code)
+    return answer(request, status, str(error), error.code)
 
 
-async def http_error(request: Request, error: HTTPException) -> JSONResponse:
+async def http_error(request: Request, error: HTTPException) -> Response:
     code = CODE_BY_STATUS.get(error.status_code, "http_error")
 
-    return envelope(
-        error.status_code, str(error.detail), code, headers=error.headers,
+    return answer(
+        request,
+        error.status_code,
+        str(error.detail),
+        code,
+        headers=error.headers,
     )
 
 
 async def validation_error(
     request: Request, error: RequestValidationError,
-) -> JSONResponse:
+) -> Response:
     fields = tuple(
         FieldError(
             path=".".join(str(part) for part in item["loc"]),
@@ -64,18 +71,22 @@ async def validation_error(
     )
 
     # 400 rather than FastAPI's 422, as today; DEN-53 may revisit it.
-    return envelope(400, "The request is invalid.", "invalid_request", fields)
+    return answer(
+        request, 400, "The request is invalid.", "invalid_request", fields,
+    )
 
 
-async def unexpected_error(
-    request: Request, error: Exception,
-) -> JSONResponse:
+async def unexpected_error(request: Request, error: Exception) -> Response:
     logger.error("Request failed: %s", request.url.path, exc_info=error)
 
     # Starlette runs this handler outside every middleware, so ApiHeaders
     # can't add the header that keeps a failure out of the browser's cache.
-    return envelope(
-        503, UNAVAILABLE, "unavailable", headers={"cache-control": "no-store"},
+    return answer(
+        request,
+        503,
+        UNAVAILABLE,
+        "unavailable",
+        headers={"cache-control": "no-store"},
     )
 
 
@@ -89,6 +100,20 @@ EXCEPTION_HANDLERS: dict[int | type[Exception], ExceptionHandler] = {
     RequestValidationError: validation_error,
     Exception: unexpected_error,
 }
+
+
+def answer(
+    request: Request,
+    status: int,
+    message: str,
+    code: str,
+    fields: Sequence[FieldError] = (),
+    headers: Mapping[str, str] | None = None,
+) -> Response:
+    if request.url.path.startswith("/api/"):
+        return envelope(status, message, code, fields, headers)
+
+    return PlainTextResponse(message, status, headers=headers)
 
 
 def envelope(

@@ -7,19 +7,19 @@ import hashlib
 import io
 import ipaddress
 import pathlib
-import re
 import socket
 import tempfile
 import time
 import warnings
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 from aiohttp import web
 from aiohttp.abc import ResolveResult
 from PIL import Image, UnidentifiedImageError
 
+from dank.api.source_icons.model import domain_valid, source_icon_url
 from dank.web.app import AppState
 
 # A sidebar must not start an unbounded crawl or download full-size artwork.
@@ -31,33 +31,6 @@ ICON_CAPTURE_SECONDS = 15
 ICON_CONCURRENCY = 3
 ICON_FRESH_SECONDS = 30 * 24 * 60 * 60
 ICON_RETRY_SECONDS = 6 * 60 * 60
-SOCIAL_DOMAINS = {"x.com", "twitter.com", "reddit.com", "youtube.com"}
-DOMAIN_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
-
-
-def _domain_valid(domain: str) -> bool:
-    if len(domain) > 253 or "." not in domain:
-        return False
-
-    try:
-        ipaddress.ip_address(domain)
-    except ValueError:
-        return all(
-            DOMAIN_LABEL.fullmatch(label) for label in domain.split(".")
-        )
-
-    return False
-
-
-def source_icon_url(domain: str) -> str | None:
-    if (
-        not _domain_valid(domain)
-        or domain.removeprefix("www.") in SOCIAL_DOMAINS
-    ):
-        return None
-
-    return "/api/reader/source-icon?" + urlencode({"domain": domain})
-
 
 class _PublicResolver(aiohttp.ThreadedResolver):
     """Validate the actual connection addresses, including redirected hosts."""
@@ -83,7 +56,7 @@ def _public_url(url: str) -> bool:
 
         return (
             parsed.scheme in {"http", "https"}
-            and _domain_valid(parsed.hostname or "")
+            and domain_valid(parsed.hostname or "")
             and parsed.username is None and parsed.password is None
             and parsed.port in {None, 80, 443}
         )

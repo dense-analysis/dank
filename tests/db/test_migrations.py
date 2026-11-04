@@ -28,6 +28,7 @@ from dank.db.atlas import (
 from dank.db.engine import async_engine, async_sessions, sync_engine
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.reader_refresh import RefreshManager
+from dank.web.reader_source_icons import SourceIconCache
 from dank.web.startup import prepare_postgres
 
 pytestmark = pytest.mark.postgres
@@ -320,6 +321,7 @@ async def test_fastapi_dependency_opens_a_session(
         clickhouse=cast("ClickHouseClient", None),
         postgres=async_sessions(engine),
         refresh=cast("RefreshManager", None),
+        source_icons=cast("SourceIconCache", None),
         assets_dir=pathlib.Path(),
         page_size=1,
     )

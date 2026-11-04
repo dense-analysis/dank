@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from dank.api.source_icons.model import source_icon_url
 from dank.api.sources.model import source_kind
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import (
@@ -32,7 +33,6 @@ from dank.web.reader_query import (
     parse_filters,
 )
 from dank.web.reader_refresh import add_refresh_routes
-from dank.web.reader_source_icons import source_icon_url
 from dank.web.reader_x_authors import handle_x_authors
 from dank.web.reader_x_home import HOME_CONDITION, encode_home_cursor
 from dank.web.reader_youtube import add_youtube_routes

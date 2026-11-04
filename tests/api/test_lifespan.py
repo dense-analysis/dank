@@ -41,6 +41,9 @@ async def test_startup_prepares_storage_and_shutdown_stops_refresh(
 
             assert STARTUP_TABLES <= await tables(client)
             assert resources.assets_dir.is_dir()
+            assert resources.source_icons.directory.parent == (
+                resources.assets_dir
+            )
             assert resources.refresh.worker is not None
             assert not resources.refresh.worker.done()
 

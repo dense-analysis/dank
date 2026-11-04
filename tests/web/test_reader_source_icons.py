@@ -9,23 +9,17 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import aiohttp
 import pytest
-from aiohttp import web
-from aiohttp.test_utils import make_mocked_request
 from PIL import Image
 
-from dank.config import SourceConfig, load_settings
-from dank.storage.clickhouse import QueryResult
 from dank.web.reader_source_icons import (
     ICON_CONCURRENCY,
     ICON_FRESH_SECONDS,
-    SOURCE_ICON_CACHE,
     SourceIconCache,
     _as_png,  # pyright: ignore[reportPrivateUsage]
     _capture_icon,  # pyright: ignore[reportPrivateUsage]
     _fetch_bytes,  # pyright: ignore[reportPrivateUsage]
     _icon_candidates,  # pyright: ignore[reportPrivateUsage]
     _PublicResolver,  # pyright: ignore[reportPrivateUsage]
-    handle_source_icon,
     source_icon_url,
 )
 
@@ -178,40 +172,6 @@ async def test_capture_concurrency_is_bounded(tmp_path: Path) -> None:
         ))
 
     assert peak == ICON_CONCURRENCY
-
-
-@pytest.mark.parametrize("configured,stored,allowed", [
-    (True, False, True), (False, True, True), (False, False, False),
-])
-async def test_icon_capture_requires_a_known_source(
-    *, configured: bool, stored: bool, allowed: bool,
-) -> None:
-    settings = load_settings("config.example.toml")._replace(
-        sources=(SourceConfig("github.blog", ()),) if configured else (),
-    )
-    cache = AsyncMock()
-    cache.get.return_value = _as_png(_png())
-    client = AsyncMock()
-    client.fetch_json.return_value = QueryResult(
-        [{"domain": "github.blog"}] if stored else [],
-    )
-    request = make_mocked_request(
-        "GET", "/api/reader/source-icon?domain=github.blog", app={
-            "state": SimpleNamespace(settings=settings),
-            "clickhouse": client, SOURCE_ICON_CACHE: cache,
-        },
-    )
-
-    if allowed:
-        response = await handle_source_icon(request)
-        assert response.content_type == "image/png"
-        assert response.body == cache.get.return_value
-        cache.get.assert_awaited_once_with("github.blog")
-    else:
-        with pytest.raises(web.HTTPNotFound):
-            await handle_source_icon(request)
-
-        cache.get.assert_not_awaited()
 
 
 @pytest.mark.parametrize("truncate", [False, True])
