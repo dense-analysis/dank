@@ -28,6 +28,40 @@ See [known collection and processing issues](docs/known-issues.md) for reader
 status meanings, source-specific problems, current handling and recovery gaps.
 Track outstanding work and future ideas in the [DANK project in Linear](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
 
+## Codex Configuration
+
+For configuring OpenAI Codex with Docker Sandboxes, you should run the
+following:
+
+```sh
+# Set up Codex for the project with playwright for browser testing.
+sbx run docker.io/docker/sbx-kit-codex:0.155.1 \
+    --name codex-dank \
+    --kit docker.io/sbx/playwright:latest
+
+# Allow fetching PyTorch modules
+sbx policy allow network --sandbox codex-dank download.pytorch.org,download-r2.pytorch.org
+
+# Allow all HTTP get requests from Codex.
+sbx policy allow network --sandbox codex-dank '**' --method GET,HEAD
+
+# Install socat and a script for giving the sandbox access to our ClickHouse
+sbx policy allow network --sandbox codex-dank localhost:8123
+sbx exec -u root codex-dank bash -c 'apt-get update && apt-get install -y socat'
+sbx exec codex-dank bash -c 'grep -Fq "TCP-LISTEN:8123" /etc/sandbox-persistent.sh || echo "if ! pgrep -x socat >/dev/null; then nohup socat TCP-LISTEN:8123,bind=127.0.0.1,reuseaddr,fork TCP:host.docker.internal:8123 >/tmp/clickhouse-forward.log 2>&1 </dev/null & fi" >> /etc/sandbox-persistent.sh; source /etc/sandbox-persistent.sh'
+sbx stop codex-dank
+
+# Set up the codex instance to run `uv run` with a different .venv.
+# This stops the sandbox interfering with your .venv directory.
+sbx exec -u root codex-dank bash -c 'printf "%s\n" "export UV_PROJECT_ENVIRONMENT=/home/agent/.venvs/dank" >> /etc/sandbox-persistent.sh'
+sbx stop codex-dank
+
+# Allow connecting to Linear.
+sbx policy allow network --sandbox codex-dank mcp.linear.app
+sbx run codex -- mcp add linear --url https://mcp.linear.app/mcp
+sbx run codex -- mcp login linear
+```
+
 ## Choose how to run
 
 DANK supports **native execution with uv** and **Docker Compose**. Both use
