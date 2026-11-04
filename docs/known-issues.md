@@ -9,6 +9,28 @@ Open-work consolidation: **2026-10-27**. Observations below retain their origina
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Browser protocol compatibility
+
+The 2026-11-04 log contains 741 `localNetworkAccessRequestPolicy` parsing
+errors: Chromium 138 sends `privateNetworkRequestPolicy`, while Zendriver
+0.17.1 expects the newer Local Network Access schema. Zendriver drops these
+`Network.requestWillBeSentExtraInfo` events before dispatching handlers.
+The 302 historical `sameParty` errors last appeared on 2026-10-01; the pinned
+Zendriver version already accepts cookies without that removed field.
+
+Before starting a browser, DANK installs a narrow parser compatibility fix.
+Legacy request events retain their cookies, headers, timing and request ID;
+their optional client security state is omitted because the old preflight
+policies have no exact equivalent in the newer permission-based schema.
+DANK does not use that metadata. Modern security states are preserved, and
+unrelated schema errors still surface. This changes event decoding only,
+without changing browser security settings or site access restrictions.
+See [protocol regression tests](../tests/scrape/test_cdp_compat.py) for both
+schemas, cookies with and without `sameParty`, and repeated installation.
+Replaying all 1,043 logged protocol-error events through the installed driver
+reproduced 741 errors before the fix and none after it, without browser traffic.
+Other browser/driver schema differences can still require separate fixes.
+
 ## Reader refresh results
 
 Refresh results start collapsed below the header and expand within the page,
