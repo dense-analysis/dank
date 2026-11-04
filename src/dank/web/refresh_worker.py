@@ -5,11 +5,13 @@ import asyncio
 import logging
 import os
 import signal
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from multiprocessing.connection import Connection
 
 from dank.config import Settings
 from dank.process.runner import run_process
+from dank.scrape.metrics import RunMetrics
 from dank.scrape.runner import CollectionBusyError, run_scrape
 
 logger = logging.getLogger(__name__)
@@ -89,8 +91,10 @@ async def watch_owner(
 async def collect_and_process(
     settings: Settings, target_post: tuple[str, str] | None,
     connection: Connection, *, exclusive: bool = False,
+    scrape: Callable[..., Awaitable[RunMetrics]] = run_scrape,
+    process: Callable[..., Awaitable[object]] = run_process,
 ) -> None:
-    metrics = await run_scrape(
+    metrics = await scrape(
         settings, headless=True, target_post=target_post, scoped=True,
         exclusive=exclusive,
     )
@@ -101,7 +105,7 @@ async def collect_and_process(
     })
 
     if metrics.collected_posts:
-        await run_process(
+        await process(
             settings, since=metrics.started_at,
             post_keys=metrics.collected_posts,
         )

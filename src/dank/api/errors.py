@@ -15,7 +15,14 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.exceptions import HTTPException
 
 from dank.api.schemas import ErrorBody, FieldError
-from dank.errors import Busy, Conflict, DankError, InvalidInput, NotFound
+from dank.errors import (
+    Busy,
+    Conflict,
+    DankError,
+    InvalidInput,
+    NotFound,
+    TooManyRequests,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +31,7 @@ STATUS_BY_ERROR: Mapping[type[DankError], int] = {
     NotFound: 404,
     Conflict: 409,
     Busy: 503,
+    TooManyRequests: 429,
 }
 CODE_BY_STATUS: Mapping[int, str] = {
     403: "forbidden",

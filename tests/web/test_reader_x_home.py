@@ -4,11 +4,8 @@ import datetime as dt
 
 import pytest
 from multidict import MultiDict
-from test_reader_refresh_scope import client, settings
 
-from dank.config import SourceConfig
 from dank.web.reader_query import build_query, parse_filters
-from dank.web.reader_refresh_scope import resolve_scope
 from dank.web.reader_x_home import decode_home_cursor, encode_home_cursor
 
 
@@ -68,25 +65,3 @@ def test_cursor_preserves_cutoff_and_position_and_cannot_cross_filters():
 def test_rejects_ambiguous_or_wrong_feed(query: dict[str, str]):
     with pytest.raises(ValueError):
         parse_filters(MultiDict(query))
-
-
-async def test_home_and_account_refresh_remain_separate():
-    original = settings(SourceConfig("x.com", ("alice", "bob")))
-    home = await resolve_scope(
-        original, client(), {"kind": "x", "feed_id": "for_you"},
-    )
-    assert home.settings.x.homepage
-    assert home.settings.sources[0].accounts == ()
-    assert home.label == "X For You"
-    account = await resolve_scope(
-        original, client(), {"kind": "x", "account": "alice"},
-    )
-    assert not account.settings.x.homepage
-    assert account.settings.sources[0].accounts == ("alice",)
-
-    with pytest.raises(ValueError):
-        await resolve_scope(
-            original,
-            client(),
-            {"kind": "x", "feed_id": "for_you", "account": "alice"},
-        )

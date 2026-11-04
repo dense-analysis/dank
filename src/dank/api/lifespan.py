@@ -10,12 +10,13 @@ from typing import NamedTuple
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dank.api.refresh.manager import RefreshManager, running_refresh
+from dank.api.refresh.worker import ProcessWorker
 from dank.api.youtube.collector import CollectionGate, collection_gate
 from dank.config import Settings
 from dank.db.engine import async_engine, async_sessions
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.app import assets_path
-from dank.web.reader_refresh import RefreshManager, running_refresh
 from dank.web.reader_source_icons import SourceIconCache
 from dank.web.startup import prepare_clickhouse, prepare_postgres
 
@@ -55,7 +56,9 @@ def lifespan(settings: Settings, *, page_size: int) -> Lifespan:
                 await prepare_clickhouse(clickhouse)
 
                 # Shutdown waits here for refresh workers (about 95 s).
-                async with running_refresh(settings) as refresh:
+                async with running_refresh(
+                    settings, ProcessWorker(),
+                ) as refresh:
                     yield {"resources": Resources(
                         settings=settings,
                         clickhouse=clickhouse,

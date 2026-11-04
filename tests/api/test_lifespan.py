@@ -44,10 +44,10 @@ async def test_startup_prepares_storage_and_shutdown_stops_refresh(
             assert resources.source_icons.directory.parent == (
                 resources.assets_dir
             )
-            assert resources.refresh.worker is not None
-            assert not resources.refresh.worker.done()
+            assert resources.refresh.scheduler is not None
+            assert not resources.refresh.scheduler.done()
 
-    assert resources.refresh.worker.done()
+    assert resources.refresh.scheduler.done()
 
 
 async def test_each_running_app_owns_its_collection_gates(

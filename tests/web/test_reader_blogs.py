@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from multidict import MultiDict
 
-from dank.config import SourceConfig, load_settings
+from dank.config import SourceConfig
 from dank.storage.clickhouse import QueryResult
 from dank.web.reader_blogs import (
     BLOG_CONDITION,
@@ -21,7 +21,6 @@ from dank.web.reader_query import (
     encode_cursor,
     parse_filters,
 )
-from dank.web.reader_refresh_scope import resolve_scope
 
 
 @pytest.mark.parametrize("query", [
@@ -110,53 +109,6 @@ async def test_external_count_matches_the_external_article_query():
     assert query.endswith(EXTERNAL_BLOG_CONDITION)
 
 
-@pytest.mark.parametrize("scope", [
-    {"kind": "rss"}, {"kind": "rss", "blog_feed": "external"},
-])
-async def test_blogs_refreshes_discovery_sources_without_adding_publishers(
-    scope: dict[str, str],
-):
-    settings = load_settings("config.example.toml")._replace(sources=(
-        SourceConfig("blog.test", ()),
-        SourceConfig("news.ycombinator.com", ()),
-        SourceConfig("x.com", ("alice",)), SourceConfig("reddit.com", ()),
-        SourceConfig("youtube.com", ()),
-    ))
-    client = AsyncMock()
-    plan = await resolve_scope(settings, client, scope)
-    assert plan.settings.sources == settings.sources[:4]
-    client.fetch_json.assert_not_called()
-
-
-async def test_selected_blog_refresh_does_not_collect_other_discovery_feeds():
-    settings = load_settings("config.example.toml")._replace(sources=(
-        SourceConfig("blog.test", ()), SourceConfig("x.com", ("alice",)),
-    ))
-    plan = await resolve_scope(settings, AsyncMock(), {
-        "kind": "rss", "domains": ["blog.test"],
-    })
-    assert plan.settings.sources == settings.sources[:1]
-    assert plan.label == "blog.test"
-
-
-@pytest.mark.parametrize("scope", [
-    {"kind": "rss", "blog_feed": "unknown"},
-    {"kind": "rss", "blog_feed": ""},
-    {"kind": "all", "blog_feed": "external"},
-])
-async def test_invalid_blog_refresh_context_fails_before_storage(
-    scope: object,
-):
-    client = AsyncMock()
-
-    with pytest.raises(ValueError):
-        await resolve_scope(
-            load_settings("config.example.toml"), client, scope,
-        )
-
-    client.fetch_json.assert_not_called()
-
-
 @pytest.mark.parametrize("filters,selected", [
     (ReaderFilters(kind="stories"), "(" + BLOG_CONDITION + ")"),
     (ReaderFilters(kind="all", platforms=("stories",)),
@@ -179,24 +131,3 @@ def test_blogs_only_suppress_wrappers_with_targets_in_selected_collections(
 def test_unfiltered_all_still_uses_any_saved_canonical_destination():
     query, _ = build_query(ReaderFilters(kind="all"), ())
     assert "(domain, post_id) NOT IN (" + RESOLVED_HN_POSTS_SQL + ")" in query
-
-
-@pytest.mark.parametrize("field,values", [
-    ("domains", ["blog.test"]), ("domains", ["unconfigured.test"]),
-    ("tags", ["tech"]),
-])
-async def test_external_refresh_rejects_publisher_filters(
-    field: str, values: list[str],
-):
-    settings = load_settings("config.example.toml")._replace(sources=(
-        SourceConfig("blog.test", (), tags=("tech",)),
-        SourceConfig("x.com", ("alice",)),
-    ))
-    client = AsyncMock()
-
-    with pytest.raises(ValueError, match="publisher domains or tags"):
-        await resolve_scope(settings, client, {
-            "kind": "rss", "blog_feed": "external", field: values,
-        })
-
-    client.fetch_json.assert_not_called()

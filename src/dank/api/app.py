@@ -10,6 +10,7 @@ from dank.api.guards import same_origin_json
 from dank.api.headers import ApiHeaders
 from dank.api.lifespan import lifespan
 from dank.api.posts.router import router as posts_router
+from dank.api.refresh.router import router as refresh_router
 from dank.api.source_icons.router import router as source_icons_router
 from dank.api.sources.router import router as sources_router
 from dank.api.viewer.router import router as viewer_router
@@ -39,6 +40,7 @@ def create_app(
     app.include_router(sources_router)
     app.include_router(posts_router)
     app.include_router(connections_router)
+    app.include_router(refresh_router)
     app.include_router(youtube_router)
     app.include_router(source_icons_router)
     app.include_router(viewer_router)

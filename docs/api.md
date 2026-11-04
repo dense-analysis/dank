@@ -11,10 +11,10 @@ uv run web --server fastapi --no-reload --port 8081
 
 `web` keeps its other flags (`--config`, `--host`, `--port`, `--limit`,
 `--no-reload`). Ported so far: `GET /api/reader/sources`, `/posts`, `/post`,
-`/x/authors`, `/connections`, `/connection`, `/source-icon` and everything under
-`/api/reader/youtube`, plus the pages and files: `/`, `/post`, `/reader`,
-`/assets/` and `/static/`. OpenAPI is served at `/api/openapi.json`, with
-interactive docs at `/api/docs`.
+`/x/authors`, `/connections`, `/connection` and `/source-icon`, `GET` and `POST
+/api/reader/refresh`, everything under `/api/reader/youtube`, plus the pages and
+files: `/`, `/post`, `/reader`, `/assets/` and `/static/`. OpenAPI is served at
+`/api/openapi.json`, with interactive docs at `/api/docs`.
 
 ## Shape
 
@@ -32,7 +32,8 @@ never the other way round.
 
 ```text
 src/dank/
-  errors.py              DankError, InvalidInput, NotFound, Conflict, Busy
+  errors.py              DankError, InvalidInput, NotFound, Conflict, Busy,
+                         TooManyRequests
   api/
     app.py               create_app(): routers, error handlers, guard, headers
     lifespan.py          Resources, opened at startup and closed at shutdown
@@ -93,6 +94,15 @@ src/dank/
       model.py           YouTubeFilters, PlaylistPage, cursors, transcript_view()
       clickhouse.py      ClickHouseYouTubeStore, over the reader helpers
       collector.py       ScrapeVideoCollector, CollectionGate, the real waits
+    refresh/
+      router.py          GET and POST /api/reader/refresh
+      schemas.py         RefreshRequest, one scope variant per kind; RefreshJobOut
+      deps.py            picks the adapters; tests override them here
+      service.py         RefreshService, resolve_scope, ports RefreshTargets, RefreshQueue
+      model.py           RefreshPlan, RefreshJob, scope and history rules
+      clickhouse.py      ClickHouseRefreshTargets
+      manager.py         RefreshManager, running_refresh, port CollectionWorker
+      worker.py          ProcessWorker, one spawned process per job
 ```
 
 A feature skips files it has nothing for: no `model.py` without rules, no
@@ -156,6 +166,7 @@ inputs:
 | `NotFound` | 404 | `not_found` |
 | `Conflict` | 409 | `conflict`, or a subclass's code |
 | `Busy` | 503 | `busy` |
+| `TooManyRequests` | 429 | `too_many_requests` |
 | Unsafe method from another origin | 403 | `forbidden` |
 | Unsafe method without a JSON body | 415 | `unsupported_media_type` |
 | Unknown path or method | 404, 405 | `not_found`, `method_not_allowed` |
@@ -253,6 +264,9 @@ uvicorn runs with `proxy_headers=False` so that a proxy on the same machine
 can't change the scheme. The rule needs no configuration natively, in Docker or
 behind the proxy.
 
+FastAPI parses a JSON body before it runs dependencies, so malformed JSON
+answers 400 even from another origin. Nothing has run by then.
+
 ## Headers
 
 - `/api/*` responses get `Cache-Control: no-store` unless the route sets its
@@ -300,6 +314,31 @@ requests 10 seconds, then the lifespan waits for refresh workers (about 95
 seconds). That stays within the 110-second `stop_grace_period` in
 `compose.yaml`.
 
+## Refresh jobs
+
+The lifespan owns one `RefreshManager` through `running_refresh`: it restores
+`data_dir/reader-refresh.json`, runs the scheduler task and calls `close()` at
+shutdown. `RefreshService` is the use case the routes call, built per request
+like any other; it resolves a scope through `RefreshTargets`, then submits it to
+the manager through `RefreshQueue`.
+
+- **Running a job is a port.** `ProcessWorker` spawns a process per job, whose
+  entry point is `dank/web/refresh_worker.py`, and route tests swap it for a
+  fake. The history file isn't a port, since a temporary file is as easy as a
+  fake and more real.
+- **A scope is JSON-shaped.** It is saved and answered with keys absent rather
+  than null, as in Projections. A job is a NamedTuple around it.
+- **Rejections keep their wording.** `resolve_scope` turns a plain `ValueError`
+  from `urlsplit` or `configured_feeds` into `InvalidInput`, so it answers 400
+  with their words rather than 503. Their messages can say what to configure.
+- **Restoring is strict.** The API's models forbid what they don't know, so
+  `restored_jobs` leaves out any saved job they couldn't describe, rather than
+  letting one answer 503 for the whole list. Unknown fields are dropped.
+- **A worker stops in one of two ways.** Shutdown signals it and waits up to 90
+  seconds, then kills its process group. If the server dies or reloads first,
+  which `watchfiles` forces after 5 seconds, `watch_owner` sees the pipe close
+  and stops the collection. The next start marks the job interrupted.
+
 ## Testing
 
 Tests live in `tests/api/`, mirroring the package. `unittest.mock` is banned
@@ -326,6 +365,10 @@ there by `tests/api/ruff.toml`.
 - **Projection tests** do the same over HTTP: the real router and service, with
   the real store swapped in for the fake. Each test states its rows and checks
   the JSON, as in `tests/api/posts/test_payloads.py`.
+- **Process tests** use real processes, signals and pipes, as in
+  `tests/api/refresh/test_worker.py`. `tests/api/refresh/test_lifecycle.py` runs
+  whole jobs through real workers, collecting from a feed server on the same
+  machine.
 
 Rules: no `AsyncMock`, `patch` or `monkeypatch.setattr` on DANK modules; no
 assertions on SQL text, call counts or call order. A test that needs a patch
@@ -345,6 +388,12 @@ The intended differences:
   a rule rejects the query, and is generic when Pydantic does.
 - `/api/reader/post` with a repeated `domain` or `id` uses the last value, not
   the first.
+- `POST /api/reader/refresh` takes a scope's closed sets from Pydantic, so they
+  must match exactly. A `platforms` value in another case, or a `blog_feed` with
+  spaces around it, answers 400 where aiohttp normalized it and went on. The
+  reader sends neither.
+- Malformed JSON from another origin answers 400 rather than 403; see Same-origin
+  rule.
 - When `reddit.com` has posts but no configured communities, `/sources` still
   returns empty `communities` and `flairs` lists.
 - Under `/assets/` and `/static/`, a directory answers 404 rather than 403. Neither

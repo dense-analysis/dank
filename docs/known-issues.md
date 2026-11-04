@@ -1066,8 +1066,8 @@ Recent job results persist locally. A server restart marks unfinished jobs as
 interrupted instead of replaying them. The queue and status are local to the
 running DANK installation; provider blocks, configured collection limits and
 unavailable original pages still apply. See [scope tests](
-../tests/web/test_reader_refresh_scope.py) and [job lifecycle tests](
-../tests/web/test_reader_refresh.py).
+../tests/api/refresh/test_scope.py) and [job lifecycle tests](
+../tests/api/refresh/test_router.py).
 
 
 ### YouTube playlist snapshots

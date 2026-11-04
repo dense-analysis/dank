@@ -25,3 +25,7 @@ class Busy(DankError):
     """Bounded work ran out of time. The same request may work shortly."""
 
     code = "busy"
+
+
+class TooManyRequests(DankError):
+    code = "too_many_requests"

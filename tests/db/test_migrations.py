@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from dank.api import deps
 from dank.api.lifespan import Resources
+from dank.api.refresh.manager import RefreshManager
 from dank.api.youtube.collector import CollectionGate
 from dank.config import PostgresSettings, Settings
 from dank.db import atlas
@@ -28,7 +29,6 @@ from dank.db.atlas import (
 )
 from dank.db.engine import async_engine, async_sessions, sync_engine
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.reader_refresh import RefreshManager
 from dank.web.reader_source_icons import SourceIconCache
 from dank.web.startup import prepare_postgres
 
