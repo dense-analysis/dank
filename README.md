@@ -121,6 +121,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make youtube-compare` | Compare browser and yt-dlp recommendations |
 | `make scrape` | Collect configured sources; Docker adds `--headless` |
 | `make process` | Process collected posts and assets |
+| `make train` | Label category training examples with Decisions; see [categories](docs/features/categories.md) |
 | `make query` | Run `clickhouse-query` with arguments from `ARGS` |
 | `make embed` | Run `embed-text` with text from `ARGS` |
 | `make download-model` | Cache the embedding model |

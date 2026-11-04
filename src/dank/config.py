@@ -9,6 +9,8 @@ from enum import StrEnum
 from typing import Any, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
+from dank.category_config import CategorySettings, parse_categories
+
 MEDIA_DOWNLOAD_TYPES = ("image", "audio", "video")
 # X's posts are saved under x.com, but people still write its old name.
 SITE_ALIASES = {"twitter.com": "x.com"}
@@ -269,6 +271,7 @@ class Settings(NamedTuple):
     youtube: YouTubeSettings = YouTubeSettings()
     hacker_news: HackerNewsSettings = HackerNewsSettings()
     postgres: PostgresSettings = PostgresSettings()
+    categories: CategorySettings = CategorySettings()
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -1115,6 +1118,11 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
 
     logging_settings = LoggingSettings(file_path=file_path, level=level)
 
+    try:
+        category_settings = parse_categories(data.get("categories", {}))
+    except ValueError as error:
+        raise ConfigError(str(error)) from None
+
     return Settings(
         clickhouse=clickhouse_settings,
         x=x_settings,
@@ -1135,6 +1143,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         youtube=_parse_youtube_settings(data.get("youtube", {})),
         hacker_news=_parse_hacker_news_settings(data.get("hacker_news", {})),
         postgres=_parse_postgres_settings(data.get("postgres", {})),
+        categories=category_settings,
     )
 
 

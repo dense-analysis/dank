@@ -17,6 +17,8 @@ class _Result(NamedTuple):
 
 
 class _Embedder:
+    model_name = "test-model"
+
     def embed_texts(self, texts: list[str]) -> list[tuple[float, ...]]:
         return [() for _ in texts]
 

@@ -66,6 +66,8 @@ preserved. A new scrape is needed only when no matching saved page exists.
 - Downloaded assets gain file size and an inferred content type. Missing local
   files are omitted from processed assets.
 - Posts receive separate title and body embeddings for semantic search.
+- Optional [category assignment](categories.md) uses trained examples, cosine
+  similarity and confidence thresholds, entirely locally.
 
 Raw payloads remain in the [database](database.md) alongside the processed
 records. A post's identity is its domain and source post ID. Where a publication

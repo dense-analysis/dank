@@ -27,7 +27,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas test lint test-postgres
+.PHONY: help config up web down logs scrape process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas test lint test-postgres
 
 help:
 	@printf '%s\n' \
@@ -40,6 +40,7 @@ help:
 		'  youtube-login   Sign in to Google using 1Password' \
 		'  youtube-compare Compare browser and yt-dlp recommendations' \
 		'  process         Process posts/assets; save output under logs/process/' \
+		'  train           Label category examples with Decisions' \
 		'  query           Run clickhouse-query; pass -q and SQL through ARGS' \
 		'  embed           Run embed-text; pass quoted text through ARGS' \
 		'  download-model  Cache an embedding model' \
@@ -89,6 +90,9 @@ youtube-compare: config
 
 process: config
 	@bash src/dank/run_logged.sh process $(MODE) $(RUN) process $(value ARGS)
+
+train: config
+	$(RUN) train $(value ARGS)
 
 query: config
 	$(RUN) clickhouse-query $(value ARGS)

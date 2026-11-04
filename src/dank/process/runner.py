@@ -8,8 +8,12 @@ import pathlib
 import re
 import time
 from collections.abc import Callable, Collection
+from itertools import batched
 from typing import Any, cast
 
+from dank.age import parse_age_window as parse_age_window
+from dank.categories import category_embedding
+from dank.category_config import CategorySettings
 from dank.config import Settings, SourceConfig, load_settings
 from dank.embeddings import EmbeddingModel, get_embedding_model
 from dank.html_utils import html_text
@@ -17,6 +21,10 @@ from dank.links import LinkPost, normalized_url, post_index_rows
 from dank.logging_setup import configure_logging
 from dank.model import Asset, Post, RawAsset, RawPost
 from dank.process.assets import convert_raw_asset
+from dank.process.categories import (
+    assignment_values,
+    category_query,
+)
 from dank.process.hacker_news import (
     convert_raw_hacker_news_post,
     preserve_hacker_news_story,
@@ -51,6 +59,7 @@ async def process_source_posts(
     embedder: EmbeddingModel,
     reprocess: bool = False,
     post_ids: tuple[str, ...] | None = None,
+    categories: CategorySettings | None = None,
 ) -> int:
     selected = "AND post_id IN %(post_ids)s " if post_ids is not None else ""
     query = (
@@ -144,11 +153,11 @@ async def process_source_posts(
         converted += 1
 
         if len(batch) >= batch_size:
-            await _insert_posts(clickhouse_client, batch, embedder)
+            await _insert_posts(clickhouse_client, batch, embedder, categories)
             batch.clear()
 
     if batch:
-        await _insert_posts(clickhouse_client, batch, embedder)
+        await _insert_posts(clickhouse_client, batch, embedder, categories)
 
     logger.info(
         "Processed %d posts for domain=%s",
@@ -389,6 +398,7 @@ async def _insert_posts(
     clickhouse_client: ClickHouseClient,
     posts: list[Post],
     embedder: EmbeddingModel,
+    categories: CategorySettings | None = None,
 ) -> None:
     posts = await _recover_saved_pages(clickhouse_client, posts)
 
@@ -415,6 +425,8 @@ async def _insert_posts(
             post._replace(
                 title_embedding=title_embedding,
                 html_embedding=html_embedding,
+                embedding_algorithm=embedder.model_name,
+                categories=(),
             )
             for post, title_embedding, html_embedding in zip(
                 posts,
@@ -424,13 +436,20 @@ async def _insert_posts(
             )
         ]
 
-        rows: list[dict[str, Any]] = []
+        if categories is not None and categories.enabled:
+            posts = await _assign_categories(
+                clickhouse_client, posts, categories,
+            )
 
-        for post in posts:
-            row = post._asdict()
-            row["title_embedding"] = list(post.title_embedding)
-            row["html_embedding"] = list(post.html_embedding)
-            rows.append(row)
+        rows = [
+            {
+                **post._asdict(),
+                "title_embedding": list(post.title_embedding),
+                "html_embedding": list(post.html_embedding),
+                "categories": list(post.categories),
+            }
+            for post in posts
+        ]
 
         identities: list[dict[str, object]] = []
         links: list[dict[str, object]] = []
@@ -448,7 +467,7 @@ async def _insert_posts(
         await clickhouse_client.insert_rows("post_links", links)
         post_evidence = [
             link for row in rows
-            for link in post_reference_rows(row, raw=False)
+            for link in post_reference_rows(dict(row), raw=False)
         ]
 
         if post_evidence:
@@ -456,9 +475,12 @@ async def _insert_posts(
                 "post_reference_evidence", post_evidence,
             )
 
-        await clickhouse_client.insert_rows("posts", rows)
+        await clickhouse_client.insert_rows(
+            "posts", [dict(row) for row in rows],
+        )
         evidence = [
-            link for row in rows for link in reference_rows(row, raw=False)
+            link for row in rows
+            for link in reference_rows(dict(row), raw=False)
         ]
 
         if evidence:
@@ -596,7 +618,9 @@ async def run_process(
             pathlib.Path(__file__).parents[1] / "storage/raw_posts.sql"
         )
         await clickhouse_client.execute(raw_schema.read_text())
-        for name in ("links.sql", "youtube.sql", "references.sql"):
+        for name in (
+            "links.sql", "youtube.sql", "references.sql", "categories.sql",
+        ):
             schema = pathlib.Path(__file__).parents[1] / "storage" / name
 
             for statement in schema.read_text().split(";"):
@@ -629,6 +653,7 @@ async def run_process(
                 since=since,
                 embedder=embedder,
                 reprocess=reprocess,
+                categories=settings.categories,
                 **selection,
             )
 
@@ -691,24 +716,35 @@ def run_process_from_config(
     ))
 
 
-def parse_age_window(value: str) -> datetime.timedelta:
-    match = re.fullmatch(r"(\d+)\s*([a-z]*)", value.strip().lower())
+async def _assign_categories(
+    client: ClickHouseClient,
+    posts: list[Post],
+    settings: CategorySettings,
+) -> list[Post]:
+    async def assign(post: Post) -> Post:
+        vector = category_embedding(post)
 
-    if not match:
-        raise ValueError("Age must look like 30s, 10m, or 2h")
+        if not vector:
+            return post._replace(categories=())
 
-    amount = int(match.group(1))
+        result = await client.fetch_json(
+            category_query(),
+            {
+                "embedding": list(vector),
+                "dimensions": len(vector),
+                "categories": [c.name for c in settings.definitions],
+                "confidence": settings.confidence_threshold,
+                "cosine": settings.cosine_threshold,
+            },
+        )
 
-    if amount <= 0:
-        raise ValueError("Age must be greater than zero")
+        return post._replace(categories=tuple(assignment_values(result.rows)))
 
-    # Match the unit.
-    match match.group(2):
-        case "" | "s" | "sec" | "secs" | "second" | "seconds":
-            return datetime.timedelta(seconds=amount)
-        case "m" | "min" | "mins" | "minute" | "minutes":
-            return datetime.timedelta(minutes=amount)
-        case "h" | "hr" | "hrs" | "hour" | "hours":
-            return datetime.timedelta(hours=amount)
-        case _:
-            raise ValueError("Age must be in seconds, minutes, or hours")
+    assigned: list[Post] = []
+
+    for batch in batched(posts, settings.concurrency):
+        assigned.extend(await asyncio.gather(
+            *(assign(post) for post in batch),
+        ))
+
+    return assigned

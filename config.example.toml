@@ -133,3 +133,17 @@ detail_timeout_seconds = "all"
 # username = "op://VAULT_ID/GOOGLE_ITEM_ID/username"
 # password = "op://VAULT_ID/GOOGLE_ITEM_ID/password"
 # otp = "op://VAULT_ID/GOOGLE_ITEM_ID/one-time password?attribute=otp"
+
+# Optional category training and local assignment; see docs/features/categories.md.
+# [categories]
+# enabled = true
+# api_key = "YOUR_OPENAI_API_KEY"
+# model = "gpt-6-luna"
+# cosine_threshold = 0.85
+# confidence_threshold = 0.8
+# concurrency = 4
+# max_content_chars = 8192
+#
+# [[categories.definitions]]
+# name = "software"
+# description = "Software development, programming tools and languages."

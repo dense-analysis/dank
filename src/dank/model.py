@@ -1,5 +1,14 @@
 import datetime
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, TypedDict
+
+
+class PostTrainingData(TypedDict):
+    """The only post evidence sent to the Decisions API."""
+
+    url: str
+    author: str
+    title: str
+    html: str
 
 
 class RawPost(NamedTuple):
@@ -113,6 +122,8 @@ class Post(NamedTuple):
     html: str
     html_embedding: tuple[float, ...]
     source: str
+    embedding_algorithm: str = ""
+    categories: tuple[tuple[str, float, float], ...] = ()
 
 
 class RedditCommunityDiscovery(NamedTuple):

@@ -93,6 +93,8 @@ def test_new_story_capture_does_not_revive_old_body():
 
 
 class Embedder:
+    model_name = "test-model"
+
     def embed_texts(self, texts: list[str]) -> list[tuple[float, ...]]:
         return [() for _ in texts]
 

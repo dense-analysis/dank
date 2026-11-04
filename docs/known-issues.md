@@ -1177,3 +1177,39 @@ unavailable original pages still apply. See [scope tests](
   Office (2 entries), Saved Shorts (2) and Artificial Intelligence (1,955).
   That large listing took 13.3 seconds with yt-dlp versus 28.6 with Chromium;
   the 15-entry source count gap remained explicit in both captures.
+
+## Category training and assignment
+
+Training uses OpenAI Decisions predicate probabilities; calibration must be
+checked against reviewed examples. Refusals, missing answers and invalid
+scores fail without
+writing that example; bounded retries handle transient errors. Completed
+requests are retained if another request fails. Posts with a blank embedding
+algorithm are eligible for training, and their examples retain the blank value.
+Assignment treats algorithm names as metadata, so blank-algorithm training
+examples remain usable after reprocessing records a named algorithm. Only
+vector dimensions, category names and the thresholds filter these matches.
+Reprocessing is required to refresh categories after training or threshold
+changes. Category description edits do not
+invalidate saved examples; rename a category when changing its meaning.
+Training omits zero-confidence rows; an all-zero result still counts toward
+the post limit. Omitted scores can be requested again in subsequent runs.
+Concurrent training commands can append duplicate examples. Exact cosine
+queries preserve threshold semantics but cost a scan per new post. No lossy
+quantisation or ANN index is enabled. See [category behavior and research](features/categories.md).
+
+Training now lives in `dank.training`, with import boundaries enforced by
+`run-linters.sh`. Decisions receives only URL, author, title and HTML; vectors
+remain local. Category definitions occur only in predicate questions. The
+implicit shared-input cache can reuse identical post evidence across retries
+or missing-label requests when the matching prefix reaches 1,024 tokens.
+The short developer instructions alone do not qualify for cross-post reuse.
+No live cache hits have been measured. Verification covers payload fields, cache-prefix
+stability and import boundaries in `tests/training/` and
+`tests/test_lint_architecture.py`, alongside category queries in
+`tests/process/test_categories.py` and vector checks in
+`tests/test_categories.py`. Category loading and training tests use in-memory
+storage fakes and run with plain `make test`, without a ClickHouse server.
+They check query filters/bindings and processing behavior; they do not execute
+SQL against ClickHouse. Transport replies are simulated; no live paid OpenAI
+call was made.

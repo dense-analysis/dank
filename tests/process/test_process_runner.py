@@ -39,6 +39,8 @@ class _DummyClient:
 
 
 class _DummyEmbedder:
+    model_name = "test-model"
+
     def embed_texts(self, items: list[str]) -> list[tuple[float, ...]]:
         return [() for _ in items]
 
@@ -310,6 +312,8 @@ async def test_insert_posts_writes_embedding_arrays() -> None:
     client = _InsertClient()
 
     class _TupleEmbedder:
+        model_name = "test-model"
+
         def embed_texts(self, items: list[str]) -> list[tuple[float, ...]]:
             return [(float(index),) for index, _ in enumerate(items, start=1)]
 
@@ -400,6 +404,8 @@ async def test_embeddings_use_readable_text_instead_of_page_code() -> None:
     calls: list[list[str]] = []
 
     class _SpyEmbedder:
+        model_name = "test-model"
+
         def embed_texts(self, items: list[str]) -> list[tuple[float, ...]]:
             calls.append(items)
 

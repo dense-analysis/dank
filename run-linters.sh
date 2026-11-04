@@ -2,23 +2,26 @@
 
 set -eu
 
-# Complain when scraping code is used in processing.
-if grep -qrI 'dank.scrape' src/dank/process/; then
-    echo 'dank.scrape modules should not be imported in dank.process modules!' 1>&2
-    exit 1
-fi
+# Collection, processing and training own separate execution pipelines.
+for module in scrape process training; do
+    for dependency in scrape process training; do
+        if [ "$module" = "$dependency" ]; then
+            continue
+        fi
 
-# Complain when processing code is used in scraping.
-if grep -qrI 'dank.process' src/dank/scrape/; then
-    echo 'dank.process modules should not be imported in dank.scrape modules!' 1>&2
-    exit 1
-fi
+        if rg --quiet --glob '*.py' \
+            "dank[.]$dependency|from dank import .*\\b$dependency\\b" "src/dank/$module/"; then
+            echo "dank.$module modules must not import dank.$dependency modules!" >&2
+            exit 1
+        fi
+    done
 
-
-if grep  -qrI 'dank.storage.clickhouse' src/dank/process/ --exclude 'runner.py'; then
-    echo 'dank.process code other than runner.py should not use clickhouse code!' 1>&2
-    exit 1
-fi
+    if rg --quiet --glob '*.py' --glob '!runner.py' \
+        'dank[.]storage[.]clickhouse' "src/dank/$module/"; then
+        echo "Only dank.$module.runner may access ClickHouse in dank.$module!" >&2
+        exit 1
+    fi
+done
 
 if grep -rI aiohttp src/dank/process/; then
     echo 'dank.process code should not be making HTTP requests!' 1>&2
