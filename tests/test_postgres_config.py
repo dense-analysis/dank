@@ -193,3 +193,17 @@ def test_undecodable_password_is_not_shown(tmp_path: pathlib.Path) -> None:
     assert SECRET not in str(caught.value)
     assert "xff" not in str(caught.value)
     assert caught.value.__suppress_context__
+
+
+def test_postgres_is_enabled_unless_turned_off(tmp_path: pathlib.Path) -> None:
+    assert _load(tmp_path, "").postgres.enabled is True
+
+    settings = _load(tmp_path, "[postgres]\nenabled = false\n")
+
+    assert settings.postgres.enabled is False
+
+
+def test_enabled_must_be_a_boolean(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(ConfigError, match=r"postgres\.enabled"):
+        _load(tmp_path, '[postgres]\nenabled = "no"\n')
+

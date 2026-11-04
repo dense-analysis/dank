@@ -55,9 +55,16 @@ configuration changes.
 
 ### Postgres on your own server
 
-Postgres is ready to hold DANK's app state, but no feature connects to it yet,
-so native installs keep working without a server for now. See
-[which data lives where](features/database.md#where-data-lives). Docker runs
+The web app brings the Postgres schema up to date whenever it starts, so it
+needs a server and [Atlas](#atlas). No feature stores anything there yet, so you
+can run without both for now by turning it off in `config.toml`:
+
+```toml
+[postgres]
+enabled = false
+```
+
+See [which data lives where](features/database.md#where-data-lives). Docker runs
 Postgres 18, so use that major version or a newer one.
 
 `make config MODE=native` creates `postgres-password`, a private file ignored
@@ -84,6 +91,22 @@ you run DANK. Check that the file and the role match:
 PGPASSWORD="$(cat postgres-password)" psql --host=localhost --username=dank --dbname=dank --command='SELECT 1'
 ```
 
+### Atlas
+
+[Atlas](https://atlasgo.io/) applies the Postgres migrations. It is a separate
+program that `uv sync` can't install, so install it once per checkout:
+
+```sh
+make atlas
+```
+
+This downloads a pinned version into `.venv/bin` and checks it against a
+checksum in the repository. DANK turns off Atlas's telemetry and update checks
+whenever it runs it, so run Atlas through `dank-db`; see
+[Postgres migrations](development.md#postgres-migrations). The binary is free to
+use under [Atlas's own terms](https://atlasgo.io/community-edition) rather than
+an open source license. The Docker image already includes it.
+
 ## Docker
 
 The Make shortcuts require `make` and Bash on the host.
@@ -102,7 +125,8 @@ that holds a random password, even when `config.toml` already exists. The
 built-in `[postgres]` settings match the Compose service, so an existing Docker
 install upgrades with `make up` alone. Compose gives the file to both containers
 as a secret, and the application container copies it to
-`/app/postgres-password` for the `dank` user.
+`/app/postgres-password` for the `dank` user. The viewer brings the Postgres
+schema up to date whenever it starts.
 
 Postgres reads the file only when it initialises an empty volume, so keep it. If
 you lose it, `make config` creates a new password that doesn't match the

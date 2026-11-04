@@ -19,6 +19,7 @@ from dank.api import deps
 from dank.api.app import create_app
 from dank.config import (
     ClickHouseSettings,
+    PostgresSettings,
     Settings,
     SourceConfig,
     load_settings,
@@ -35,6 +36,7 @@ ROOT = pathlib.Path(__file__).parents[2]
 def settings(tmp_path: pathlib.Path) -> Settings:
     return load_settings(ROOT / "config.example.toml")._replace(
         data_dir=tmp_path,
+        postgres=PostgresSettings(enabled=False),
         sources=(
             SourceConfig("politics.example", (), tags=("politics",)),
             SourceConfig("empty.example", (), tags=("culture",)),

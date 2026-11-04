@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
+import pathlib
 import socket
 import subprocess
-from collections.abc import Container, Iterator
+import uuid
+from collections.abc import AsyncIterator, Container, Iterator
 from typing import Any, Never, Self
 from urllib.parse import urlsplit
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy.orm import Session
+
+from dank.config import PostgresSettings
+from dank.db.atlas import atlas_url, find_atlas, upgrade
+from dank.db.engine import async_engine, sync_engine
+from tests.postgres import (
+    create_database,
+    drop_database,
+    server_settings,
+)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -17,6 +31,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help=(
             "Run tests marked clickhouse against this loopback server, "
             "e.g. http://default:@127.0.0.1:18123"
+        ),
+    )
+    parser.addoption(
+        "--postgres-url",
+        default="",
+        help=(
+            "Run tests marked postgres against this loopback server, "
+            "e.g. postgresql://postgres:test@127.0.0.1:15433/postgres"
         ),
     )
 
@@ -67,13 +89,18 @@ class GuardedSocket:
         return self._s.__exit__(exc_type, exc, tb)
 
 
-def loopback_addresses(url: str) -> frozenset[tuple[str, int]]:
-    """The addresses a --clickhouse-url may connect to; loopback only."""
+def loopback_addresses(
+    url: str,
+    *,
+    option: str = '--clickhouse-url',
+    default_port: int = 8123,
+) -> frozenset[tuple[str, int]]:
+    """The addresses a test server URL may connect to; loopback only."""
     if not url:
         return frozenset()
 
     parts = urlsplit(url)
-    port = parts.port or 8123
+    port = parts.port or default_port
     addresses = frozenset(
         (str(info[4][0]), port)
         for info in socket.getaddrinfo(parts.hostname, port)
@@ -82,7 +109,7 @@ def loopback_addresses(url: str) -> frozenset[tuple[str, int]]:
     if not all(
         ipaddress.ip_address(host).is_loopback for host, _ in addresses
     ):
-        raise pytest.UsageError('--clickhouse-url must be a loopback address')
+        raise pytest.UsageError(f'{option} must be a loopback address')
 
     return addresses
 
@@ -93,15 +120,23 @@ def block_all_network(request: pytest.FixtureRequest) -> Iterator[None]:
     This fixture blocks all network traffic during test runs so running
     pytest never accidentally dials network connections at any point.
 
-    This keeps tests predictable and efficient. The one exception is the
-    loopback ClickHouse server named by --clickhouse-url, if any.
+    This keeps tests predictable and efficient. The exceptions are the
+    loopback servers named by --clickhouse-url and --postgres-url, if any,
+    and the Atlas binary that the Postgres lane runs.
     """
-    url = str(request.config.getoption('clickhouse_url'))
-    allowed = loopback_addresses(url)
-    # The ClickHouse driver resolves the URL's host name before connecting.
+    clickhouse_url = str(request.config.getoption('clickhouse_url'))
+    postgres_url = str(request.config.getoption('postgres_url'))
+    allowed = loopback_addresses(clickhouse_url) | loopback_addresses(
+        postgres_url,
+        option='--postgres-url',
+        default_port=5432,
+    )
+    # The drivers resolve the URL's host name before connecting.
     allowed_hosts: Container[object] = {
-        urlsplit(url).hostname, *(host for host, _ in allowed),
-    } if allowed else frozenset[str]()
+        urlsplit(url).hostname
+        for url in (clickhouse_url, postgres_url)
+        if url
+    } | {host for host, _ in allowed}
 
     ###
     ### Save originals
@@ -149,6 +184,13 @@ def block_all_network(request: pytest.FixtureRequest) -> Iterator[None]:
         # Block all other networking.
         blocked()
 
+    def guarded_popen(args: Any, *rest: Any, **kwargs: Any) -> Any:
+        # asyncio starts subprocesses through this name, passing a tuple.
+        if postgres_url and pathlib.Path(str(args[0])).name == 'atlas':
+            return real_popen(args, *rest, **kwargs)
+
+        blocked()
+
     def guarded_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
         if host in allowed_hosts:
             return real_getaddrinfo(host, *args, **kwargs)
@@ -164,7 +206,7 @@ def block_all_network(request: pytest.FixtureRequest) -> Iterator[None]:
     socket.getaddrinfo = guarded_getaddrinfo
     socket.gethostbyname = blocked
     socket.gethostbyname_ex = blocked
-    subprocess.Popen = blocked
+    subprocess.Popen = guarded_popen
 
     try:
         yield
@@ -179,3 +221,99 @@ def block_all_network(request: pytest.FixtureRequest) -> Iterator[None]:
         socket.gethostbyname = real_gethostbyname
         socket.gethostbyname_ex = real_gethostbyname_ex
         subprocess.Popen = real_popen
+
+
+@pytest.fixture(scope='session')
+def postgres_server(
+    request: pytest.FixtureRequest,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> PostgresSettings:
+    """The --postgres-url server. Tests using it skip when it's missing."""
+    url = str(request.config.getoption('postgres_url'))
+
+    if not url:
+        pytest.skip('needs --postgres-url; see make test-postgres')
+
+    if find_atlas() is None:
+        pytest.skip('needs Atlas; run uv run dank-db install-atlas')
+
+    return server_settings(url, tmp_path_factory.mktemp('postgres'))
+
+
+@pytest.fixture(scope='session')
+def postgres_dev_url(postgres_server: PostgresSettings) -> Iterator[str]:
+    """An empty database for Atlas to compare schemas in."""
+    settings = postgres_server._replace(database=f'dev_{uuid.uuid4().hex}')
+    create_database(settings)
+
+    try:
+        yield atlas_url(settings, settings.password_file.read_text())
+    finally:
+        drop_database(settings)
+
+
+@pytest.fixture
+def fresh_postgres(postgres_server: PostgresSettings) -> Iterator[
+    PostgresSettings
+]:
+    """A new, empty database for one test, such as a migration test."""
+    settings = postgres_server._replace(database=f'test_{uuid.uuid4().hex}')
+    create_database(settings)
+
+    try:
+        yield settings
+    finally:
+        drop_database(settings)
+
+
+@pytest.fixture(scope='session')
+def postgres_settings(postgres_server: PostgresSettings) -> Iterator[
+    PostgresSettings
+]:
+    """A database migrated to head, shared by every test in the session."""
+    settings = postgres_server._replace(database=f'test_{uuid.uuid4().hex}')
+    create_database(settings)
+
+    try:
+        asyncio.run(upgrade(settings))
+        yield settings
+    finally:
+        drop_database(settings)
+
+
+@pytest.fixture
+def postgres_session(postgres_settings: PostgresSettings) -> Iterator[Session]:
+    """A session whose work rolls back after the test, even commits."""
+    engine = sync_engine(postgres_settings)
+
+    with engine.connect() as connection, connection.begin() as transaction:
+        with Session(
+            bind=connection,
+            join_transaction_mode='create_savepoint',
+        ) as session:
+            yield session
+
+        transaction.rollback()
+
+    engine.dispose()
+
+
+@pytest.fixture
+async def async_postgres_session(
+    postgres_settings: PostgresSettings,
+) -> AsyncIterator[AsyncSession]:
+    """The same for the web app's async sessions."""
+    engine = async_engine(postgres_settings)
+    connection: AsyncConnection
+
+    async with engine.connect() as connection, connection.begin() as outer:
+        async with AsyncSession(
+            bind=connection,
+            join_transaction_mode='create_savepoint',
+            expire_on_commit=False,
+        ) as session:
+            yield session
+
+        await outer.rollback()
+
+    await engine.dispose()

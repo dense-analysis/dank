@@ -157,6 +157,8 @@ class PostgresSettings(NamedTuple):
     user: str = "dank"
     # Relative to the working directory: the checkout, or /app in a container.
     password_file: pathlib.Path = pathlib.Path("postgres-password")
+    # Lets a native install run without a server until a feature needs one.
+    enabled: bool = True
 
 
 class SourceAdapter(StrEnum):
@@ -760,8 +762,8 @@ def _parse_postgres_settings(value: object) -> PostgresSettings:
     # Report no values: a misplaced password must not reach an error message.
     if set(data) - set(PostgresSettings._fields):
         raise ConfigError(
-            "postgres accepts only host, port, database, user and "
-            "password_file; keep the password in password_file",
+            "postgres accepts only host, port, database, user, "
+            "password_file and enabled; keep the password in password_file",
         )
 
     defaults = PostgresSettings()
@@ -799,7 +801,17 @@ def _parse_postgres_settings(value: object) -> PostgresSettings:
     if password_file is None:
         raise ConfigError("postgres.password_file must be a non-empty path")
 
-    return PostgresSettings(**names, port=port, password_file=password_file)
+    enabled = data.get("enabled", defaults.enabled)
+
+    if not isinstance(enabled, bool):
+        raise ConfigError("postgres.enabled must be true or false")
+
+    return PostgresSettings(
+        **names,
+        port=port,
+        password_file=password_file,
+        enabled=enabled,
+    )
 
 
 def read_postgres_password(settings: PostgresSettings) -> str:

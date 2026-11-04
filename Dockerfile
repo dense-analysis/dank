@@ -29,6 +29,10 @@ ENV PATH="/app/.venv/bin:$PATH" \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1
 
+COPY src/dank/db/install_atlas.py /tmp/install_atlas.py
+RUN python /tmp/install_atlas.py /usr/local/bin/atlas \
+    && rm /tmp/install_atlas.py
+
 COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project

@@ -1,11 +1,12 @@
 """Dependencies every feature shares. Features add their own in deps.py."""
 
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, get_origin
 
 from fastapi import Depends, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from dank.api.lifespan import Resources
 from dank.config import Settings
@@ -26,6 +27,16 @@ def settings(resources: ResourcesDep) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(settings)]
+
+
+async def postgres_session(
+    resources: ResourcesDep,
+) -> AsyncGenerator[AsyncSession]:
+    async with resources.postgres() as session:
+        yield session
+
+
+PostgresSessionDep = Annotated[AsyncSession, Depends(postgres_session)]
 
 
 def single_values(model: type[BaseModel]) -> Callable[[Request], None]:

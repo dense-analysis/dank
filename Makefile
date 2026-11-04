@@ -3,9 +3,11 @@ MODE ?= docker
 COMPOSE ?= docker compose
 UV ?= uv
 ARGS ?=
+NAME ?=
 FILE ?=
 # The Compose service's role and database.
 POSTGRES_ARGS := --username=dank --dbname=dank
+POSTGRES_IMAGE := postgres:18
 
 ifeq ($(MODE),docker)
 CONFIG_TEMPLATE := config.example.toml
@@ -25,7 +27,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore
+.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff atlas test-postgres
 
 help:
 	@printf '%s\n' \
@@ -45,6 +47,13 @@ help:
 		'  down, logs      Stop or view logs for the Docker stack' \
 		'  postgres-dump   Save the Docker Postgres database under backups/' \
 		'  postgres-restore  Restore a dump into it; pass FILE=backups/<name>.dump' \
+		'  db-upgrade      Apply pending Postgres migrations' \
+		'  db-current      Show whether the Postgres schema is at head' \
+		'  db-create       Create the configured Postgres database if missing' \
+		'  db-check        On the host: check migrations are valid and match models' \
+		'  db-diff         On the host: generate a migration; pass NAME=<name>' \
+		'  atlas           On the host: install the pinned Atlas binary' \
+		'  test-postgres   Run the Postgres tests against a disposable server' \
 		'' \
 		'ARGS goes to the application command, or to Compose for Docker up/web.' \
 		'Existing configuration is preserved; MODE does not convert it.'
@@ -118,3 +127,32 @@ postgres-dump postgres-restore:
 	@printf '%s\n' '$@ manages the Docker Postgres. For your own server, use pg_dump and pg_restore; see docs/setup.md.' >&2
 	@exit 2
 endif
+
+db-upgrade db-current db-create: db-%:
+	$(RUN) dank-db $*
+
+# These need the dev dependencies and Atlas, so they always run on the host.
+db-check:
+	$(UV) run dank-db check
+
+db-diff:
+	@if [ -z '$(NAME)' ]; then \
+		printf '%s\n' 'Name the migration: make db-diff NAME=<name>' >&2; \
+		exit 1; \
+	fi
+	$(UV) run dank-db diff '$(NAME)'
+
+atlas:
+	$(UV) run dank-db install-atlas
+
+test-postgres:
+	@set -e; \
+	name="dank-test-postgres-$$$$"; \
+	docker run --detach --rm --name "$$name" --env POSTGRES_PASSWORD=test \
+		--publish 127.0.0.1::5432 $(POSTGRES_IMAGE) > /dev/null; \
+	trap 'docker stop "$$name" > /dev/null' EXIT; \
+	until docker exec "$$name" pg_isready --quiet --host=127.0.0.1 --username=postgres; do \
+		sleep 1; \
+	done; \
+	port="$$(docker port "$$name" 5432/tcp | sed 's/.*://')"; \
+	$(UV) run pytest -m postgres --postgres-url="postgresql://postgres:test@127.0.0.1:$$port/postgres" $(ARGS)

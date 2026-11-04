@@ -74,6 +74,60 @@ make up
 
 This rebuilds the application image and recreates the service when needed.
 
+## Postgres migrations
+
+SQLAlchemy models in `src/dank/db/models/` describe the Postgres schema.
+[Atlas](https://atlasgo.io/) generates SQL migrations from them into
+`src/dank/db/migrations/`, and applies those. Atlas is a trial: only
+`src/dank/db/atlas.py` runs it, so it stays easy to replace, and
+[DEN-57](https://linear.app/dense-analysis/issue/DEN-57) decides whether it
+stays. [Install it first](setup.md#atlas).
+
+The web app upgrades to head when it starts, and two starting together migrate
+once. Scrape and process commands that need Postgres call `require_head`: they
+stop with a clear message unless the schema is at head, and never migrate. A
+database with migrations this code doesn't know about is always refused, which
+Atlas alone would report as fine.
+
+| Command | Purpose |
+| --- | --- |
+| `make db-upgrade` | Apply pending migrations |
+| `make db-current` | Show migrations; exits 1 unless the schema is at head |
+| `make db-create` | Create the configured database if it's missing, for a new worktree |
+| `make db-diff NAME=<name>` | Generate a migration from model changes |
+| `make db-check` | Check migrations are valid and match the models |
+| `uv run dank-db atlas migrate hash --env dank` | Run any other Atlas command, with telemetry off |
+
+`db-upgrade`, `db-current` and `db-create` follow `MODE`; the others always run on
+the host. `db-diff` and `db-check` compare schemas in a temporary Docker container.
+Without Docker, pass your own empty database:
+`uv run dank-db check --dev-url 'postgres://user:password@localhost:5432/atlas_dev?sslmode=prefer&search_path=public'`.
+
+Rules for migrations:
+
+- They only move forward, and released ones are never edited. Editing an
+  unreleased one needs `migrate hash`, and `atlas.sum` refuses it otherwise.
+- Review every generated migration, especially any `DROP`. Atlas asks about
+  renames only in a terminal. Without one, as for an agent, it writes a drop and
+  an add, which loses the column's data, so write those renames by hand.
+- For a merge conflict in `atlas.sum`, keep either side and run `migrate hash`.
+  If your migration is now older than one already applied, run
+  `uv run dank-db atlas migrate rebase <version> --env dank`.
+- Don't rely on Atlas Pro features such as `migrate lint` or `migrate test` unless
+  DEN-57 decides to pay for them. Hand-written views, functions and triggers in a
+  migration work on the free tier, though Atlas won't track them.
+
+`make test-postgres` runs the tests marked `postgres` against a disposable server.
+Without `--postgres-url` or Atlas they're skipped, so `uv run pytest` needs
+neither. They get these fixtures from `tests/conftest.py`:
+
+| Fixture | Gives a test |
+| --- | --- |
+| `postgres_session`, `async_postgres_session` | A session on a database at head, rolled back afterwards even after a commit |
+| `postgres_settings` | Settings for that database |
+| `fresh_postgres` | An empty database of its own, for migration tests |
+| `postgres_dev_url` | An empty database for Atlas to compare schemas in |
+
 ## Parallel instances
 
 Use a separate config, database and data directory for each native instance.
@@ -95,7 +149,8 @@ database = "dank_my_task"
 password_file = "../main/postgres-password"
 ```
 
-Create the database once, connected as your server's administrator:
+Create the database once with `make db-create MODE=native` if the role may
+create databases, or connected as your server's administrator:
 
 ```sh
 createdb --owner=dank dank_my_task

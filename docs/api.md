@@ -34,7 +34,7 @@ src/dank/
   api/
     app.py               create_app(): routers, error handlers, guard, headers
     lifespan.py          Resources, opened at startup and closed at shutdown
-    deps.py              ResourcesDep, SettingsDep, single_values
+    deps.py              ResourcesDep, SettingsDep, PostgresSessionDep, single_values
     errors.py            the error envelope
     guards.py            same-origin JSON rule for unsafe methods
     headers.py           Cache-Control defaults, HEAD for every GET
@@ -96,8 +96,9 @@ adapter without I/O.
 8. **Errors are domain facts, translated once.** Services raise `DankError`
    subclasses; `api/errors.py` maps them, and FastAPI's own errors, to one
    envelope. Only edge code raises `HTTPException`.
-9. **Resources come from the lifespan.** The ClickHouse client, refresh
-   workers and settings are opened in the lifespan and reached through
+9. **Resources come from the lifespan.** The ClickHouse client, Postgres
+   sessions, refresh workers and settings are opened in the lifespan and
+   reached through
    `Annotated` dependencies. There are no module-level clients.
 10. **Fakes over mocks, real databases over fakes of SQL.** See Testing.
 

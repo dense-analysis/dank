@@ -26,6 +26,9 @@ database = "dank"
 user = "dank"
 # Holds only the password. make config creates a random one if it is missing.
 password_file = "postgres-password"
+# The web app needs this server and Atlas; see docs/setup.md. To run without
+# them until a feature needs Postgres, turn this off.
+# enabled = false
 
 [media]
 # Use ["image"] for images only, or [] to keep references without downloads.

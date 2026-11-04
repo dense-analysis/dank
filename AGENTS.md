@@ -37,6 +37,8 @@ the pages.
 * Never import `scrape` code in the `process` module or vice versa.
 * Only `dank/scrape/runner.py`, `dank/process/runner.py`, and the web app
   may access ClickHouse.
+* Only `dank/db/atlas.py` may run Atlas, so that it stays replaceable. Change the
+  Postgres schema through migrations; see `docs/development.md`.
 
 IMPORTANT: You are not allowed to just create new modules and import `process`
 or `scrape` code in them to get around the rules of not importing `scrape` code

@@ -126,6 +126,8 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make down`, `make logs` | Stop or inspect the Docker stack; Docker mode only |
 | `make postgres-dump` | Save the Docker Postgres database under `backups/`; Docker mode only |
 | `make postgres-restore FILE=<dump>` | Restore a saved dump into it; Docker mode only |
+| `make atlas` | Install the pinned Atlas binary for native runs |
+| `make db-upgrade`, `make db-current`, `make db-create` | Manage the Postgres schema; see [Postgres migrations](docs/development.md#postgres-migrations) |
 
 **Native**
 
@@ -170,8 +172,9 @@ make web MODE=native
 make web ARGS='--force-recreate dank'
 ```
 
-Native runs use your local ClickHouse and files, and can point at
-[your own Postgres server](docs/setup.md#postgres-on-your-own-server). Docker
+Native runs use your local ClickHouse and files, and
+[your own Postgres server](docs/setup.md#postgres-on-your-own-server) unless you
+turn it off. Docker
 stores database files, assets, browser profile and model cache in named volumes.
 Use `make logs` and `make down` to inspect and stop the Docker stack; `make down`
 preserves volumes.

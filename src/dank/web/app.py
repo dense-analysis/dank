@@ -174,7 +174,11 @@ async def _no_cache_middleware(
 
 
 async def _clickhouse_context(app: web.Application):
+    from dank.web.startup import prepare_postgres
+
     state = app["state"]
+    # First, so a bad schema stops startup before any long backfills.
+    await prepare_postgres(state.settings.postgres)
     client = ClickHouseClient(state.settings.clickhouse)
     await client.__aenter__()
     app["clickhouse"] = client

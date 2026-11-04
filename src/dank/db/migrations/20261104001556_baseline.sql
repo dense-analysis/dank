@@ -1,0 +1,1 @@
+-- The schema starts empty. DEN-22 adds the first tables.
