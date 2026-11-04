@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
-from aiohttp.test_utils import make_mocked_request
 from multidict import MultiDict
 
 from dank.config import SourceConfig, load_settings
-from dank.storage.clickhouse import QueryResult
 from dank.web import reader_youtube_channels as channels
 from dank.web.reader_youtube_query import (
     YouTubeFilters,
@@ -103,70 +97,3 @@ def test_channel_paging_binds_filters_snapshot_and_stable_count_identity():
         channels.parse_channel_cursor(
             filters._replace(channel_scope="configured"), cursor,
         )
-
-
-async def test_channel_endpoint_groups_saved_examples_and_reports_unknowns(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-):
-    settings = load_settings("config.native.example.toml")
-    client = AsyncMock()
-    client.fetch_json.side_effect = [
-        QueryResult([{"snapshot_time": dt.datetime.now(dt.UTC)}]),
-        QueryResult(
-            [
-                {
-                    "channel_key": "UC1",
-                    "name": "Channel One",
-                    "url": "",
-                    "count": 8,
-                    "video_count": 6,
-                    "short_count": 2,
-                    "post_count": 0,
-                },
-            ],
-        ),
-        QueryResult([{"total": 1, "unattributed_items": 4}]),
-    ]
-    monkeypatch.setattr(
-        channels, "load_configured_channels", AsyncMock(return_value=("UC1",)),
-    )
-    previews = AsyncMock(return_value={"UC1": [{"id": "video:aaaaaaaaaaa"}]})
-    monkeypatch.setattr(channels, "channel_previews", previews)
-    request = make_mocked_request(
-        "GET", "/api/reader/youtube/channels?feed=https://www.youtube.com/",
-    )
-    request.app["clickhouse"] = client
-    request.app["state"] = SimpleNamespace(
-        settings=settings, assets_dir=tmp_path,
-    )
-    response = await channels.handle_youtube_channels(request)
-    assert response.status == 200
-    body = json.loads(response.text or "")
-    assert body["total"] == 1
-    assert body["unattributed_items"] == 4
-    assert body["channels"][0]["configured"] is True
-    assert body["channels"][0]["items"][0]["id"] == "video:aaaaaaaaaaa"
-    assert body["next_cursor"] is None
-    assert previews.await_args is not None
-    assert previews.await_args.args[4].feed == HOME
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        "limit=51",
-        "limit=0",
-        "cursor=bad",
-        "cursor=a&cursor=b",
-        "id=video:x",
-        "channel_scope=unknown",
-        "unexpected=true",
-    ],
-)
-async def test_channel_endpoint_rejects_invalid_requests_before_io(query: str):
-    request = make_mocked_request(
-        "GET", "/api/reader/youtube/channels?" + query,
-    )
-    response = await channels.handle_youtube_channels(request)
-    assert response.status == 400

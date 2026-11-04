@@ -48,3 +48,28 @@ async def test_startup_prepares_storage_and_shutdown_stops_refresh(
             assert not resources.refresh.worker.done()
 
     assert resources.refresh.worker.done()
+
+
+async def test_each_running_app_owns_its_collection_gates(
+    settings: Settings, clickhouse_settings: ClickHouseSettings,
+) -> None:
+    configured = settings._replace(clickhouse=clickhouse_settings)
+    first = create_app(configured, page_size=50)
+    second = create_app(configured, page_size=50)
+
+    async with (
+        first.router.lifespan_context(first) as one,
+        second.router.lifespan_context(second) as other,
+    ):
+        assert one is not None
+        assert other is not None
+        ours: Resources = one["resources"]
+        theirs: Resources = other["resources"]
+
+        assert ours.metadata_gate is not ours.transcript_gate
+        assert ours.metadata_gate.lock is not theirs.metadata_gate.lock
+        assert ours.metadata_gate.limiter is not theirs.metadata_gate.limiter
+        assert ours.transcript_gate.lock is not theirs.transcript_gate.lock
+        assert (
+            ours.transcript_gate.limiter is not theirs.transcript_gate.limiter
+        )

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import aiohttp
 from aiohttp import web
 
+from dank.api.youtube.model import transcript_view
 from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.runner import collect_youtube_video_transcript
 from dank.scrape.youtube.transcripts import TRANSCRIPT_TIMEOUT_SECONDS
-from dank.storage.clickhouse import ClickHouseClient, parse_datetime
-from dank.youtube import VIDEO_ID, payload_object
+from dank.storage.clickhouse import ClickHouseClient
+from dank.youtube import VIDEO_ID
 
 TRANSCRIPT_LOCK = web.AppKey("youtube_transcript_lock", asyncio.Lock)
 TRANSCRIPT_LIMITER = web.AppKey("youtube_transcript_limiter", RequestLimiter)
@@ -106,21 +106,3 @@ async def handle_video_transcript(request: web.Request) -> web.Response:
             lock.release()
 
     return web.json_response(transcript_view(video_id, row))
-
-
-def transcript_view(video_id: str, row: dict[str, Any]) -> dict[str, Any]:
-    payload = payload_object(row.get("payload"))
-    observed = parse_datetime(row.get("observed_at"))
-    retry = parse_datetime(row.get("retry_after"))
-    captured = row.get("status") == "captured"
-
-    return {
-        "video_id": video_id,
-        "status": row.get("status", "not_collected"),
-        "observed_at": observed.isoformat() if observed else "",
-        "retry_after": retry.isoformat() if retry and not captured else "",
-        "language": str(payload.get("language") or ""),
-        "language_name": str(payload.get("language_name") or ""),
-        "generated": payload.get("generated") is True,
-        "segments": payload.get("segments", []) if captured else [],
-    }

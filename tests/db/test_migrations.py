@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from dank.api import deps
 from dank.api.lifespan import Resources
+from dank.api.youtube.collector import CollectionGate
 from dank.config import PostgresSettings, Settings
 from dank.db import atlas
 from dank.db.atlas import (
@@ -324,6 +325,8 @@ async def test_fastapi_dependency_opens_a_session(
         source_icons=cast("SourceIconCache", None),
         assets_dir=pathlib.Path(),
         page_size=1,
+        metadata_gate=cast("CollectionGate", None),
+        transcript_gate=cast("CollectionGate", None),
     )
 
     async for session in deps.postgres_session(resources):

@@ -2,40 +2,18 @@
 
 from __future__ import annotations
 
-import base64
-import datetime as dt
-import hashlib
-import json
-from typing import Any, NamedTuple, cast
+from typing import Any
 
 from multidict import MultiMapping
 
-RECOMMENDATIONS_FEED = "https://www.youtube.com/"
-
-
-class YouTubeFilters(NamedTuple):
-    feed: str = ""
-    channel: str = ""
-    kind: str = ""
-    q: str = ""
-    item_id: str = ""
-    limit: int = 30
-    cursor: str = ""
-    sort: str = "newest"
-    channel_scope: str = ""
-
-    def signature(self) -> str:
-        values = (*self[:5], self.sort)
-
-        if self.feed == RECOMMENDATIONS_FEED:
-            values = (*values, "recommendation-history-v1")
-
-        if self.channel_scope:
-            values = (*values, self.channel_scope)
-
-        encoded = json.dumps(values).encode()
-
-        return hashlib.sha256(encoded).hexdigest()[:24]
+from dank.api.youtube.model import (
+    RECOMMENDATIONS_FEED as RECOMMENDATIONS_FEED,
+    YouTubeFilters as YouTubeFilters,
+    decode_youtube_cursor as decode_youtube_cursor,
+    encode_youtube_cursor as encode_youtube_cursor,
+    youtube_cursor_snapshot as youtube_cursor_snapshot,
+    youtube_filters,
+)
 
 
 def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
@@ -50,109 +28,13 @@ def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
     except ValueError:
         raise ValueError("limit must be an integer from 1 to 500") from None
 
-    filters = YouTubeFilters(
-        feed=query.get("feed", "").strip(),
-        channel=query.get("channel", "").strip(),
-        kind=query.get("kind", ""), q=query.get("q", "").strip(),
+    return youtube_filters(YouTubeFilters(
+        feed=query.get("feed", ""), channel=query.get("channel", ""),
+        kind=query.get("kind", ""), q=query.get("q", ""),
         item_id=query.get("id", ""), limit=limit,
         cursor=query.get("cursor", ""), sort=query.get("sort", "newest"),
         channel_scope=query.get("channel_scope", ""),
-    )
-
-    if not 1 <= limit <= 500 or filters.kind not in {
-        "", "video", "short", "post",
-    }:
-        raise ValueError("Invalid limit or content kind")
-
-    if any(len(value) > 2000 for value in filters[:5]):
-        raise ValueError("YouTube filters are limited to 2000 characters")
-
-    if filters.sort not in {"newest", "oldest", "most-linked"} or (
-        filters.sort != "newest" and filters.feed != "linked"
-    ):
-        raise ValueError("Invalid sort for this YouTube feed")
-
-    if filters.channel_scope not in {"", "configured"}:
-        raise ValueError("Invalid channel scope")
-
-    if filters.cursor:
-        decode_youtube_cursor(filters)
-
-    return filters
-
-
-def encode_youtube_cursor(
-    filters: YouTubeFilters, observed_at: str, item_id: str,
-    position: int = 0, reference_count: int = 0, *, snapshot_time: str = "",
-) -> str:
-    data: list[Any] = [
-        filters.signature(), observed_at, item_id, position, reference_count,
-    ]
-
-    if filters.feed == RECOMMENDATIONS_FEED:
-        data.append(snapshot_time or observed_at)
-
-    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
-
-
-def decode_youtube_cursor(
-    filters: YouTubeFilters,
-) -> tuple[str, str, int, int]:
-    data = _cursor_data(filters)
-
-    return data[1], data[2], data[3], data[4]
-
-
-def youtube_cursor_snapshot(filters: YouTubeFilters) -> str:
-    data = _cursor_data(filters)
-
-    return str(data[5] if len(data) == 6 else data[1])
-
-
-def _cursor_data(filters: YouTubeFilters) -> list[Any]:
-    try:
-        if len(filters.cursor) > 8192:
-            raise ValueError
-
-        raw = json.loads(base64.b64decode(
-            filters.cursor, altchars=b"-_", validate=True,
-        ))
-
-        if not isinstance(raw, list):
-            raise ValueError
-
-        data = cast(list[Any], raw)
-
-        if (
-            len(data) != (6 if filters.feed == RECOMMENDATIONS_FEED else 5)
-            or not all(isinstance(value, str) for value in data[:3])
-            or type(data[3]) is not int or not 0 <= data[3] <= 2**32 - 1
-            or type(data[4]) is not int or not 0 <= data[4] <= 2**64 - 1
-            or data[0] != filters.signature()
-        ):
-            raise ValueError
-
-        date = dt.datetime.fromisoformat(data[1])
-
-        if date.tzinfo is None:
-            raise ValueError
-
-        data[1] = date.astimezone(dt.UTC).isoformat()
-
-        if len(data) == 6:
-            if not isinstance(data[5], str):
-                raise ValueError
-
-            snapshot = dt.datetime.fromisoformat(data[5])
-
-            if snapshot.tzinfo is None or snapshot < date:
-                raise ValueError
-
-            data[5] = snapshot.astimezone(dt.UTC).isoformat()
-
-        return data
-    except (ValueError, TypeError, UnicodeError):
-        raise ValueError("Invalid cursor for these filters") from None
+    ))
 
 
 def build_youtube_query(

@@ -19,3 +19,9 @@ class NotFound(DankError):
 
 class Conflict(DankError):
     code = "conflict"
+
+
+class Busy(DankError):
+    """Bounded work ran out of time. The same request may work shortly."""
+
+    code = "busy"

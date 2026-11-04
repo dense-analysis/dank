@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urlsplit
 
 from aiohttp import web
 
+from dank.config import Settings
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import ThumbnailSignature, similar_thumbnail_signatures
 from dank.web.app import (
@@ -382,7 +383,16 @@ async def _references(
 
 
 async def handle_youtube_sources(request: web.Request) -> web.Response:
-    client: ClickHouseClient = request.app["clickhouse"]
+    state = request.app["state"]
+
+    return web.json_response(await youtube_sources(
+        request.app["clickhouse"], state.settings, state.assets_dir,
+    ))
+
+
+async def youtube_sources(
+    client: ClickHouseClient, settings: Settings, assets_dir: pathlib.Path,
+) -> dict[str, Any]:
     result = await client.fetch_json(
         "SELECT feed_url, argMax(feed_name, observed_at) AS name, "
         "argMax(feed_kind, observed_at) AS kind, "
@@ -399,11 +409,8 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
         "FROM youtube_discoveries GROUP BY feed_url) "
         "GROUP BY feed_url ORDER BY name",
     )
-    state = request.app["state"]
-    metadata = await _channel_metadata(client, state.assets_dir)
-    feeds, channels = configured_sources(
-        state.settings, result.rows, metadata,
-    )
+    metadata = await _channel_metadata(client, assets_dir)
+    feeds, channels = configured_sources(settings, result.rows, metadata)
     await _channel_counts(client, channels)
     total = await client.fetch_json(
         "SELECT uniqExact(item_id) AS total FROM youtube_discoveries",
@@ -413,11 +420,11 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
         "FROM youtube_reference_evidence FINAL",
     )
 
-    return web.json_response({
+    return {
         "feeds": feeds, "channels": channels,
         "total": int(total.rows[0]["total"]) if total.rows else 0,
         "linked_count": int(linked.rows[0]["total"]) if linked.rows else 0,
-    })
+    }
 
 
 async def _channel_metadata(

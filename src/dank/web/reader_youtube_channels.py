@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
-import json
 import pathlib
-from typing import Any, cast
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from aiohttp import web
 from multidict import MultiDict
 
+from dank.api.youtube.model import (
+    channel_cursor as channel_cursor,
+    parse_channel_cursor,
+    require_channel_page,
+)
 from dank.config import Settings
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.reader_youtube_query import (
@@ -26,7 +30,6 @@ CHANNEL_KEY = (
     "JSONExtractString(payload, 'channel_id'), "
     "JSONExtractString(payload, 'channel_url'))"
 )
-CHANNEL_PAGE_LIMIT = 50
 CHANNEL_EXAMPLES = 3
 
 
@@ -44,47 +47,6 @@ async def load_configured_channels(
     )
 
     return configured_channel_keys(settings, result.rows)
-
-
-def channel_cursor(
-    filters: YouTubeFilters, snapshot: str, count: int, key: str,
-) -> str:
-    return base64.urlsafe_b64encode(json.dumps([
-        filters.signature(), snapshot, count, key,
-    ]).encode()).decode()
-
-
-def parse_channel_cursor(
-    filters: YouTubeFilters, cursor: str,
-) -> tuple[str, int, str]:
-    try:
-        if len(cursor) > 8192:
-            raise ValueError
-
-        decoded: object = json.loads(base64.b64decode(
-            cursor, altchars=b"-_", validate=True,
-        ))
-
-        if not isinstance(decoded, list):
-            raise ValueError
-
-        raw = cast(list[Any], decoded)
-
-        if (len(raw) != 4
-                or raw[0] != filters.signature()
-                or not isinstance(raw[1], str)
-                or type(raw[2]) is not int or raw[2] < 1
-                or not isinstance(raw[3], str) or len(raw[3]) > 2000):
-            raise ValueError
-
-        snapshot = dt.datetime.fromisoformat(raw[1])
-
-        if snapshot.tzinfo is None:
-            raise ValueError
-
-        return snapshot.astimezone(dt.UTC).isoformat(), raw[2], raw[3]
-    except (ValueError, TypeError, UnicodeError):
-        raise ValueError("Invalid channel cursor for these filters") from None
 
 
 def channel_query(
@@ -133,10 +95,7 @@ async def handle_youtube_channels(request: web.Request) -> web.Response:
         cursor = query.pop("cursor", "")
         query.setdefault("limit", "20")
         filters = parse_youtube_filters(query)
-
-        if filters.limit > CHANNEL_PAGE_LIMIT or filters.item_id:
-            raise ValueError("Channel pages allow up to 50 channels")
-
+        require_channel_page(filters)
         snapshot = dt.datetime.now(dt.UTC).isoformat()
         after = None
 
@@ -157,27 +116,11 @@ async def handle_youtube_channels(request: web.Request) -> web.Response:
     sql, params, base = channel_query(filters, configured, snapshot, after)
     result = await client.fetch_json(sql, params)
     rows = result.rows[:filters.limit]
-    totals = await client.fetch_json(
-        f"SELECT uniqExactIf({CHANNEL_KEY}, "
-        f"notEmpty({CHANNEL_KEY})) AS total, "
-        f"countIf(empty({CHANNEL_KEY})) AS unattributed_items FROM ({base})",
-        params,
-    )
+    totals = await client.fetch_json(channel_totals_query(base), params)
     previews = await channel_previews(
         client, rows, base, params, filters, state.assets_dir,
     )
-    channels = [{
-        "id": str(row["channel_key"]),
-        "name": str(row["name"] or row["channel_key"]),
-        "url": str(row["url"] or ""),
-        "configured": (str(row["channel_key"]) in configured
-                       or str(row["url"]) in configured),
-        "count": int(row["count"]),
-        "video_count": int(row["video_count"]),
-        "short_count": int(row["short_count"]),
-        "post_count": int(row["post_count"]),
-        "items": previews.get(str(row["channel_key"]), []),
-    } for row in rows]
+    channels = channel_views(rows, configured, previews)
     next_cursor = (
         channel_cursor(filters, snapshot, int(rows[-1]["count"]),
                        str(rows[-1]["channel_key"]))
@@ -190,6 +133,33 @@ async def handle_youtube_channels(request: web.Request) -> web.Response:
         "total": int(total.get("total", 0)),
         "unattributed_items": int(total.get("unattributed_items", 0)),
     })
+
+
+def channel_totals_query(base: str) -> str:
+    return (
+        f"SELECT uniqExactIf({CHANNEL_KEY}, "
+        f"notEmpty({CHANNEL_KEY})) AS total, "
+        f"countIf(empty({CHANNEL_KEY})) AS unattributed_items FROM ({base})"
+    )
+
+
+def channel_views(
+    rows: Sequence[Mapping[str, Any]],
+    configured: tuple[str, ...],
+    previews: Mapping[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    return [{
+        "id": str(row["channel_key"]),
+        "name": str(row["name"] or row["channel_key"]),
+        "url": str(row["url"] or ""),
+        "configured": (str(row["channel_key"]) in configured
+                       or str(row["url"]) in configured),
+        "count": int(row["count"]),
+        "video_count": int(row["video_count"]),
+        "short_count": int(row["short_count"]),
+        "post_count": int(row["post_count"]),
+        "items": previews.get(str(row["channel_key"]), []),
+    } for row in rows]
 
 
 async def channel_previews(

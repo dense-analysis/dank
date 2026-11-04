@@ -13,6 +13,7 @@ from dank.api.posts.router import router as posts_router
 from dank.api.source_icons.router import router as source_icons_router
 from dank.api.sources.router import router as sources_router
 from dank.api.viewer.router import router as viewer_router
+from dank.api.youtube.router import router as youtube_router
 from dank.config import Settings
 
 
@@ -38,6 +39,7 @@ def create_app(
     app.include_router(sources_router)
     app.include_router(posts_router)
     app.include_router(connections_router)
+    app.include_router(youtube_router)
     app.include_router(source_icons_router)
     app.include_router(viewer_router)
     app.include_router(files_router)

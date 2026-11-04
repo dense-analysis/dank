@@ -11,9 +11,10 @@ uv run web --server fastapi --no-reload --port 8081
 
 `web` keeps its other flags (`--config`, `--host`, `--port`, `--limit`,
 `--no-reload`). Ported so far: `GET /api/reader/sources`, `/posts`, `/post`,
-`/x/authors`, `/connections`, `/connection` and `/source-icon`, plus the pages
-and files: `/`, `/post`, `/reader`, `/assets/` and `/static/`. OpenAPI is served
-at `/api/openapi.json`, with interactive docs at `/api/docs`.
+`/x/authors`, `/connections`, `/connection`, `/source-icon` and everything under
+`/api/reader/youtube`, plus the pages and files: `/`, `/post`, `/reader`,
+`/assets/` and `/static/`. OpenAPI is served at `/api/openapi.json`, with
+interactive docs at `/api/docs`.
 
 ## Shape
 
@@ -31,7 +32,7 @@ never the other way round.
 
 ```text
 src/dank/
-  errors.py              DankError, InvalidInput, NotFound, Conflict
+  errors.py              DankError, InvalidInput, NotFound, Conflict, Busy
   api/
     app.py               create_app(): routers, error handlers, guard, headers
     lifespan.py          Resources, opened at startup and closed at shutdown
@@ -83,6 +84,15 @@ src/dank/
       router.py          GET /reader, the redirect to /reader/
       static.py          ReaderFiles, FileRoots, the /assets, /static and /reader mounts
       model.py           client_route(), which paths load the reader
+    youtube/
+      router.py          GET and POST /api/reader/youtube/...
+      schemas.py         Query models; YouTubeItemOut, PlaylistOut and the rest
+      deps.py            picks the adapters; tests override them here
+      service.py         YouTubeService, VideoCaptureService; ports YouTubeStore,
+                         VideoCollector; CollectionLocks, CollectionLimits
+      model.py           YouTubeFilters, PlaylistPage, cursors, transcript_view()
+      clickhouse.py      ClickHouseYouTubeStore, over the reader helpers
+      collector.py       ScrapeVideoCollector, CollectionGate, the real waits
 ```
 
 A feature skips files it has nothing for: no `model.py` without rules, no
@@ -118,9 +128,9 @@ adapter without I/O.
    subclasses; `api/errors.py` maps them, and FastAPI's own errors, to one
    envelope. Only edge code raises `HTTPException`.
 9. **Resources come from the lifespan.** The ClickHouse client, Postgres
-   sessions, refresh workers and settings are opened in the lifespan and
-   reached through
-   `Annotated` dependencies. There are no module-level clients.
+   sessions, refresh workers, collection locks and limiters, and settings are
+   opened in the lifespan and reached through `Annotated` dependencies. There
+   are no module-level clients.
 10. **Fakes over mocks, real databases over fakes of SQL.** See Testing.
 
 ## Errors
@@ -145,6 +155,7 @@ inputs:
 | `InvalidInput` | 400 | `invalid_input`, or a subclass's code |
 | `NotFound` | 404 | `not_found` |
 | `Conflict` | 409 | `conflict`, or a subclass's code |
+| `Busy` | 503 | `busy` |
 | Unsafe method from another origin | 403 | `forbidden` |
 | Unsafe method without a JSON body | 415 | `unsupported_media_type` |
 | Unknown path or method | 404, 405 | `not_found`, `method_not_allowed` |
@@ -181,16 +192,43 @@ parameter per field. The model extends `ApiModel`.
 - **Absent can differ from empty.** Use `| None = None` when sending a key empty
   must fail while leaving it out is fine.
 
+## Path parameters
+
+A route declares its shape as `Annotated[str, Path(pattern=...)]`, so a bad value
+fails as `invalid_request` and OpenAPI shows the rule. Keep Starlette's default
+converter, which can't match a slash; never use `:path`. uvicorn decodes the path
+before routing, so `%2F` is a slash too, and finds no route.
+
+## Collecting on demand
+
+`POST /api/reader/youtube/metadata/{video_id}` and `/transcript/{video_id}` ask
+YouTube about one video that DANK already knows, then save the answer. Asking
+about an unknown ID fails before anything waits or connects. So that readers
+can't pile up behind a slow provider:
+
+- One collection of each kind runs at a time. Its `asyncio.Lock` and
+  `RequestLimiter` make up a `CollectionGate`, and the lifespan owns one for each
+  kind. A request that waited reuses what the first one saved.
+- The service bounds each wait with `CollectionLimits`, and running out raises
+  `Busy`. Metadata gets 15 seconds for the lock and the collection together.
+  Transcripts get 1 second for the lock, then the transcript timeout plus 5
+  seconds for the lookup.
+- Tests override `collection_limits` with short waits and hold a collection open
+  with the fake collector, so nothing has to sleep for the real waits.
+
+Each body is declared as `CollectBody`, an empty object. The reader sends `{}`.
+
 ## Projections
 
-Posts and connections are the exception to NamedTuples inside. The helpers in
-`dank/web/reader_*.py` build one deeply nested, JSON-shaped dict per post for
-both servers, with keys that are absent rather than null. A copy of that shape
-as NamedTuples would have to round-trip through those dicts until aiohttp goes,
-so `model.py` names the dict (`PostPayload`) and `schemas.py` gives it its
-contract. Revisit this once DEN-51 removes aiohttp.
+Posts, connections and YouTube items are the exception to NamedTuples inside. The
+helpers in `dank/web/reader_*.py` build one deeply nested, JSON-shaped dict per
+post for both servers, with keys that are absent rather than null. A copy of that
+shape as NamedTuples would have to round-trip through those dicts until aiohttp
+goes, so `model.py` names the dict (`PostPayload`, `ItemPayload`) and `schemas.py`
+gives it its contract. Revisit this once DEN-51 removes aiohttp.
 
-To keep absent fields absent:
+YouTube's keys are always present, even when null, so its routes need none of the
+following. To keep absent fields absent:
 
 - Declare a field that may be absent with a `None` default, and one that is
   always present, even as null, without a default.
@@ -325,6 +363,13 @@ The intended differences:
   than `no-store` alone.
 - `/`, `/post` and `/api/reader/source-icon` use the last value of a repeated key,
   not the first.
+- A path parameter holding an encoded slash answers 404, not 400. See Path
+  parameters.
+- The metadata and transcript POSTs run the shared same-origin rule first, so the
+  local HTTPS proxy works, and a cross-origin request with a bad ID answers 403,
+  not 400. Their body must be `{}`, where aiohttp ignored it.
+- Busy and timed-out collections answer the error envelope, with `code: "busy"`
+  and aiohttp's wording in `error`.
 
 ## Porting a route
 

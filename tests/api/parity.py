@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pathlib
 import tempfile
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, NamedTuple, Protocol
 
@@ -21,7 +21,13 @@ from dank.config import Settings
 from dank.web.app import create_app as create_aiohttp_app
 from tests.api.client import BASE_URL, serving
 
-type Get = Callable[[str], Awaitable[tuple[int, Any]]]
+
+class Get(Protocol):
+    """A status and JSON for a target: a GET, or a POST of `post` if given."""
+
+    def __call__(
+        self, target: str, *, post: Any = None,
+    ) -> Awaitable[tuple[int, Any]]: ...
 
 
 class Exchange(NamedTuple):
@@ -67,8 +73,13 @@ async def aiohttp_session(
 async def aiohttp_server(settings: Settings) -> AsyncGenerator[Get]:
     async with aiohttp_session(settings) as session:
 
-        async def get(target: str) -> tuple[int, Any]:
-            async with session.get(BASE_URL + target) as response:
+        async def get(target: str, *, post: Any = None) -> tuple[int, Any]:
+            url = BASE_URL + target
+
+            async with (
+                session.get(url) if post is None
+                else session.post(url, json=post)
+            ) as response:
                 return response.status, await response.json()
 
         yield get
@@ -78,8 +89,11 @@ async def aiohttp_server(settings: Settings) -> AsyncGenerator[Get]:
 async def fastapi_server(settings: Settings) -> AsyncGenerator[Get]:
     async with serving(create_api_app(settings, page_size=50)) as client:
 
-        async def get(target: str) -> tuple[int, Any]:
-            response = await client.get(target)
+        async def get(target: str, *, post: Any = None) -> tuple[int, Any]:
+            response = await (
+                client.get(target) if post is None
+                else client.post(target, json=post)
+            )
 
             return response.status_code, response.json()
 

@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
 import json
-import re
-from typing import Any, NamedTuple, cast
+import pathlib
+from typing import Any
 
 from aiohttp import web
 from multidict import MultiMapping
 
+from dank.api.youtube.model import (
+    PlaylistPage,
+    parse_cursor as parse_cursor,
+    playlist_cursor,
+    playlist_page,
+)
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.web.reader_youtube import (  # pyright: ignore[reportPrivateUsage]
     _http_url,  # pyright: ignore[reportPrivateUsage]
@@ -18,37 +23,6 @@ from dank.web.reader_youtube import (  # pyright: ignore[reportPrivateUsage]
 )
 from dank.web.reader_youtube_query import YouTubeFilters
 from dank.youtube import VIDEO_ID, payload_object, playlist_listing_labels
-
-PLAYLIST_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
-PAGE_LIMIT = 100
-
-
-class PlaylistPage(NamedTuple):
-    limit: int = 30
-    q: str = ""
-    snapshot: str = ""
-    after: tuple[str, str] | int | None = None
-    sort: str = "recent"
-
-
-def playlist_cursor(
-    identity: str,
-    query: str,
-    snapshot: str,
-    after: tuple[str, str] | int,
-    sort: str = "recent",
-) -> str:
-    return base64.urlsafe_b64encode(
-        json.dumps(
-            [
-                identity,
-                query,
-                snapshot,
-                after,
-                sort,
-            ],
-        ).encode(),
-    ).decode()
 
 
 def parse_page(
@@ -68,86 +42,13 @@ def parse_page(
     except ValueError:
         raise ValueError("Playlist limit must be an integer") from None
 
-    search = query.get("q", "").strip()
-    sort = query.get("sort", "recent")
-
-    if sort not in {"recent", "az"}:
-        raise ValueError("Playlist sort must be recent or az")
-
-    if not 1 <= limit <= PAGE_LIMIT or len(search) > 2000:
-        raise ValueError("Invalid playlist limit or search")
-
-    if playlist_id and not PLAYLIST_ID.fullmatch(playlist_id):
-        raise ValueError("Invalid YouTube playlist identifier")
-
-    snapshot = ""
-    after = None
-
-    if cursor := query.get("cursor", ""):
-        snapshot, after = parse_cursor(cursor, playlist_id, search, sort)
-
-    return PlaylistPage(limit, search, snapshot, after, sort)
-
-
-def parse_cursor(
-    cursor: str,
-    identity: str,
-    query: str,
-    sort: str = "recent",
-) -> tuple[str, tuple[str, str] | int]:
-    try:
-        if len(cursor) > 16384:
-            raise ValueError
-
-        decoded: object = json.loads(
-            base64.b64decode(
-                cursor,
-                altchars=b"-_",
-                validate=True,
-            ),
-        )
-
-        if not isinstance(decoded, list):
-            raise ValueError
-
-        values = cast(list[Any], decoded)
-
-        if len(values) != 5 or values[4] != sort:
-            raise ValueError
-
-        if values[:2] != [identity, query] or not isinstance(values[2], str):
-            raise ValueError
-
-        snapshot = dt.datetime.fromisoformat(values[2])
-
-        if snapshot.tzinfo is None:
-            raise ValueError
-
-        after = _cursor_boundary(values[3], identity)
-
-        return snapshot.astimezone(dt.UTC).isoformat(), after
-    except (ValueError, TypeError, UnicodeError):
-        raise ValueError("Invalid cursor for this playlist view") from None
-
-
-def _cursor_boundary(value: Any, identity: str) -> tuple[str, str] | int:
-    if identity:
-        if type(value) is not int or not 1 <= value <= 2**32 - 1:
-            raise ValueError
-
-        return value
-
-    if not isinstance(value, list):
-        raise ValueError
-
-    parts = cast(list[Any], value)
-
-    if (len(parts) != 2 or any(
-        not isinstance(part, str) or len(part) > 4000 for part in parts
-    )):
-        raise ValueError
-
-    return str(parts[0]), str(parts[1])
+    return playlist_page(
+        limit=limit,
+        q=query.get("q", ""),
+        cursor=query.get("cursor", ""),
+        sort=query.get("sort", "recent"),
+        playlist_id=playlist_id,
+    )
 
 
 def latest_playlists_query(*, individual: bool = False) -> str:
@@ -378,7 +279,9 @@ async def handle_playlist(request: web.Request) -> web.Response:
         ))
         total = int(totals.rows[0]["total"]) if totals.rows else 0
     rows = entries.rows[:page.limit]
-    items = await playlist_items(request, rows, row)
+    items = await playlist_items(
+        client, request.app["state"].assets_dir, rows, row,
+    )
     cursor = None
 
     if len(entries.rows) > page.limit and rows:
@@ -393,13 +296,14 @@ async def handle_playlist(request: web.Request) -> web.Response:
 
 
 async def playlist_items(
-    request: web.Request, rows: list[dict[str, Any]], playlist: dict[str, Any],
+    client: ClickHouseClient,
+    assets_dir: pathlib.Path,
+    rows: list[dict[str, Any]],
+    playlist: dict[str, Any],
 ) -> list[dict[str, Any]]:
     adapted = [_entry_row(row, playlist["observed_at"]) for row in rows]
     items = await youtube_items(
-        request.app["clickhouse"], adapted,
-        YouTubeFilters(feed=str(playlist["url"])),
-        request.app["state"].assets_dir,
+        client, adapted, YouTubeFilters(feed=str(playlist["url"])), assets_dir,
     )
 
     for item, row in zip(items, rows, strict=True):

@@ -10,6 +10,7 @@ from typing import NamedTuple
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dank.api.youtube.collector import CollectionGate, collection_gate
 from dank.config import Settings
 from dank.db.engine import async_engine, async_sessions
 from dank.storage.clickhouse import ClickHouseClient
@@ -33,6 +34,8 @@ class Resources(NamedTuple):
     source_icons: SourceIconCache
     assets_dir: pathlib.Path
     page_size: int
+    metadata_gate: CollectionGate
+    transcript_gate: CollectionGate
 
 
 def lifespan(settings: Settings, *, page_size: int) -> Lifespan:
@@ -61,6 +64,8 @@ def lifespan(settings: Settings, *, page_size: int) -> Lifespan:
                         source_icons=SourceIconCache(assets_dir),
                         assets_dir=assets_dir,
                         page_size=page_size,
+                        metadata_gate=collection_gate(settings.scrape),
+                        transcript_gate=collection_gate(settings.scrape),
                     )}
         finally:
             await postgres.dispose()
