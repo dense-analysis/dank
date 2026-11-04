@@ -14,6 +14,7 @@ import zendriver
 from zendriver import cdp
 
 from dank.config import Settings
+from dank.scrape.cdp_compat import install_cdp_compatibility
 from dank.youtube_session import YouTubeSession
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ class BrowserSession:
     async def get_browser(self) -> zendriver.Browser:
         async with self._lock:
             if self._browser is None:
+                install_cdp_compatibility()
                 options: dict[str, Any] = {
                     "headless": self._config.headless,
                     "disable_webrtc": False,
