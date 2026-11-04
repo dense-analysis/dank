@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import pathlib
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ import pytest
 
 from dank.config import (
     BrowserScrapeSettings,
+    MediaSizeLimits,
     ScrapeSettings,
     Settings,
     SourceConfig,
@@ -605,6 +607,66 @@ async def test_history_snapshots_source_options_and_limit_between_runs(
     assert [row["x_max_posts"] for row in runs] == [23, 200]
     assert [row["x_max_scrolls"] for row in runs] == [7, 20]
     assert [row["x_scroll_pause_seconds"] for row in runs] == [0, 1.5]
+
+
+async def test_history_records_the_media_limits_each_run_used(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def discover(
+        *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        yield ScrapeBatch([_post("one.test")], [])
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    limits = MediaSizeLimits(
+        kinds={"video": 8}, sites={"youtube.com": {"video": None}},
+    )
+    sources = (SourceConfig("one.test", ()),)
+    await run_scrape(harness.settings._replace(sources=sources))
+    await run_scrape(harness.settings._replace(
+        sources=sources, media_size_limits=limits,
+    ))
+    runs = [
+        row for row in harness.client.rows["scrape_runs"]
+        if row["version"] == 2
+    ]
+
+    assert [json.loads(row["media_size_limits"]) for row in runs] == [
+        {"kinds": {}, "sites": {}},
+        {"kinds": {"video": 8}, "sites": {"youtube.com": {"video": None}}},
+    ]
+
+
+async def test_a_run_downloads_media_under_its_configured_limits(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits = MediaSizeLimits(sites={"one.test": {"image": 3}})
+    received: list[MediaSizeLimits] = []
+    asset = AssetDiscovery(
+        "rss", "one.test", "post", "https://one.test/a.jpg", "image", None,
+    )
+
+    async def discover(
+        *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        yield ScrapeBatch([_post("one.test")], [asset])
+
+    async def download(*args: Any, **kwargs: Any) -> list[RawAsset]:
+        received.append(kwargs["size_limits"])
+
+        return []
+
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    monkeypatch.setattr("dank.scrape.runner.download_assets", download)
+    await run_scrape(harness.settings._replace(
+        sources=(SourceConfig("one.test", ()),), media_size_limits=limits,
+    ))
+
+    assert received == [limits]
 
 
 async def test_fast_source_is_saved_while_another_source_waits(

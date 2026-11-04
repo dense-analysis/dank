@@ -14,7 +14,7 @@ from dank.scrape.http import HostCooldownError, http_response
 from dank.youtube import VIDEO_ID, payload_object
 
 # A preview is a small JSON document; do not accept arbitrary watch-page HTML.
-MAX_METADATA_BYTES = 64 * 1024
+MAX_PREVIEW_BYTES = 64 * 1024
 METADATA_TIMEOUT_SECONDS = 12
 # Local refresh policy; failed lookups must not repeat on every page read.
 METADATA_TTL = dt.timedelta(days=7)
@@ -75,7 +75,7 @@ async def fetch_video_metadata(
         "provider": "youtube_oembed", "request_url": request_url,
         "http_status": http_status, "error": error[:1000],
         # Preserve the provider response verbatim, including failed responses.
-        "provider_payload": body[:MAX_METADATA_BYTES].decode(
+        "provider_payload": body[:MAX_PREVIEW_BYTES].decode(
             "utf-8", errors="replace",
         ),
         "payload": json.dumps({**metadata, "metadata_capture": capture}),
@@ -129,7 +129,7 @@ async def _preview_body(response: aiohttp.ClientResponse) -> bytes:
     async for chunk in response.content.iter_chunked(8192):
         body.extend(chunk)
 
-        if len(body) > MAX_METADATA_BYTES:
+        if len(body) > MAX_PREVIEW_BYTES:
             raise ValueError("YouTube preview exceeded the size limit")
 
     return bytes(body)

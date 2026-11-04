@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     max_entries_per_feed UInt64 DEFAULT 0,
     max_asset_bytes Nullable(Int64),
     media_download_types Array(String) DEFAULT ['image', 'audio', 'video'],
+    media_size_limits String DEFAULT '',
     feed_staleness_days Int64,
     x_max_posts Int64,
     x_max_scrolls Int64,
@@ -104,6 +105,9 @@ ALTER TABLE scrape_runs
 ALTER TABLE scrape_runs
     ADD COLUMN IF NOT EXISTS media_download_types Array(String)
     DEFAULT ['image', 'audio', 'video'];
+
+ALTER TABLE scrape_runs
+    ADD COLUMN IF NOT EXISTS media_size_limits String DEFAULT '';
 
 ALTER TABLE scrape_runs
     ADD COLUMN IF NOT EXISTS post_references_queued UInt64 DEFAULT 0,

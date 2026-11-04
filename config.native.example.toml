@@ -34,6 +34,14 @@ password_file = "postgres-password"
 # Use ["image"] for images only, or [] to keep references without downloads.
 download_types = ["image", "audio", "video"]
 
+# Optional limits per file, in bytes, overriding storage.max_asset_bytes. A site's
+# limit applies first, then a type's. See docs/features/media.md.
+# [media.max_bytes]
+# video = 52428800
+#
+# [media.max_bytes."youtube.com"]
+# video = 209715200
+
 [storage]
 # Relative to the directory where you run DANK, or use your existing host path.
 data_dir = "data"

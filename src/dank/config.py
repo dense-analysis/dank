@@ -4,15 +4,48 @@ import math
 import pathlib
 import re
 import tomllib
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
 MEDIA_DOWNLOAD_TYPES = ("image", "audio", "video")
+# X's posts are saved under x.com, but people still write its old name.
+SITE_ALIASES = {"twitter.com": "x.com"}
 
 
 class ConfigError(RuntimeError):
     pass
+
+
+class MediaSizeLimits(NamedTuple):
+    """Per-file limits in bytes that override storage.max_asset_bytes.
+
+    None is a choice of its own, meaning no limit. A missing key has no
+    opinion, so the next rule decides.
+    """
+
+    kinds: Mapping[str, int | None] = {}
+    sites: Mapping[str, Mapping[str, int | None]] = {}
+
+    def for_file(
+        self, site: str, kind: str, default: int | None,
+    ) -> int | None:
+        """The most specific rule wins, whether it's higher or lower."""
+        for rules in (self.sites.get(_site_key(site), {}), self.kinds):
+            if kind in rules:
+                return rules[kind]
+
+        return default
+
+
+NO_SIZE_LIMITS = MediaSizeLimits()
+
+
+def _site_key(domain: str) -> str:
+    site = domain.strip().lower().removeprefix("www.")
+
+    return SITE_ALIASES.get(site, site)
 
 
 class BrowserScrapeSettings(NamedTuple):
@@ -231,6 +264,7 @@ class Settings(NamedTuple):
     max_entries_per_feed: int = 0
     scrape: ScrapeSettings = ScrapeSettings()
     media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
+    media_size_limits: MediaSizeLimits = MediaSizeLimits()
     reddit: RedditSettings = RedditSettings()
     youtube: YouTubeSettings = YouTubeSettings()
     hacker_news: HackerNewsSettings = HackerNewsSettings()
@@ -729,6 +763,60 @@ def _parse_media_download_types(value: object) -> tuple[str, ...]:
     return types
 
 
+def _parse_media_size_limits(value: object) -> MediaSizeLimits:
+    media = _as_dict(value)
+
+    if media is None:
+        raise ConfigError("media must be a table")
+
+    table = _as_dict(media.get("max_bytes", {}))
+
+    if table is None:
+        raise ConfigError("media.max_bytes must be a table")
+
+    kinds: dict[str, int | None] = {}
+    sites: dict[str, dict[str, int | None]] = {}
+
+    for key, item in table.items():
+        rules = _as_dict(item)
+
+        if rules is None:
+            kinds[_size_limit_kind(key)] = _size_limit(key, item)
+            continue
+
+        site = _site_key(key)
+
+        if not site:
+            raise ConfigError("media.max_bytes site names can't be blank")
+
+        sites.setdefault(site, {}).update({
+            _size_limit_kind(kind): _size_limit(f"{site}.{kind}", limit)
+            for kind, limit in rules.items()
+        })
+
+    return MediaSizeLimits(kinds, sites)
+
+
+def _size_limit_kind(value: str) -> str:
+    kind = value.strip().lower()
+
+    if kind not in MEDIA_DOWNLOAD_TYPES:
+        raise ConfigError(
+            "media.max_bytes accepts image, audio and video, "
+            f"or a table for a site; found {value!r}",
+        )
+
+    return kind
+
+
+def _size_limit(name: str, value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"media.max_bytes.{name} must be a whole number")
+
+    # As for storage.max_asset_bytes, zero or less means no limit.
+    return value if value > 0 else None
+
+
 def _parse_scrape_settings(value: object) -> ScrapeSettings:
     data = _as_dict(value)
 
@@ -1042,6 +1130,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         media_download_types=_parse_media_download_types(
             data.get("media", {}),
         ),
+        media_size_limits=_parse_media_size_limits(data.get("media", {})),
         reddit=_parse_reddit_settings(data.get("reddit", {})),
         youtube=_parse_youtube_settings(data.get("youtube", {})),
         hacker_news=_parse_hacker_news_settings(data.get("hacker_news", {})),

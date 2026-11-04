@@ -37,6 +37,8 @@ class ScrapeOptions(NamedTuple):
     x_scroll_pause_seconds: float = 1.5
     max_entries_per_feed: int = 0
     media_download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES
+    # JSON, since it's for comparing runs and not for querying into.
+    media_size_limits: str = ""
 
 
 class SourceMetrics:

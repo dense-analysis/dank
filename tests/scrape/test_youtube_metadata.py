@@ -10,7 +10,7 @@ import pytest
 
 from dank.scrape import runner
 from dank.scrape.youtube.metadata import (
-    MAX_METADATA_BYTES,
+    MAX_PREVIEW_BYTES,
     METADATA_FAILURE_TTL,
     METADATA_TTL,
     METADATA_UNAVAILABLE_TTL,
@@ -97,7 +97,7 @@ async def test_unavailable_previews_back_off_and_keep_response(status: int):
     (b"<html>challenge</html>", 200), (b"{}", 200),
     (json.dumps({**PREVIEW, "title": " "}).encode(), 200),
     (b"Rate limited", 429), (b"Busy", 503),
-    (b"x" * (MAX_METADATA_BYTES + 1), 200),
+    (b"x" * (MAX_PREVIEW_BYTES + 1), 200),
 ])
 async def test_invalid_previews_are_failed_attempts(body: bytes, status: int):
     row = await fetch_video_metadata(cast(Any, HTTP(body, status)), VIDEO)

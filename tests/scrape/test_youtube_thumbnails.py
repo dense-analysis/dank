@@ -13,7 +13,7 @@ import aiohttp
 import pytest
 from PIL import Image, ImageDraw
 
-from dank.config import SourceConfig, load_settings
+from dank.config import MediaSizeLimits, SourceConfig, load_settings
 from dank.model import AssetDiscovery
 from dank.scrape import runner
 from dank.scrape.assets import download_assets
@@ -244,8 +244,10 @@ async def test_flush_preserves_legacy_and_separates_observation_metadata(
 async def test_targeted_retry_does_not_launch_collection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
 ) -> None:
+    limits = MediaSizeLimits(sites={"youtube.com": {"image": 5}})
     settings = load_settings("config.native.example.toml")._replace(
         data_dir=tmp_path, media_download_types=("image",),
+        media_size_limits=limits,
     )
     client = AsyncMock()
     client.__aenter__.return_value = client
@@ -264,6 +266,7 @@ async def test_targeted_retry_does_not_launch_collection(
     assert client.fetch_json.call_args.args[1] == {"ids": [f"video:{VIDEO}"]}
     assert "WHERE local_path = ''" in client.fetch_json.call_args.args[0]
     assert flush.call_args.args[2] == [discovery()]
+    assert flush.call_args.kwargs["size_limits"] == limits
 
 
 async def test_snapshot_sniffs_avif_returned_for_jpeg_url(

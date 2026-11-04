@@ -60,7 +60,8 @@ it eligible when rediscovered in a future scrape.
 
 Terminal summaries and `media_skipped` in [run history](history.md) count these
 intentional skips separately from download failures. Each run also records
-`media_download_types` so comparisons can use the same download policy.
+`media_download_types` and `media_size_limits` so comparisons can use the same
+download policy.
 
 ## Configure storage
 
@@ -108,6 +109,38 @@ paths remain valid but may be downloaded once into the new cache layout.
 A lower cap skips an oversized cached video without deleting the older file.
 Metadata/thumbnail files and temporary muxing overhead are not covered by a total
 disk or network-transfer budget.
+
+### Limit a site or a type
+
+To give some media its own limit, add `[media.max_bytes]`, in bytes per file:
+
+```toml
+[storage]
+max_asset_bytes = 6291456
+
+[media.max_bytes]
+video = 52428800
+
+[media.max_bytes."youtube.com"]
+video = 209715200
+```
+
+The most specific limit applies, whether it's higher or lower: the site's limit
+for that type, then the type's, then `max_asset_bytes`. Above, YouTube videos get
+200 MiB, other videos 50 MiB and everything else 6 MiB. Zero or less means no
+limit, so a site can opt out of a limit set more widely. Each run reads these when
+it starts.
+
+- **Types** are `image`, `audio` and `video`. Photos count as images, and GIFs from
+  X as videos.
+- **A site** is the domain of the post that found the file, so X videos are `x.com`
+  even though they're served from `video.twimg.com`. `www.` makes no difference,
+  and `twitter.com` means `x.com`.
+- **YouTube videos** count as `youtube.com`, even when a blog post embeds them.
+- **A file found by several posts in one batch** downloads once, under the limit
+  for the first of them.
+- **Icons** keep their own cap. Reddit community and YouTube channel icons are
+  limited to 1 MiB, or `max_asset_bytes` if that's lower.
 
 ## Collect and view
 

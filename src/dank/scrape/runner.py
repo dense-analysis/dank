@@ -22,7 +22,9 @@ import aiohttp
 
 from dank.config import (
     MEDIA_DOWNLOAD_TYPES,
+    NO_SIZE_LIMITS,
     HackerNewsSettings,
+    MediaSizeLimits,
     RedditSettings,
     RedditSourceConfig,
     Settings,
@@ -497,6 +499,7 @@ async def _run_scrape(
             settings.x.scrape.max_scrolls,
             settings.x.scrape.scroll_pause_seconds,
             settings.max_entries_per_feed, settings.media_download_types,
+            json.dumps(settings.media_size_limits._asdict(), sort_keys=True),
         ),
     )
     if not settings.sources:
@@ -932,6 +935,7 @@ async def _collect_source(
             queue, client, http_client, assets_dir=assets_dir,
             browser_profile_dir=profile_dir,
             max_asset_bytes=settings.max_asset_bytes,
+            size_limits=settings.media_size_limits,
             batch_size=history.batch_size, history=history,
             download_types=tuple(
                 kind for kind in settings.media_download_types
@@ -2027,6 +2031,7 @@ async def _process_batches(
     batch_size: int,
     history: RunMetrics | None = None,
     download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
+    size_limits: MediaSizeLimits = NO_SIZE_LIMITS,
 ) -> ScrapeTotals:
     available_assets = 0
     unavailable_assets = 0
@@ -2062,6 +2067,7 @@ async def _process_batches(
                 max_asset_bytes=max_asset_bytes,
                 owners=_asset_owner_map(pending_discoveries, asset_owners),
                 download_types=download_types,
+                size_limits=size_limits,
             )
             _records_persisted(asset_owners)
             available_assets += assets.assets_available
@@ -2410,6 +2416,7 @@ async def _flush_assets(
     max_asset_bytes: int | None,
     owners: dict[AssetDiscovery, SourceMetrics] | None = None,
     download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
+    size_limits: MediaSizeLimits = NO_SIZE_LIMITS,
 ) -> ScrapeTotals:
     if not discoveries:
         return ScrapeTotals()
@@ -2426,6 +2433,7 @@ async def _flush_assets(
         max_asset_bytes=max_asset_bytes,
         owners=owners,
         download_types=download_types,
+        size_limits=size_limits,
     )
     discoveries.clear()
 
@@ -2599,6 +2607,7 @@ async def retry_youtube_thumbnails(
                                          / "youtube-browser-profile"),
                     max_asset_bytes=settings.max_asset_bytes,
                     download_types=("image",),
+                    size_limits=settings.media_size_limits,
                 )
     finally:
         current_limiter.reset(limiter_token)

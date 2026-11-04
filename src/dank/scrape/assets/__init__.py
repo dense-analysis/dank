@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from dank.config import MEDIA_DOWNLOAD_TYPES
+from dank.config import MEDIA_DOWNLOAD_TYPES, NO_SIZE_LIMITS, MediaSizeLimits
 from dank.model import AssetDiscovery, RawAsset, YouTubeThumbnailCapture
 from dank.progress import Progress
 from dank.scrape.http import current_limiter
@@ -44,6 +44,7 @@ async def download_assets(
     download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
     scraped_at: datetime.datetime | None = None,
     owners: dict[AssetDiscovery, SourceMetrics] | None = None,
+    size_limits: MediaSizeLimits = NO_SIZE_LIMITS,
 ) -> list[RawAsset]:
     timestamp = scraped_at or datetime.datetime.now(datetime.UTC)
     unique: dict[
@@ -74,6 +75,7 @@ async def download_assets(
     async def _tracked_download(discovery: AssetDiscovery) -> RawAsset | None:
         source = (owners or {}).get(discovery)
         token = current_source.set(source)
+        limit = asset_size_limit(discovery, max_asset_bytes, size_limits)
 
         try:
             if _skip_download(discovery, download_types):
@@ -97,7 +99,7 @@ async def download_assets(
 
                     result = await _download_one(
                         discovery, assets_dir, browser_profile_dir,
-                        http_client, max_asset_bytes, timestamp,
+                        http_client, limit, timestamp,
                         download_types=download_types,
                     )
 
@@ -195,6 +197,27 @@ async def _download_one(
 
 
 
+def asset_size_limit(
+    discovery: AssetDiscovery,
+    default: int | None,
+    limits: MediaSizeLimits,
+) -> int | None:
+    # A YouTube video is YouTube's, whichever post embedded it. Other files
+    # belong to the post's site, since X and Reddit serve theirs from CDNs.
+    site = (
+        "youtube.com" if discovery.asset_type == "youtube"
+        else discovery.domain
+    )
+
+    return limits.for_file(site, _media_kind(discovery.asset_type), default)
+
+
+def _media_kind(asset_type: str) -> str:
+    return {"photo": "image", "youtube": "video", "animated_gif": "video"}.get(
+        asset_type, asset_type,
+    )
+
+
 def _skip_download(
     discovery: AssetDiscovery, download_types: tuple[str, ...],
 ) -> bool:
@@ -205,9 +228,7 @@ def _skip_download(
     ):
         return True
 
-    kind = {"photo": "image", "youtube": "video", "animated_gif": "video"}.get(
-        discovery.asset_type, discovery.asset_type,
-    )
+    kind = _media_kind(discovery.asset_type)
 
     if kind in MEDIA_DOWNLOAD_TYPES:
         return kind not in download_types

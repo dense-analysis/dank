@@ -2,7 +2,12 @@ import pathlib
 
 import pytest
 
-from dank.config import ConfigError, SourceConfig, load_settings
+from dank.config import (
+    ConfigError,
+    MediaSizeLimits,
+    SourceConfig,
+    load_settings,
+)
 
 
 @pytest.mark.parametrize(
@@ -210,6 +215,121 @@ def test_invalid_media_download_types_are_rejected(
 
     with pytest.raises(ConfigError, match="media"):
         load_settings(path)
+
+
+@pytest.mark.parametrize("text", ["", "[media]", "[media.max_bytes]"])
+def test_media_size_limits_are_empty_unless_set(
+    tmp_path: pathlib.Path, text: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(text)
+
+    assert load_settings(path).media_size_limits == MediaSizeLimits()
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("[media.max_bytes]\nvideo = 100",
+     MediaSizeLimits(kinds={"video": 100})),
+    ("[media.max_bytes]\nVideo = 100",
+     MediaSizeLimits(kinds={"video": 100})),
+    ('[media.max_bytes."youtube.com"]\nvideo = 200',
+     MediaSizeLimits(sites={"youtube.com": {"video": 200}})),
+    # Zero or less means no limit, as it does for storage.max_asset_bytes.
+    ("[media.max_bytes]\nvideo = 0\naudio = -1",
+     MediaSizeLimits(kinds={"video": None, "audio": None})),
+    ('[media.max_bytes."x.com"]\nvideo = 0',
+     MediaSizeLimits(sites={"x.com": {"video": None}})),
+    # Sites are named as a person would write them.
+    ('[media.max_bytes." WWW.YouTube.com "]\nvideo = 200',
+     MediaSizeLimits(sites={"youtube.com": {"video": 200}})),
+    ('[media.max_bytes."twitter.com"]\nvideo = 200',
+     MediaSizeLimits(sites={"x.com": {"video": 200}})),
+    ('[media.max_bytes]\nimage = 1\n[media.max_bytes."x.com"]\nimage = 2',
+     MediaSizeLimits(kinds={"image": 1}, sites={"x.com": {"image": 2}})),
+])
+def test_media_size_limits_configuration(
+    tmp_path: pathlib.Path, text: str, expected: MediaSizeLimits,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(text)
+
+    assert load_settings(path).media_size_limits == expected
+
+
+@pytest.mark.parametrize("text", [
+    "[media]\nmax_bytes = 5",
+    '[media]\nmax_bytes = "big"',
+    '[media.max_bytes]\nvideo = "big"',
+    "[media.max_bytes]\nvideo = true",
+    "[media.max_bytes]\nvideo = 1.5",
+    # A typo must not silently leave a limit unset.
+    "[media.max_bytes]\nvidoe = 100",
+    '[media.max_bytes."youtube.com"]\nvidoe = 100',
+    '[media.max_bytes."youtube.com"]\nvideo = "big"',
+    '[media.max_bytes."youtube.com"]\nvideo = false',
+    '[media.max_bytes." "]\nvideo = 100',
+])
+def test_invalid_media_size_limits_are_rejected(
+    tmp_path: pathlib.Path, text: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(text)
+
+    with pytest.raises(ConfigError, match=r"media\.max_bytes"):
+        load_settings(path)
+
+
+LIMITS = MediaSizeLimits(
+    kinds={"video": 8, "image": None},
+    sites={"youtube.com": {"video": 10, "image": 5, "audio": None}},
+)
+
+
+@pytest.mark.parametrize(("site", "kind", "default", "expected"), [
+    # The site wins over the type, and the type over the default.
+    ("youtube.com", "video", 6, 10),
+    ("x.com", "video", 6, 8),
+    ("x.com", "audio", 6, 6),
+    # More specific can mean lower as well as higher.
+    ("youtube.com", "video", 100, 10),
+    ("youtube.com", "image", 6, 5),
+    # "No limit" is a choice, which has to beat a default.
+    ("x.com", "image", 6, None),
+    ("youtube.com", "audio", 6, None),
+    # And it's distinct from having no opinion.
+    ("x.com", "audio", None, None),
+    ("youtube.com", "image", None, 5),
+    # A kind with no rule of its own takes the default.
+    ("youtube.com", "file", 6, 6),
+    # However the site's domain was saved.
+    ("www.youtube.com", "video", 6, 10),
+    ("YouTube.com", "video", 6, 10),
+])
+def test_the_most_specific_media_limit_wins(
+    site: str, kind: str, default: int | None, expected: int | None,
+) -> None:
+    assert LIMITS.for_file(site, kind, default) == expected
+
+
+def test_no_media_limits_leave_the_default_alone() -> None:
+    assert MediaSizeLimits().for_file("x.com", "video", 6) == 6
+    assert MediaSizeLimits().for_file("x.com", "video", None) is None
+
+
+@pytest.mark.parametrize("site", ["twitter.com", "www.twitter.com", "X.com"])
+def test_x_keeps_its_limit_under_either_name(site: str) -> None:
+    limits = MediaSizeLimits(sites={"x.com": {"video": 3}})
+
+    assert limits.for_file(site, "video", 6) == 3
+
+
+@pytest.mark.parametrize("name", [
+    "config.example.toml", "config.native.example.toml",
+])
+def test_the_example_configs_set_no_media_size_limits(name: str) -> None:
+    root = pathlib.Path(__file__).parents[1]
+
+    assert load_settings(root / name).media_size_limits == MediaSizeLimits()
 
 
 @pytest.mark.parametrize(("field", "value"), [
