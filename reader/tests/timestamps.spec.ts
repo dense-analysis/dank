@@ -63,6 +63,10 @@ test("All and source readers share recent dates and switch yesterday to an exact
   );
   await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
+
     const kind = url.searchParams.get("kind");
     return route.fulfill({
       json: url.pathname.endsWith("/sources")

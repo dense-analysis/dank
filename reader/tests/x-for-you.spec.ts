@@ -25,6 +25,10 @@ for (const width of [390, 1280]) {
     const queries: URLSearchParams[] = [];
     await page.route("**/api/reader/**", async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname === "/api/reader/categories") {
+        return route.fulfill({ json: { categories: [] } });
+      }
+
       if (url.pathname.endsWith("/youtube/sources")) {
         await route.fulfill({
           json: { feeds: [], channels: [], total: 0, linked_count: 0 },

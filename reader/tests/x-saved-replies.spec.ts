@@ -75,6 +75,10 @@ for (const mobile of [false, true]) {
     if (mobile) await page.setViewportSize({ width: 390, height: 844 });
     await page.route("**/api/reader/**", async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname === "/api/reader/categories") {
+        return route.fulfill({ json: { categories: [] } });
+      }
+
       if (url.pathname.endsWith("/sources")) {
         await route.fulfill({
           json: {

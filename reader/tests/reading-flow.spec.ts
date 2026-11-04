@@ -35,6 +35,10 @@ async function mockReader(context: BrowserContext) {
   );
   await context.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
+
     const posts = [article, other];
     if (url.pathname.endsWith("/sources"))
       return route.fulfill({

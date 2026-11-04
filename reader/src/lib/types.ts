@@ -115,7 +115,14 @@ export interface YouTubePost {
   video_url: string | null;
 }
 
+export interface CategoryAssignment {
+  name: string;
+  confidence: number;
+  similarity: number;
+}
+
 export interface Post {
+  categories?: CategoryAssignment[];
   id: string;
   domain: string;
   url: string;
@@ -295,6 +302,7 @@ export interface Filters {
   domains: string[];
   tags: string[];
   flairs: string[];
+  categories: string[];
   author: string;
   authorExact: boolean;
   after: string;

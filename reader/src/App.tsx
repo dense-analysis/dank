@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { ArticleView } from "./components/ArticleView";
+import { CategoryFilters } from "./components/CategoryFilters";
 import { CollectionCount } from "./components/CollectionCount";
 import { CollectionHeader } from "./components/CollectionHeader";
 import { CommunityAvatar } from "./components/CommunityAvatar";
@@ -793,6 +794,7 @@ export function App() {
                   {section === "all" && (
                     <PlatformFilters filters={filters} change={changeFilters} />
                   )}
+                  <CategoryFilters filters={filters} change={changeFilters} />
                   {section === "hacker_news" && (
                     <HackerNewsFilters
                       value={filters.hnFilter}

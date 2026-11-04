@@ -27,7 +27,8 @@ from dank.web.reader_links import HN_LINKED_POSTS_SQL, RESOLVED_HN_POSTS_SQL
 from dank.web.reader_x_home import home_listing
 
 POST_COLUMNS = (
-    "domain, post_id, url, author, title, html, created_at, updated_at, source"
+    "domain, post_id, url, author, title, html, created_at, updated_at, "
+    "source, categories"
 )
 
 
@@ -36,13 +37,13 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         "q", "mode", "sort", "domain", "tag", "author", "after", "before",
         "limit", "cursor", "author_match", "kind", "community", "flair",
         "account", "hn_filter", "x_view", "platform", "blog_feed",
-        "x_feed",
+        "x_feed", "category",
     }
 
     if unknown:
         raise ValueError("Unknown reader filter")
 
-    for key in set(query) - {"domain", "tag", "flair", "platform"}:
+    for key in set(query) - {"domain", "tag", "flair", "platform", "category"}:
         if len(query.getall(key)) != 1:
             raise ValueError(f"{key} must appear only once")
 
@@ -53,6 +54,7 @@ def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
         domains=query.getall("domain", []),
         tags=query.getall("tag", []),
         platforms=query.getall("platform", []),
+        categories=query.getall("category", []),
         flairs=query.getall("flair", []),
         author=query.get("author", ""),
         author_match=query.get("author_match", "contains"),
@@ -245,6 +247,23 @@ def _collection_conditions(
             _platform_condition(platform, sources, params)
             for platform in filters.platforms
         ) + ")")
+
+    identity_conditions, identity_params = _identity_conditions(filters)
+    conditions.extend(identity_conditions)
+    params.update(identity_params)
+
+    return conditions, params
+
+
+def _identity_conditions(
+    filters: ReaderFilters,
+) -> tuple[list[str], dict[str, Any]]:
+    conditions: list[str] = []
+    params: dict[str, Any] = {}
+
+    if filters.categories:
+        conditions.append("hasAny(categories.name, %(categories)s)")
+        params["categories"] = list(filters.categories)
 
     if filters.account:
         conditions.append(f"{X_ACCOUNT_SQL} = %(account)s")

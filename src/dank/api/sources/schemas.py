@@ -123,3 +123,7 @@ def source_out(source: SourceSummary) -> SourceOut:
             )
         case None:
             return FeedSourceOut.model_validate(base)
+
+
+class CategoriesResponse(ApiModel):
+    categories: list[str]

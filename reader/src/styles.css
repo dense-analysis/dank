@@ -3353,3 +3353,38 @@ a.social-metric:hover {
 .source-link-actions > .original-link {
   padding-bottom: 0;
 }
+
+.category-controls {
+  margin-block: 0.5rem 1rem;
+}
+.category-controls legend {
+  font-size: 0.8rem;
+  padding-block: 0.3rem;
+}
+.category-controls p {
+  font-size: 0.8rem;
+}
+.post-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0.5rem 0;
+  list-style: none;
+}
+.post-categories li {
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: 0.4rem;
+  padding: 0.15rem 0.45rem;
+  overflow-wrap: anywhere;
+}
+
+.category-controls .platform-filters {
+  position: static;
+}
+.category-controls button {
+  white-space: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

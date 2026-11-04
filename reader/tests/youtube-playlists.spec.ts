@@ -94,6 +94,10 @@ async function fixture(page: Page) {
   );
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
+
     if (url.pathname.endsWith("/refresh")) {
       if (route.request().method() === "POST") {
         const { scope } = route.request().postDataJSON() as {

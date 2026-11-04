@@ -138,3 +138,16 @@ export async function fetchPost(
 
   return body;
 }
+
+export async function fetchCategories(signal?: AbortSignal): Promise<string[]> {
+  const body = await request("/categories", signal);
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.categories) ||
+    !body.categories.every((item: unknown) => typeof item === "string")
+  ) {
+    return invalidResponse();
+  }
+
+  return body.categories;
+}

@@ -23,6 +23,9 @@ from dank.errors import InvalidInput
 
 AUTHOR_PAGE_LIMIT = 50
 MAX_FLAIR_LENGTH = 300
+# Request bounds keep category selections practical in URLs.
+MAX_CATEGORY_FILTERS = 400
+MAX_CATEGORY_NAME_LENGTH = 1000
 
 type Embedding = tuple[float, ...]
 # The reader helpers build one JSON-shaped projection of a post for both
@@ -41,6 +44,7 @@ class PostRow(NamedTuple):
     created_at: dt.datetime
     updated_at: dt.datetime
     source: str
+    categories: tuple[tuple[str, float, float], ...] = ()
 
 
 class AssetRow(NamedTuple):
@@ -115,6 +119,7 @@ class FilterInput(NamedTuple):
     tags: Sequence[str] = ()
     platforms: Sequence[str] = ()
     flairs: Sequence[str] = ()
+    categories: Sequence[str] = ()
     author: str = ""
     author_match: str = "contains"
     after: str = ""
@@ -152,6 +157,7 @@ class ReaderFilters(NamedTuple):
     platforms: tuple[str, ...] = ()
     blog_feed: str = ""
     x_feed: str = ""
+    categories: tuple[str, ...] = ()
 
     def signature(self) -> str:
         # Bind cursors to filters, while allowing page-size changes.
@@ -182,6 +188,7 @@ def reader_filters(raw: FilterInput) -> ReaderFilters:
 
     default_ranking = "top50" if raw.kind == "hacker_news" else ""
     filters = ReaderFilters(
+        categories=tuple(sorted(set(raw.categories))),
         q=raw.q.strip(),
         mode=raw.mode,
         sort=raw.sort,
@@ -203,6 +210,12 @@ def reader_filters(raw: FilterInput) -> ReaderFilters:
         account=raw.account.strip().removeprefix("@").lower(),
         hn_filter=default_ranking if raw.hn_filter is None else raw.hn_filter,
     )
+    if len(filters.categories) > MAX_CATEGORY_FILTERS or any(
+        not name.strip() or len(name) > MAX_CATEGORY_NAME_LENGTH
+        for name in filters.categories
+    ):
+        raise InvalidInput("Category filters must be nonempty and bounded")
+
     _validate(filters)
 
     return filters

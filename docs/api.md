@@ -443,3 +443,18 @@ Controller classes, base repository or service classes, a unit of work, a
 dependency-injection library, an event bus, a mapping library,
 `pydantic-settings` or environment variables, generic CRUD routes and API
 version prefixes. Each waits for a concrete need.
+
+### Saved post categories
+
+`GET /api/reader/categories` returns configured category names as
+`{ "categories": ["science"] }`. Choices come from `categories.definitions`
+in the loaded `config.toml`; this endpoint does not access ClickHouse.
+Reader feed and post detail payloads include `categories`, an array of
+`{ "name": "science", "confidence": 0.9, "similarity": 0.95 }` objects.
+An empty array means no saved assignment. The scores describe the matching
+training example's confidence and cosine similarity, not a new probability.
+
+Repeat `category` on `/api/reader/posts` (and X author listings) to match any
+selected exact, case-sensitive name. Category filtering combines with other
+filters using AND and is bound into pagination cursors. Category choices do
+not trigger training or processing. Both servers provide these routes.

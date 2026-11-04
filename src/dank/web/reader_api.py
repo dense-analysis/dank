@@ -48,6 +48,7 @@ def add_reader_routes(app: web.Application) -> None:
     app.router.add_get("/api/reader/connections", handle_connections)
     app.router.add_get("/api/reader/connection", handle_connection)
     app.router.add_get("/api/reader/sources", handle_sources)
+    app.router.add_get("/api/reader/categories", handle_categories)
     app.router.add_get("/api/reader/x/authors", handle_x_authors)
     app.router.add_get("/api/reader/posts", handle_posts)
     app.router.add_get("/api/reader/post", handle_post)
@@ -80,6 +81,16 @@ async def reader_errors(
         response.headers["Cache-Control"] = "no-store"
 
     return response
+
+
+async def handle_categories(request: web.Request) -> web.Response:
+    state: AppState = request.app["state"]
+
+    return web.json_response({
+        "categories": [
+            category.name for category in state.settings.categories.definitions
+        ],
+    })
 
 
 async def handle_sources(request: web.Request) -> web.Response:

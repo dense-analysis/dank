@@ -74,6 +74,11 @@ async function mockReader(page: Page): Promise<MockReader> {
 
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      await route.fulfill({ json: { categories: [] } });
+      return;
+    }
+
     state.requests.push(url);
 
     if (url.pathname.endsWith("/sources")) {

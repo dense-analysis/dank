@@ -75,6 +75,14 @@ establish the match. A post's own text and captured X descriptions take priority
 ambiguous links, quotes and unavailable publisher content keep their existing
 presentation. This does not fetch articles or change where Reddit cards open.
 
+- Saved post categories appear on feed cards and article pages. Select one category
+  below the platform selector, combined with source,
+  search and date filters. Choosing another category replaces the selection.
+  Repeated `category` URL parameters still match any listed category.
+  **All categories** clears the selection. Category state
+  stays in the URL, including through article navigation and reload. Choices come
+  from the category definitions in `config.toml`, including categories with no
+  assigned posts. Existing post labels remain visible if a definition is removed. Posts without assignments remain visible when no category is selected.
 - Source tags select publishers, not article topics. Choices within a source or
   tag group are OR; groups, author, dates and search combine with AND.
 - Search combines word matches with related ideas. Relevance puts stories

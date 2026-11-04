@@ -176,6 +176,7 @@ export function FeedToolbar({
                   domains: [],
                   tags: [],
                   flairs: [],
+                  categories: [],
                   author: "",
                   authorExact: false,
                   after: "",

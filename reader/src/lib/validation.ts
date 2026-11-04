@@ -282,6 +282,21 @@ function validPost(
       "created_at",
       "source",
     ].every((key) => typeof value[key] === "string") &&
+    (value.categories === undefined ||
+      (Array.isArray(value.categories) &&
+        value.categories.every(
+          (item: unknown) =>
+            isRecord(item) &&
+            typeof item.name === "string" &&
+            typeof item.confidence === "number" &&
+            Number.isFinite(item.confidence) &&
+            item.confidence >= 0 &&
+            item.confidence <= 1 &&
+            typeof item.similarity === "number" &&
+            Number.isFinite(item.similarity) &&
+            item.similarity >= -1 &&
+            item.similarity <= 1,
+        ))) &&
     (value.published_at === undefined ||
       value.published_at === null ||
       isTimestamp(value.published_at)) &&

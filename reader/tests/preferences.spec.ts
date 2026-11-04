@@ -18,6 +18,9 @@ const post = {
 async function mockReader(page: Page) {
   await page.route("**/api/reader/**", (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
     return route.fulfill({
       json: path.endsWith("/sources")
         ? {

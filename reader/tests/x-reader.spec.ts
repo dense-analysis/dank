@@ -142,6 +142,9 @@ async function mockX(context: BrowserContext, posts = [grant]) {
   );
   await context.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
 
     if (url.pathname.endsWith("/sources")) {
       await route.fulfill({

@@ -108,6 +108,7 @@ export function parseFilters(params: URLSearchParams): Filters {
           : "newest",
     domains: selections(params, "domain"),
     tags: selections(params, "tag"),
+    categories: selections(params, "category"),
     flairs: params.get("view") === "reddit" ? selections(params, "flair") : [],
     author: (params.get("author") ?? "").trim(),
     authorExact:
@@ -157,6 +158,10 @@ export function filterParams(filters: Filters): URLSearchParams {
 
   for (const domain of new Set(filters.domains)) {
     if (domain.trim()) params.append("domain", domain.trim());
+  }
+
+  for (const category of new Set(filters.categories)) {
+    params.append("category", category);
   }
 
   for (const tag of new Set(filters.tags)) {

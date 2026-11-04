@@ -140,6 +140,10 @@ async function mock(context: BrowserContext, posts: Post[], details = posts) {
   );
   await context.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
+
     return route.fulfill({
       json: url.pathname.endsWith("/sources")
         ? {

@@ -3,6 +3,7 @@ import { type ReactNode, useId, useState } from "react";
 import type { Post } from "../lib/types";
 import { safeUrl } from "../lib/urls";
 import { CollectionInfoContent, earlierDiscoveryTitle } from "./CollectionInfo";
+import { PostCategories } from "./PostCategories";
 import { SourceActions } from "./SourceActions";
 
 export function PostFooter({
@@ -30,6 +31,7 @@ export function PostFooter({
 
   return (
     <footer className="post-footer">
+      {post && <PostCategories post={post} />}
       {byline && <div className="post-footer-byline">{byline}</div>}
       <div className="post-bottom social-post-actions">
         {children}

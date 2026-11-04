@@ -36,6 +36,7 @@ import { CollectionInfoDetails } from "./CollectionInfo";
 import { CommunityAvatar } from "./CommunityAvatar";
 import { HackerNewsDetail } from "./HackerNewsDetail";
 import { PostTimestamp, readingTime, SourceMark, safeUrl } from "./PostCard";
+import { PostCategories } from "./PostCategories";
 import { ReaderLink } from "./ReaderLink";
 import { RedditComments } from "./RedditComments";
 import {
@@ -293,6 +294,7 @@ export function ArticleView({
       )}
       {post && !xPost && !post.hacker_news && (
         <div className="article-inner">
+          <PostCategories post={post} />
           <div className="post-meta">
             {post.reddit ? (
               <CommunityAvatar

@@ -110,6 +110,10 @@ async function mockArchive(page: Page, detail: Post = post) {
   );
   await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
+
     const listPost = {
       ...detail,
       reddit: detail.reddit

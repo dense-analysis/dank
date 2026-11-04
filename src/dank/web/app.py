@@ -6,7 +6,7 @@ from __future__ import annotations
 import datetime
 import pathlib
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from urllib.parse import quote
 
 import bleach
@@ -219,7 +219,7 @@ async def _fetch_post(
 ) -> PostRow | None:
     query = (
         "SELECT domain, post_id, url, author, title, html, created_at, "
-        "updated_at, source FROM posts FINAL "
+        "updated_at, source, categories FROM posts FINAL "
         "WHERE domain = %(domain)s "
         "AND post_id = %(post_id)s "
     )
@@ -254,6 +254,14 @@ def _parse_post_row(row: dict[str, Any]) -> PostRow:
         created_at=created_at,
         updated_at=updated_at,
         source=str(row.get("source", "")),
+        categories=tuple(
+            (str(cast(dict[str, Any], item)["name"]),
+             float(cast(dict[str, Any], item)["confidence"]),
+             float(cast(dict[str, Any], item)["similarity"]))
+            if isinstance(item, dict)
+            else (str(item[0]), float(item[1]), float(item[2]))
+            for item in cast(list[Any], row.get("categories", []))
+        ),
     )
 
 

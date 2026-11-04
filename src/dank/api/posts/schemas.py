@@ -49,6 +49,7 @@ class FilterQuery(ApiModel):
     tag: tuple[str, ...] = ()
     platform: tuple[str, ...] = ()
     flair: tuple[str, ...] = ()
+    category: tuple[str, ...] = ()
     author: str = ""
     author_match: Literal["contains", "exact"] = "contains"
     after: DateText = ""
@@ -75,6 +76,7 @@ class FilterQuery(ApiModel):
             tags=self.tag,
             platforms=self.platform,
             flairs=self.flair,
+            categories=self.category,
             author=self.author,
             author_match=self.author_match,
             after=self.after,
@@ -378,7 +380,16 @@ class XDetailOut(XOut):
     conversation: XConversationOut
 
 
+class CategoryAssignmentOut(ApiModel):
+    name: str
+    confidence: float
+    similarity: float
+
+
 class PostBase(ApiModel):
+    categories: list[CategoryAssignmentOut] = Field(
+        default_factory=list[CategoryAssignmentOut],
+    )
     id: str
     domain: str
     url: str

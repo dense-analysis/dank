@@ -128,6 +128,9 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
   });
   await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
 
     return route.fulfill({
       json: url.pathname.endsWith("/sources")

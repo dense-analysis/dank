@@ -297,6 +297,10 @@ def post_payload(
         created_at = created_at.replace(tzinfo=dt.UTC)
 
     result: dict[str, Any] = {
+        "categories": [
+            {"name": name, "confidence": confidence, "similarity": similarity}
+            for name, confidence, similarity in post.categories
+        ],
         "id": post.post_id, "domain": post.domain, "url": source_url,
         "author": post.author, "title": post.title,
         "excerpt": search_excerpt(body, query) or _summarize_html(body),

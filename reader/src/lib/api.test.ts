@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchPost, fetchPosts, fetchSources } from "./api";
+import { fetchCategories, fetchPost, fetchPosts, fetchSources } from "./api";
 import { defaultFilters } from "./storage";
 import { isPost } from "./validation";
 
@@ -487,4 +487,21 @@ it("validates archive estimates and provenance while accepting communities witho
     });
     await expect(fetchSources()).rejects.toThrow("unexpected response");
   }
+});
+
+describe("category catalog", () => {
+  it("accepts configured names and keeps malformed responses and errors explicit", async () => {
+    respond({ categories: ["Software", "Science"] });
+    await expect(fetchCategories()).resolves.toEqual(["Software", "Science"]);
+    respond({ categories: [] });
+    await expect(fetchCategories()).resolves.toEqual([]);
+
+    for (const invalid of [null, 2, { name: "Software" }]) {
+      respond({ categories: [invalid] });
+      await expect(fetchCategories()).rejects.toThrow("unexpected response");
+    }
+
+    respond({ error: "Collection unavailable" }, 503);
+    await expect(fetchCategories()).rejects.toThrow("Collection unavailable");
+  });
 });

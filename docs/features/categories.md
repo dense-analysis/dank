@@ -63,6 +63,23 @@ vector selection and duration parsing have independent modules with no
 imports from the scraping, processing or training pipelines. `AGENTS.md` and
 `run-linters.sh` enforce those boundaries.
 
+## Reader
+
+The reader displays saved category names on post cards and article pages.
+Choose one category below the platform selector; choosing another replaces
+the current selection. Repeated `category` URL parameters still match with OR,
+and category filters combine with the other filters using AND. **All categories** removes the
+category filter. The URL preserves selections through reload and article
+navigation. Unassigned posts appear when no category is selected.
+
+`GET /api/reader/categories` returns `{ "categories": ["science"] }` from
+`categories.definitions` in the loaded `config.toml`, without querying the
+database. Removed category names are not offered, while existing post labels
+remain saved. Feed and detail responses include `categories` objects with
+`name`, `confidence`, and `similarity`; repeated `category` query parameters
+filter the feed by exact, case-sensitive names. Confidence and similarity
+remain saved example evidence, not predicted probabilities for the post.
+
 ## Prompt caching
 
 Category names and descriptions appear only in the predicate questions. The
@@ -171,3 +188,14 @@ query construction and orchestration, rather than executing ClickHouse SQL.
 No live paid API call or cache-hit measurement was made.
 [DEN-69](https://linear.app/dense-analysis/issue/DEN-69/benchmark-category-accuracy-and-clickhouse-vector-quantisation)
 tracks corpus calibration and performance/quantisation measurements.
+
+Reader checks are in `tests/web/test_reader_categories.py`,
+`tests/api/sources/test_categories.py`, `reader/src/lib/categories.test.ts`,
+`reader/src/lib/api.test.ts`, and `reader/tests/categories.spec.ts`. They cover
+exact-name bindings, cursor isolation, named/positional ClickHouse tuple
+payloads, catalog validation, selection persistence and article navigation at
+320px, 390px and desktop widths. Browser verification also exercised saved
+assignments on a local ClickHouse 26.6 server: multi-category URLs, single-category controls, platform
+intersection and empty results, article return, and filtered cursor pagination
+through both API servers. This used existing collected data without collection,
+training or reprocessing.

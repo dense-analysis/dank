@@ -47,6 +47,11 @@ async function fixture(page: Page) {
   };
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      await route.fulfill({ json: { categories: [] } });
+      return;
+    }
+
     if (url.pathname.endsWith("/x/authors")) {
       state.authors.push(url.searchParams);
       const next = url.searchParams.has("cursor");

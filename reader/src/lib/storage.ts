@@ -16,6 +16,7 @@ export const defaultFilters: Filters = {
   domains: [],
   tags: [],
   flairs: [],
+  categories: [],
   author: "",
   authorExact: false,
   after: "",

@@ -115,6 +115,10 @@ async function fixtures(page: Page, missingComment = false) {
   const requests: string[] = [];
   await page.context().route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/categories") {
+      return route.fulfill({ json: { categories: [] } });
+    }
+
     requests.push(url.pathname);
     if (url.pathname.endsWith("/youtube/sources"))
       return route.fulfill({
