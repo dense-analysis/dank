@@ -133,8 +133,22 @@ where you have a complex series of nested if statements.
 
 ## Database
 
-You have access to a local ClickHouse database during development default
-ClickHouse credentials on Port 9000, and you can use that for your operations.
+You have access to the user's local ClickHouse database during development.
+Use DANK's configured connection through internal functions or `make query
+MODE=native ARGS='-q "SELECT ..."'`; do not inspect private configuration.
+The HTTP interface is normally on port 8123 (native protocol on port 9000).
+In a sandbox, localhost may be forwarded to the host database.
+
+You may run the app and use Playwright in a browser with the user's saved data
+to verify reader changes. Start the backend with `make web MODE=native`
+(optionally pass `ARGS='--port 8091'`) and follow `reader/README.md` for the
+frontend development server. Check desktop and mobile layouts, actual API
+responses, filtering and navigation. Prefer read-only browsing and queries;
+do not trigger collection, processing or training just to populate a UI check.
+Use isolated fixture data for automated tests that change data. If live access
+fails, report the connection failure and which checks used fixtures instead.
+Browser testing can use an installed Chromium executable when Chrome is
+unavailable; keep environment-specific browser paths out of committed config.
 
 App state goes in Postgres and collected content stays in ClickHouse. See
 `docs/features/database.md`. Each worktree needs its own Postgres database on a
