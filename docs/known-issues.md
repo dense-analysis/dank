@@ -427,10 +427,34 @@ are excluded. Automatic captions can contain errors; saved text is not a verifie
 verbatim transcription. Saved captions are not included in semantic search;
 track that idea under [search saved captions](https://linear.app/dense-analysis/issue/DEN-40/include-saved-youtube-captions-in-semantic-search).
 
+A failed row's `error` column names the cause: yt-dlp's own message, an HTTP
+status, which size limit was exceeded, or every cause when several tasks fail
+together. The reader doesn't show it; it says only that captions couldn't be
+fetched. Rows saved before 2026-11-04 may say only `unhandled errors in a
+TaskGroup (1 sub-exception)`. Those retry after `retry_after`, when the video
+is next opened or discovered by a scrape; nothing retries them on a schedule.
+
+Auto-dubbed videos have an automatic caption source for each audio track. yt-dlp's
+`translated_subs` skip only covers manual subtitles, so each automatic source is
+still listed in about 157 languages and seven formats, roughly 0.5 MB per source.
+About 16 sources overflowed the former 8 MiB metadata limit on every attempt. On
+2026-11-04, all 13 videos whose latest row had failed measured 9.6-11.2 MB from
+18-21 sources, 98% of the entries being machine translations that are never
+selected. The limit is now 16 MiB, which fits about 31 sources; a video with more
+fails on every attempt, and its row names the limit. `track_payload` keeps the full
+listing, which is cheap to keep: an 11 MB listing parsed in 18 ms and compressed
+to 91 KB with the column's ZSTD codec.
+
+`YouTube caption request failed (HTTP 429)` with a `Sorry...` page is a block on the
+whole IP address, not a problem with that video. One on 2026-11-04 followed about
+30 lookups and 12 caption downloads in 20 minutes from a manual check. It lasted
+at least 50 minutes and had cleared 8 hours later.
+
 Validation includes track choice, parsing, negative caching, current-run scoping,
 read-only access, first-open collection and desktop/mobile rendering. A live
-2026-10-19 check retrieved 19 creator-caption segments for `L_6pAVHYoFM`; this
-establishes that sample, not universal availability. See
+2026-10-19 check retrieved 19 creator-caption segments for `L_6pAVHYoFM`, and a
+2026-11-04 check retrieved 2,065 automatic-caption segments for the 18-source
+`eqYqUAdjsL0`; these establish those samples, not universal availability. See
 [collector tests](../tests/scrape/test_youtube_transcripts.py),
 [API tests](../tests/web/test_reader_youtube_transcripts.py) and
 [reader tests](../reader/tests/youtube-transcripts.spec.ts).

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import subprocess
+import sys
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -12,6 +14,7 @@ from dank.scrape import runner
 from dank.scrape.youtube import transcripts
 from dank.storage.clickhouse import QueryResult
 
+_REAL_POPEN = subprocess.Popen
 VIDEO = "L_6pAVHYoFM"
 URL = "https://www.youtube.com/api/timedtext?v=" + VIDEO
 BODY = json.dumps(
@@ -344,3 +347,192 @@ async def test_cancelled_extractor_terminates_and_drains_process(
     assert "--skip-download" in arguments
     assert "--ignore-config" in arguments
     assert "--no-cache-dir" in arguments
+
+
+def dubbed_captions(sources: list[str]) -> dict[str, list[dict[str, str]]]:
+    """List tracks as yt-dlp does: each source, then translated into the rest.
+
+    Sizes match `eqYqUAdjsL0`, whose 157 languages and seven formats reach
+    about 480 bytes an entry. A language's translations from earlier sources
+    come before its own track, which is why selection has to look past them.
+    """
+    languages = [*sources, *(f"t{number}" for number in range(157))][:157]
+    captions: dict[str, list[dict[str, str]]] = {}
+
+    def add(language: str, source: str, translate: str = "") -> None:
+        captions.setdefault(language, []).extend(
+            {
+                "ext": ext,
+                "name": language,
+                "url": f"{URL}&kind=asr&lang={source}{translate}&fmt={ext}"
+                f"&signature={'s' * 330}",
+            }
+            for ext in ("json3", "srv1", "srv2", "srv3", "ttml", "srt", "vtt")
+        )
+
+    for source in sources:
+        for language in languages:
+            if language != source:
+                add(language, source, f"&tlang={language}")
+
+        add(source, source)
+        add(f"{source}-orig", source)
+
+    return captions
+
+
+def substitute_extractor(monkeypatch: Any, code: str) -> None:
+    """Run a local script as yt-dlp, past the tests' network guard."""
+    spawn = asyncio.create_subprocess_exec
+
+    def local_script_only(args: Any, **kwargs: Any):
+        assert tuple(args) == (sys.executable, "-c", code)
+
+        return _REAL_POPEN(args, **kwargs)
+
+    async def substitute(*args: Any, **kwargs: Any):
+        return await spawn(sys.executable, "-c", code, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", local_script_only)
+    monkeypatch.setattr(
+        transcripts.asyncio,
+        "create_subprocess_exec",
+        substitute,
+    )
+
+
+async def test_dubbed_video_listing_gets_a_transcript(
+    monkeypatch: Any,
+    tmp_path: Any,
+):
+    listing = tmp_path / "metadata.json"
+    listing.write_text(
+        json.dumps(
+            {
+                "id": VIDEO,
+                "automatic_captions": dubbed_captions(
+                    ["bn", "en", *(f"s{number}" for number in range(19))],
+                ),
+                "language": "en-US",
+            },
+        ),
+    )
+    # Guards the fixture: this size overflowed the former 8 MiB limit.
+    assert listing.stat().st_size > 8 * 1024 * 1024
+    substitute_extractor(
+        monkeypatch,
+        "import shutil, sys\n"
+        f"with open({str(listing)!r}) as metadata:\n"
+        "    shutil.copyfileobj(metadata, sys.stdout)",
+    )
+    http = HTTP()
+
+    row = await transcripts.fetch_video_transcript(cast(Any, http), VIDEO)
+
+    assert row["error"] == ""
+    assert row["status"] == "captured"
+    assert json.loads(row["payload"])["language"] == "en"
+    assert json.loads(row["payload"])["generated"] is True
+    url = str(http.calls[0][0][0])
+    assert "lang=en" in url
+    assert "tlang" not in url
+
+
+async def test_extractor_exit_saves_what_yt_dlp_reported(monkeypatch: Any):
+    substitute_extractor(
+        monkeypatch,
+        "import sys\n"
+        "sys.stderr.write('ERROR: [youtube] blocked')\n"
+        "sys.exit(1)",
+    )
+
+    row = await transcripts.fetch_video_transcript(cast(Any, HTTP()), VIDEO)
+
+    assert row["status"] == "failed"
+    assert row["error"] == (
+        "YouTube caption discovery failed: ERROR: [youtube] blocked"
+    )
+
+
+async def test_oversized_metadata_saves_the_limit_not_the_task_group(
+    monkeypatch: Any,
+):
+    substitute_extractor(
+        monkeypatch,
+        "import sys\n"
+        f"sys.stdout.write('x' * {transcripts.MAX_METADATA_BYTES + 1})",
+    )
+
+    row = await transcripts.fetch_video_transcript(cast(Any, HTTP()), VIDEO)
+
+    assert row["status"] == "failed"
+    assert row["retry_after"] - row["observed_at"] == transcripts.FAILURE_TTL
+    assert row["error"] == (
+        "YouTube caption metadata exceeded the "
+        f"{transcripts.MAX_METADATA_BYTES}-byte limit"
+    )
+
+
+async def test_every_cause_in_an_exception_group_is_saved(monkeypatch: Any):
+    monkeypatch.setattr(
+        transcripts,
+        "extract_caption_metadata",
+        AsyncMock(
+            side_effect=ExceptionGroup(
+                "outer",
+                [
+                    ValueError("first"),
+                    ExceptionGroup(
+                        "inner",
+                        [OSError("second"), TimeoutError()],
+                    ),
+                ],
+            ),
+        ),
+    )
+
+    row = await transcripts.fetch_video_transcript(cast(Any, HTTP()), VIDEO)
+
+    assert row["status"] == "failed"
+    assert row["error"] == "first; second; TimeoutError"
+
+
+async def test_failure_message_is_bounded(monkeypatch: Any):
+    monkeypatch.setattr(
+        transcripts,
+        "extract_caption_metadata",
+        AsyncMock(
+            side_effect=ExceptionGroup("outer", [ValueError("x" * 2000)]),
+        ),
+    )
+
+    row = await transcripts.fetch_video_transcript(cast(Any, HTTP()), VIDEO)
+
+    assert row["error"] == "x" * 1000
+
+
+async def test_oversized_caption_body_names_what_overflowed(monkeypatch: Any):
+    monkeypatch.setattr(
+        transcripts,
+        "extract_caption_metadata",
+        AsyncMock(
+            return_value={"id": VIDEO, "subtitles": {"en": [track()]}},
+        ),
+    )
+    body = b"x" * (transcripts.MAX_TRANSCRIPT_BYTES + 1)
+
+    row = await transcripts.fetch_video_transcript(
+        cast(Any, HTTP(body)),
+        VIDEO,
+    )
+
+    assert row["error"] == (
+        "YouTube caption response exceeded the "
+        f"{transcripts.MAX_TRANSCRIPT_BYTES}-byte limit"
+    )
+
+
+@pytest.mark.parametrize("body", [b"", b"<html>blocked</html>"])
+def test_caption_body_that_is_not_json_says_so(body: bytes):
+    with pytest.raises(ValueError, match="response was not valid JSON"):
+        transcripts.parse_caption_segments(body)

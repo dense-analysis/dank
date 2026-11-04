@@ -23,7 +23,11 @@ from dank.youtube import VIDEO_ID, payload_object
 
 TRANSCRIPT_TIMEOUT_SECONDS = 40
 MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024
-MAX_METADATA_BYTES = 8 * 1024 * 1024
+# yt-dlp's `translated_subs` skip only covers manual subtitles, so each
+# automatic source is still listed in about 157 languages and seven formats,
+# 0.5 MB per source. Dubbed videos reach 11 MB from 21 sources; this project
+# limit fits about 31.
+MAX_METADATA_BYTES = 16 * 1024 * 1024
 MAX_SEGMENTS = 20000
 FAILURE_TTL = dt.timedelta(hours=1)
 UNAVAILABLE_TTL = dt.timedelta(days=1)
@@ -105,7 +109,14 @@ def _caption_url(url: str) -> bool:
 
 
 def parse_caption_segments(body: bytes) -> list[dict[str, Any]]:
-    raw = payload_object(json.loads(body))
+    try:
+        decoded = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"The caption response was not valid JSON: {error}",
+        ) from error
+
+    raw = payload_object(decoded)
     events = raw.get("events")
 
     if (
@@ -163,6 +174,7 @@ def _milliseconds(value: Any) -> float:
 async def _read_bounded(
     stream: asyncio.StreamReader | aiohttp.StreamReader,
     maximum: int,
+    label: str,
 ) -> bytes:
     body = bytearray()
 
@@ -170,7 +182,7 @@ async def _read_bounded(
         body.extend(chunk)
 
         if len(body) > maximum:
-            raise ValueError("Caption response exceeded the size limit")
+            raise ValueError(f"{label} exceeded the {maximum}-byte limit")
 
     return bytes(body)
 
@@ -219,9 +231,12 @@ async def extract_caption_metadata(video_id: str) -> dict[str, Any]:
                 _read_bounded(
                     process.stdout,
                     MAX_METADATA_BYTES,
+                    "YouTube caption metadata",
                 ),
             )
-            errors = group.create_task(_read_bounded(process.stderr, 65536))
+            errors = group.create_task(
+                _read_bounded(process.stderr, 65536, "yt-dlp's error output"),
+            )
 
         await process.wait()
 
@@ -252,6 +267,16 @@ async def extract_caption_metadata(video_id: str) -> dict[str, Any]:
 
         # Drain pipe buffers after termination so wait cannot deadlock.
         await process.communicate()
+
+
+def _failure_reason(error: Exception) -> str:
+    """Name each cause, because a TaskGroup's own message only counts them."""
+    if isinstance(error, ExceptionGroup):
+        causes = cast(ExceptionGroup[Exception], error).exceptions
+
+        return "; ".join(_failure_reason(cause) for cause in causes)
+
+    return str(error) or type(error).__name__
 
 
 async def fetch_video_transcript(
@@ -300,6 +325,7 @@ async def fetch_video_transcript(
                     body = await _read_bounded(
                         response.content,
                         MAX_TRANSCRIPT_BYTES,
+                        "YouTube caption response",
                     )
                     row["provider_payload"] = body.decode(
                         "utf-8",
@@ -332,6 +358,6 @@ async def fetch_video_transcript(
         HostCooldownError,
         ExceptionGroup,
     ) as error:
-        row["error"] = (str(error) or type(error).__name__)[:1000]
+        row["error"] = _failure_reason(error)[:1000]
 
     return row
