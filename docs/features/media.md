@@ -128,8 +128,9 @@ video = 209715200
 The most specific limit applies, whether it's higher or lower: the site's limit
 for that type, then the type's, then `max_asset_bytes`. Above, YouTube videos get
 200 MiB, other videos 50 MiB and everything else 6 MiB. Zero or less means no
-limit, so a site can opt out of a limit set more widely. Each run reads these when
-it starts.
+limit, so a site can opt out of a limit set more widely. `make scrape` reads these
+when it starts. For refreshes from the reader, restart the viewer after changing
+them, as for any other setting.
 
 - **Types** are `image`, `audio` and `video`. Photos count as images, and GIFs from
   X as videos.
