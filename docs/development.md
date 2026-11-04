@@ -10,8 +10,8 @@ Install Python 3.13 and uv, then run from the checkout root:
 
 ```sh
 uv sync --frozen
-uv run pytest
-./run-linters.sh
+make test
+make lint
 uv run pyright
 ```
 
@@ -96,7 +96,7 @@ Atlas alone would report as fine.
 | `make db-create` | Create the configured database if it's missing, for a new worktree |
 | `make db-diff NAME=<name>` | Generate a migration from model changes |
 | `make db-check` | Check migrations are valid and match the models |
-| `uv run dank-db atlas migrate hash --env dank` | Run any other Atlas command, with telemetry off |
+| `make db-atlas ARGS='migrate hash --env dank'` | Run any other Atlas command, with telemetry off |
 
 `db-upgrade`, `db-current` and `db-create` follow `MODE`; the others always run on
 the host. `db-diff` and `db-check` compare schemas in a temporary Docker container.
@@ -112,7 +112,7 @@ Rules for migrations:
   an add, which loses the column's data, so write those renames by hand.
 - For a merge conflict in `atlas.sum`, keep either side and run `migrate hash`.
   If your migration is now older than one already applied, run
-  `uv run dank-db atlas migrate rebase <version> --env dank`.
+  `make db-atlas ARGS='migrate rebase <version> --env dank'`.
 - Don't rely on Atlas Pro features such as `migrate lint` or `migrate test` unless
   DEN-57 decides to pay for them. Hand-written views, functions and triggers in a
   migration work on the free tier, though Atlas won't track them.

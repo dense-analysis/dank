@@ -87,8 +87,13 @@ indirection.
 
 ## Tools
 
-* Run `./run-linters.sh` to run all linters to check for and autofix errors.
-* You can run tests with `uv run pytest`.
+* Make is DANK's one interface for commands. Whenever you add or change a
+  command people run, including a `[project.scripts]` entry, add or update its
+  Make target in the same change, list it in `make help`, and add it to the
+  command table in `README.md`. `tests/test_makefile.py` checks this.
+* Run `make lint` to run all linters to check for and autofix errors.
+* You can run tests with `make test`. Pass paths or options through `ARGS`, as
+  in `make test ARGS='tests/db -k upgrade'`.
 * You can scrape data with `uv run scrape`.
     * Pass `--domains` to scrape only matching `sources` domains.
 * You can process scraped data with `uv run process`.

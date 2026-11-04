@@ -102,7 +102,7 @@ make atlas
 
 This downloads a pinned version into `.venv/bin` and checks it against a
 checksum in the repository. DANK turns off Atlas's telemetry and update checks
-whenever it runs it, so run Atlas through `dank-db`; see
+whenever it runs it, so run Atlas through `make db-atlas`; see
 [Postgres migrations](development.md#postgres-migrations). The binary is free to
 use under [Atlas's own terms](https://atlasgo.io/community-edition) rather than
 an open source license. The Docker image already includes it.

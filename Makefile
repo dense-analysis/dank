@@ -27,7 +27,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff atlas test-postgres
+.PHONY: help config up web down logs scrape process query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas test lint test-postgres
 
 help:
 	@printf '%s\n' \
@@ -52,7 +52,10 @@ help:
 		'  db-create       Create the configured Postgres database if missing' \
 		'  db-check        On the host: check migrations are valid and match models' \
 		'  db-diff         On the host: generate a migration; pass NAME=<name>' \
+		'  db-atlas        On the host: run an Atlas command with telemetry off; pass ARGS' \
 		'  atlas           On the host: install the pinned Atlas binary' \
+		'  test            On the host: run the tests; pass paths or options through ARGS' \
+		'  lint            On the host: run all linters, which can fix files' \
 		'  test-postgres   Run the Postgres tests against a disposable server' \
 		'' \
 		'ARGS goes to the application command, or to Compose for Docker up/web.' \
@@ -138,12 +141,25 @@ db-check:
 db-diff:
 	@if [ -z '$(NAME)' ]; then \
 		printf '%s\n' 'Name the migration: make db-diff NAME=<name>' >&2; \
-		exit 1; \
+		exit 2; \
 	fi
 	$(UV) run dank-db diff '$(NAME)'
 
+db-atlas:
+	@if [ -z '$(value ARGS)' ]; then \
+		printf '%s\n' "Pass the Atlas command: make db-atlas ARGS='migrate hash --env dank'" >&2; \
+		exit 2; \
+	fi
+	$(UV) run dank-db atlas $(ARGS)
+
 atlas:
 	$(UV) run dank-db install-atlas
+
+test:
+	$(UV) run pytest $(ARGS)
+
+lint:
+	./run-linters.sh
 
 test-postgres:
 	@set -e; \

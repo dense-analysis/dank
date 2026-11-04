@@ -117,6 +117,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make up` or `make web` | Start the Docker stack; native mode runs the viewer in the foreground |
 | `make x-login` | Sign in to X and save the session for collection |
 | `make youtube-login` | Save an optional, separate YouTube session |
+| `make youtube-compare` | Compare browser and yt-dlp recommendations |
 | `make scrape` | Collect configured sources; Docker adds `--headless` |
 | `make process` | Process collected posts and assets |
 | `make query` | Run `clickhouse-query` with arguments from `ARGS` |
@@ -128,6 +129,11 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make postgres-restore FILE=<dump>` | Restore a saved dump into it; Docker mode only |
 | `make atlas` | Install the pinned Atlas binary for native runs |
 | `make db-upgrade`, `make db-current`, `make db-create` | Manage the Postgres schema; see [Postgres migrations](docs/development.md#postgres-migrations) |
+| `make db-diff NAME=<name>`, `make db-check` | Generate a migration from model changes, or check they match; on the host |
+| `make db-atlas ARGS='<command>'` | Run any other Atlas command with telemetry off; on the host |
+| `make test` | Run the tests; pass paths or options through `ARGS`; on the host |
+| `make test-postgres` | Run the Postgres tests against a disposable server |
+| `make lint` | Run all linters, which can fix files; on the host |
 
 **Native**
 
