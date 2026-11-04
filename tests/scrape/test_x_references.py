@@ -124,7 +124,7 @@ async def test_references_do_not_use_post_limit(
     monkeypatch.setattr(
         "dank.scrape.x.NetworkCapture", MagicMock(return_value=capture),
     )
-    monkeypatch.setattr("dank.scrape.x._ensure_navigation", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x._navigate_to_account", AsyncMock())
     monkeypatch.setattr("dank.scrape.x._check_login_required", AsyncMock())
     monkeypatch.setattr("dank.scrape.x._scroll", AsyncMock())
     monkeypatch.setattr("dank.scrape.x._drain_posts_and_assets", drain)
@@ -155,7 +155,7 @@ async def test_retry_keeps_reference_and_later_content_once(
         attempts += 1
         yield ScrapeBatch([raw(reference=True)], [])
         if attempts == 1:
-            raise TimeoutError()
+            raise ConnectionError()
         yield ScrapeBatch([raw(reference=False)], [])
 
     browser = MagicMock(get=AsyncMock())

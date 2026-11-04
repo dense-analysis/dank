@@ -16,8 +16,10 @@ from dank.model import AssetDiscovery, RawPost
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.x import (
+    XBrowser,
     _asset_discovery_from_extracted,  # pyright: ignore[reportPrivateUsage]
     _raw_post_from_extracted,  # pyright: ignore[reportPrivateUsage]
+    _scroll_pause_seconds,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.x.navigation import (
     check_login_required,
@@ -176,21 +178,26 @@ async def select_for_you(page: zendriver.Tab) -> None:
 async def scrape_x_for_you(
     settings: XSettings,
     session: BrowserSession,
+    *,
+    browser: XBrowser | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
+    browser = browser or XBrowser(session)
     collected = HomeCapture(settings.scrape.max_posts)
     capture: NetworkCapture | None = None
     started = asyncio.get_running_loop().time()
 
     try:
         async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
-            browser = await session.get_browser()
-            page = await browser.get("about:blank")
+            driver = await session.get_browser()
+            page = await driver.get("about:blank")
             capture = NetworkCapture(page, HOME_PATTERNS)
             await capture.start()
             await page.get(X_HOME_URL)
             await wait_for_x_session(
                 page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
             )
+            browser.page = page
+
             await select_for_you(page)
 
         idle = 0
@@ -209,10 +216,12 @@ async def scrape_x_for_you(
             async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
                 await check_login_required(page)
                 responses = await capture.drain(
-                    timeout_seconds=max(
-                        1.5 if step == 0 else 0.35,
-                        settings.scrape.scroll_pause_seconds,
+                    timeout_seconds=(
+                        1.5 if step == 0 else _scroll_pause_seconds(
+                            settings.scrape.scroll_pause_seconds, idle,
+                        )
                     ),
+                    wait_for_idle=False,
                 )
 
             previous = len(collected.recommended)

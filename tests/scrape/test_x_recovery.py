@@ -68,7 +68,7 @@ async def test_retry_keeps_saved_records_once_then_visits_next_account(
         if account == "one":
             yield batch("1")
             if len(attempts) == 1:
-                raise TimeoutError()
+                raise ConnectionError()
             yield batch("2")
         else:
             yield batch("3")
@@ -95,22 +95,26 @@ async def test_retry_keeps_saved_records_once_then_visits_next_account(
 
 
 @pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("failure", [TimeoutError, ValueError])
 async def test_persistent_account_failure_still_reaches_healthy_account(
     session: Any,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     *,
     partial: bool,
+    failure: type[Exception],
 ):
     caplog.set_level("INFO", logger="dank.scrape.x")
     visited: list[str] = []
+    pages: list[Any] = []
 
     async def collect(page: Any, account: str, settings: XSettings):
         visited.append(account)
+        pages.append(page)
         if account == "bad":
             if partial:
                 yield batch("1")
-            raise TimeoutError()
+            raise failure("account failed")
         yield batch("2")
 
     monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
@@ -118,13 +122,15 @@ async def test_persistent_account_failure_still_reaches_healthy_account(
         b
         async for b in scrape_x_accounts(XSettings(), ("bad", "good"), session)
     ]
-    assert visited == ["bad", "bad", "good"]
+    assert visited == ["bad", "good"]
     assert [p.post_id for b in saved for p in b.posts] == (
         ["1", "2"] if partial else ["2"]
     )
     assert "account=good outcome=completed" in caplog.text
     assert "account=bad outcome=completed" not in caplog.text
-    assert session.close.await_count == 2
+    session.close.assert_not_awaited()
+    assert pages[0] is pages[1]
+    assert session.get_browser.return_value.get.await_count == 1
 
 
 async def test_login_failure_stops_without_browser_or_sign_in_retries(
@@ -174,7 +180,7 @@ async def test_stalled_cleanup_is_bounded_and_does_not_reopen_owned_profile(
     caplog: pytest.LogCaptureFixture,
 ):
     async def collect(*args: Any) -> AsyncIterator[ScrapeBatch]:
-        raise TimeoutError()
+        raise ConnectionError()
         yield batch("1")
 
     async def hang():
@@ -195,7 +201,7 @@ async def test_stalled_cleanup_is_bounded_and_does_not_reopen_owned_profile(
     assert "Could not close the owned X browser safely" in caplog.text
 
 
-async def test_discussion_timeout_is_saved_before_fresh_browser_for_next_post(
+async def test_discussion_timeout_keeps_browser_for_next_post(
     session: Any,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -223,9 +229,9 @@ async def test_discussion_timeout_is_saved_before_fresh_browser_for_next_post(
         )
     ]
     assert len(saved) == 2
-    assert pages[0] is not pages[1]
+    assert pages[0] is pages[1]
     assert (
         json.loads(saved[0].posts[0].payload)["conversation_capture"]["reason"]
         == "timeout"
     )
-    session.close.assert_awaited_once()
+    session.close.assert_not_awaited()

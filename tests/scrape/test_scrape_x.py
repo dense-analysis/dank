@@ -6,7 +6,6 @@ import pytest
 
 from dank.scrape.x import extract_posts_and_assets
 from dank.scrape.x.navigation import (
-    LOGIN_PROMPT_TIMEOUT_SECONDS,
     has_login_prompt as _has_login_prompt,
     is_login_page as _is_login_page,
 )
@@ -65,36 +64,30 @@ class _FakeLoginPromptPage:
         self,
         *,
         location: object,
-        select_raises: Exception | None,
+        prompt_present: bool,
     ) -> None:
         self.location = location
-        self.select_raises = select_raises
-        self.last_timeout: float | None = None
+        self.prompt_present = prompt_present
+        self.last_selector: str | None = None
 
     async def evaluate(self, _script: str) -> object:
         return self.location
 
-    async def select(self, *_args: object, **kwargs: object) -> object:
-        timeout = kwargs.get("timeout")
+    async def query_selector(self, selector: str) -> object | None:
+        self.last_selector = selector
 
-        if isinstance(timeout, int | float):
-            self.last_timeout = float(timeout)
-
-        if self.select_raises is not None:
-            raise self.select_raises
-
-        return object()
+        return object() if self.prompt_present else None
 
 
-async def test_has_login_prompt_uses_short_selector_timeout() -> None:
-    page = _FakeLoginPromptPage(location=None, select_raises=None)
+async def test_has_login_prompt_queries_without_a_selector_wait() -> None:
+    page = _FakeLoginPromptPage(location=None, prompt_present=True)
 
     assert await _has_login_prompt(cast(Any, page)) is True
-    assert page.last_timeout == LOGIN_PROMPT_TIMEOUT_SECONDS
+    assert page.last_selector == 'a[href="/i/flow/signup"]'
 
 
-async def test_has_login_prompt_handles_timeout() -> None:
-    page = _FakeLoginPromptPage(location=None, select_raises=TimeoutError())
+async def test_has_login_prompt_handles_absent_prompt() -> None:
+    page = _FakeLoginPromptPage(location=None, prompt_present=False)
 
     assert await _has_login_prompt(cast(Any, page)) is False
 
@@ -102,15 +95,15 @@ async def test_has_login_prompt_handles_timeout() -> None:
 async def test_is_login_page_checks_prompt_on_account_page() -> None:
     page = _FakeLoginPromptPage(
         location="https://x.com/example",
-        select_raises=TimeoutError(),
+        prompt_present=False,
     )
 
     assert await _is_login_page(cast(Any, page)) is False
-    assert page.last_timeout == LOGIN_PROMPT_TIMEOUT_SECONDS
+    assert page.last_selector == 'a[href="/i/flow/signup"]'
 
 
 async def test_is_login_page_checks_selector_for_missing_location() -> None:
-    page = _FakeLoginPromptPage(location=None, select_raises=None)
+    page = _FakeLoginPromptPage(location=None, prompt_present=True)
 
     assert await _is_login_page(cast(Any, page)) is True
 
@@ -122,6 +115,6 @@ async def test_login_and_verification_redirects_require_sign_in(
     path: str,
 ) -> None:
     page = _FakeLoginPromptPage(
-        location=f"https://x.com{path}", select_raises=TimeoutError(),
+        location=f"https://x.com{path}", prompt_present=False,
     )
     assert await _is_login_page(cast(Any, page)) is True

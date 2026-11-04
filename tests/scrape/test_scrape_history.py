@@ -751,8 +751,10 @@ async def test_source_concurrency_is_bounded_and_x_is_serialized(
 
 
 @pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("domain", ["one.test", "x.com"])
 async def test_database_backpressure_and_cleanup_on_failure(
-    harness: _Harness, monkeypatch: pytest.MonkeyPatch, *, cancel: bool,
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch, domain: str,
+    *, cancel: bool,
 ) -> None:
     produced = 0
     writing = asyncio.Event()
@@ -777,7 +779,7 @@ async def test_database_backpressure_and_cleanup_on_failure(
         try:
             for _ in range(1000):
                 produced += 1
-                yield ScrapeBatch([_post("one.test")], [])
+                yield ScrapeBatch([_post(domain)], [])
         finally:
             closed.set()
 
@@ -786,7 +788,7 @@ async def test_database_backpressure_and_cleanup_on_failure(
         "dank.scrape.runner._discover_source_batches", discover,
     )
     settings = harness.settings._replace(
-        sources=(SourceConfig("one.test", ()),),
+        sources=(SourceConfig(domain, ()),),
         scrape=ScrapeSettings(queue_batches=2),
     )
     task = asyncio.create_task(run_scrape(settings, batch_size=1))
@@ -811,12 +813,14 @@ async def test_database_backpressure_and_cleanup_on_failure(
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-async def test_media_backpressure_keeps_committed_posts_on_failure(
+async def test_media_workers_keep_committed_posts_on_failure(
     harness: _Harness, monkeypatch: pytest.MonkeyPatch, *, cancel: bool,
 ) -> None:
     downloading = asyncio.Event()
     release = asyncio.Event()
     produced = 0
+    discovered = asyncio.Event()
+    tasks_before = asyncio.all_tasks()
 
     async def download(*args: Any, **kwargs: Any) -> list[RawAsset]:
         downloading.set()
@@ -826,12 +830,14 @@ async def test_media_backpressure_keeps_committed_posts_on_failure(
     async def discover(*args: Any, **kwargs: Any):
         nonlocal produced
 
-        for i in range(1000):
+        for i in range(12):
             produced += 1
             yield ScrapeBatch([_post("one.test")._replace(post_id=str(i))], [
                 AssetDiscovery("rss", "one.test", str(i),
                                f"https://one.test/{i}.jpg", "image", None),
             ])
+
+        discovered.set()
 
     monkeypatch.setattr("dank.scrape.runner.download_assets", download)
     monkeypatch.setattr(
@@ -842,9 +848,8 @@ async def test_media_backpressure_keeps_committed_posts_on_failure(
         scrape=ScrapeSettings(queue_batches=2),
     ), batch_size=1))
     await asyncio.wait_for(downloading.wait(), timeout=1)
-    await asyncio.sleep(0.01)
-    # Media has one active batch, two queued and one waiting.
-    assert produced == len(harness.client.rows["raw_posts"]) == 4
+    await asyncio.wait_for(discovered.wait(), timeout=1)
+    assert produced == len(harness.client.rows["raw_posts"]) == 12
 
     if cancel:
         task.cancel()
@@ -854,7 +859,8 @@ async def test_media_backpressure_keeps_committed_posts_on_failure(
     with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
         await asyncio.wait_for(task, timeout=1)
 
-    assert harness.client.rows["scrape_runs"][-1]["posts_saved"] == 4
+    assert harness.client.rows["scrape_runs"][-1]["posts_saved"] == 12
+    assert asyncio.all_tasks() == tasks_before
 
 
 async def test_disabled_media_is_saved_as_references_without_failing_run(
@@ -986,3 +992,136 @@ def test_reference_schema_is_bundled_and_matches_fresh_and_existing_tables():
     )[0]
     assert expression == fresh
     assert '"raw_posts.sql"' in (root / "pyproject.toml").read_text()
+
+
+@pytest.mark.parametrize("domain", ["x.com", "one.test"])
+async def test_discovery_finishes_before_waiting_for_downloads(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch, domain: str,
+) -> None:
+    blocked = asyncio.Event()
+    release = asyncio.Event()
+    navigated = asyncio.Event()
+    visited: list[str] = []
+    sessions: list[_Browser] = []
+    closed_sessions: list[_Browser] = []
+
+    class HeldBrowser(_Browser):
+        async def __aexit__(self, *args: object) -> None:
+            closed_sessions.append(self)
+
+    def browser(config: BrowserConfig) -> HeldBrowser:
+        session = HeldBrowser()
+        sessions.append(session)
+
+        return session
+
+    async def download(*args: Any, **kwargs: Any) -> list[RawAsset]:
+        blocked.set()
+        await release.wait()
+
+        return []
+
+    async def discover(
+        settings: Settings, source: SourceConfig, *args: Any, **kwargs: Any,
+    ) -> AsyncIterator[ScrapeBatch]:
+        visited.append(source.domain)
+
+        if source.domain != domain:
+            return
+
+        for index in range(12):
+            yield ScrapeBatch([
+                _post(domain)._replace(post_id=str(index), source="x"),
+            ], [AssetDiscovery(
+                "x", domain, str(index), f"https://media.test/{index}.jpg",
+                "image", None,
+            )])
+
+            if index == 0:
+                await blocked.wait()
+
+        navigated.set()
+
+    monkeypatch.setattr("dank.scrape.runner.BrowserSession", browser)
+    monkeypatch.setattr("dank.scrape.runner.download_assets", download)
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    task = asyncio.create_task(run_scrape(harness.settings._replace(
+        sources=(SourceConfig(domain, ()), SourceConfig("other.test", ())),
+        scrape=ScrapeSettings(source_concurrency=1, queue_batches=2),
+    ), batch_size=1))
+
+    try:
+        await asyncio.wait_for(navigated.wait(), timeout=2)
+        assert visited == [domain]
+        assert not task.done()
+        assert len(harness.client.rows["raw_posts"]) == 12
+        assert sessions
+        assert not closed_sessions
+    finally:
+        release.set()
+        await asyncio.wait_for(task, timeout=2)
+
+    assert visited == [domain, "other.test"]
+    assert closed_sessions == list(reversed(sessions))
+    assert len(harness.client.rows["raw_posts"]) == 12
+    assert harness.client.rows["scrape_runs"][-1]["posts_saved"] == 12
+
+
+@pytest.mark.parametrize("failure", ["cancel", "database", "discovery"])
+async def test_x_collection_and_media_workers_are_closed_on_failure(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch, failure: str,
+) -> None:
+    writing = asyncio.Event()
+    release = asyncio.Event()
+    closed = asyncio.Event()
+    tasks_before = asyncio.all_tasks()
+    insert = harness.client.insert_rows
+
+    async def insert_rows(table: str, rows: list[dict[str, Any]]) -> None:
+        if table == "raw_posts":
+            writing.set()
+            await release.wait()
+
+            if failure == "database":
+                raise RuntimeError("writer failed")
+
+        await insert(table, rows)
+
+    async def discover(*args: Any, **kwargs: Any):
+        try:
+            yield ScrapeBatch([_post("x.com")], [])
+            await writing.wait()
+
+            if failure == "discovery":
+                raise RuntimeError("browser failed")
+
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    monkeypatch.setattr(harness.client, "insert_rows", insert_rows)
+    monkeypatch.setattr(
+        "dank.scrape.runner._discover_source_batches", discover,
+    )
+    task = asyncio.create_task(run_scrape(harness.settings._replace(
+        sources=(SourceConfig("x.com", ()),),
+    )))
+    await asyncio.wait_for(writing.wait(), timeout=2)
+
+    if failure == "cancel":
+        task.cancel()
+    else:
+        release.set()
+
+    with pytest.raises(
+        asyncio.CancelledError if failure == "cancel" else RuntimeError,
+    ):
+        await asyncio.wait_for(task, timeout=2)
+
+    assert closed.is_set()
+    assert asyncio.all_tasks() == tasks_before
+
+    if failure == "discovery":
+        assert len(harness.client.rows["raw_posts"]) == 1

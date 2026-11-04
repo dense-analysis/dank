@@ -13,6 +13,7 @@ from dank.config import BrowserScrapeSettings, SourceConfig, XSettings
 from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.x import (
     X_GRAPHQL_PATTERNS,
+    _scrape_account,  # pyright: ignore[reportPrivateUsage]
     extract_posts_and_assets,
     scrape_x_accounts,
 )
@@ -21,6 +22,37 @@ from dank.scrape.zendriver import NetworkCapture, NetworkResponse
 TIMELINE_URL = (
     "https://x.com/i/api/graphql/query-id/UserOriginalsTimeline?variables={}"
 )
+
+
+async def test_account_capture_starts_before_search_navigation(
+    monkeypatch: pytest.MonkeyPatch, timeline_body: str,
+) -> None:
+    page = MagicMock(get=AsyncMock())
+    response = NetworkResponse(
+        TIMELINE_URL, 200, "application/json", timeline_body, "id", "Fetch",
+    )
+    capture = MagicMock(
+        start=AsyncMock(), stop=AsyncMock(),
+        drain=AsyncMock(return_value=[response]),
+    )
+
+    async def navigate(tab: object, handle: str) -> None:
+        assert tab is page
+        assert handle == "writer"
+        capture.start.assert_awaited_once()
+
+    monkeypatch.setattr(
+        "dank.scrape.x.NetworkCapture", MagicMock(return_value=capture),
+    )
+    monkeypatch.setattr("dank.scrape.x._navigate_to_account", navigate)
+    monkeypatch.setattr("dank.scrape.x._check_login_required", AsyncMock())
+    batches = [batch async for batch in _scrape_account(
+        page, " @writer ", XSettings(BrowserScrapeSettings(max_posts=1)),
+    )]
+
+    assert batches[0].posts[0].post_id == "2019987790369296512"
+    page.get.assert_not_awaited()
+    capture.stop.assert_awaited_once()
 
 
 @pytest.fixture
@@ -76,10 +108,43 @@ async def test_account_network_responses_reach_post_extraction(
         assert posts[0].request_url == url
 
 
+async def test_ready_x_responses_do_not_wait_for_network_idle(
+    timeline_body: str,
+) -> None:
+    page = MagicMock(
+        send=AsyncMock(side_effect=[None, (timeline_body, False)]),
+    )
+    capture = NetworkCapture(page, X_GRAPHQL_PATTERNS)
+    await capture.start()
+    handlers = {
+        call.args[0]: call.args[1] for call in page.add_handler.call_args_list
+    }
+    await handlers[cdp.network.ResponseReceived](SimpleNamespace(
+        type_=cdp.network.ResourceType.FETCH,
+        request_id="ready",
+        response=SimpleNamespace(
+            url=TIMELINE_URL, status=200, mime_type="application/json",
+            headers={},
+        ),
+    ))
+    await handlers[cdp.network.LoadingFinished](SimpleNamespace(
+        request_id="ready",
+    ))
+
+    try:
+        async with asyncio.timeout(1):
+            responses = await capture.drain(30, wait_for_idle=False)
+    finally:
+        await capture.stop()
+
+    assert len(responses) == 1
+    assert responses[0].body == timeline_body
+
+
 @pytest.mark.parametrize("stage", [
     "startup", "home", "capture", "account", "inspection", "scroll", "drain",
 ])
-async def test_stalled_browser_retries_each_account_and_preserves_batches(
+async def test_stalled_account_is_skipped_without_restarting_browser(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
     timeline_body: str, stage: str,
 ) -> None:
@@ -105,6 +170,8 @@ async def test_stalled_browser_retries_each_account_and_preserves_batches(
     )
     monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.BROWSER_ACTION_TIMEOUT_SECONDS", 0.01)
+    navigate = AsyncMock()
+    monkeypatch.setattr("dank.scrape.x._navigate_to_account", navigate)
     inspect_page = AsyncMock()
     scroll = AsyncMock()
     monkeypatch.setattr("dank.scrape.x._check_login_required", inspect_page)
@@ -115,7 +182,7 @@ async def test_stalled_browser_retries_each_account_and_preserves_batches(
 
     commands = {
         "startup": session.get_browser, "home": browser.get,
-        "capture": capture.start, "account": page.get,
+        "capture": capture.start, "account": navigate,
         "inspection": inspect_page, "scroll": scroll, "drain": capture.drain,
     }
     commands[stage].side_effect = stalled
@@ -133,12 +200,12 @@ async def test_stalled_browser_retries_each_account_and_preserves_batches(
 
     assert bool(batches) == (stage == "scroll")
     assert stats.counts["fetch_failures"] == 2
-    assert stats.counts["retries"] == 2
+    assert stats.counts["retries"] == 0
     assert stats.error_type == "TimeoutError"
-    assert "browser failure=TimeoutError" in caplog.text
+    assert "error=TimeoutError" in caplog.text
     assert "X timeline [2/2] account=two" in caplog.text
-    assert session.close.await_count == 4
-    assert page.get.await_count <= 4
+    session.close.assert_not_awaited()
+    assert page.get.await_count <= 1
 
     if stage not in {"startup", "home"}:
-        assert capture.stop.await_count == 4
+        assert capture.stop.await_count == 2

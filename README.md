@@ -99,7 +99,8 @@ Scrape and process progress appears in the terminal. Normal messages go to
 stdout; warnings and errors go to stderr. Both streams also go to the configured
 log file. Pending stages report elapsed time every five seconds. See
 [RSS progress](docs/features/rss.md#progress-and-errors) for the counts.
-Sources run concurrently with shared per-host request limits and bounded queues.
+Sources run concurrently with shared per-host request limits. Posts are saved
+during discovery, while separate workers fetch assets without pausing navigation.
 See [concurrency settings](docs/features/history.md#concurrency) for defaults and tuning.
 
 Every `make scrape` and `make process` also saves a timestamped terminal log

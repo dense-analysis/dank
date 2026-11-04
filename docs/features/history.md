@@ -139,11 +139,22 @@ queue_batches = 2
 
 Up to four source pipelines collect, download and save independently. Each
 post batch is committed before discovery advances, so a later collection
-failure or cancellation cannot discard those saved posts. Media keeps its
-own batching: each source has at most two queued media batches, and a full
-queue pauses its producer. Batch sizes vary with discovered media, so this
-bounds the backlog, not memory in bytes.
-A source slot is reused after its downloads and writes finish. Set
+failure or cancellation cannot discard those saved posts.
+
+`queue_batches` bounds the handoff between discovery and the asset consumer.
+The consumer dispatches batches into an in-memory media backlog independently
+of its fetching worker, so downloading files does not pause discovery or browser
+navigation. The worker processes media batches in order, retaining the shared
+HTTP and media concurrency limits and avoiding duplicate-file races within a
+source. Pending asset references can accumulate in memory when downloading is
+slower than discovery; there is no separate batch or byte cap on that backlog.
+Post, scroll and entry limits constrain discovery where configured. Cancellation
+keeps committed posts but may leave their queued media undownloaded.
+
+Browser sessions stay open until all source discovery and fetching finishes.
+X, Reddit and YouTube use separate sessions, preserving their pages and profiles
+while other sources run. A source slot is reused after its downloads and writes
+finish. Set
 `source_concurrency = 1` for sequential sources.
 
 The HTTP limits are shared across homepage, feed, article and direct media
@@ -151,8 +162,9 @@ requests, including redirect destinations. Hosts are grouped by hostname,
 including across configured sources. Four RSS fetch jobs per source and four
 media jobs across the run provide additional bounds. X and Reddit use separate
 browsers, profiles and locks, so either can collect while the other waits.
-Sources on the same site share a browser and run one at a time. Both still
-count toward `source_concurrency`; RSS-only runs do not launch either browser.
+Sources on the same site share a browser and serialize browser discovery.
+Both still count toward `source_concurrency`; RSS-only runs do not launch
+either browser.
 Chromium and yt-dlp's internal HTTP requests are outside the direct HTTP
 limiter; processing remains a separate command.
 

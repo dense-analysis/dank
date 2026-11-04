@@ -328,15 +328,23 @@ class NetworkCapture:
         )
         self._started = False
 
-    async def drain(self, timeout_seconds: float) -> list[NetworkResponse]:
+    async def drain(
+        self, timeout_seconds: float, *, wait_for_idle: bool = True,
+    ) -> list[NetworkResponse]:
         responses: list[NetworkResponse] = []
 
         while True:
             try:
-                async with asyncio.timeout(timeout_seconds):
-                    response = await self._queue.get()
-            except TimeoutError:
-                break
+                response = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                if responses and not wait_for_idle:
+                    break
+
+                try:
+                    async with asyncio.timeout(timeout_seconds):
+                        response = await self._queue.get()
+                except TimeoutError:
+                    break
 
             responses.append(response)
 

@@ -6,7 +6,6 @@ import json
 import logging
 from collections.abc import AsyncIterator, Iterable
 from typing import cast
-from urllib.parse import quote
 
 import zendriver
 from zendriver.core.connection import ProtocolException
@@ -25,7 +24,7 @@ from dank.scrape.zendriver import (
 from .conversations import ConversationCapture, capture_conversation
 from .navigation import (
     check_login_required as _check_login_required,
-    ensure_navigation as _ensure_navigation,
+    navigate_to_account as _navigate_to_account,
     scroll as _scroll,
 )
 from .payloads import (
@@ -50,7 +49,8 @@ X_GRAPHQL_PATTERNS = (
 )
 # Bound browser steps without charging time spent saving yielded batches.
 BROWSER_ACTION_TIMEOUT_SECONDS = 30
-FAST_SCROLL_PAUSE_SECONDS = 0.35
+# Project heuristic: drain briefly while progressing, back off on idle scrolls.
+FAST_SCROLL_PAUSE_SECONDS = 0.1
 INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
 MAX_IDLE_SCROLLS = 4
 
@@ -64,7 +64,7 @@ class XBrowserRecoveryError(RuntimeError):
     pass
 
 
-class _XBrowser:
+class XBrowser:
     def __init__(self, session: BrowserSession) -> None:
         self.session = session
         self.page: zendriver.Tab | None = None
@@ -107,6 +107,8 @@ async def scrape_x_accounts(
     settings: XSettings,
     accounts: tuple[str, ...],
     session: BrowserSession,
+    *,
+    browser: XBrowser | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     if not accounts:
         stats = current_source.get()
@@ -118,7 +120,7 @@ async def scrape_x_accounts(
 
         return
 
-    browser = _XBrowser(session)
+    browser = browser or XBrowser(session)
     logger.info(
         "Collecting X timelines first; discussions are deferred. "
         "Use --x-details to refresh saved posts separately.",
@@ -150,7 +152,7 @@ async def scrape_x_accounts(
 
 
 async def _collect_account(
-    browser: _XBrowser, account: str, settings: XSettings,
+    browser: XBrowser, account: str, settings: XSettings,
 ) -> AsyncIterator[ScrapeBatch]:
     seen_posts: set[str] = set()
     seen_references: set[str] = set()
@@ -177,7 +179,7 @@ async def _collect_account(
                     yield batch._replace(posts=posts, assets=assets)
         except (LoginRequiredError, BrowserProfileBusyError):
             raise
-        except RECOVERABLE_BROWSER_ERRORS as error:
+        except (ConnectionError, ProtocolException) as error:
             logger.warning(
                 "X timeline account=%s attempt=%d browser failure=%s; "
                 "retained posts=%d", account, attempt + 1,
@@ -193,8 +195,9 @@ async def _collect_account(
 
             return
         except Exception as error:
+            # Timeouts/account errors do not establish that the tab is dead.
+            # Preserve the session and in-flight assets for the next account.
             _account_failed(account, seen_posts, error, len(seen_references))
-            await browser.reset()
 
             return
         else:
@@ -232,7 +235,7 @@ def _account_failed(
 async def scrape_x_posts(
     settings: XSettings, posts: list[RawPost], session: BrowserSession,
 ) -> AsyncIterator[ScrapeBatch]:
-    browser = _XBrowser(session)
+    browser = XBrowser(session)
 
     for index, post in enumerate(posts, 1):
         logger.info(
@@ -249,8 +252,6 @@ async def scrape_x_posts(
                 logger.warning("X discussions stopped: sign-in required")
                 break
 
-            if reason in {"timeout", "unavailable"}:
-                await browser.reset()
         except (BrowserProfileBusyError, XBrowserRecoveryError) as error:
             _record_failure(error)
             logger.warning("X discussions stopped: %s", error)
@@ -258,7 +259,7 @@ async def scrape_x_posts(
 
 
 async def _capture_saved_post(
-    browser: _XBrowser, post: RawPost, settings: XSettings,
+    browser: XBrowser, post: RawPost, settings: XSettings,
 ) -> RawPost:
     reason = "disabled"
 
@@ -292,7 +293,7 @@ async def _scrape_account(
     settings: XSettings,
 ) -> AsyncIterator[ScrapeBatch]:
     limits = settings.scrape
-    handle = account.strip("@").strip()
+    handle = account.strip().lstrip("@")
     if not handle:
         return
 
@@ -301,12 +302,9 @@ async def _scrape_account(
     capture = NetworkCapture(page, X_GRAPHQL_PATTERNS)
 
     try:
-        url = f"https://x.com/{quote(handle)}"
-
         async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
             await capture.start()
-            page = await page.get(url)
-            await _ensure_navigation(page, url)
+            await _navigate_to_account(page, handle)
             await _check_login_required(page)
 
         seen_posts: set[str] = set()
@@ -415,6 +413,7 @@ async def _drain_posts_and_assets(
     async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
         responses = await capture.drain(
             timeout_seconds=max(0.05, timeout_seconds),
+            wait_for_idle=False,
         )
     logger.info("Drained %d X network responses", len(responses))
 

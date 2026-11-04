@@ -65,10 +65,54 @@ run; zero usable recommendations never count as a successful empty capture.
 
 ## Account timelines
 
-The scraper visits accounts in order. `max_posts` is a per-account stopping
-threshold, so the final batch can exceed it. `max_scrolls` bounds scrolling;
-collection can also stop after repeated idle scrolls. These settings control
-the collection attempt, not a guarantee of complete account history.
+The scraper visits accounts in order, typing each full `@handle` into the X
+search bar using `/`. It clears existing text and verifies the input is empty
+before typing. With the search input focused, it presses Down until
+the exact account is highlighted, confirms its handle in the popup, and presses
+Enter. This handles the search-query option before the account results without
+activating a different account. The tab is activated before the shortcut, and
+Down/Enter use explicit native key events with the DOM key names `ArrowDown`
+and `Enter`. The scraper waits for the expanded popup to contain the requested
+account. Each Down waits for the selected option to change; Enter waits for
+that exact option's `aria-selected="true"` marker and a matching
+`aria-activedescendant` that remain unchanged across two animation frames. If the requested account is
+already selected, it presses Enter without another Down. X retains a zero-percent
+progress bar in both the initial results and selected state, so its presence
+does not block selection. A 250 ms pause before each Down/Enter supplements
+the selector and selection checks. Selection is revalidated after the Enter
+pause so an outdated highlight cannot authorize it. Suggestion handles come from the live popup's avatar attributes.
+After Enter, both the route and the main profile header must match the requested
+handle before timeline discovery starts. Navigation logs record query entry,
+each Down, Enter and the matching profile header.
+The homepage and account pass share one tab.
+Account switches reuse the loaded page without a full document reload. Missing
+suggestions or profile navigation time out rather than selecting a different
+account. A timed-out account is recorded as failed (or partial when posts
+were already saved), then the collector moves to the next account in the same
+tab without retrying or reloading. Unexpected account errors also preserve the
+tab; connection/protocol failures retain bounded browser recovery.
+
+Timeline scrolling jumps to the bottom of the loaded posts to request the next
+page. Ready timeline responses drain immediately; only an empty response queue
+waits up to 0.1 seconds while progressing (or a shorter configured pause), then
+uses `scroll_pause_seconds` after two idle scrolls to allow slower responses to
+arrive. The homepage allows up to 1.5 seconds for its first response. Login
+prompt checks do not add polling delays to each scroll.
+
+X uses the same discovery and asset-fetching pipeline as other sources. Each
+post batch is saved before discovery advances, while a separate media worker
+fetches queued assets. Asset downloads cannot hold up scrolling or account
+switches. The browser session stays open while fetching finishes, and the source
+worker waits for its downloads before moving on to another source. Other source
+workers can continue in their own browser sessions. Queued asset references stay
+in memory when downloading falls behind; there is no separate byte cap on that
+media backlog. Cancelling a run preserves saved posts but can leave their media
+undownloaded. See [concurrency](history.md#concurrency).
+
+`max_posts` is a per-account stopping threshold, so the final batch can exceed
+it. `max_scrolls` bounds scrolling; collection can also stop after repeated idle
+scrolls. These settings control the collection attempt, not a guarantee of
+complete account history.
 
 Normal scrapes collect timelines only. Refresh discussions separately with
 `--x-details`; timeline-only captures retain earlier conversation archives in the
@@ -265,8 +309,8 @@ The collector captures replies and parent context from X's detail responses.
 The reader shows saved context before the selected post and replies below it.
 Conversation posts retain their identity, text, links and media references;
 reply media uses remote URLs rather than starting extra downloads. A discussion
-timeout saves its failure/partial snapshot and restarts the browser before the
-next post. A sign-in requirement stops further refreshes. Earlier useful
+timeout saves its failure/partial snapshot and continues to the next post in
+the same browser. A sign-in requirement stops further refreshes. Earlier useful
 archives remain available after failed attempts and normal timeline scrapes.
 
 Each conversation has a `timeout_seconds` budget and at most `max_scrolls`

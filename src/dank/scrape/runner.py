@@ -83,7 +83,7 @@ from dank.scrape.rss import (
 )
 from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
-from dank.scrape.x import scrape_x_accounts, scrape_x_posts
+from dank.scrape.x import XBrowser, scrape_x_accounts, scrape_x_posts
 from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.x.home import scrape_x_for_you
 from dank.scrape.x.session import LoginRequiredError
@@ -1238,9 +1238,13 @@ async def _discover_adapter_batches(
 async def _x_listing_batches(
     settings: XSettings, accounts: tuple[str, ...], session: BrowserSession,
 ) -> AsyncIterator[ScrapeBatch]:
+    browser = XBrowser(session)
+
     if settings.homepage:
         try:
-            async for batch in scrape_x_for_you(settings, session):
+            async for batch in scrape_x_for_you(
+                settings, session, browser=browser,
+            ):
                 yield batch
         except (LoginRequiredError, BrowserProfileBusyError):
             return
@@ -1248,7 +1252,9 @@ async def _x_listing_batches(
     if not accounts and settings.homepage:
         return
 
-    async for batch in scrape_x_accounts(settings, accounts, session):
+    async for batch in scrape_x_accounts(
+        settings, accounts, session, browser=browser,
+    ):
         yield batch
 
 
@@ -2021,6 +2027,44 @@ async def _source_feed_urls(
 
 
 async def _process_batches(
+    queue: asyncio.Queue[ScrapeBatch | None],
+    clickhouse_client: ClickHouseClient,
+    http_client: aiohttp.ClientSession,
+    *,
+    assets_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path,
+    max_asset_bytes: int | None,
+    batch_size: int,
+    history: RunMetrics | None = None,
+    download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,
+    size_limits: MediaSizeLimits = NO_SIZE_LIMITS,
+) -> ScrapeTotals:
+    # Drain the discovery handoff independently of the media worker. Keep
+    # fetching batches in order so duplicate files do not race within a source.
+    pending: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
+
+    async def dispatch() -> None:
+        while True:
+            batch = await queue.get()
+            pending.put_nowait(batch)
+
+            if batch is None:
+                return
+
+    dispatcher = asyncio.create_task(dispatch())
+    fetcher = asyncio.create_task(_fetch_asset_batches(
+        pending, clickhouse_client, http_client,
+        assets_dir=assets_dir, browser_profile_dir=browser_profile_dir,
+        max_asset_bytes=max_asset_bytes, batch_size=batch_size,
+        history=history, download_types=download_types,
+        size_limits=size_limits,
+    ))
+    await gather_tasks([dispatcher, fetcher])
+
+    return fetcher.result()
+
+
+async def _fetch_asset_batches(
     queue: asyncio.Queue[ScrapeBatch | None],
     clickhouse_client: ClickHouseClient,
     http_client: aiohttp.ClientSession,

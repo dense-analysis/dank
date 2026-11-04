@@ -19,7 +19,9 @@ from dank.config import (
 from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.runner import (
     _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
+    _x_listing_batches,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.scrape.types import ScrapeBatch
 from dank.scrape.x.home import HOME_PATTERNS, HomeCapture, scrape_x_for_you
 from dank.scrape.x.session import LoginRequiredError
 from dank.scrape.zendriver import BrowserProfileBusyError, NetworkResponse
@@ -293,3 +295,38 @@ def test_homepage_setting_requires_boolean(tmp_path: pathlib.Path):
 
     with pytest.raises(ConfigError, match=r"x\.homepage"):
         load_settings(path)
+
+
+async def test_accounts_reuse_the_scrolled_homepage_tab(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = MagicMock(get=AsyncMock())
+    driver = MagicMock(get=AsyncMock(return_value=page))
+    session = MagicMock(get_browser=AsyncMock(return_value=driver))
+    capture = MagicMock(
+        start=AsyncMock(), stop=AsyncMock(),
+        drain=AsyncMock(return_value=[response(item(tweet("10")))]),
+    )
+    monkeypatch.setattr(
+        "dank.scrape.x.home.NetworkCapture", MagicMock(return_value=capture),
+    )
+    monkeypatch.setattr("dank.scrape.x.home.wait_for_x_session", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x.home.select_for_you", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x.home.check_login_required", AsyncMock())
+    visited: list[str] = []
+
+    async def collect(tab: object, account: str, settings: XSettings):
+        assert tab is page
+        visited.append(account)
+        yield ScrapeBatch([], [])
+
+    monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
+    batches = [batch async for batch in _x_listing_batches(
+        XSettings(scrape=BrowserScrapeSettings(max_posts=1)),
+        ("one", "two"), session,
+    )]
+
+    assert recommended(batches[0]) == ["10"]
+    assert visited == ["one", "two"]
+    driver.get.assert_awaited_once_with("about:blank")
+    page.get.assert_awaited_once_with("https://x.com/home")
