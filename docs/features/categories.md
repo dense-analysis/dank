@@ -107,6 +107,8 @@ there has been no live measurement. Cache reads and writes are reported under
 Newly processed posts record `embedding_algorithm`. Old posts get an empty
 algorithm when the schema upgrades and can be trained without reprocessing;
 training preserves that empty value in its examples.
+Web server startup applies this schema as well as `process` and training,
+because the reader selects `categories` from every post.
 The selected vector is the body embedding when readable body text exists,
 otherwise the title embedding. Empty, nonfinite and zero vectors are skipped.
 The same choice is used for training and assignment.

@@ -308,8 +308,8 @@ they have always forgiven what they can't read: a bad `limit` means the default.
 ## Startup and shutdown
 
 Both servers run the same ClickHouse startup steps, in order, from
-`dank/web/startup.py`: `reddit.sql`, then YouTube, link and reference storage.
-The refresh manager starts after them. At shutdown uvicorn gives in-flight
+`dank/web/startup.py`: `reddit.sql`, `categories.sql`, then YouTube, link and
+reference storage. The refresh manager starts after them. At shutdown uvicorn gives in-flight
 requests 10 seconds, then the lifespan waits for refresh workers (about 95
 seconds). That stays within the 110-second `stop_grace_period` in
 `compose.yaml`.

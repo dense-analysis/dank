@@ -12,19 +12,29 @@ from dank.web.reader_links import ensure_link_storage
 from dank.web.reader_reference_index import ensure_reference_storage
 from dank.web.reader_youtube import ensure_youtube_storage
 
-REDDIT_SCHEMA = pathlib.Path(__file__).parents[1] / "storage/reddit.sql"
+STORAGE = pathlib.Path(__file__).parents[1] / "storage"
 
 type StartupStep = Callable[[ClickHouseClient], Awaitable[None]]
 
 
-async def apply_reddit_schema(client: ClickHouseClient) -> None:
-    for statement in REDDIT_SCHEMA.read_text().split(";"):
+async def _apply_schema(client: ClickHouseClient, name: str) -> None:
+    for statement in (STORAGE / name).read_text().split(";"):
         if statement.strip():
             await client.execute(statement)
 
 
+async def apply_reddit_schema(client: ClickHouseClient) -> None:
+    await _apply_schema(client, "reddit.sql")
+
+
+async def apply_category_schema(client: ClickHouseClient) -> None:
+    # The reader selects posts.categories, so it can't wait for a process run.
+    await _apply_schema(client, "categories.sql")
+
+
 STARTUP_STEPS: tuple[StartupStep, ...] = (
     apply_reddit_schema,
+    apply_category_schema,
     ensure_youtube_storage,
     ensure_link_storage,
     ensure_reference_storage,
