@@ -51,8 +51,12 @@ async def domain_error(request: Request, error: DankError) -> Response:
         ),
         500,
     )
+    fields = tuple(
+        FieldError(path=field.path, code=field.code, message=field.message)
+        for field in error.fields
+    )
 
-    return answer(request, status, str(error), error.code)
+    return answer(request, status, str(error), error.code, fields)
 
 
 async def http_error(request: Request, error: HTTPException) -> Response:

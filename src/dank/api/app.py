@@ -12,6 +12,7 @@ from dank.api.lifespan import lifespan
 from dank.api.posts.router import router as posts_router
 from dank.api.refresh.router import router as refresh_router
 from dank.api.source_icons.router import router as source_icons_router
+from dank.api.source_settings.router import router as source_settings_router
 from dank.api.sources.router import router as sources_router
 from dank.api.viewer.router import router as viewer_router
 from dank.api.youtube.router import router as youtube_router
@@ -38,6 +39,7 @@ def create_app(
     )
     app.add_middleware(ApiHeaders)
     app.include_router(sources_router)
+    app.include_router(source_settings_router)
     app.include_router(posts_router)
     app.include_router(connections_router)
     app.include_router(refresh_router)

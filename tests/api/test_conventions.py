@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from dank.api.app import create_app
 from dank.api.schemas import ApiModel
 from dank.config import Settings
-from dank.errors import Conflict, NotFound
+from dank.errors import Conflict, FieldProblem, InvalidInput, NotFound
 from tests.api.client import BASE_URL, http_client
 
 SAME_ORIGIN = {"origin": BASE_URL}
@@ -40,6 +40,13 @@ async def missing_probe() -> Probe:
 @probe.get("/stale")
 async def stale_probe() -> Probe:
     raise Conflict("The probe changed")
+
+
+@probe.get("/invalid")
+async def invalid_probe() -> Probe:
+    raise InvalidInput("Check the probe", fields=[
+        FieldProblem("n", "too_big", "Use a smaller number."),
+    ])
 
 
 @probe.get("/broken")
@@ -101,6 +108,22 @@ async def test_domain_errors_choose_their_status(client: AsyncClient) -> None:
         "error": "No such probe", "code": "not_found", "fields": [],
     })
     assert (stale.status_code, stale.json()["code"]) == (409, "conflict")
+
+
+async def test_domain_errors_can_name_fields(client: AsyncClient) -> None:
+    response = await client.get("/api/probe/invalid")
+
+    assert (response.status_code, response.json()) == (400, {
+        "error": "Check the probe",
+        "code": "invalid_input",
+        "fields": [
+            {
+                "path": "n",
+                "code": "too_big",
+                "message": "Use a smaller number.",
+            },
+        ],
+    })
 
 
 async def test_unexpected_errors_answer_503_and_are_logged(
