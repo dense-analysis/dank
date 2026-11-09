@@ -1,9 +1,13 @@
 import hashlib
 import pathlib
+import sys
 
 import pytest
 
-from dank.db import install_atlas
+from dank.db import (
+    __main__ as dank_db,
+    install_atlas,
+)
 from dank.db.install_atlas import InstallError, platform_name
 
 
@@ -67,3 +71,50 @@ def test_a_verified_download_is_installed_executable(
     assert target.read_bytes() == data
     assert target.stat().st_mode & 0o111
     assert [path.name for path in target.parent.iterdir()] == ["atlas"]
+
+
+def install_command(
+    monkeypatch: pytest.MonkeyPatch, *args: str,
+) -> list[pathlib.Path]:
+    """Run `dank-db install-atlas`, recording where it would install."""
+    installed: list[pathlib.Path] = []
+
+    def install(target: pathlib.Path, _name: str) -> None:
+        installed.append(target)
+
+    monkeypatch.setattr(install_atlas, "install", install)
+    monkeypatch.setattr("sys.argv", ["dank-db", "install-atlas", *args])
+
+    with pytest.raises(SystemExit) as exited:
+        dank_db.main()
+
+    assert exited.value.code == 0
+
+    return installed
+
+
+def test_atlas_installs_into_this_checkout_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert install_command(monkeypatch) == [
+        pathlib.Path(sys.prefix) / "bin" / "atlas",
+    ]
+
+
+def test_one_install_can_serve_every_checkout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    assert install_command(monkeypatch, "--dir", str(tmp_path / "bin")) == [
+        tmp_path / "bin" / "atlas",
+    ]
+
+
+def test_a_shared_directory_can_start_from_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    # As in ARGS='--dir=~/.local/bin', where the shell leaves ~ alone.
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert install_command(monkeypatch, "--dir=~/.local/bin") == [
+        tmp_path / ".local" / "bin" / "atlas",
+    ]

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from typing import Any, NamedTuple, cast
 from urllib.parse import quote
 
 from dank.config import PostgresSettings, read_postgres_password
+from dank.db.install_atlas import VERSION
 
 DB_DIR = pathlib.Path(__file__).parent
 ENV = "dank"
@@ -30,10 +32,10 @@ OPT_OUTS = {
     "ATLAS_NO_UPDATE_NOTIFIER": "true",
     "ATLAS_NO_UPGRADE_SUGGESTIONS": "true",
 }
-NOT_INSTALLED = (
-    "Atlas isn't installed. Run `uv run dank-db install-atlas`; see "
-    "docs/setup.md#atlas."
-)
+INSTALL_HINT = "Run `make atlas`; see docs/setup.md#atlas."
+NOT_INSTALLED = f"Atlas isn't installed. {INSTALL_HINT}"
+# The first line of `atlas version`, as in "atlas version v1.3.0".
+VERSION_LINE = re.compile(r"^atlas version (v\S+)$", re.MULTILINE)
 
 
 class SchemaError(Exception):
@@ -135,11 +137,42 @@ def _failure(stderr: str, stdout: str) -> str:
     return "\n".join(errors) or output.strip() or "Atlas failed"
 
 
-def _require_atlas() -> str:
+async def _require_atlas() -> str:
+    """Find Atlas, and refuse any version but the pinned one.
+
+    A copy shared between checkouts, on PATH, stays behind when a checkout
+    moves the pin, and nothing else would notice.
+    """
     atlas = find_atlas()
 
     if atlas is None:
         raise SchemaError(NOT_INSTALLED)
+
+    process = await asyncio.create_subprocess_exec(
+        atlas,
+        "version",
+        env=child_environment(),
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await process.communicate()
+    found = (
+        None if process.returncode
+        else VERSION_LINE.search(stdout.decode())
+    )
+
+    if found is None:
+        raise SchemaError(
+            f"{atlas} didn't say which Atlas version it is, and DANK needs "
+            f"{VERSION}. {INSTALL_HINT}",
+        )
+
+    if found[1] != VERSION:
+        raise SchemaError(
+            f"{atlas} is Atlas {found[1]}, but DANK needs {VERSION}. "
+            f"{INSTALL_HINT}",
+        )
 
     return atlas
 
@@ -152,7 +185,7 @@ async def _run(
     password: str = "",
 ) -> str:
     process = await asyncio.create_subprocess_exec(
-        _require_atlas(),
+        await _require_atlas(),
         *args,
         cwd=root,
         env=child_environment(url, dev_url),
@@ -298,7 +331,7 @@ async def run_interactive(
 ) -> int:
     """Run Atlas in this terminal, so it can ask about renames."""
     process = await asyncio.create_subprocess_exec(
-        _require_atlas(),
+        await _require_atlas(),
         *args,
         cwd=root,
         env=child_environment(dev_url=dev_url),

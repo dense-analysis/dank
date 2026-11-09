@@ -1,10 +1,12 @@
+import asyncio
 import json
 import pathlib
+import sys
 
 import pytest
 
 from dank.config import PostgresSettings
-from dank.db import atlas
+from dank.db import atlas, install_atlas
 from dank.db.atlas import SchemaState, SchemaStatus, parse_status
 from dank.web.startup import prepare_postgres
 
@@ -121,7 +123,141 @@ async def test_missing_binary_explains_the_way_out(
     with pytest.raises(atlas.SchemaError) as caught:
         await atlas.upgrade(PostgresSettings(password_file=password_file))
 
-    assert "dank-db install-atlas" in str(caught.value)
+    assert "make atlas" in str(caught.value)
+
+
+SHARED = "/home/someone/.local/bin/atlas"
+
+
+class FakeProcess:
+    def __init__(self, stdout: str = "", returncode: int = 0) -> None:
+        self.stdout = stdout.encode()
+        self.returncode = returncode
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return self.stdout, b""
+
+    async def wait(self) -> int:
+        return self.returncode
+
+
+def fake_atlas(
+    monkeypatch: pytest.MonkeyPatch, answer: FakeProcess,
+) -> list[tuple[str, ...]]:
+    """Answer `atlas version` with `answer`, and record any other command.
+
+    The test suite refuses real subprocesses outside the Postgres lane.
+    """
+    ran: list[tuple[str, ...]] = []
+
+    async def start(program: str, *args: str, **_: object) -> FakeProcess:
+        assert program == SHARED
+
+        if args == ("version",):
+            return answer
+
+        ran.append(args)
+
+        return FakeProcess()
+
+    monkeypatch.setattr(atlas, "find_atlas", lambda: SHARED)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
+
+    return ran
+
+
+def reports(version: str) -> FakeProcess:
+    # What the pinned download prints.
+    return FakeProcess(
+        f"atlas version {version}\n"
+        f"https://github.com/ariga/atlas/releases/tag/{version}\n",
+    )
+
+
+async def test_the_pinned_version_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    ran = fake_atlas(monkeypatch, reports(install_atlas.VERSION))
+
+    await atlas.validate_migrations(root=tmp_path)
+
+    assert ran == [("migrate", "validate", "--env", "dank")]
+
+
+async def test_another_version_is_refused_before_it_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    ran = fake_atlas(monkeypatch, reports("v1.2.0"))
+
+    with pytest.raises(atlas.SchemaError) as caught:
+        await atlas.validate_migrations(root=tmp_path)
+
+    assert str(caught.value) == (
+        f"{SHARED} is Atlas v1.2.0, but DANK needs {install_atlas.VERSION}. "
+        "Run `make atlas`; see docs/setup.md#atlas."
+    )
+    assert ran == []
+
+
+@pytest.mark.parametrize("answer", [
+    FakeProcess("something else entirely\n"),
+    FakeProcess(returncode=1),
+])
+async def test_an_atlas_that_won_t_say_its_version_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    answer: FakeProcess,
+) -> None:
+    ran = fake_atlas(monkeypatch, answer)
+
+    with pytest.raises(atlas.SchemaError) as caught:
+        await atlas.validate_migrations(root=tmp_path)
+
+    assert str(caught.value) == (
+        f"{SHARED} didn't say which Atlas version it is, and DANK needs "
+        f"{install_atlas.VERSION}. Run `make atlas`; see docs/setup.md#atlas."
+    )
+    assert ran == []
+
+
+async def test_an_interactive_command_checks_the_version_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    ran = fake_atlas(monkeypatch, reports("v1.2.0"))
+
+    with pytest.raises(atlas.SchemaError, match=r"v1\.2\.0"):
+        await atlas.run_interactive("migrate", "hash", root=tmp_path)
+
+    assert ran == []
+
+
+def executable(path: pathlib.Path) -> pathlib.Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n")
+    path.chmod(0o755)
+
+    return path
+
+
+def test_a_shared_install_on_path_serves_a_checkout_without_its_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    shared = executable(tmp_path / "shared" / "atlas")
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
+    monkeypatch.setenv("PATH", str(shared.parent))
+
+    assert atlas.find_atlas() == str(shared)
+
+
+def test_a_checkout_s_own_copy_comes_before_the_shared_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    own = executable(tmp_path / "venv" / "bin" / "atlas")
+    shared = executable(tmp_path / "shared" / "atlas")
+    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
+    monkeypatch.setenv("PATH", str(shared.parent))
+
+    assert atlas.find_atlas() == str(own)
 
 
 async def test_startup_failure_explains_the_ways_out(

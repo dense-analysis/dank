@@ -158,8 +158,14 @@ def _run_atlas(args: argparse.Namespace) -> int:
     )
 
 
-def _install_atlas(_args: argparse.Namespace) -> int:
-    target = pathlib.Path(sys.prefix) / "bin" / "atlas"
+def _install_atlas(args: argparse.Namespace) -> int:
+    # In a directory on PATH, one install serves every checkout that has no
+    # copy of its own. A shell leaves the ~ in --dir=~/... alone.
+    directory = (
+        pathlib.Path(args.dir).expanduser() if args.dir
+        else pathlib.Path(sys.prefix) / "bin"
+    )
+    target = directory / "atlas"
     install_atlas.install(
         target,
         install_atlas.platform_name(platform.system(), platform.machine()),
@@ -230,7 +236,15 @@ def _parser() -> argparse.ArgumentParser:
         "Run any other Atlas command, with telemetry off",
         dev_url=True,
     ).add_argument("arguments", nargs=argparse.REMAINDER)
-    command("install-atlas", _install_atlas, "Install the pinned Atlas binary")
+    command(
+        "install-atlas", _install_atlas, "Install the pinned Atlas binary",
+    ).add_argument(
+        "--dir",
+        help=(
+            "Install here instead of this checkout's .venv/bin, such as "
+            "~/.local/bin, to share one copy between checkouts"
+        ),
+    )
 
     return parser
 

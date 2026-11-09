@@ -171,7 +171,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make down`, `make logs` | Stop or inspect the Docker stack; Docker mode only |
 | `make postgres-dump` | Save the Docker Postgres database under `backups/`; Docker mode only |
 | `make postgres-restore FILE=<dump>` | Restore a saved dump into it; Docker mode only |
-| `make atlas` | Install the pinned Atlas binary for native runs |
+| `make atlas` | Install the pinned Atlas binary for native runs; `ARGS='--dir=~/.local/bin'` installs one copy for every checkout |
 | `make db-upgrade`, `make db-current`, `make db-create` | Manage the Postgres schema; see [Postgres migrations](docs/development.md#postgres-migrations) |
 | `make db-diff NAME=<name>`, `make db-check` | Generate a migration from model changes, or check they match; on the host |
 | `make db-atlas ARGS='<command>'` | Run any other Atlas command with telemetry off; on the host |

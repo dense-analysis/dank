@@ -235,7 +235,7 @@ def postgres_server(
         pytest.skip('needs --postgres-url; see make test-postgres')
 
     if find_atlas() is None:
-        pytest.skip('needs Atlas; run uv run dank-db install-atlas')
+        pytest.skip('needs Atlas; run make atlas')
 
     return server_settings(url, tmp_path_factory.mktemp('postgres'))
 

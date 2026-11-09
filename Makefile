@@ -54,7 +54,7 @@ help:
 		'  db-check        On the host: check migrations are valid and match models' \
 		'  db-diff         On the host: generate a migration; pass NAME=<name>' \
 		'  db-atlas        On the host: run an Atlas command with telemetry off; pass ARGS' \
-		'  atlas           On the host: install the pinned Atlas binary' \
+		'  atlas           On the host: install the pinned Atlas binary; ARGS=--dir=DIR shares one' \
 		'  sources-import  Import the sources in config.toml into Postgres, once' \
 		'  test            On the host: run the tests; pass paths or options through ARGS' \
 		'  lint            On the host: run all linters, which can fix files' \
@@ -158,7 +158,7 @@ db-atlas:
 	$(UV) run dank-db atlas $(ARGS)
 
 atlas:
-	$(UV) run dank-db install-atlas
+	$(UV) run dank-db install-atlas $(ARGS)
 
 sources-import:
 	$(RUN) dank-db import-sources

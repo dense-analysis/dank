@@ -16,7 +16,7 @@ from dank.api.lifespan import Resources
 from dank.api.refresh.manager import RefreshManager
 from dank.api.youtube.collector import CollectionGate
 from dank.config import PostgresSettings, Settings
-from dank.db import atlas
+from dank.db import atlas, install_atlas
 from dank.db.atlas import (
     SchemaAheadError,
     SchemaError,
@@ -277,8 +277,14 @@ async def test_password_stays_out_of_the_command_line(
 ) -> None:
     recorded = tmp_path / "arguments"
     stub = tmp_path / "atlas"
+    # It reports the pinned version, as DANK asks before running it.
     stub.write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$@" >> "{recorded}"\necho "{{}}"\n',
+        "#!/bin/sh\n"
+        'if [ "$1" = version ]; then\n'
+        f'  echo "atlas version {install_atlas.VERSION}"\n'
+        "  exit 0\n"
+        "fi\n"
+        f'printf "%s\\n" "$@" >> "{recorded}"\necho "{{}}"\n',
     )
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setattr(atlas, "find_atlas", lambda: str(stub))

@@ -94,14 +94,24 @@ PGPASSWORD="$(cat postgres-password)" psql --host=localhost --username=dank --db
 ### Atlas
 
 [Atlas](https://atlasgo.io/) applies the Postgres migrations. It is a separate
-program that `uv sync` can't install, so install it once per checkout:
+program that `uv sync` can't install, so install it with Make:
 
 ```sh
 make atlas
 ```
 
-This downloads a pinned version into `.venv/bin` and checks it against a
-checksum in the repository. DANK turns off Atlas's telemetry and update checks
+This downloads a pinned version into this checkout's `.venv/bin` and checks it
+against a checksum in the repository. With several checkouts, such as Git
+worktrees, install one copy into a directory on your `PATH` instead:
+
+```sh
+make atlas ARGS='--dir=~/.local/bin'
+```
+
+DANK uses the checkout's own copy first and the one on `PATH` otherwise. Before
+running either, it checks that it's the pinned version, and stops with a message
+when it isn't, such as after a change moves the pin. Run the same command again
+to replace the shared copy. DANK turns off Atlas's telemetry and update checks
 whenever it runs it, so run Atlas through `make db-atlas`; see
 [Postgres migrations](development.md#postgres-migrations). The binary is free to
 use under [Atlas's own terms](https://atlasgo.io/community-edition) rather than
