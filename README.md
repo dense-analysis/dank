@@ -23,6 +23,7 @@ perception and evolving narratives.
 - [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
 - [Stored data and queries](docs/features/database.md) — see which data lives where and inspect it.
+- [Sources in Postgres](docs/features/sources.md) — import sources once, ready to manage them in the app.
 
 See [known collection and processing issues](docs/known-issues.md) for reader
 status meanings, source-specific problems, current handling and recovery gaps.

@@ -10,13 +10,13 @@ tables automatically. See [setup](../setup.md) for both modes.
 | Store | Holds |
 | --- | --- |
 | ClickHouse | Collected and processed content, and scrape history |
-| Postgres | Nothing yet except Atlas's record of applied migrations; reserved for app state people edit, which has to be exactly right |
+| Postgres | App state people edit, which has to be exactly right: so far, [sources](sources.md), once imported |
 | `storage.data_dir` | Downloaded media, browser profiles, reader refresh jobs and logs |
-| `config.toml` | Sources and settings |
+| `config.toml` | Settings, and the sources collection still reads |
 
-Postgres runs beside ClickHouse so app state can move there, starting with the
-source catalog. Collected content stays in ClickHouse, and no transaction spans
-the two. See [setup](../setup.md#back-up-and-upgrade-postgres) to back up
+Postgres runs beside ClickHouse so app state can move there, starting with
+[sources](sources.md). Collected content stays in ClickHouse, and no
+transaction spans the two. See [setup](../setup.md#back-up-and-upgrade-postgres) to back up
 Postgres, and [Postgres migrations](../development.md#postgres-migrations) to
 change its schema.
 

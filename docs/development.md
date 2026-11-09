@@ -117,6 +117,13 @@ Rules for migrations:
   DEN-57 decides to pay for them. Hand-written views, functions and triggers in a
   migration work on the free tier, though Atlas won't track them.
 
+A preview of a branch with a migration that isn't on `main` must use a
+Postgres database of its own. On the real database it would apply that
+migration, and `main` would then refuse to start, correctly, because the
+database is ahead of its code. A preview of an older branch refuses to start
+for the same reason. Point the preview's config at another database, created
+with `make db-create`, as for [parallel instances](#parallel-instances).
+
 `make test-postgres` runs the tests marked `postgres` against a disposable server.
 Without `--postgres-url` or Atlas they're skipped, so `uv run pytest` needs
 neither. They get these fixtures from `tests/conftest.py`:

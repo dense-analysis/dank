@@ -13,8 +13,9 @@ uv run web --server fastapi --no-reload --port 8081
 `--no-reload`). Ported so far: `GET /api/reader/sources`, `/posts`, `/post`,
 `/x/authors`, `/connections`, `/connection` and `/source-icon`, `GET` and `POST
 /api/reader/refresh`, everything under `/api/reader/youtube`, plus the pages and
-files: `/`, `/post`, `/reader`, `/assets/` and `/static/`. OpenAPI is served at
-`/api/openapi.json`, with interactive docs at `/api/docs`.
+files: `/`, `/post`, `/reader`, `/assets/` and `/static/`. `/api/reader/source-settings`
+is new and only on FastAPI; see [sources](features/sources.md). OpenAPI is served
+at `/api/openapi.json`, with interactive docs at `/api/docs`.
 
 ## Shape
 
@@ -33,7 +34,12 @@ never the other way round.
 ```text
 src/dank/
   errors.py              DankError, InvalidInput, NotFound, Conflict, Busy,
-                         TooManyRequests
+                         TooManyRequests; FieldProblem for an error's fields
+  sources/               Sources people manage, outside api/ because the CLIs
+                         use them too
+    model.py             Source, normalized(), compile_sources(), encoding
+    service.py           SourceService, port SourceRepository
+  db/sources.py          PostgresSourceRepository
   api/
     app.py               create_app(): routers, error handlers, guard, headers
     lifespan.py          Resources, opened at startup and closed at shutdown
@@ -51,6 +57,10 @@ src/dank/
       model.py           SourceSummary, XActivity, summarize(), source_kind()
       clickhouse.py      ClickHouseCollectionStats
       config_catalog.py  ConfigSourceCatalog, over Settings.sources
+    source_settings/
+      router.py          GET, POST and PUT /api/reader/source-settings
+      schemas.py         SourceBody, SourceOut, SourceListResponse
+      deps.py            picks the repository; tests override it here
     posts/
       router.py          GET /api/reader/posts, /post and /x/authors
       schemas.py         Query models; PostOut, PostDetailOut, XAuthorsResponse
@@ -130,7 +140,7 @@ adapter without I/O.
    pure code directly. Adapters match a port by shape and never inherit.
 6. **Repositories for writes, read stores for reads.** ClickHouse reads go
    through read stores that return domain values or projections, never rows.
-   Postgres app state, starting with the source catalog, gets repositories.
+   Postgres app state, starting with sources, gets repositories.
 7. **One aggregate, one transaction.** A repository method opens and commits
    its own transaction. There is no unit-of-work class until a use case must
    change two aggregates together.
@@ -162,7 +172,7 @@ inputs:
 | Raised by | Status | `code` |
 | --- | --- | --- |
 | Pydantic validation | 400 | `invalid_request`, with `fields` |
-| `InvalidInput` | 400 | `invalid_input`, or a subclass's code |
+| `InvalidInput` | 400 | `invalid_input`, or a subclass's code, with `fields` when it names them |
 | `NotFound` | 404 | `not_found` |
 | `Conflict` | 409 | `conflict`, or a subclass's code |
 | `Busy` | 503 | `busy` |
@@ -349,6 +359,9 @@ there by `tests/api/ruff.toml`.
   `ASGITransport`. Only driven adapters are replaced, with one
   `dependency_overrides` line each, by fakes in the feature's `fakes.py` that
   hold plain values and are type-checked against their port.
+- **Repository tests** run Postgres repositories against a real database, and
+  are marked `postgres`; see [Postgres migrations](development.md#postgres-migrations).
+  `tests/db/test_sources.py` races real transactions, which a fake can't.
 - **Adapter tests** run each adapter against a real, throwaway ClickHouse
   database. They are marked `clickhouse` and skipped unless
   `--clickhouse-url` names a loopback server:
