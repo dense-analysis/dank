@@ -1,4 +1,4 @@
-"""dank-db: manage the Postgres schema by hand."""
+"""dank-db: manage the Postgres schema by hand, and import sources."""
 
 from __future__ import annotations
 
@@ -10,9 +10,12 @@ import sys
 
 import psycopg
 
-from dank.config import ConfigError, PostgresSettings, load_settings
+from dank.config import ConfigError, PostgresSettings, Settings, load_settings
 from dank.db import atlas, install_atlas
-from dank.db.engine import create_database
+from dank.db.engine import async_engine, async_sessions, create_database
+from dank.db.sources import PostgresSourceRepository
+from dank.errors import DankError
+from dank.sources.service import ImportResult, SourceService
 
 
 def _settings(args: argparse.Namespace) -> PostgresSettings:
@@ -68,6 +71,71 @@ def _create(args: argparse.Namespace) -> int:
         if created else
         f"Postgres database {settings.database} already exists.",
     )
+
+    return 0
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}{'' if count == 1 else 's'}"
+
+
+async def import_sources(settings: Settings) -> ImportResult:
+    """Save config.toml's sources in Postgres, once per database."""
+    if not settings.postgres.enabled:
+        raise ConfigError(
+            "Postgres is turned off in config.toml "
+            "([postgres] enabled = false), so sources can't be imported.",
+        )
+
+    # Like every CLI, this never migrates.
+    await atlas.require_head(settings.postgres)
+    engine = async_engine(settings.postgres)
+
+    try:
+        repository = PostgresSourceRepository(async_sessions(engine))
+
+        return await SourceService(repository).import_settings(settings)
+    finally:
+        await engine.dispose()
+
+
+def _import_sources(args: argparse.Namespace) -> int:
+    settings = load_settings(args.config)
+
+    if not settings.sources:
+        print("config.toml lists no sources, so nothing was imported.")
+
+        return 0
+
+    try:
+        result = asyncio.run(import_sources(settings))
+    except DankError as error:
+        print(f"dank-db: {error}", file=sys.stderr)
+
+        for problem in error.fields:
+            print(f"  {problem.path}: {problem.message}", file=sys.stderr)
+
+        if error.fields:
+            print(
+                "Sources are numbered from 0 in the order config.toml lists "
+                "them.",
+                file=sys.stderr,
+            )
+
+        return 1
+
+    print(
+        f"Imported {_plural(result.imported, 'source')} into Postgres "
+        f"database {settings.postgres.database}.",
+    )
+
+    if result.duplicates:
+        print(
+            f"Skipped {_plural(result.duplicates, 'exact duplicate')} in "
+            "config.toml.",
+        )
+
+    print("Collection still reads config.toml for now.")
 
     return 0
 
@@ -139,6 +207,11 @@ def _parser() -> argparse.ArgumentParser:
         dev_url=True,
     ).add_argument("name", help="A short name for the migration")
     command("create", _create, "Create the configured database if missing")
+    command(
+        "import-sources",
+        _import_sources,
+        "Save config.toml's sources in Postgres; only once per database",
+    )
     command(
         "atlas",
         _run_atlas,

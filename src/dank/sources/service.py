@@ -116,7 +116,9 @@ class SourceService:
 
         if problems:
             raise InvalidSource(
-                problems, "Some sources in config.toml can't be imported.",
+                problems,
+                "Some sources in config.toml can't be imported, so nothing "
+                "was.",
             )
 
         await self._repository.add_all(unique.values())

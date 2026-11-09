@@ -167,6 +167,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make db-upgrade`, `make db-current`, `make db-create` | Manage the Postgres schema; see [Postgres migrations](docs/development.md#postgres-migrations) |
 | `make db-diff NAME=<name>`, `make db-check` | Generate a migration from model changes, or check they match; on the host |
 | `make db-atlas ARGS='<command>'` | Run any other Atlas command with telemetry off; on the host |
+| `make sources-import` | Import the sources in `config.toml` into Postgres, once; see [sources](docs/features/sources.md) |
 | `make test` | Run the tests; pass paths or options through `ARGS`; on the host |
 | `make test-postgres` | Run the Postgres tests against a disposable server |
 | `make lint` | Run all linters, which can fix files; on the host |
