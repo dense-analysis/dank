@@ -23,7 +23,7 @@ perception and evolving narratives.
 - [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
 - [Stored data and queries](docs/features/database.md) — see which data lives where and inspect it.
-- [Sources in Postgres](docs/features/sources.md) — import sources once, ready to manage them in the app.
+- [Sources in Postgres](docs/features/sources.md) — import sources once, then use them without restarting DANK.
 
 See [known collection and processing issues](docs/known-issues.md) for reader
 status meanings, source-specific problems, current handling and recovery gaps.
@@ -102,6 +102,13 @@ Edit the top-level `sources` setting in your private `config.toml`, for example:
 ```toml
 sources = ["blog.codinghorror.com"]
 ```
+
+`sources` is deprecated in favour of [sources in Postgres](docs/features/sources.md),
+which apply edits without a restart. Import them once with
+`make sources-import`, then set `sources_in_database = true` near the top of
+`config.toml`, before any `[section]`. The example configs already have the
+line set to `false`. From then on, DANK no longer uses `sources` in
+`config.toml`.
 
 **Native**
 

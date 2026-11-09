@@ -1,13 +1,13 @@
 # Sources in Postgres
 
-DANK is moving its sources from `config.toml` into Postgres, so the reader can
-add and edit them without a restart. This page covers what exists so far: the
-`sources` table, a one-time import and an API.
+DANK is moving its sources from `config.toml` into Postgres, so they can be
+edited without a restart. This page covers the `sources` table, a one-time
+import, the `sources_in_database` switch that puts the table in use, and an
+API. Editing sources in the reader comes with
+[DEN-21](https://linear.app/dense-analysis/issue/DEN-21).
 
-Nothing reads these sources for collection yet. Collection keeps reading
-`config.toml` until a later change adds a `sources_in_database` switch
-([DEN-23](https://linear.app/dense-analysis/issue/DEN-23)), so importing or
-editing sources today changes nothing that DANK collects.
+`sources` in `config.toml` is deprecated. Import it once, turn the switch on,
+and keep your sources in Postgres from then on.
 
 ## Import config.toml once
 
@@ -21,8 +21,12 @@ and prints how many it imported:
 
 ```text
 Imported 14 sources into Postgres database dank.
-Collection still reads config.toml for now.
+DANK still uses config.toml's sources. To use these instead, set this near the top of config.toml, before any [section], replacing any sources_in_database line already there, and restart DANK:
+
+sources_in_database = true
 ```
+
+With the switch already on, the last line says `DANK uses these sources now.`
 
 - **It runs once per database.** Once any source exists, it says
   `Sources were already imported, so nothing changed.` and exits 1. Two runs
@@ -51,6 +55,59 @@ make sources-import
 ```
 
 Each worktree has its own database, and imports from its own `config.toml`.
+
+## Use the sources in Postgres
+
+`sources_in_database` is a top-level key in `config.toml`, so it goes before
+any `[section]`. It decides where every source comes from:
+
+| `sources_in_database` | Sources come from |
+| --- | --- |
+| `false`, the default | `sources` in `config.toml`, read when DANK starts |
+| `true` | The `sources` table only, even when it's empty. DANK no longer uses `sources` in `config.toml`, though it still checks it at startup, so remove it or keep it valid |
+
+Changing it needs a restart: `make web ARGS='--force-recreate dank'` with
+Docker, which copies `config.toml` in when the container starts. Switching
+off goes back to `config.toml` and keeps the table, so you can switch on again
+later.
+
+With the switch on:
+
+- **Edits apply without a restart.** Each reader request, refresh and command
+  reads the table as it starts. That covers the sidebar and its counts, tags,
+  configured YouTube channels, which source icons the reader serves, the legacy
+  viewer, `scrape`, `process` and `train`.
+- **Submitted work keeps its sources.** A queued or running refresh collects
+  the sources it was submitted with. A refresh asked for after an edit uses the
+  new ones; asking again for the same refresh joins the active job only while
+  the sources it selects are unchanged.
+- **Disabled sources stop new collection only.** Their posts stay in the
+  sidebar, readable, searchable and processable, and so do a disabled account's
+  or feed's.
+- **Other tabs catch up within five seconds.** A reader tab in the foreground
+  checks the source list every five seconds, and again when you come back to
+  it, and reloads its sidebar when the list changed. This needs the FastAPI
+  server (`web --server fastapi`). The aiohttp server, which Docker runs until
+  [DEN-51](https://linear.app/dense-analysis/issue/DEN-51), reads the table for
+  every request but has no source list, so its tabs catch up when reloaded or
+  after a refresh.
+- **An empty table means no sources.** The reader shows its empty state, and
+  `scrape`, `process` and `train` stop with
+  `No sources in the database. Run make sources-import, or add one in the app.`
+  and exit 1.
+- **Postgres has to be up.** An outage never falls back to `config.toml`:
+  reader requests that need sources answer `503`, and commands stop with
+  `sources_in_database is on, but the sources couldn't be read from Postgres:`
+  and the reason, and exit 1. Commands also need the schema at head, and never
+  migrate. Scrape modes that name their own posts, such as
+  `--x-post`, read no sources and run without Postgres.
+- **It needs Postgres turned on.** With `[postgres] enabled = false`, DANK
+  refuses the config:
+  `sources_in_database needs Postgres, which is turned off ([postgres] enabled = false).`
+
+`GET /api/reader/sources`, the sidebar's request on both servers, has an
+`in_database` flag that mirrors the switch, so the reader knows whether to watch
+for edits.
 
 ## What a source is
 
@@ -103,7 +160,7 @@ FastAPI only, under `/api/reader/source-settings`. See
 
 | Method | Path | Does |
 | --- | --- | --- |
-| `GET` | `/api/reader/source-settings` | `{sources: [...]}`, every source in order, disabled ones too |
+| `GET` | `/api/reader/source-settings` | `{sources: [...], in_database}`: every source in order, disabled ones too, and whether DANK uses them, which is false while the switch is off |
 | `GET` | `/api/reader/source-settings/{id}` | One source |
 | `POST` | `/api/reader/source-settings` | Add a source, sent without an ID. Answers `201` with the saved source |
 | `PUT` | `/api/reader/source-settings/{id}` | Replace a source, including whether it and each target are enabled |

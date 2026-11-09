@@ -8,6 +8,10 @@
 # Hacker News: sources = [{ domain = "hckrnews.com", hacker_news_filter = "top50" }]
 # Compose HN with RSS: docs/features/hacker-news.md#add-rss-or-use-it-alone
 sources = []
+# The sources list above is deprecated. Import it into Postgres with
+# make sources-import, then set this to true to use the sources there
+# instead. Keep it before any [section]; see docs/features/sources.md.
+sources_in_database = false
 
 [clickhouse]
 host = "localhost"

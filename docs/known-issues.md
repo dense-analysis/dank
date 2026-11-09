@@ -40,9 +40,10 @@ be ready to view; this does not mean collection succeeded completely. Submission
 progress and update-loading errors stay visible while details are collapsed.
 See [refresh browser tests](../reader/tests/refresh.spec.ts).
 
-## Source edits require an app restart
+## Source edits in config.toml require an app restart
 
-The reader loads settings at startup and passes that snapshot to refresh jobs.
+With `sources_in_database` off, the default, the reader loads `sources` from
+`config.toml` at startup and passes that snapshot to refresh jobs.
 Docker also copies the mounted TOML into the container at startup. Editing the
 host file does not update the sidebar or a refresh launched by the running app.
 A successful refresh therefore does not mean newly added sources were attempted.
@@ -56,8 +57,15 @@ Recreating the app and refreshing only that account saved 28 posts, including
 
 After source edits, recreate Docker's app with
 `make web ARGS='--force-recreate dank'`, or restart the native viewer, then
-refresh the new source. Proposed [source management in the app](https://linear.app/dense-analysis/issue/DEN-23/apply-saved-source-changes-without-restarting-dank)
-would persist source definitions and make saved changes available without a restart.
+refresh the new source. Or [move the sources into Postgres](features/sources.md#use-the-sources-in-postgres):
+with `sources_in_database` on, each request, refresh and command reads them
+as it starts, so saved edits apply without a restart. Refreshes already queued
+or running keep the sources they were submitted with, and an outage is an error
+rather than a fallback to `config.toml`. Reader tabs on the aiohttp server,
+which Docker runs until [DEN-51](https://linear.app/dense-analysis/issue/DEN-51),
+show edits only after a reload or a refresh. See
+[saved source tests](../tests/web/test_saved_sources.py) and
+[refresh job tests](../tests/api/refresh/test_router.py).
 
 ## Blocked Reddit collection and cancellation
 
@@ -1094,7 +1102,10 @@ and reuse saved successful transcripts; community-post detail refresh and the
 computed **From your feeds** view do not have a standalone collector.
 
 Up to three independent refreshes run in separate child processes, with at most
-five outstanding requests and duplicate-click reuse. Overlapping source domains
+five outstanding requests and duplicate-click reuse. A repeated request joins
+the active job only while the sources it selects are unchanged, so a refresh
+after a [saved source edit](features/sources.md#use-the-sources-in-postgres)
+queues a new job. Overlapping source domains
 and shared browser profiles wait; an unrestricted All refresh runs alone and
 keeps its place ahead of later requests. Command-line scrapes remain exclusive;
 reader jobs wait and retry when that lock is held. Public article recovery uses

@@ -10,9 +10,9 @@ tables automatically. See [setup](../setup.md) for both modes.
 | Store | Holds |
 | --- | --- |
 | ClickHouse | Collected and processed content, and scrape history |
-| Postgres | App state people edit, which has to be exactly right: so far, [sources](sources.md), once imported |
+| Postgres | App state people edit, which has to be exactly right: so far, [sources](sources.md), used once `sources_in_database` is on |
 | `storage.data_dir` | Downloaded media, browser profiles, reader refresh jobs and logs |
-| `config.toml` | Settings, and the sources collection still reads |
+| `config.toml` | Settings, and the deprecated `sources` list DANK uses while `sources_in_database` is off |
 
 Postgres runs beside ClickHouse so app state can move there, starting with
 [sources](sources.md). Collected content stays in ClickHouse, and no
