@@ -22,14 +22,14 @@ const client = new QueryClient({
 });
 
 function evidenceHref(evidence: PostConnectionEvidence) {
-  return `/reader/?${new URLSearchParams({ article: evidence.post_id, article_source: evidence.domain, reference_kind: evidence.kind, reference_id: evidence.reference_id, reference_url: evidence.matched_url })}`;
+  return `/?${new URLSearchParams({ article: evidence.post_id, article_source: evidence.domain, reference_kind: evidence.kind, reference_id: evidence.reference_id, reference_url: evidence.matched_url })}`;
 }
 
 function targetHref(target: PostConnectionTarget) {
   if (target.post)
-    return `/reader/?${new URLSearchParams({ article: target.post.id, article_source: target.post.domain, connections: "graph" })}`;
+    return `/?${new URLSearchParams({ article: target.post.id, article_source: target.post.domain, connections: "graph" })}`;
   if (target.youtube_item_id)
-    return `/reader/?${new URLSearchParams({ view: "youtube", feed: "linked", youtube_item: target.youtube_item_id, references: "graph" })}`;
+    return `/?${new URLSearchParams({ view: "youtube", feed: "linked", youtube_item: target.youtube_item_id, references: "graph" })}`;
 
   return undefined;
 }

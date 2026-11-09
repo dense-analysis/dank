@@ -203,7 +203,7 @@ export function YouTubeCollection({
     const next = new URLSearchParams(params);
     next.set("youtube_item", item.id);
 
-    return `/reader/?${next}`;
+    return `/?${next}`;
   }
 
   if (selectedId) {
@@ -375,7 +375,7 @@ export function YouTubeCollection({
                     onOpenReference={openReference}
                     referenceHref={(reference) =>
                       referenceHref?.(reference) ??
-                      `/reader/?${referenceParams(params, reference)}`
+                      `/?${referenceParams(params, reference)}`
                     }
                   />
                 ) : (
@@ -793,7 +793,7 @@ function YouTubeSourceReference({
   const original = safeUrl(reference.reference_url);
   const matched = safeUrl(reference.matched_url);
   const reader = reference.reader_url
-    ? (href ?? `/reader/?${referenceParams(params, reference)}`)
+    ? (href ?? `/?${referenceParams(params, reference)}`)
     : undefined;
   const source =
     reference.source === "x"

@@ -77,7 +77,7 @@ const first = {
       url: "https://x.com/reporter/status/123",
       title: "A different view of the future of our cities",
       source: "x",
-      reader_url: "/reader/?article=source-post&article_source=x.com",
+      reader_url: "/?article=source-post&article_source=x.com",
       kind: "post" as const,
       reference_id: "",
       author: "reporter",
@@ -92,7 +92,7 @@ const first = {
       url: "https://lobste.rs/s/video",
       title: "Urban design worth watching",
       source: "rss",
-      reader_url: "/reader/?article=blog-link&article_source=lobste.rs",
+      reader_url: "/?article=blog-link&article_source=lobste.rs",
       kind: "comment" as const,
       reference_id: "comment-one",
       author: "reader",
@@ -387,7 +387,7 @@ for (const width of [1440, 390, 320]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     const state = await recommendationsFixture(page);
-    await page.goto("/reader/?view=youtube");
+    await page.goto("/?view=youtube");
 
     if (width < 600) {
       await page
@@ -488,7 +488,7 @@ test("configured recommendations remain selectable before their first capture", 
   page,
 }) => {
   await recommendationsFixture(page, true);
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await page
     .getByRole("button", { name: "Recommendations, 0 discoveries" })
     .click();
@@ -517,7 +517,7 @@ test("nested YouTube groups remember independent expansion choices", async ({
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav.getByRole("button", { name: "Collapse YouTube News" }).click();
   await nav.getByRole("button", { name: "Channel Feeds", exact: true }).click();
@@ -540,7 +540,7 @@ test("YouTube offers independent shelves, portrait Shorts, posts and safe on-dem
   page,
 }) => {
   const state = await fixture(page);
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await expect(
     page.getByRole("heading", { name: "Collected recommendations" }),
   ).toBeVisible();
@@ -580,7 +580,7 @@ test("feed and format search preserve state through discovery details, source ar
   page,
 }) => {
   const state = await fixture(page);
-  await page.goto("/reader/?view=youtube&feed=linked");
+  await page.goto("/?view=youtube&feed=linked");
   await expect(page.locator(".yt-card")).toHaveCount(1);
   await page
     .getByRole("searchbox", { name: "Search From your feeds", exact: true })
@@ -629,7 +629,7 @@ test("configured feeds and channels are selectable and their disclosure is keybo
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav
     .getByRole("button", { name: "Collapse YouTube feeds" })
@@ -671,7 +671,7 @@ test("pagination errors retain discoveries and retry the same collection", async
   await page.addInitScript(() => {
     Reflect.deleteProperty(window, "IntersectionObserver");
   });
-  await page.goto("/reader/?view=youtube&format=video");
+  await page.goto("/?view=youtube&format=video");
   await expect(page.locator(".yt-card")).toHaveCount(2);
   state.failMore = true;
   await page.getByRole("button", { name: "More discoveries" }).click();
@@ -690,7 +690,7 @@ test("empty, failed and unconfigured collections are explicit", async ({
   const state = await fixture(page);
   state.data = [];
   state.sources = { feeds: [], channels: [], total: 0, linked_count: 0 };
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await expect(
     page.getByRole("heading", { name: "Your next discovery starts here" }),
   ).toBeVisible();
@@ -723,7 +723,7 @@ for (const width of [1440, 390, 320]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     await fixture(page);
-    await page.goto("/reader/?view=youtube");
+    await page.goto("/?view=youtube");
     await expect(page.locator(".yt-card")).toHaveCount(8);
     await noOverflow(page);
     await page.screenshot({
@@ -794,7 +794,7 @@ test("downloaded videos play locally on demand and preserve position in discover
       body: mp4.subarray(start, end + 1),
     });
   });
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await expect(page.getByText("Downloaded", { exact: true })).toBeVisible();
   expect(requests).toBe(0);
   await expect(page.locator("video, iframe")).toHaveCount(0);
@@ -844,7 +844,7 @@ test("failed local video offers explicit remote playback and community links rem
   await page.route("**/assets/missing-video.mp4", (route) =>
     route.fulfill({ status: 404 }),
   );
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await expect(page.locator(".yt-post-text a")).toHaveAttribute(
     "href",
     "https://news.example.com/story?topic=world",
@@ -883,7 +883,7 @@ test("raw-only source references open their original and processed references re
       body: "<p>Original source fixture</p>",
     }),
   );
-  await page.goto(`/reader/?view=youtube&feed=linked&youtube_item=${first.id}`);
+  await page.goto(`/?view=youtube&feed=linked&youtube_item=${first.id}`);
   const references = page.getByRole("region", {
     name: "Linked from collected posts",
   });
@@ -929,7 +929,7 @@ test("channel header uses a cached icon and stable video totals while channel ca
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=youtube&channel=channel4");
+  await page.goto("/?view=youtube&channel=channel4");
   const header = page.locator(".topbar");
   await expect(
     header.getByRole("heading", { name: "Channel 4 News" }),
@@ -971,7 +971,7 @@ test("News and Hyped headings choose default feeds and tabs retain independent U
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   await nav.getByRole("button", { name: "News", exact: true }).click();
@@ -1005,7 +1005,7 @@ test("nested sections collapse independently without changing the selected feed"
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=youtube&channel=channel4");
+  await page.goto("/?view=youtube&channel=channel4");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   const location = page.url();
   await nav
@@ -1027,7 +1027,7 @@ test("references show post and comment evidence with exact destinations", async 
   page,
 }) => {
   await fixture(page);
-  await page.goto(`/reader/?view=youtube&feed=linked&youtube_item=${first.id}`);
+  await page.goto(`/?view=youtube&feed=linked&youtube_item=${first.id}`);
   const region = page.getByRole("region", {
     name: "Linked from collected posts",
   });
@@ -1085,7 +1085,7 @@ test("linked videos sort across pages and retain order through navigation", asyn
       observed_at: "2026-10-17T10:00:00Z",
     },
   ];
-  await page.goto("/reader/?view=youtube&feed=linked&format=video");
+  await page.goto("/?view=youtube&feed=linked&format=video");
   const sort = page.getByRole("combobox", { name: "Order linked videos" });
   const titles = page.locator(".yt-card h3");
   await expect(sort).toHaveValue("newest");
@@ -1153,7 +1153,7 @@ test("All loads videos before Shorts in independent manual batches of 500", asyn
     ...Array.from({ length: 501 }, (_, i) => recommended(i, "short")),
     ...Array.from({ length: 1001 }, (_, i) => recommended(i, "video")),
   ];
-  await page.goto(`/reader/?view=youtube&feed=${encodeURIComponent(home)}`);
+  await page.goto(`/?view=youtube&feed=${encodeURIComponent(home)}`);
   await expect(page.locator(".yt-card.yt-video")).toHaveCount(500);
   await expect(page.locator(".yt-card.yt-short")).toHaveCount(500);
   await expect(page.locator(".yt-shelf").first()).toHaveClass(/yt-shelf-video/);
@@ -1223,7 +1223,7 @@ for (const width of [1440, 390]) {
       })),
     };
     await page.goto(
-      `/reader/?view=youtube&feed=${encodeURIComponent(home)}&format=channels`,
+      `/?view=youtube&feed=${encodeURIComponent(home)}&format=channels`,
     );
     await expect(page.locator(".yt-channel-group")).toHaveCount(4);
     await expect(
@@ -1275,7 +1275,7 @@ test("empty configured-only recommendations explain the filter", async ({
   const state = await recommendationsFixture(page);
   state.sources = { ...state.sources, channels: [] };
   await page.goto(
-    `/reader/?view=youtube&feed=${encodeURIComponent(home)}&channel_scope=configured`,
+    `/?view=youtube&feed=${encodeURIComponent(home)}&channel_scope=configured`,
   );
   await expect(
     page.getByRole("heading", { name: "No matching discoveries", exact: true }),

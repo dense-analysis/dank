@@ -112,7 +112,7 @@ for (const mobile of [false, true]) {
         });
       }
     });
-    await page.goto("/reader/?view=x&account=author");
+    await page.goto("/?view=x&account=author");
     await expect(
       page.getByRole("button", { name: "Posts", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");

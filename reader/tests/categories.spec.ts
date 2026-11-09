@@ -43,7 +43,7 @@ for (const width of [320, 390, 1280]) {
               };
       await route.fulfill({ json });
     });
-    await page.goto("/reader/");
+    await page.goto("/");
     const filters = page.getByRole("group", { name: "Filter by category" });
     await expect(filters).toBeVisible();
     await expect(
@@ -86,7 +86,7 @@ for (const width of [320, 390, 1280]) {
     expect(new URL(page.url()).searchParams.getAll("category")).toEqual([
       "Software",
     ]);
-    await page.goto("/reader/?category=Science&category=Software");
+    await page.goto("/?category=Science&category=Software");
     await expect(
       filters.getByRole("button", { name: "Science", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");

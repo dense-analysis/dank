@@ -16,7 +16,7 @@ export function XAccountLink({
   return (
     <ReaderLink
       className={`source-link x-account-link ${showName ? "x-account-identity" : ""}`}
-      href={`/reader/?${filterParams({ ...defaultFilters, kind: "x", account: account.handle })}`}
+      href={`/?${filterParams({ ...defaultFilters, kind: "x", account: account.handle })}`}
       onNavigate={() => select(account.handle)}
       aria-label={`Posts from @${account.handle}`}
       title={`${account.name} (@${account.handle})`}

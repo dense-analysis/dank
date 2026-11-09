@@ -108,7 +108,7 @@ for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     await mockCollections(page);
     await page.goto(
-      "/reader/?view=x&account=reporter&q=dispatch&author=Shared+display+name",
+      "/?view=x&account=reporter&q=dispatch&author=Shared+display+name",
     );
     const header = page.locator(".topbar");
     await expect(
@@ -142,7 +142,7 @@ for (const width of [320, 390, 1280]) {
     await header
       .getByRole("button", { name: "Back to X posts", exact: true })
       .click();
-    await expect(page).toHaveURL(/\/reader\/\?view=x$/);
+    await expect(page).toHaveURL(/\/\?view=x$/);
     await expect(page.locator(".post-card")).toHaveCount(5);
     await expect(
       page.getByRole("searchbox", { name: "Search X", exact: true }),
@@ -154,7 +154,7 @@ test("collection headers show honest missing totals and return to the Reddit ove
   page,
 }) => {
   await mockCollections(page);
-  await page.goto("/reader/?view=x&account=quiet_account");
+  await page.goto("/?view=x&account=quiet_account");
   const header = page.locator(".topbar");
   await expect(header.locator(".collection-count-values")).toHaveText(
     "0collected",
@@ -163,14 +163,14 @@ test("collection headers show honest missing totals and return to the Reddit ove
     "title",
     "0 posts collected",
   );
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await expect(header.locator(".collection-count-values")).toHaveText(
     "1collected",
   );
   await header
     .getByRole("button", { name: "Back to Reddit", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/reader\/\?view=reddit$/);
+  await expect(page).toHaveURL(/\/\?view=reddit$/);
   await expect(
     page.getByRole("searchbox", { name: "Search Reddit", exact: true }),
   ).toBeVisible();
@@ -276,7 +276,7 @@ test("All mixes collections while Blogs, X and Reddit keep their own feeds", asy
   page,
 }) => {
   const state = await mockCollections(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await expect(story(page, blog)).toBeVisible();
   await expect(story(page, dispatches[0])).toBeVisible();
@@ -336,7 +336,7 @@ test("X accounts have accessible disclosure, safe icons and initial fallbacks", 
       untrustedRequests.push(request.url());
   });
   await mockCollections(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   const reporter = nav.getByRole("button", {
     name: /City Reporter.*@reporter.*4 collected posts/,
@@ -406,7 +406,7 @@ for (const width of [390, 1280]) {
   }) => {
     await page.setViewportSize({ width, height: 800 });
     await mockCollections(page);
-    await page.goto("/reader/");
+    await page.goto("/");
     const nav = page.getByRole("navigation", { name: "Main navigation" });
 
     async function openNavigation() {
@@ -457,7 +457,7 @@ test("invalid sidebar storage falls back without resetting other group choices",
   page,
 }) => {
   await mockCollections(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page.evaluate(() => {
     localStorage.setItem(
       "dank-reader:collection-expanded:v1:x-accounts",
@@ -489,7 +489,7 @@ for (const method of ["getItem", "setItem"] as const) {
         },
       });
     }, method);
-    await page.goto("/reader/");
+    await page.goto("/");
     await page.getByRole("button", { name: "Collapse X accounts" }).click();
     await expect(page.locator("#x-accounts")).toBeHidden();
     await page.getByRole("button", { name: "Expand X accounts" }).click();
@@ -510,7 +510,7 @@ test("account search, author, loaded pages and history survive article navigatio
     Reflect.deleteProperty(window, "IntersectionObserver");
   });
   await page.goto(
-    "/reader/?view=x&account=REPORTER&after=2026-10-01&before=2026-10-31&author=Shared+display+name&author_match=exact",
+    "/?view=x&account=REPORTER&after=2026-10-01&before=2026-10-31&author=Shared+display+name&author_match=exact",
   );
   await expect(page.locator(".post-card")).toHaveCount(2);
   await page
@@ -586,7 +586,7 @@ test("configured accounts without posts remain selectable and X can be absent", 
   page,
 }) => {
   await mockCollections(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav
     .getByRole("button", {
@@ -620,7 +620,7 @@ for (const width of [1440, 390, 320]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
     await mockCollections(page);
-    await page.goto("/reader/");
+    await page.goto("/");
 
     if (width < 600)
       await page
@@ -678,7 +678,7 @@ test("source links and source rows select their collection", async ({
     [blog, "stories"],
     [dispatches[0], "x"],
   ] as const) {
-    await page.goto("/reader/");
+    await page.goto("/");
     const card = page.locator(".post-card").filter({ has: story(page, post) });
     const link =
       post.source === "x"
@@ -714,7 +714,7 @@ test("source links and source rows select their collection", async ({
 
     await expect(article).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get("view")).toBe(view);
-    await page.goto("/reader/?view=sources");
+    await page.goto("/?view=sources");
     await page.locator(".source-row").filter({ hasText: post.domain }).click();
     expect(new URL(page.url()).searchParams.get("view")).toBe(view);
     await expect(story(page, post)).toBeVisible();
@@ -752,7 +752,7 @@ for (const width of [1440, 390, 320]) {
       return source;
     });
     await mockCollections(page, true, manySources);
-    await page.goto("/reader/");
+    await page.goto("/");
 
     if (width < 600)
       await page
@@ -834,7 +834,7 @@ for (const width of [320, 390, 1280]) {
     );
     await mockCollections(page, true, enriched);
     await page.goto(
-      "/reader/?view=reddit&community=LocalLLaMA&q=missing&after=2026-10-01",
+      "/?view=reddit&community=LocalLLaMA&q=missing&after=2026-10-01",
     );
     const header = page.locator(".topbar");
     const pill = header.locator(".collection-count-pill");
@@ -857,7 +857,7 @@ for (const width of [320, 390, 1280]) {
     await header
       .getByRole("button", { name: "Back to Reddit", exact: true })
       .click();
-    await expect(page).toHaveURL(/\/reader\/\?view=reddit$/);
+    await expect(page).toHaveURL(/\/\?view=reddit$/);
   });
 }
 
@@ -884,7 +884,7 @@ test("a successful zero archive count remains distinct from an unknown total", a
         },
   );
   await mockCollections(page, true, enriched);
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await expect(page.locator(".topbar .collection-count-values")).toHaveText(
     "0/≈0posts",
   );

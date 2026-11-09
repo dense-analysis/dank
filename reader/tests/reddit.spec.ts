@@ -119,7 +119,7 @@ for (const width of [1440, 980, 390, 320]) {
         ...redditPost,
         title: "Waymo in Toronto",
         excerpt: "Learn more.",
-        thumbnail: "/reader/favicon.svg",
+        thumbnail: "/favicon.svg",
         reddit: { community: "accelerate", score: 32, comments: 2, flair },
       },
       {
@@ -145,7 +145,7 @@ for (const width of [1440, 980, 390, 320]) {
     await mockReddit(page, true, posts);
 
     for (const community of ["accelerate", ""]) {
-      await page.goto(`/reader/?view=reddit&community=${community}`);
+      await page.goto(`/?view=reddit&community=${community}`);
       const cards = page.locator(".post-card");
       await expect(cards).toHaveCount(3);
       await page.evaluate(() => document.fonts.ready);
@@ -224,7 +224,7 @@ test("keeps Blogs separate and exposes configured Reddit communities with access
   page,
 }, testInfo) => {
   const requests = await mockReddit(page);
-  await page.goto("/reader/?view=stories");
+  await page.goto("/?view=stories");
   await expect(
     page.getByRole("heading", { name: blogPost.title }),
   ).toBeVisible();
@@ -288,7 +288,7 @@ test("keeps Blogs separate and exposes configured Reddit communities with access
 
 test("hides Reddit navigation when it is not configured", async ({ page }) => {
   await mockReddit(page, false);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(
     page.getByRole("heading", { name: blogPost.title }),
   ).toBeVisible();
@@ -303,7 +303,7 @@ test("retains community, search, author and article navigation in Reddit", async
   page,
 }) => {
   const requests = await mockReddit(page);
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await expect(
     page.getByRole("heading", { name: "r/LocalLLaMA", exact: true }),
   ).toBeVisible();
@@ -368,7 +368,7 @@ test("supports Reddit communities on mobile without leaving the navigation overl
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockReddit(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("button", { name: "Open navigation", exact: true })
     .click();

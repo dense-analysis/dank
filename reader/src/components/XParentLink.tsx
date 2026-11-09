@@ -20,7 +20,7 @@ export function XParentLink({
   return parent.collected ? (
     <ReaderLink
       className="x-parent-link"
-      href={`/reader/?${articleParams(params, parent)}`}
+      href={`/?${articleParams(params, parent)}`}
       onNavigate={() => openPost(parent)}
     >
       {label}

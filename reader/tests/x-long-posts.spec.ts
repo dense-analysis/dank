@@ -111,7 +111,7 @@ test("feed boundaries distinguish short, medium and article-length text", async 
     makePost("at-words", `<p>${"a ".repeat(500).trim()}</p>`),
   ];
   await mockPosts(context, posts);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const cards = page.locator(".post-card");
   await expect(cards).toHaveCount(posts.length);
   await expect(
@@ -148,7 +148,7 @@ test("ordinary long posts expand completely with paragraphs, source links and se
   context,
 }) => {
   await mockPosts(context, [medium]);
-  await page.goto("/reader/?view=x&q=explanation");
+  await page.goto("/?view=x&q=explanation");
   const originalUrl = page.url();
   const card = page.locator(".post-card");
   const study = card.getByRole("link", { name: "the study", exact: true });
@@ -202,7 +202,7 @@ for (const view of ["", "view=x", "view=x&account=researcher"]) {
     context,
   }) => {
     await mockPosts(context, [article]);
-    await page.goto(`/reader/?${view}`);
+    await page.goto(`/?${view}`);
     const card = page.locator(".post-card");
     const fullPost = card.getByRole("link", { name: /Read full post/ });
     await expect(fullPost).toBeVisible();
@@ -227,9 +227,7 @@ test("the full-post link supports new tabs and keyboard navigation and Back reta
     makePost(`preceding-${index}`, "<p>A short preceding post.</p>"),
   );
   await mockPosts(context, [...preceding, article]);
-  await page.goto(
-    "/reader/?view=x&account=researcher&q=explanation&sort=oldest",
-  );
+  await page.goto("/?view=x&account=researcher&q=explanation&sort=oldest");
   const originalUrl = page.url();
   const card = page.locator(".post-card").last();
   await card.getByRole("button", { name: "Show more", exact: true }).click();
@@ -278,7 +276,7 @@ test("mobile expanded article previews remain bounded and accessible", async ({
 }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   await mockPosts(context, [article]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   await card.getByRole("button", { name: "Show more", exact: true }).click();
   await expect(
@@ -350,7 +348,7 @@ test("expanding preserves attachment state and suppresses raw URLs represented b
       ),
     }),
   );
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   const video = card.locator("video");
   await video.scrollIntoViewIfNeeded();
@@ -428,9 +426,7 @@ test("long conversation replies fully expand when no internal reader destination
     },
   };
   await mockPosts(context, [post]);
-  await page.goto(
-    "/reader/?view=x&article=conversation-parent&article_source=x.com",
-  );
+  await page.goto("/?view=x&article=conversation-parent&article_source=x.com");
   const reader = page.getByRole("main", { name: "X post reader" });
   const reply = reader.locator(".x-conversation-entry");
   await expect(reply).toHaveCount(1);
@@ -487,7 +483,7 @@ for (const [width, query, reducedMotion] of [
       article,
       ...Array.from({ length: 6 }, (_, index) => filler(`after-${index}`)),
     ]);
-    await page.goto(`/reader/?${query}`);
+    await page.goto(`/?${query}`);
     const originalUrl = page.url();
     const card = page.locator(".post-card").filter({
       has: page.getByRole("link", {
@@ -578,7 +574,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       article,
       makePost("after-animation", "<p>Following post.</p>"),
     ]);
-    await page.goto("/reader/?view=x&account=researcher");
+    await page.goto("/?view=x&account=researcher");
     const card = page.locator(".post-card").first();
     const viewport = card.locator(".x-post-content > div[id]");
     await expect(viewport).toBeVisible();
@@ -663,7 +659,7 @@ test("rapid disclosure reversals settle to the latest state without pinning the 
 }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await mockPosts(context, [article]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   const viewport = card.locator(".x-post-content > div[id]");
   const toggle = card.locator(".x-text-actions button");
@@ -714,7 +710,7 @@ for (const [width, query, reducedMotion, input] of [
       article,
       ...Array.from({ length: 5 }, (_, index) => filler(`after-${index}`)),
     ]);
-    await page.goto(`/reader/?${query}`);
+    await page.goto(`/?${query}`);
     const card = page.locator(".post-card").filter({
       has: page.getByRole("link", {
         name: `Read ${article.title}`,
@@ -789,7 +785,7 @@ test("expanding does not fight manual scrolling and releases its temporary ancho
       ),
     ),
   ]);
-  await page.goto("/reader/?view=x&account=researcher");
+  await page.goto("/?view=x&account=researcher");
   const card = page.locator(".post-card").first();
   const toggle = card.getByRole("button", { name: "Show more", exact: true });
   await toggle.scrollIntoViewIfNeeded();

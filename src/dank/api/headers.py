@@ -4,9 +4,10 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
-# Their mounts answer HEAD themselves. Run as a GET, a HEAD on a video would
-# read the whole file only to throw it away.
-FILE_PATHS = ("/assets/", "/reader/")
+# The only routes. Everything else is a file mount, which answers HEAD itself:
+# run as a GET, a HEAD on a video would read the whole file only to throw it
+# away.
+ROUTE_PATHS = ("/api/", "/reader")
 
 
 class ApiHeaders:
@@ -49,7 +50,7 @@ class ApiHeaders:
 
             await send(message)
 
-        if head and not path.startswith(FILE_PATHS):
+        if head and path.startswith(ROUTE_PATHS):
             scope = {**scope, "method": "GET"}
 
         await self.app(scope, receive, send_with_headers)

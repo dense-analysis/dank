@@ -180,7 +180,7 @@ for (const [post, dedicated] of [
     }) => {
       await fixtures(context);
       await page.goto(
-        `/reader/?view=${view}&sort=oldest&q=collected&after=2026-10-01`,
+        `/?view=${view}&sort=oldest&q=collected&after=2026-10-01`,
       );
       const primary = page.getByRole("link", {
         name: `Read ${post.title}`,
@@ -225,7 +225,7 @@ test("Hacker News discussion links retain their own destination", async ({
   context,
 }) => {
   await fixtures(context);
-  await page.goto("/reader/?view=hacker_news&hn_filter=top20");
+  await page.goto("/?view=hacker_news&hn_filter=top20");
   const discussion = page.getByRole("link", {
     name: `Discussion on Hacker News: ${hn.title}`,
   });
@@ -245,7 +245,7 @@ for (const kind of ["video", "post"] as const) {
     context,
   }) => {
     await fixtures(context);
-    await page.goto("/reader/?view=youtube");
+    await page.goto("/?view=youtube");
     const card = page.locator(`.yt-card.yt-${kind}`);
     const details = card.getByRole("link", { name: /Discovery details for/ });
     await expect(details).toBeVisible();
@@ -297,7 +297,7 @@ for (const width of [1280, 390]) {
       [hn, "hacker_news"],
     ] as const) {
       for (const feed of [view, "all"]) {
-        await page.goto(`/reader/?view=${feed}`);
+        await page.goto(`/?view=${feed}`);
         const primary = page.getByRole("link", {
           name: `Read ${post.title}`,
           exact: true,
@@ -322,7 +322,7 @@ for (const width of [1280, 390]) {
       }
     }
 
-    await page.goto("/reader/?view=youtube");
+    await page.goto("/?view=youtube");
 
     for (const item of [video, communityPost]) {
       const card = page.locator(`.yt-card.yt-${item.kind}`);
@@ -336,9 +336,7 @@ for (const width of [1280, 390]) {
       expect(context.pages()).toHaveLength(1);
     }
 
-    await page.goto(
-      "/reader/?view=stories&article=blog&article_source=example.com",
-    );
+    await page.goto("/?view=stories&article=blog&article_source=example.com");
     const original = page.getByRole("link", {
       name: "Read original",
       exact: true,

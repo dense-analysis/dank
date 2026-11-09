@@ -192,7 +192,7 @@ for (const kind of ["blog", "x", "reddit"] as const) {
     }, testInfo) => {
       await page.setViewportSize({ width, height: 844 });
       const { original, story } = await fixtures(page, kind);
-      await page.goto("/reader/?view=hacker_news&hn_filter=top20");
+      await page.goto("/?view=hacker_news&hn_filter=top20");
       const title = page.getByRole("link", {
         name: `Read ${story.title}`,
         exact: true,
@@ -306,7 +306,7 @@ for (const kind of ["blog", "x", "reddit"] as const) {
       await expect(page.locator('[data-reference-match="true"]')).toHaveCount(
         0,
       );
-      await page.goto("/reader/");
+      await page.goto("/");
       await expect(page.locator(".post-card")).toHaveCount(1);
       await expect(page.locator(".hn-card")).toHaveCount(0);
       await page.locator(".post-card .post-links summary").click();
@@ -337,7 +337,7 @@ for (const publishedAt of [null, "2026-10-14T12:30:00Z", undefined]) {
       source: "linked_article",
       published_at: publishedAt,
     });
-    await page.goto("/reader/");
+    await page.goto("/");
     const card = page.locator(".post-card");
     await expect(card).toBeVisible();
     if (publishedAt === null) {
@@ -379,7 +379,7 @@ test("HN publisher previews highlight search terms without fetching each article
     }
   });
   await fixtures(page, "blog");
-  await page.goto("/reader/?view=hacker_news&q=research");
+  await page.goto("/?view=hacker_news&q=research");
   await expect(page.locator(".hn-card .post-open p mark")).toHaveText(
     "research",
   );
@@ -401,7 +401,7 @@ for (const ownBody of [true, false]) {
           }
         : {},
     );
-    await page.goto("/reader/?view=hacker_news");
+    await page.goto("/?view=hacker_news");
     const card = page.locator(".hn-card");
     await expect(card).toBeVisible();
     const excerpt = card.locator(".post-open p");

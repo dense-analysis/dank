@@ -43,7 +43,7 @@ const saved: YouTubeTranscript = {
     { start: 65, duration: 3, text: "<script>Literal caption text</script>" },
   ],
 };
-const detail = `/reader/?view=youtube&youtube_item=video:${id}`;
+const detail = `/?view=youtube&youtube_item=video:${id}`;
 
 async function fixture(page: Page, initial = blank) {
   const state = { result: initial, posts: 0, reads: 0, fail: false };
@@ -83,7 +83,7 @@ for (const width of [390, 1440]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     const state = await fixture(page);
-    await page.goto("/reader/?view=youtube");
+    await page.goto("/?view=youtube");
     await expect(page.locator(".yt-card")).toHaveCount(1);
     expect(state.reads).toBe(0);
     expect(state.posts).toBe(0);

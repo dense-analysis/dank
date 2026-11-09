@@ -19,7 +19,7 @@ const rootQuery = new URLSearchParams({
   article: connectionRoot.id,
   article_source: connectionRoot.domain,
 });
-const rootUrl = `/reader/?${rootQuery}`;
+const rootUrl = `/?${rootQuery}`;
 const commentNode = JSON.stringify([
   "comment",
   connectionDiscussion.domain,
@@ -550,7 +550,7 @@ test("publisher exploration retains Reddit community context while All requests 
   params.set("view", "reddit");
   params.set("community", "kernel");
   params.set("connections", "list");
-  await page.goto(`/reader/?${params}`);
+  await page.goto(`/?${params}`);
   const outgoing = page
     .getByRole("region", { name: "Links from this post" })
     .locator(".post-connection-evidence")
@@ -581,7 +581,7 @@ test("publisher exploration retains Reddit community context while All requests 
   ).toBe(true);
   params.set("view", "all");
   params.delete("community");
-  await page.goto(`/reader/?${params}`);
+  await page.goto(`/?${params}`);
   await expect(
     page.getByRole("region", { name: "Links to this post" }),
   ).toBeVisible();

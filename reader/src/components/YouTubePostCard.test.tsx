@@ -58,7 +58,7 @@ const post = {
   },
 } satisfies Post;
 const href =
-  "/reader/?platform=youtube&platform=reddit&q=station&youtube_item=video%3AdQw4w9WgXcQ";
+  "/?platform=youtube&platform=reddit&q=station&youtube_item=video%3AdQw4w9WgXcQ";
 let container: HTMLDivElement;
 let root: Root;
 const open = vi.fn();

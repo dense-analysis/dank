@@ -170,9 +170,7 @@ test("refresh collects only the community and holds updates until accepted while
   page,
 }) => {
   const state = await fixture(page);
-  await page.goto(
-    "/reader/?view=reddit&community=LocalLLaMA&q=discussion&flair=News",
-  );
+  await page.goto("/?view=reddit&community=LocalLLaMA&q=discussion&flair=News");
   const refresh = page.getByRole("button", {
     name: "Refresh r/LocalLLaMA",
     exact: true,
@@ -241,7 +239,7 @@ test("uncollected post refresh targets only the post and preserves its notice un
   const state = await fixture(page);
   state.posts = [{ ...saved, html: "", excerpt: "" }];
   await page.goto(
-    "/reader/?view=reddit&community=LocalLLaMA&article=post-one&article_source=reddit.com",
+    "/?view=reddit&community=LocalLLaMA&article=post-one&article_source=reddit.com",
   );
   await expect(
     page.getByRole("heading", { name: "Full text not collected", exact: true }),
@@ -272,7 +270,7 @@ test("reload recovers a queued refresh, reports partial completion, and remember
   page,
 }) => {
   const state = await fixture(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("button", { name: "Refresh all sources", exact: true })
     .click();
@@ -308,7 +306,7 @@ test("submission and progress failures keep content and recovery controls availa
 }) => {
   const state = await fixture(page);
   state.reject = true;
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("button", { name: "Refresh all sources", exact: true })
     .click();
@@ -352,7 +350,7 @@ for (const width of [320, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await fixture(page);
-    await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+    await page.goto("/?view=reddit&community=LocalLLaMA");
     await page
       .getByRole("button", { name: "Refresh r/LocalLLaMA", exact: true })
       .click();
@@ -396,7 +394,7 @@ for (const width of [320, 1280]) {
 
 test("linked videos explain their original source scope", async ({ page }) => {
   const state = await fixture(page);
-  await page.goto("/reader/?view=youtube&feed=linked");
+  await page.goto("/?view=youtube&feed=linked");
   const refresh = page.getByRole("button", {
     name: "Refresh linked videos",
     exact: true,
@@ -446,7 +444,7 @@ for (const [url, scope] of [
     page,
   }) => {
     const state = await fixture(page);
-    await page.goto(`/reader/?${url}`);
+    await page.goto(`/?${url}`);
     await page.locator(".topbar .refresh-button").click();
     await expect.poll(() => state.requests).toEqual([scope]);
   });
@@ -462,7 +460,7 @@ test("recommendations refresh collects the whole homepage while retaining reader
     format: "short",
     q: "science",
   });
-  await page.goto(`/reader/?${params}`);
+  await page.goto(`/?${params}`);
   const refresh = page.getByRole("button", {
     name: "Refresh YouTube recommendations",
     exact: true,
@@ -479,7 +477,7 @@ test("collapsed progress announces completion and offers updates", async ({
   page,
 }) => {
   const state = await fixture(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("button", { name: "Refresh all sources", exact: true })
     .click();
@@ -507,7 +505,7 @@ test("failed update loading keeps the collected feed readable and allows retry",
   page,
 }) => {
   const state = await fixture(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("button", { name: "Refresh all sources", exact: true })
     .click();
@@ -576,7 +574,7 @@ for (const width of [320, 1280]) {
           : "Collecting in the background.",
       ...job,
     })) as RefreshJob[];
-    await page.goto("/reader/");
+    await page.goto("/");
     const heading = page.locator(".refresh-status-heading [aria-live]");
     await expect(heading).toHaveText("2 refreshing · 1 waiting");
     await expect(heading).toHaveAttribute("aria-live", "polite");
@@ -630,7 +628,7 @@ test("Show updates opens its completed collection without reloading an unrelated
     reddit: undefined,
   };
   state.postsByKind.stories = [{ ...blog, title: "Previously collected blog" }];
-  await page.goto("/reader/?view=stories");
+  await page.goto("/?view=stories");
   await page.locator(".topbar .refresh-button").click();
   await page
     .getByRole("button", { name: /^Hacker News, \d+ collected posts$/ })
@@ -654,7 +652,7 @@ test("Show updates opens its completed collection without reloading an unrelated
     (kind) => kind === "hacker_news",
   ).length;
   await show.click();
-  await expect(page).toHaveURL(/\/reader\/\?view=stories$/);
+  await expect(page).toHaveURL(/\/\?view=stories$/);
   await expect(
     page.getByRole("link", { name: "Read Newly collected blog", exact: true }),
   ).toBeVisible();
@@ -685,7 +683,7 @@ test("each completed refresh opens its own destination and dismisses only that r
     posts_saved: 1,
     ...job,
   })) as RefreshJob[];
-  await page.goto("/reader/?view=hacker_news");
+  await page.goto("/?view=hacker_news");
   await page.getByRole("button", { name: "Show refresh details" }).click();
   await expect(
     page.getByRole("button", { name: /^Show updates for / }),
@@ -742,7 +740,7 @@ test("refreshing a YouTube video replaces an older cached feed preview", async (
       reference_count: 0,
     },
   ];
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await page
     .getByRole("link", { name: "Old video title", exact: true })
     .click();
@@ -787,7 +785,7 @@ test("a compact completed result identifies its destination without overflowing"
       posts_saved: 1,
     },
   ];
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(
     page.getByRole("button", {
       name: `Show updates for ${label}`,
@@ -820,7 +818,7 @@ for (const width of [320, 1280]) {
       finished_at: "2026-10-22T10:01:00Z",
       posts_saved: status === "failed" ? 0 : 1,
     })) as RefreshJob[];
-    await page.goto("/reader/");
+    await page.goto("/");
     const panel = page.getByRole("complementary", {
       name: "Background refresh",
     });

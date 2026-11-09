@@ -108,7 +108,7 @@ export function YouTubeChannels({
                 <div>
                   <h3>
                     <ReaderLink
-                      href={`/reader/?${next}`}
+                      href={`/?${next}`}
                       onNavigate={() => navigate(next)}
                     >
                       {channel.name}
@@ -121,7 +121,7 @@ export function YouTubeChannels({
                 </div>
                 <ReaderLink
                   className="icon-button"
-                  href={`/reader/?${next}`}
+                  href={`/?${next}`}
                   onNavigate={() => navigate(next)}
                   aria-label={`View ${channel.name} recommendations`}
                 >

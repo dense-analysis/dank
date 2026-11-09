@@ -15,7 +15,7 @@ async function fixture(page: Page, data = connectionsFixture) {
 
     return route.fulfill({ json: data });
   });
-  await page.goto("/reader/tests/fixtures/post-connections.html");
+  await page.goto("/tests/fixtures/post-connections.html");
 
   return requests;
 }
@@ -240,7 +240,7 @@ test("failed connection requests show a recoverable error and empty evidence sta
           },
         }),
   );
-  await page.goto("/reader/tests/fixtures/post-connections.html");
+  await page.goto("/tests/fixtures/post-connections.html");
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(
     "Connection index is unavailable.",
@@ -404,7 +404,7 @@ for (const width of [1210, 390]) {
       requests.push(route.request().url());
       return route.fulfill({ json: redditConnectionsFixture });
     });
-    await page.goto("/reader/tests/fixtures/post-connections.html?reddit");
+    await page.goto("/tests/fixtures/post-connections.html?reddit");
     await page.getByRole("button", { name: "Graph view" }).click();
     const graph = page.locator(".relationship-graph");
     await expect(graph).toHaveAttribute("data-status", "ready");
@@ -479,7 +479,7 @@ for (const width of [1210, 390]) {
         route.fulfill({ json: redditConnectionsFixture }),
       );
       await page.goto(
-        `/reader/tests/fixtures/post-connections.html?reddit&discovery=${throughReddit ? "reddit" : "rss"}`,
+        `/tests/fixtures/post-connections.html?reddit&discovery=${throughReddit ? "reddit" : "rss"}`,
       );
       await page.getByRole("button", { name: "Graph view" }).click();
       await expect(page.locator(".relationship-graph")).toHaveAttribute(
@@ -586,7 +586,7 @@ test("graph keeps missing publication and gaps explicit without using collection
     route.fulfill({ json: redditConnectionsFixture }),
   );
   await page.goto(
-    "/reader/tests/fixtures/post-connections.html?reddit&discovery=unknown",
+    "/tests/fixtures/post-connections.html?reddit&discovery=unknown",
   );
   await page.getByRole("button", { name: "Graph view" }).click();
   await expect(page.locator(".relationship-graph")).toHaveAttribute(
@@ -613,7 +613,7 @@ test("exploring a publisher keeps its known publication time in discovery detail
   await page.route("**/api/reader/connections?*", (route) =>
     route.fulfill({ json: connectionsFixture }),
   );
-  await page.goto("/reader/tests/fixtures/post-connections.html?discovery=rss");
+  await page.goto("/tests/fixtures/post-connections.html?discovery=rss");
   await page.getByRole("button", { name: "Graph view" }).click();
   await expect(page.locator(".relationship-graph")).toHaveAttribute(
     "data-status",

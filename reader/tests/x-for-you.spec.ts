@@ -86,7 +86,7 @@ for (const width of [390, 1280]) {
         });
       } else await route.fulfill({ json: {} });
     });
-    await page.goto("/reader/?view=x&x_feed=for_you");
+    await page.goto("/?view=x&x_feed=for_you");
     await expect(
       page.getByRole("heading", { name: "For You", exact: true }),
     ).toBeVisible();

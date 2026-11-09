@@ -14,7 +14,7 @@ const reference: YouTubeReference = {
   title:
     "Drunken Godess Reflux Cancels Demo In Fear Of People Using AI To Copy The Game And Release It Before They Can",
   url: "https://www.reddit.com/r/gamedev/comments/reddit-discussion/",
-  reader_url: "/reader/?article=reddit-discussion&article_source=reddit.com",
+  reader_url: "/?article=reddit-discussion&article_source=reddit.com",
   kind: "comment",
   reference_id: "ph4vac2",
   reference_url:

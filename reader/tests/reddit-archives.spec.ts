@@ -144,7 +144,7 @@ async function mockArchive(page: Page, detail: Post = post) {
 }
 
 async function openPost(page: Page) {
-  await page.goto("/reader/?view=reddit&community=accelerate");
+  await page.goto("/?view=reddit&community=accelerate");
   await page
     .getByRole("link", { name: `Read ${post.title}`, exact: true })
     .click();

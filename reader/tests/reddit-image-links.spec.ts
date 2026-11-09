@@ -85,7 +85,7 @@ for (const width of [1440, 390]) {
     await mockImages(page);
 
     for (const query of ["", "view=reddit", "view=reddit&community=photos"]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const card = page.locator(".reddit-card");
       const summary = card.locator(".post-open p");
       await expect(card.locator(".thumbnail img")).toHaveJSProperty(
@@ -150,7 +150,7 @@ for (const noThumbnail of [false, true]) {
       noThumbnail,
       failed: noThumbnail ? undefined : "first",
     });
-    await page.goto("/reader/?view=reddit");
+    await page.goto("/?view=reddit");
     const summary = page.locator(".reddit-card .post-open p");
     await expect(summary).toContainText(original);
     await expect(summary).toContainText(gallery);
@@ -165,9 +165,7 @@ for (const missingSecond of [false, true]) {
       missingSecond,
       failed: missingSecond ? undefined : "second",
     });
-    await page.goto(
-      "/reader/?view=reddit&article=t3_abc&article_source=reddit.com",
-    );
+    await page.goto("/?view=reddit&article=t3_abc&article_source=reddit.com");
     const reader = page.locator(".article-page");
     await reader
       .getByRole("link", { name: gallery, exact: true })
@@ -188,9 +186,7 @@ test("an image failure restores raw references without replacing other article i
   page,
 }) => {
   await mockImages(page);
-  await page.goto(
-    "/reader/?view=reddit&article=t3_abc&article_source=reddit.com",
-  );
+  await page.goto("/?view=reddit&article=t3_abc&article_source=reddit.com");
   const reader = page.locator(".article-page");
   const first = reader.getByAltText("First photograph");
   const other = reader.getByAltText("Second photograph");

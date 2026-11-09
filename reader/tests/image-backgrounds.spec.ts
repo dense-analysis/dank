@@ -104,7 +104,7 @@ async function openArticle(page: Page, html = defaultHtml, automatic = false) {
           : { posts: [post], next_cursor: null, limited: false },
     });
   });
-  await page.goto("/reader/?article=image-example&article_source=example.com");
+  await page.goto("/?article=image-example&article_source=example.com");
   await expect(page.locator(".article-body img").first()).toBeAttached();
 }
 

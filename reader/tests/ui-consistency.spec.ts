@@ -61,7 +61,7 @@ for (const width of [320, 1280]) {
           : view === "all"
             ? "&domain=example.com"
             : "";
-      await page.goto(`/reader/?view=${view}${scoped}`);
+      await page.goto(`/?view=${view}${scoped}`);
       const search = page.getByRole("searchbox");
       await expect(search).toBeVisible();
       await page.keyboard.press("/");
@@ -112,7 +112,7 @@ test("source rows share platform identity and use accurate count labels", async 
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=sources");
+  await page.goto("/?view=sources");
   const blog = page.locator(".source-row").filter({ hasText: "example.com" });
   const reddit = page.locator(".source-row").filter({ hasText: "Reddit" });
   await expect(blog).toContainText("1 post");
@@ -131,7 +131,7 @@ test("X post selection keeps touch targets consistent with other mobile filters"
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await fixture(page);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
 
   for (const name of ["Posts", "Posts & replies"]) {
     const button = page.getByRole("button", { name, exact: true });

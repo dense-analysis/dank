@@ -104,7 +104,7 @@ export function XAuthors({
             account: author.handle,
             xTab: "posts",
           });
-          const href = `/reader/?${next}`;
+          const href = `/?${next}`;
           return (
             <section
               className="x-author-group"
@@ -147,7 +147,7 @@ export function XAuthors({
                     <ReaderLink
                       className={`x-author-example ${thumbnail ? "has-thumbnail" : ""}`}
                       key={`${post.domain}:${post.id}`}
-                      href={`/reader/?${articleParams(params, post)}`}
+                      href={`/?${articleParams(params, post)}`}
                       onNavigate={() => open(post)}
                       preserveTextSelection
                     >

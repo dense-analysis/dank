@@ -40,9 +40,7 @@ for (const width of [320, 390, 1280]) {
 
       return route.fulfill({ json: { sources: [], total_posts: 0 } });
     });
-    await page.goto(
-      "/reader/?view=youtube&channel=channel4&format=short&q=test",
-    );
+    await page.goto("/?view=youtube&channel=channel4&format=short&q=test");
     const header = page.locator(".topbar");
     await expect(
       header.getByRole("heading", { name: "Channel 4 News", exact: true }),
@@ -71,6 +69,6 @@ for (const width of [320, 390, 1280]) {
       path: testInfo.outputPath(`youtube-header-${width}.png`),
     });
     await header.getByRole("button", { name: "Back to YouTube" }).click();
-    await expect(page).toHaveURL(/\/reader\/\?view=youtube$/);
+    await expect(page).toHaveURL(/\/\?view=youtube$/);
   });
 }

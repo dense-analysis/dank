@@ -150,7 +150,7 @@ for (const width of [1440, 390, 320]) {
     const current = await mockVideo(context);
 
     for (const query of ["", "view=x", "view=x&account=mathematician"]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const card = page.locator(".post-card");
       const video = card.locator("video");
       await expectRatio(video, 9 / 16);
@@ -201,7 +201,7 @@ for (const [orientation, ratio] of [
       context,
       videoPost({ ...media, aspect_ratio: ratio }),
     );
-    await page.goto("/reader/?view=x");
+    await page.goto("/?view=x");
     const card = page.locator(".post-card");
     await expectRatio(card.locator("video"), ratio);
     await card.getByText(postText, { exact: true }).click();
@@ -219,7 +219,7 @@ test("portrait metadata sizes older saved videos and native controls leave the f
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockVideo(context, videoPost({ ...media, aspect_ratio: undefined }));
-  await page.goto("/reader/?view=x&account=mathematician");
+  await page.goto("/?view=x&account=mathematician");
   const origin = page.url();
   const video = page.locator(".post-card video");
   await video.scrollIntoViewIfNeeded();
@@ -258,7 +258,7 @@ test("video failures restore the paired raw reference and original-post fallback
     "view=x",
     "view=x&article=123456&article_source=x.com",
   ]) {
-    await page.goto(`/reader/?${query}`);
+    await page.goto(`/?${query}`);
     const content = page.locator(".x-post-content:visible");
     await expectLinks(content);
     await content.locator("video").evaluate((element) => {
@@ -282,7 +282,7 @@ test("unsupported video sources retain raw references even when a poster is avai
     context,
     videoPost({ ...media, url: "https://untrusted.example/video.mp4" }),
   );
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   await expectLinks(card, true);
   await expect(card.locator("video")).toHaveCount(0);
@@ -323,7 +323,7 @@ test("portrait reply videos use the same natural player dimensions as the post",
     },
   };
   await mockVideo(context, post);
-  await page.goto("/reader/?view=x&article=123456&article_source=x.com");
+  await page.goto("/?view=x&article=123456&article_source=x.com");
   const conversation = page.getByRole("region", {
     name: "Conversation",
     exact: true,

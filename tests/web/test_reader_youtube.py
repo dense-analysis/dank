@@ -116,7 +116,7 @@ async def test_item_keeps_provenance_and_multiple_source_references():
     assert len(item["discoveries"]) == 2
     assert item["discoveries"][0]["region"] == "GB"
     assert item["references"][0]["reader_url"] == (
-        "/reader/?article_source=x.com&article=123"
+        "/?article_source=x.com&article=123"
     )
     assert item["references"][1]["reader_url"] == ""
     assert item["references"][1]["url"] == "https://reddit.com/post/123"

@@ -111,7 +111,7 @@ for (const width of [390, 1280]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
     const requests = await fixtures(page);
-    await page.goto("/reader/");
+    await page.goto("/");
     if (width < 600)
       await page.getByRole("button", { name: "Open navigation" }).click();
     const navigation = page.getByRole("navigation", {
@@ -261,7 +261,7 @@ test("saved comments preserve nesting, expose partial capture, and sanitize untr
     ],
   });
   await page.goto(
-    "/reader/?view=hacker_news&hn_filter=top20&article=1&article_source=news.ycombinator.com",
+    "/?view=hacker_news&hn_filter=top20&article=1&article_source=news.ycombinator.com",
   );
   await expect(
     page.getByRole("heading", { name: "Partial discussion" }),
@@ -300,7 +300,7 @@ test("failed capture is explicit and API failure never becomes an empty feed", a
 }) => {
   await fixtures(page, { comment_capture: { ...capture, status: "failed" } });
   await page.goto(
-    "/reader/?view=hacker_news&article=1&article_source=news.ycombinator.com",
+    "/?view=hacker_news&article=1&article_source=news.ycombinator.com",
   );
   await expect(
     page.getByRole("heading", { name: "Comment collection failed" }),
@@ -311,7 +311,7 @@ test("failed capture is explicit and API failure never becomes an empty feed", a
       json: { detail: "Hacker News data unavailable." },
     }),
   );
-  await page.goto("/reader/?view=hacker_news");
+  await page.goto("/?view=hacker_news");
   await expect(page.getByText("Hacker News data unavailable.")).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "No collected posts found" }),
@@ -322,7 +322,7 @@ test("author filters preserve the Hacker News daily selection", async ({
   page,
 }) => {
   await fixtures(page);
-  await page.goto("/reader/?view=hacker_news&hn_filter=top20");
+  await page.goto("/?view=hacker_news&hn_filter=top20");
   await page.getByRole("link", { name: "Stories by builder" }).first().click();
   await expect(page).toHaveURL(/view=hacker_news/);
   await expect(page).toHaveURL(/hn_filter=top20/);
@@ -349,7 +349,7 @@ test("complete discussions show every captured comment beyond 500", async ({
     })),
   });
   await page.goto(
-    "/reader/?view=hacker_news&article=1&article_source=news.ycombinator.com",
+    "/?view=hacker_news&article=1&article_source=news.ycombinator.com",
   );
   await expect(page.locator(".hn-comment")).toHaveCount(650);
   await expect(

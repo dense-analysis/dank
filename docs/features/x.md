@@ -32,7 +32,7 @@ X passwords and email credentials are not required in configuration.
 
 ## For You recommendations
 
-Open **X → For You** in the [reader](http://127.0.0.1:8080/reader/?view=x&x_feed=for_you)
+Open **X → For You** in the [reader](http://127.0.0.1:8080/?view=x&x_feed=for_you)
 and choose **Refresh** to save the signed-in homepage without visiting account
 timelines. Normal X scrapes include it by default; set `[x].homepage = false`
 to omit it from those runs. A source with `domain = "x.com"` and no accounts

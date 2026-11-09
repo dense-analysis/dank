@@ -97,7 +97,7 @@ for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     const state = await mock(context);
     for (const query of ["", "view=reddit", "view=reddit&community=videos"]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const card = page.locator(".reddit-card");
       await expect(card).toBeVisible();
       await expectRatio(card.locator("video"), 9 / 16);
@@ -138,7 +138,7 @@ for (const ratio of [1, 16 / 9]) {
     context,
   }) => {
     const state = await mock(context, post(), ratio);
-    await page.goto("/reader/");
+    await page.goto("/");
     await expectRatio(page.locator(".reddit-card video"), ratio);
     expect(state.requests).toBe(0);
   });
@@ -150,7 +150,7 @@ for (const poster of ["wrong-ratio", "unavailable"] as const) {
   }) => {
     const state = await mock(context, post(), 16 / 9);
     state.posterFail = poster === "unavailable";
-    await page.goto("/reader/?article=portrait&article_source=reddit.com");
+    await page.goto("/?article=portrait&article_source=reddit.com");
     const reader = page.getByRole("main", { name: "Article reader" });
     const video = reader.locator("video");
     await video.evaluate((v: HTMLVideoElement) => {
@@ -182,9 +182,7 @@ for (const detail of [false, true]) {
     const state = await mock(context);
     state.fail = true;
     await page.goto(
-      detail
-        ? "/reader/?article=portrait&article_source=reddit.com"
-        : "/reader/",
+      detail ? "/?article=portrait&article_source=reddit.com" : "/",
     );
     const scope = page.locator(detail ? ".article-page" : ".reddit-card");
     await scope
@@ -212,7 +210,7 @@ test("Reddit links remain readable when no video was captured", async ({
   context,
 }) => {
   await mock(context, post(null));
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".post-open p")).toContainText(raw);
   await page
     .getByRole("link", { name: "Read A portrait clip", exact: true })
@@ -231,7 +229,7 @@ test("URL-only feed excerpts leave the title and player without placeholder text
     excerpt: raw,
     html: `<p><a href="${raw}">${raw}</a></p><img src="/assets/reddit-poster.svg">`,
   });
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".reddit-card video")).toBeVisible();
   await expect(page.locator(".post-open p")).toHaveCount(0);
   await expect(page.locator(".post-open h2")).toHaveText("A portrait clip");
@@ -250,7 +248,7 @@ for (const width of [1440, 390]) {
       "view=reddit&community=videos",
       "article=portrait&article_source=reddit.com",
     ]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const detail = query.includes("article=");
       const scope = page.locator(detail ? ".article-page" : ".reddit-card");
       await expect(scope.locator(".video-caption")).toHaveText(
@@ -276,7 +274,7 @@ test("a Reddit video from another site retains its own caption source link", asy
 }) => {
   const external = "https://media.example.com/clip.mp4";
   await mock(context, post({ ...asset, source_url: external, remote: true }));
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   const card = page.locator(".reddit-card");
   await expect(card.locator(".video-caption")).toHaveText(
     "Remote video - media.example.com",

@@ -324,7 +324,7 @@ test("quick platform filters combine with OR, preserve other filters and reset i
   const requests = await fixture(page);
   const initial =
     "q=analysis&sort=oldest&after=2026-10-01&before=2026-10-22&author=Ada+Writer&author_match=exact";
-  await page.goto(`/reader/?${initial}`);
+  await page.goto(`/?${initial}`);
   const filters = chips(page);
   await expect(
     filters.getByRole("button", { name: "All sources", exact: true }),
@@ -372,7 +372,7 @@ test("platform choices survive search, article return and reload, then clear on 
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?platform=reddit&platform=stories&after=2026-10-01");
+  await page.goto("/?platform=reddit&platform=stories&after=2026-10-01");
   await page
     .getByRole("searchbox", { name: "Search everything", exact: true })
     .fill("analysis");
@@ -424,7 +424,7 @@ test("legacy Hacker News platform links expose their selection as Blogs", async 
   page,
 }) => {
   const requests = await fixture(page);
-  await page.goto("/reader/?platform=hacker_news");
+  await page.goto("/?platform=hacker_news");
   const filters = chips(page);
   await expect(
     filters.getByRole("button", { name: "Blogs", exact: true }),
@@ -457,7 +457,7 @@ test("Blogs quick filter includes configured blogs, discovered articles and Hack
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page, discovered)).toBeVisible();
   await expect(
     chips(page).getByRole("button", { name: "Hacker News", exact: true }),
@@ -481,7 +481,7 @@ test("discovered publisher source links open a filtered Blogs view in normal and
   context,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?platform=stories");
+  await page.goto("/?platform=stories");
   const card = page
     .locator(".post-card")
     .filter({ has: story(page, discovered) });
@@ -510,7 +510,7 @@ test("video card background navigation retains its mixed-feed filters", async ({
   context,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?platform=youtube&platform=reddit&after=2026-10-01");
+  await page.goto("/?platform=youtube&platform=reddit&after=2026-10-01");
   const card = page.locator(".youtube-feed-video");
   await expect(card).toBeVisible();
   const initial = page.url();
@@ -531,7 +531,7 @@ test("YouTube videos, Shorts and community posts fit the mixed feed and play onl
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?platform=youtube&after=2026-10-01");
+  await page.goto("/?platform=youtube&after=2026-10-01");
   await expect(page.locator(".youtube-post-card")).toHaveCount(3);
   await expect(page.locator(".youtube-feed-video")).toContainText(
     "Research Channel",
@@ -569,7 +569,7 @@ for (const width of [320, 390, 1440]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await fixture(page);
-    await page.goto("/reader/");
+    await page.goto("/");
     const filters = chips(page);
 
     for (const name of ["All sources", "X", "Reddit", "YouTube", "Blogs"]) {

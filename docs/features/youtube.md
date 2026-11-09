@@ -64,7 +64,7 @@ make scrape ARGS='--domains "^youtube\.com$"'
 ```
 
 Add `MODE=native` for native execution. Open
-[YouTube in the reader](http://127.0.0.1:8080/reader/?view=youtube).
+[YouTube in the reader](http://127.0.0.1:8080/?view=youtube).
 Feed discoveries are readable immediately; normal processing also prepares
 them for the combined collection and semantic search.
 

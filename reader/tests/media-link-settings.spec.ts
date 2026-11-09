@@ -152,7 +152,7 @@ for (const width of [1440, 390]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     const requests = await mockMedia(page);
-    await page.goto("/reader/?view=settings");
+    await page.goto("/?view=settings");
     const images = page.getByRole("checkbox", {
       name: "Hide raw image links",
       exact: true,
@@ -175,7 +175,7 @@ for (const width of [1440, 390]) {
       await page.reload();
       await expect(images).toBeChecked({ checked: hideImages });
       await expect(videos).toBeChecked({ checked: hideVideos });
-      await page.goto("/reader/");
+      await page.goto("/");
       const xCard = page.locator(".post-card").first();
       await expectRaw(xCard, xImage, hideImages);
       await expectRaw(xCard, xVideo, hideVideos);
@@ -203,7 +203,7 @@ for (const width of [1440, 390]) {
       if (hideVideos) await expect(clipSummary).not.toContainText(redditVideo);
       else await expect(clipSummary).toContainText(redditVideo);
 
-      await page.goto("/reader/?article=123&article_source=x.com");
+      await page.goto("/?article=123&article_source=x.com");
       const reader = page.locator(".article-page");
       await expectRaw(reader, xImage, hideImages);
       await expectRaw(reader, xVideo, hideVideos);
@@ -214,7 +214,7 @@ for (const width of [1440, 390]) {
       await expect(
         reader.getByRole("link", { name: "Open full-size image 1" }),
       ).toHaveAttribute("target", "_blank");
-      await page.goto("/reader/?article=t3_clip&article_source=reddit.com");
+      await page.goto("/?article=t3_clip&article_source=reddit.com");
       await reader.getByAltText("Photograph").scrollIntoViewIfNeeded();
       await expect(reader.getByAltText("Photograph")).toHaveJSProperty(
         "naturalWidth",
@@ -225,9 +225,9 @@ for (const width of [1440, 390]) {
       await expect(
         reader.getByLabel("Reddit video", { exact: true }),
       ).toBeVisible();
-      await page.goto("/reader/?article=t3_abc&article_source=reddit.com");
+      await page.goto("/?article=t3_abc&article_source=reddit.com");
       await expectRaw(reader, gallery, hideImages);
-      await page.goto("/reader/?view=settings");
+      await page.goto("/?view=settings");
     }
 
     await images.uncheck();

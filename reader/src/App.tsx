@@ -367,7 +367,7 @@ export function App() {
     navigate(next, true, undefined, { preservePosition: true });
   }
   function evidenceHref(evidence: SourceReference) {
-    return `/reader/?${connectionEvidenceParams(params, evidence)}`;
+    return `/?${connectionEvidenceParams(params, evidence)}`;
   }
   function openEvidence(evidence: SourceReference) {
     navigate(
@@ -378,7 +378,7 @@ export function App() {
   }
   function targetHref(target: PostConnectionTarget) {
     const next = connectionTargetParams(params, target);
-    return next ? `/reader/?${next}` : undefined;
+    return next ? `/?${next}` : undefined;
   }
   function exploreTarget(target: PostConnectionTarget) {
     const next = connectionTargetParams(params, target);
@@ -872,8 +872,8 @@ export function App() {
                                 ) || readKeys.has(postKey(post))
                               }
                               open={() => openPost(post.linked_post ?? post)}
-                              href={`/reader/?${articleParams(params, post.linked_post ?? post)}`}
-                              discussionHref={`/reader/?${articleParams(params, post)}`}
+                              href={`/?${articleParams(params, post.linked_post ?? post)}`}
+                              discussionHref={`/?${articleParams(params, post)}`}
                               openDiscussion={() => openPost(post)}
                               links={
                                 <PostLinks
@@ -903,7 +903,7 @@ export function App() {
                             }
                             read={readKeys.has(postKey(post))}
                             open={() => openPost(post)}
-                            href={`/reader/?${articleParams(params, post)}`}
+                            href={`/?${articleParams(params, post)}`}
                             selectAccount={selectAccount}
                             query={filters.q}
                           />
@@ -912,7 +912,7 @@ export function App() {
                             key={postKey(post)}
                             post={post}
                             read={readKeys.has(postKey(post))}
-                            href={`/reader/?${videoParams(post)}`}
+                            href={`/?${videoParams(post)}`}
                             open={() =>
                               navigate(
                                 videoParams(post),
@@ -945,7 +945,7 @@ export function App() {
                             }
                             read={readKeys.has(postKey(post))}
                             open={() => openPost(post)}
-                            href={`/reader/?${articleParams(params, post)}`}
+                            href={`/?${articleParams(params, post)}`}
                             selectSource={selectSource}
                             query={filters.q}
                             filters={filters}

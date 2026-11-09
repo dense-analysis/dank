@@ -43,7 +43,7 @@ test("reader navigation works without secure-context-only browser APIs", async (
   await page.addInitScript(() => {
     Object.defineProperty(crypto, "randomUUID", { value: undefined });
   });
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("link", { name: `Read ${post.title}`, exact: true })
     .click();
@@ -63,7 +63,7 @@ test("persists reading preferences across settings, feed, article and reload", a
   page,
 }) => {
   await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Settings", exact: true }),
@@ -118,7 +118,7 @@ test("settings work on mobile and have no serious accessibility violations", asy
 }) => {
   await mockReader(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/reader/");
+  await page.goto("/");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(
@@ -152,7 +152,7 @@ test("unavailable preference storage keeps settings usable and explains persiste
       throw new Error("Storage is full");
     };
   });
-  await page.goto("/reader/?view=settings");
+  await page.goto("/?view=settings");
   await page.getByRole("radio", { name: /Newsreader/ }).check();
   const automatic = page.getByRole("checkbox", {
     name: "Automatically improve image backgrounds",

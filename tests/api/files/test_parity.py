@@ -177,13 +177,14 @@ async def test_what_stays_hidden_matches(
     assert b"secret" not in actual.body
 
 
-async def test_the_bare_reader_path_redirects_alike(
-    servers: tuple[Fetch, Fetch],
+@pytest.mark.parametrize("path", ["/reader", "/reader/?view=x&q=a%20b"])
+async def test_the_old_reader_address_redirects_alike(
+    servers: tuple[Fetch, Fetch], path: str,
 ) -> None:
     old, new = servers
 
-    expected = await old("/reader")
-    actual = await new("/reader")
+    expected = await old(path)
+    actual = await new(path)
 
     assert actual.status == expected.status == 302
     assert actual.headers["location"] == expected.headers["location"]

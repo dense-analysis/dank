@@ -164,7 +164,7 @@ export function ArticleView({
     <>
       <CollectionInfoDetails
         post={post}
-        readerHref={`/reader/?${params}`}
+        readerHref={`/?${params}`}
         openPost={openPost}
       />
       {renderConnections(post)}
@@ -277,7 +277,7 @@ export function ArticleView({
             post.linked_post && (
               <ReaderLink
                 className="original-link"
-                href={`/reader/?${articleParams(params, post.linked_post)}`}
+                href={`/?${articleParams(params, post.linked_post)}`}
                 onNavigate={() =>
                   post.linked_post && openPost(post.linked_post)
                 }

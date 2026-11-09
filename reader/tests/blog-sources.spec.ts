@@ -184,7 +184,7 @@ for (const width of [320, 390, 1280]) {
   }) => {
     await page.setViewportSize({ width, height: 800 });
     await fixture(page);
-    await page.goto("/reader/");
+    await page.goto("/");
 
     async function openNavigation() {
       if (width <= 760) {
@@ -247,7 +247,7 @@ test("Blogs separates configured source feeds from externally discovered article
   page,
 }) => {
   const requests = await fixture(page);
-  await page.goto("/reader/?view=stories");
+  await page.goto("/?view=stories");
   const nav = navigation(page);
   await expect(story(page, github)).toBeVisible();
   await expect(story(page, external)).toBeVisible();
@@ -287,7 +287,7 @@ test("external publisher filters keep the external feed selected without a full-
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=stories&blog_feed=external");
+  await page.goto("/?view=stories&blog_feed=external");
   await page.getByRole("button", { name: /^Filters/ }).click();
   const source = page.getByRole("combobox", { name: "Source", exact: true });
 
@@ -314,7 +314,7 @@ for (const selection of ["domain=github.blog", "blog_feed=external"]) {
     page,
   }) => {
     await fixture(page);
-    await page.goto(`/reader/?view=stories&${selection}&after=2026-10-01`);
+    await page.goto(`/?view=stories&${selection}&after=2026-10-01`);
     const post = selection.startsWith("domain") ? github : external;
     await page.getByRole("searchbox", { name: /^Search / }).fill("release");
     await page.getByRole("button", { name: "Search", exact: true }).click();
@@ -351,7 +351,7 @@ test("Hacker News appears under Blog Source Feeds and keeps its daily ranked vie
   await fixture(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(
-    "/reader/?view=hacker_news&domain=news.ycombinator.com&hn_filter=top20",
+    "/?view=hacker_news&domain=news.ycombinator.com&hn_filter=top20",
   );
   await expect(
     page
@@ -384,7 +384,7 @@ test("Blog source icons use captured assets and readable fallbacks", async ({
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=stories");
+  await page.goto("/?view=stories");
   const icon = sourceEntry(page, "github.blog").locator("img");
   await expect(icon).toHaveJSProperty("naturalWidth", 32);
   await expect(icon).toHaveAttribute("alt", "");

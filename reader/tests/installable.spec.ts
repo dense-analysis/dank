@@ -15,12 +15,12 @@ test("provides a stable standalone launch and usable home-screen icons", async (
       },
     }),
   );
-  await page.goto("/reader/?kind=reddit&q=example");
+  await page.goto("/?kind=reddit&q=example");
 
   const manifestHref = await page
     .locator('link[rel="manifest"]')
     .getAttribute("href");
-  expect(manifestHref).toBe("/reader/manifest.webmanifest");
+  expect(manifestHref).toBe("/manifest.webmanifest");
 
   const manifestResponse = await request.get(manifestHref as string);
   expect(manifestResponse.ok()).toBe(true);
@@ -29,11 +29,11 @@ test("provides a stable standalone launch and usable home-screen icons", async (
   );
   const manifest = await manifestResponse.json();
   expect(manifest).toMatchObject({
-    id: "/reader/",
+    id: "/",
     name: "DANK",
     short_name: "DANK",
-    start_url: "/reader/",
-    scope: "/reader/",
+    start_url: "/",
+    scope: "/",
     display: "standalone",
     theme_color: "#101113",
     background_color: "#101113",
@@ -64,7 +64,7 @@ test("provides a stable standalone launch and usable home-screen icons", async (
   for (const icon of icons) {
     const url = new URL(icon.src, manifestResponse.url());
     expect(url.origin).toBe(new URL(page.url()).origin);
-    expect(url.pathname).toMatch(/^\/reader\/icons\//);
+    expect(url.pathname).toMatch(/^\/icons\//);
 
     const response = await request.get(url.href);
     expect(response.ok()).toBe(true);

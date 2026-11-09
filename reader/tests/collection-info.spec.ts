@@ -116,7 +116,7 @@ for (const width of [390, 1280]) {
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       await fixtures(page);
-      await page.goto(`/reader/?${view}`);
+      await page.goto(`/?${view}`);
       const card = page.locator(".reddit-card");
       const toggle = card.getByRole("button", {
         name: "Collection info",
@@ -222,7 +222,7 @@ test("unknown, incomplete, tied and disabled history stays explicit", async ({
       ],
     },
   });
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   const toggle = page.getByRole("button", {
     name: "Collection info",
     exact: true,
@@ -289,7 +289,7 @@ test("saved publisher cards show their actual Reddit collection route", async ({
       },
     },
   });
-  await page.goto("/reader/?view=stories");
+  await page.goto("/?view=stories");
   await page
     .getByRole("button", { name: "Collection info", exact: true })
     .click();
@@ -315,7 +315,7 @@ test("own post text is not attributed to the saved publisher", async ({
     html: "<p>My own explanation of the research.</p>",
     excerpt: "My own explanation of the research.",
   });
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   await page
     .getByRole("button", { name: "Collection info", exact: true })
     .click();
@@ -341,7 +341,7 @@ test("own post text is not attributed to the saved publisher", async ({
       external_url: publisher.url,
     },
   });
-  await page.goto("/reader/?view=all");
+  await page.goto("/?view=all");
   await page
     .locator(".hn-card")
     .getByRole("button", { name: "Collection info", exact: true })
@@ -368,7 +368,7 @@ test("edited links keep post collection and link discovery times separate", asyn
       earlier_discovered_from: [],
     },
   });
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   const toggle = page.getByRole("button", {
     name: "Collection info",
     exact: true,
@@ -420,7 +420,7 @@ test("Reddit-first links and native videos have information without an eye", asy
     earlier_discovered_from: [],
   };
   await fixtures(page, { ...reddit, collection_info: redditFirst });
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   const eye = page.getByRole("button", { name: "Previously discovered" });
   const toggle = page.getByRole("button", {
     name: "Collection info",
@@ -486,7 +486,7 @@ test("missing publication evidence keeps the eye hidden even for earlier collect
       earlier_discovered_from: [],
     },
   });
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   await expect(
     page.getByRole("button", { name: "Previously discovered" }),
   ).toHaveCount(0);

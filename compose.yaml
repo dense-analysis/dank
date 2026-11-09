@@ -68,7 +68,7 @@ services:
     # Allow reader collection workers to close owned browser sessions.
     stop_grace_period: 110s
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/reader/', timeout=5).close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5).close()"]
       interval: 10s
       timeout: 10s
       retries: 12

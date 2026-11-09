@@ -46,7 +46,7 @@ export function PostLinks({
         {links.map((link) => (
           <li key={postKey(link)}>
             <ReaderLink
-              href={`/reader/?${articleParams(params, link)}`}
+              href={`/?${articleParams(params, link)}`}
               onNavigate={() => open(link)}
             >
               <span className="post-link-source">{sourceLabel(link)}</span>

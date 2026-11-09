@@ -21,7 +21,7 @@ const reference: YouTubeReference = {
   url: "https://reddit.com/r/example/comments/story",
   title: "Discussion",
   source: "reddit",
-  reader_url: "/reader/",
+  reader_url: "/",
   reference_url: "https://reddit.com/comments/story/comment/target/",
   author: "Reader",
   excerpt: "Seen it happen in real time",
@@ -180,7 +180,7 @@ describe("article reference navigation", () => {
 
   it.each([
     "javascript:alert(1)",
-    "/reader/",
+    "/",
     "https://user:password@example.com/post",
   ])("rejects malicious destination parameters: %s", (input) => {
     const params = referenceParams(new URLSearchParams(), {

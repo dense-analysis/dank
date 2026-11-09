@@ -162,7 +162,7 @@ async function mockConversation(context: BrowserContext, detail = post()) {
 }
 
 async function openConversation(page: Page) {
-  await page.goto("/reader/?view=x&account=mathematician");
+  await page.goto("/?view=x&account=mathematician");
   await page
     .getByRole("link", { name: `Read ${focusText}`, exact: true })
     .click();
@@ -360,7 +360,7 @@ test("loads conversation detail separately from feed summaries and preserves sea
 }) => {
   const current = await mockConversation(context);
   const feedUrl =
-    "/reader/?view=x&account=mathematician&q=discovery&sort=oldest&after=2026-10-01";
+    "/?view=x&account=mathematician&q=discovery&sort=oldest&after=2026-10-01";
   await page.goto(feedUrl);
   await expect(page.getByText(replyText, { exact: true })).toHaveCount(0);
   let release = () => {};

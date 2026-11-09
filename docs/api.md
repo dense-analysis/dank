@@ -13,7 +13,7 @@ uv run web --server fastapi --no-reload --port 8081
 Ported so far: `GET /api/reader/sources`, `/posts`, `/post`, `/x/authors`,
 `/connections`, `/connection` and `/source-icon`, `GET` and `POST
 /api/reader/refresh`, everything under `/api/reader/youtube`, plus the files:
-`/` and `/reader`, which both lead to the reader, and `/assets/`. `/api/reader/source-settings`
+the reader at `/`, the old `/reader` address and `/assets/`. `/api/reader/source-settings`
 is new and only on FastAPI; see [sources](features/sources.md). OpenAPI is served
 at `/api/openapi.json`, with interactive docs at `/api/docs`.
 
@@ -84,8 +84,8 @@ src/dank/
       model.py           source_icon_url(), which domains may have an icon
       clickhouse.py      ClickHouseCollectedDomains
     files/
-      router.py          GET / and /reader, the redirects to /reader/
-      static.py          ReaderFiles, FileRoots, the /assets and /reader mounts
+      router.py          GET /reader and /reader/..., the redirect to /
+      static.py          ReaderFiles, FileRoots, the /assets mount and the reader
       model.py           client_route(), which paths load the reader
     youtube/
       router.py          GET and POST /api/reader/youtube/...
@@ -282,10 +282,12 @@ answers 400 even from another origin. Nothing has run by then.
 ## Pages and files
 
 These routes answer with HTML, files or images, so they have no response model.
-`/` and `/reader` stay out of OpenAPI with `include_in_schema=False`. `/api/reader/source-icon` stays in and declares
+The `/reader` redirect stays out of OpenAPI with `include_in_schema=False`. `/api/reader/source-icon` stays in and declares
 `image/png`.
 
-`/assets/` and `/reader/` are Starlette `StaticFiles` mounts, which
+`/assets/` is a Starlette `StaticFiles` mount, and the reader is a `StaticFiles`
+app set as the router's fallback, so it answers any path no route or mount
+matched, however late the route was added. Both
 meet what audio and video need, as `tests/api/files` checks over HTTP: single and
 open-ended ranges, `If-Range`, `If-None-Match`, `If-Modified-Since`, 416 past the
 end, and `HEAD` without reading the file. No responder of our own was needed.
@@ -296,14 +298,18 @@ end, and `HEAD` without reading the file. No responder of our own was needed.
 - `index.html` is `no-store` even on a 304, which has no content type for the HTML
   header rule to catch.
 - A checkout with no reader build answers 404 rather than failing.
+- Unmatched `/api/...` and `/assets` paths keep their 404, whatever the method,
+  rather than loading the reader or answering 405.
+- Bundles live under `/bundle/`, because `/assets/` holds downloaded media.
 
-`/` and `/reader` redirect with a relative `Location`, because behind the HTTPS
-proxy this server sees plain HTTP. For the same reason `redirect_slashes` is off,
-as it effectively was under aiohttp: `/assets` is a 404, not a redirect to an
-`http://` address.
+`/reader` and `/reader/...` redirect to the same path and query at `/` with a
+relative `Location`, because behind the HTTPS proxy this server sees plain HTTP.
+For the same reason `redirect_slashes` is off, as it effectively was under
+aiohttp: `/assets` is a 404, not a redirect to an `http://` address.
 
 The Jinja viewer that `/` and `/post` used to serve was retired in
-[DEN-75](https://linear.app/dense-analysis/issue/DEN-75); `/post` is now a 404.
+[DEN-75](https://linear.app/dense-analysis/issue/DEN-75), and the reader moved
+to `/` in [DEN-77](https://linear.app/dense-analysis/issue/DEN-77).
 
 ## Startup and shutdown
 
@@ -408,12 +414,11 @@ The intended differences:
   than up, and a 304 carries fewer headers. Each server's own validators
   revalidate against it, so only a switch between the servers forces one refetch.
 - Text files name their charset: `text/css; charset=utf-8`.
-- Unknown pages, and missing files under `/reader/`, say `Not Found`.
-- A failure behind `/` or `/post` answers a plain 503 rather than aiohttp's 500.
+- Missing files, and unknown paths with an extension, say `Not Found`.
 - A permission error on a file answers 401 rather than 403.
-- `/reader/index.html` and the entry page get the full no-cache headers rather
-  than `no-store` alone.
-- `/`, `/post` and `/api/reader/source-icon` use the last value of a repeated key,
+- `/index.html` and the entry page get the full no-cache headers rather than
+  `no-store` alone.
+- `/api/reader/source-icon` uses the last value of a repeated key,
   not the first.
 - A path parameter holding an encoded slash answers 404, not 400. See Path
   parameters.

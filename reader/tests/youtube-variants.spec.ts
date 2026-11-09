@@ -95,7 +95,7 @@ async function fixture(page: Page, item = video, broken: string[] = []) {
     route.fulfill({ contentType: "text/html", body: "<p>Player fixture</p>" }),
   );
   await page.clock.install();
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await expect(page.locator(".yt-card")).toHaveCount(1);
   await expect(
     page.locator(".yt-thumbnail-versions img.is-current"),

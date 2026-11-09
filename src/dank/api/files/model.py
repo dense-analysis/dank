@@ -1,6 +1,16 @@
-"""Which paths the built reader answers with its entry page."""
+"""Which paths the built reader answers, and where its old addresses went."""
 
 import pathlib
+
+# The server's own paths, which keep their 404s rather than loading the app.
+SERVER_PREFIXES = ("api", "assets")
+
+
+def server_path(path: str) -> bool:
+    """Whether a path belongs to the server rather than to the reader."""
+    parts = pathlib.PurePosixPath(path).parts
+
+    return bool(parts) and parts[0] in SERVER_PREFIXES
 
 
 def client_route(path: str) -> bool:
@@ -11,4 +21,13 @@ def client_route(path: str) -> bool:
     """
     route = pathlib.PurePosixPath(path)
 
-    return not route.suffix and ".." not in route.parts
+    return (
+        not route.suffix and ".." not in route.parts and not server_path(path)
+    )
+
+
+def reader_location(path: str, query: str) -> str:
+    """Where an old /reader/ address lives now: its path and query at /."""
+    location = "/" + path
+
+    return f"{location}?{query}" if query else location

@@ -86,7 +86,7 @@ test("All and source readers share recent dates and switch yesterday to an exact
   });
 
   for (const view of ["all", "stories", "reddit", "x", "hacker_news"]) {
-    await page.goto(`/reader/?view=${view}`);
+    await page.goto(`/?view=${view}`);
     const times = page.locator(".post-card time");
     await expect(times).toHaveCount(view === "all" ? 10 : 2);
     for (let index = 0; index < (await times.count()); index += 2) {
@@ -100,9 +100,7 @@ test("All and source readers share recent dates and switch yesterday to an exact
   }
 
   for (const post of posts) {
-    await page.goto(
-      `/reader/?article=${post.id}&article_source=${post.domain}`,
-    );
+    await page.goto(`/?article=${post.id}&article_source=${post.domain}`);
     await expect(page.locator(".article-page time").first()).toHaveText(
       post.created_at === recent ? "5 minutes ago" : "17 Oct 2026, 23:50",
     );

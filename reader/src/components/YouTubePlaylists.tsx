@@ -358,7 +358,7 @@ export function YouTubePlaylists({
             {playlists.map((item) => {
               const next = new URLSearchParams(params);
               next.set("youtube_playlist", item.id);
-              const target = `/reader/?${next}`;
+              const target = `/?${next}`;
               const visit = () => navigate(next, false, params.toString());
 
               return (

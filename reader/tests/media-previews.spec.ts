@@ -213,7 +213,7 @@ for (const width of [1440, 390, 320]) {
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
       const requests = await mockMedia(page, ratio);
-      await page.goto("/reader/");
+      await page.goto("/");
       const xImage = page.locator(".x-attachment img");
       await expectRatio(xImage, ratio);
       await expectRatio(page.locator(".reddit-card .thumbnail"), ratio);
@@ -223,9 +223,7 @@ for (const width of [1440, 390, 320]) {
       await expect(
         page.getByRole("link", { name: "Open full-size image 1" }),
       ).toHaveAttribute("href", /preview-image.svg$/);
-      await page.goto(
-        "/reader/?article=reddit-image&article_source=reddit.com",
-      );
+      await page.goto("/?article=reddit-image&article_source=reddit.com");
       await expectRatio(page.locator(".article-body img"), ratio);
       await expect(
         page.getByRole("link", {
@@ -254,7 +252,7 @@ test("image and video fitting can be changed independently and persist through n
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const requests = await mockMedia(page);
-  await page.goto("/reader/?view=settings");
+  await page.goto("/?view=settings");
   const images = page.getByRole("checkbox", {
     name: "Fit image previews to their aspect ratio",
   });
@@ -303,7 +301,7 @@ test("image and video fitting can be changed independently and persist through n
       }
     }
 
-    await page.goto("/reader/?article=x-media&article_source=x.com");
+    await page.goto("/?article=x-media&article_source=x.com");
 
     if (fitImages)
       await expectRatio(
@@ -341,7 +339,7 @@ for (const width of [1440, 1100, 816, 653, 390, 320]) {
       );
     });
     const requests = await mockMedia(page);
-    await page.goto("/reader/");
+    await page.goto("/");
 
     for (const selector of [".x-attachment video", ".reddit-card video"]) {
       await expectRatio(page.locator(selector), 9 / 16);
@@ -456,7 +454,7 @@ for (const width of [1440, 653, 390, 320]) {
       ["stories", 1],
       ["hacker_news", 1],
     ] as const) {
-      await page.goto(`/reader/?view=${view}`);
+      await page.goto(`/?view=${view}`);
       const cards = page.locator(".post-card");
       await expect(cards).toHaveCount(expected);
 

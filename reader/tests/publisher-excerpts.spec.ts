@@ -78,7 +78,7 @@ for (const width of [390, 1280]) {
         if (new URL(request.url()).pathname === "/api/reader/post")
           requests.push(request.url());
       });
-      await page.goto(`/reader/?${view}`);
+      await page.goto(`/?${view}`);
       const card = page.locator(".reddit-card");
       await expect(card.locator(".post-open p")).toHaveText(publisherText);
       await expect(card.locator(".thumbnail img")).toBeVisible();
@@ -114,7 +114,7 @@ test("Reddit own text takes priority and an unavailable publisher keeps the orig
     html: "<p>My own explanation.</p>",
     excerpt: "My own explanation.",
   });
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   await expect(page.locator(".reddit-card .post-open p")).toHaveText(
     "My own explanation.",
   );
@@ -126,7 +126,7 @@ test("Reddit own text takes priority and an unavailable publisher keeps the orig
 
 test("publisher excerpts keep shared search highlighting", async ({ page }) => {
   await fixtures(page);
-  await page.goto("/reader/?view=reddit&q=research");
+  await page.goto("/?view=reddit&q=research");
   await expect(page.locator(".reddit-card .post-open p mark")).toHaveText(
     "research",
   );
@@ -145,7 +145,7 @@ test("empty RSS aggregators show the saved excerpt in Blogs", async ({
     reddit: undefined,
     thumbnail: null,
   });
-  await page.goto("/reader/?view=stories");
+  await page.goto("/?view=stories");
   await expect(page.locator(".post-card .post-open p")).toHaveText(
     publisherText,
   );
@@ -177,7 +177,7 @@ test("link-only X previews show saved publisher text without a duplicate raw URL
       ],
     },
   });
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   await expect(page.locator(".x-link-description")).toHaveText(publisherText);
   await expect(
     page.locator(".x-post-preview").getByText(url, { exact: true }),

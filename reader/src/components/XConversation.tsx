@@ -251,7 +251,7 @@ function ConversationPosts({
               navigation={
                 post.collected
                   ? {
-                      href: `/reader/?${articleParams(params, post)}`,
+                      href: `/?${articleParams(params, post)}`,
                       open: () => openPost(post),
                     }
                   : undefined
@@ -261,7 +261,7 @@ function ConversationPosts({
               {post.collected && (
                 <ReaderLink
                   className="x-conversation-original"
-                  href={`/reader/?${articleParams(params, post)}`}
+                  href={`/?${articleParams(params, post)}`}
                   onNavigate={() => openPost(post)}
                 >
                   Open saved post

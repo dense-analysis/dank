@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from dank.api.files.model import client_route, reader_location
 from dank.api.source_icons.model import source_icon_url
 from dank.api.sources.model import source_kind
 from dank.storage.clickhouse import ClickHouseClient
@@ -53,8 +54,13 @@ def add_reader_routes(app: web.Application) -> None:
     app.router.add_get("/api/reader/x/authors", handle_x_authors)
     app.router.add_get("/api/reader/posts", handle_posts)
     app.router.add_get("/api/reader/post", handle_post)
-    app.router.add_get("/reader", handle_reader)
-    app.router.add_get("/reader/{path:.*}", handle_reader)
+    app.router.add_get("/reader", handle_old_reader_address)
+    app.router.add_get("/reader/{path:.*}", handle_old_reader_address)
+
+
+def add_reader_app_route(app: web.Application) -> None:
+    """Serves the built reader from /. Add it last: it matches every path."""
+    app.router.add_get("/{path:.*}", handle_reader)
 
 
 @web.middleware
@@ -270,17 +276,21 @@ def _reader_file(path: str) -> pathlib.Path | None:
     if candidate.is_file():
         return candidate
 
-    # Only extensionless routes may fall back to the SPA; missing assets 404.
-    if not pathlib.Path(path).suffix and (root / "index.html").is_file():
+    # Only the app's own routes fall back to it; missing bundles 404.
+    if client_route(path) and (root / "index.html").is_file():
         return root / "index.html"
 
     return None
 
 
-async def handle_reader(request: web.Request) -> web.StreamResponse:
-    if request.path == "/reader":
-        raise web.HTTPFound("/reader/")
+async def handle_old_reader_address(request: web.Request) -> web.Response:
+    # Relative, because behind the HTTPS proxy this server sees plain HTTP.
+    raise web.HTTPFound(reader_location(
+        request.match_info.get("path", ""), request.rel_url.raw_query_string,
+    ))
 
+
+async def handle_reader(request: web.Request) -> web.StreamResponse:
     path = _reader_file(request.match_info.get("path", ""))
 
     if path is None:

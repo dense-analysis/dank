@@ -3,7 +3,7 @@ import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
 const id = "NnV_cWeoo5Q";
 const title = "Kernel Recipes 2026 - Security in the LLM age";
-const url = `/reader/?view=youtube&feed=linked&youtube_item=video:${id}`;
+const url = `/?view=youtube&feed=linked&youtube_item=video:${id}`;
 const captured = "2026-10-17T20:00:00Z";
 const later = "2099-01-01T00:00:00Z";
 

@@ -133,7 +133,7 @@ test("shows cached community icons in navigation, mixed feeds and article header
   page,
 }) => {
   await mockDetails(page);
-  await page.goto("/reader/?view=reddit");
+  await page.goto("/?view=reddit");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   const local = nav.getByRole("button", { name: /r\/LocalLLaMA/ });
   await expect(local.locator("img")).toHaveAttribute(
@@ -174,7 +174,7 @@ test("isolates community flairs, combines shared global labels and supports OR s
   page,
 }, testInfo) => {
   const requests = await mockDetails(page);
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   const flairs = page.getByRole("group", { name: "Flair", exact: true });
   await expect(
@@ -247,7 +247,7 @@ test("retains flair with search, exact author, dates, article reload and browser
 }) => {
   const requests = await mockDetails(page);
   await page.goto(
-    "/reader/?view=reddit&community=LocalLLaMA&flair=New+Model&after=2026-10-15&before=2026-10-15",
+    "/?view=reddit&community=LocalLLaMA&flair=New+Model&after=2026-10-15&before=2026-10-15",
   );
   await page
     .getByRole("searchbox", { name: "Search r/LocalLLaMA" })
@@ -304,7 +304,7 @@ test("keeps icons and flair controls usable on mobile and accessible", async ({
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockDetails(page);
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await page
     .getByRole("button", { name: "Open navigation", exact: true })
     .click();
@@ -351,15 +351,14 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const requests = await mockDetails(page);
     const initial =
-      "/reader/?view=reddit&q=Discussion&author=model_builder&after=2026-10-15";
+      "/?view=reddit&q=Discussion&author=model_builder&after=2026-10-15";
     await page.goto(initial);
     await expect(page.locator(".post-card")).toHaveCount(2);
     const badge = page.getByRole("link", {
       name: "Posts from r/accelerate with flair Discussion",
       exact: true,
     });
-    const destination =
-      "/reader/?view=reddit&community=accelerate&flair=Discussion";
+    const destination = "/?view=reddit&community=accelerate&flair=Discussion";
     await expect(badge).toHaveAttribute("href", destination);
     await badge.click();
     await expect(page).toHaveURL(destination);
@@ -397,7 +396,7 @@ test("article flair supports keyboard and new-tab navigation with the same commu
 }) => {
   await mockDetails(context);
   await page.goto(
-    "/reader/?view=reddit&community=LocalLLaMA&flair=New+Model&flair=Discussion",
+    "/?view=reddit&community=LocalLLaMA&flair=New+Model&flair=Discussion",
   );
   await page
     .getByRole("link", { name: `Read ${posts[0].title}`, exact: true })
@@ -408,8 +407,7 @@ test("article flair supports keyboard and new-tab navigation with the same commu
     name: "Posts from r/LocalLLaMA with flair New Model",
     exact: true,
   });
-  const destination =
-    "/reader/?view=reddit&community=LocalLLaMA&flair=New+Model";
+  const destination = "/?view=reddit&community=LocalLLaMA&flair=New+Model";
   await expect(badge).toHaveAttribute("href", destination);
   const opened = context.waitForEvent("page");
   await badge.click({ button: "middle" });
@@ -451,7 +449,7 @@ for (const width of [1440, 816, 390]) {
       };
     });
     await mockDetails(page, false, items);
-    await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+    await page.goto("/?view=reddit&community=LocalLLaMA");
     const header = page.locator(".topbar");
     await expect(
       header.getByRole("heading", { name: "r/LocalLLaMA", exact: true }),
@@ -499,7 +497,7 @@ test("updates search scope across communities, all Reddit and stories", async ({
   page,
 }) => {
   await mockDetails(page);
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await expect(
     page.getByRole("searchbox", { name: "Search r/LocalLLaMA", exact: true }),
   ).toBeVisible();
@@ -534,7 +532,7 @@ test("keeps article controls below the community header and restores the reading
     ).join(""),
   };
   await mockDetails(page, false, [longPost]);
-  await page.goto("/reader/?view=reddit&community=LocalLLaMA");
+  await page.goto("/?view=reddit&community=LocalLLaMA");
   await page
     .getByRole("link", { name: `Read ${longPost.title}`, exact: true })
     .click();

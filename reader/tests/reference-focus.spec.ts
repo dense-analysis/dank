@@ -139,7 +139,7 @@ function reference(post: Post): YouTubeReference {
     url: post.url,
     title: post.title,
     source: post.source,
-    reader_url: "/reader/",
+    reader_url: "/",
     kind: post.source === "x" ? "post" : "comment",
     reference_id:
       post.source === "reddit"
@@ -209,7 +209,7 @@ async function fixtures(page: Page, post = article(), linkedPost?: Post) {
   });
   return ref;
 }
-const detailUrl = `/reader/?view=youtube&feed=linked&q=security&youtube_item=video%3A${videoId}`;
+const detailUrl = `/?view=youtube&feed=linked&q=security&youtube_item=video%3A${videoId}`;
 
 test("collected originals and incoming links clear the previous video target", async ({
   page,
@@ -474,7 +474,7 @@ test("a directly linked HN video highlights the original-article destination", a
     reference_video: videoId,
     reference_saved: ref.observed_at,
   });
-  await page.goto(`/reader/?${params}`);
+  await page.goto(`/?${params}`);
   const match = page.locator('[data-reference-match="true"]');
   await expect(match).toHaveCount(1);
   await expect(match).toHaveText("Read original article");
@@ -507,7 +507,7 @@ test("plain-text captured comments preserve line breaks and highlight only the e
 
 const articleUrl = "https://publisher.example/research?edition=2#results";
 function genericFocusUrl(post: Post, kind = "comment", id = "t1_target") {
-  return `/reader/?${new URLSearchParams({
+  return `/?${new URLSearchParams({
     article: post.id,
     article_source: post.domain,
     connections: "graph",
@@ -535,7 +535,7 @@ for (const width of [1210, 390]) {
     }
     await fixtures(page, post);
     await page.goto(
-      `/reader/?article=${post.id}&article_source=${post.domain}&connections=graph`,
+      `/?article=${post.id}&article_source=${post.domain}&connections=graph`,
     );
     await expect(page.locator('[data-reference-match="true"]')).toHaveCount(0);
     await page.evaluate((url) => {

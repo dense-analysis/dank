@@ -85,7 +85,7 @@ test("clicking an author preserves the view and excludes similar names", async (
   page,
 }) => {
   const requests = await mockReader(page);
-  await page.goto(`/reader/?${initial}`);
+  await page.goto(`/?${initial}`);
   const card = page.locator(".post-card").filter({
     has: page.getByRole("link", {
       name: "Read Architecture overview",
@@ -136,7 +136,7 @@ test("author filtering works from the article and missing authors stay plain", a
   page,
 }) => {
   await mockReader(page);
-  await page.goto(`/reader/?${initial}`);
+  await page.goto(`/?${initial}`);
   const unknown = page.locator(".post-card").filter({
     has: page.getByRole("link", {
       name: "Read Architecture notes",
@@ -187,7 +187,7 @@ test("quick date ranges preserve other filters and can be removed individually",
 }) => {
   await mockReader(page);
   await page.clock.setFixedTime(new Date("2026-10-08T12:00:00Z"));
-  await page.goto(`/reader/?${initial}&author=Ada+Writer&author_match=exact`);
+  await page.goto(`/?${initial}&author=Ada+Writer&author_match=exact`);
   await page.getByRole("button", { name: /^Filters/ }).click();
   const ranges = page.getByRole("group", { name: "Date range UTC" });
   await ranges.getByRole("button", { name: "Today", exact: true }).click();
@@ -239,7 +239,7 @@ test("filter chips and shortcuts remain accessible on mobile", async ({
 }) => {
   await mockReader(page);
   await page.setViewportSize({ width: 320, height: 760 });
-  await page.goto(`/reader/?${initial}&author=Ada+Writer&author_match=exact`);
+  await page.goto(`/?${initial}&author=Ada+Writer&author_match=exact`);
   await page.getByRole("button", { name: /^Filters/ }).click();
   await expect(
     page.getByRole("button", { name: "Past 7 days", exact: true }),

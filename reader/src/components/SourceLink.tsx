@@ -21,7 +21,7 @@ export function SourceLink({
 }) {
   return (
     <ReaderLink
-      href={`/reader/?${filterParams({ ...defaultFilters, kind, domains: [domain] })}`}
+      href={`/?${filterParams({ ...defaultFilters, kind, domains: [domain] })}`}
       onNavigate={() => select(domain)}
       className="source-link"
       title={sourceLabel(domain)}

@@ -171,7 +171,7 @@ for (const width of [1280, 390, 320]) {
       excerpt: "",
     };
     state.posts = [missing, article];
-    await page.goto("/reader/");
+    await page.goto("/");
     const missingCard = page
       .locator(".post-card")
       .filter({ has: story(page, missing.title) });
@@ -244,7 +244,7 @@ for (const width of [1280, 390, 320]) {
       collection_incomplete: true,
     };
     state.posts = [partial, article];
-    await page.goto("/reader/");
+    await page.goto("/");
     const card = page.locator(".post-card").filter({
       has: story(page, partial.title),
     });
@@ -313,7 +313,7 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
     after: "2026-10-01",
     before: "2026-10-08",
   });
-  await page.goto(`/reader/?${filters}`);
+  await page.goto(`/?${filters}`);
   await expect(story(page)).toBeVisible();
   await expect(
     page.getByRole("searchbox", { name: "Search example.com" }),
@@ -386,7 +386,7 @@ for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 844 });
     const state = await mockReader(page);
     state.pageSize = 5;
-    await page.goto("/reader/");
+    await page.goto("/");
     const cards = page.locator(".post-card");
     await expect(cards).toHaveCount(5);
     const initialRequests = state.requests.length;
@@ -419,7 +419,7 @@ test("loads short pages until the viewport is filled or the feed ends", async ({
   const state = await mockReader(page);
   state.pageSize = 1;
   state.posts = state.posts.slice(0, 3);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".post-card")).toHaveCount(3);
   await expect(page.locator(".load-more")).toHaveCount(0);
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
@@ -435,7 +435,7 @@ test("keeps one next-page request in flight while the bottom remains visible", a
 }) => {
   const state = await mockReader(page);
   state.pageSize = 5;
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".post-card")).toHaveCount(5);
   let release = () => {};
   const pending = new Promise<void>((resolve) => {
@@ -468,7 +468,7 @@ test("preserves loaded stories on a next-page error and retries only on request"
 }) => {
   const state = await mockReader(page);
   state.pageSize = 5;
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".post-card")).toHaveCount(5);
   state.failPosts = true;
   await page.locator(".load-more").scrollIntoViewIfNeeded();
@@ -496,7 +496,7 @@ test("does not load hidden feed pages while reading an article", async ({
 }) => {
   const state = await mockReader(page);
   state.pageSize = 1;
-  await page.goto("/reader/?article=article-0&article_source=example.com");
+  await page.goto("/?article=article-0&article_source=example.com");
   await expect(
     page.getByRole("main", { name: "Article reader" }),
   ).toBeVisible();
@@ -512,7 +512,7 @@ test("starts a fresh cursor sequence after filters change", async ({
 }) => {
   const state = await mockReader(page);
   state.pageSize = 5;
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".post-card")).toHaveCount(5);
   const initialRequests = state.requests.length;
   await page.locator(".load-more").scrollIntoViewIfNeeded();
@@ -548,7 +548,7 @@ test("keeps manual pagination available without IntersectionObserver", async ({
   await page.addInitScript(() => {
     Reflect.deleteProperty(window, "IntersectionObserver");
   });
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.locator(".post-card")).toHaveCount(5);
   await page.getByRole("button", { name: "More stories", exact: true }).click();
   await expect(page.locator(".post-card")).toHaveCount(10);
@@ -558,7 +558,7 @@ test("opens source-specific deep links and returns to their filtered timeline", 
   page,
 }) => {
   const state = await mockReader(page);
-  await page.goto("/reader/?q=housing&article=shared-id&article_source=x.com");
+  await page.goto("/?q=housing&article=shared-id&article_source=x.com");
   const reader = page.getByRole("main", { name: "X post reader" });
   await expect(
     reader.getByRole("heading", { name: "Post by City Reporter", exact: true }),
@@ -592,7 +592,7 @@ test("keeps a failed article on its page with a working way back", async ({
   page,
 }) => {
   await mockReader(page);
-  await page.goto("/reader/?article=missing&article_source=example.com");
+  await page.goto("/?article=missing&article_source=example.com");
   await expect(page.getByRole("alert")).toContainText("Story not found.");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page
@@ -605,7 +605,7 @@ test("keeps navigation and article controls focused on reading", async ({
   page,
 }) => {
   await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page)).toBeVisible();
   const sidebar = page.locator(".sidebar");
   await expect(sidebar.locator(".brand img")).toHaveCount(0);
@@ -614,7 +614,7 @@ test("keeps navigation and article controls focused on reading", async ({
   ).toHaveText("DANK");
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
     "href",
-    "/reader/favicon.svg",
+    "/favicon.svg",
   );
   await expect(page.locator("main .page-heading h1")).toHaveCount(0);
   await expect(page.locator(".topbar h1")).toHaveText("All");
@@ -694,7 +694,7 @@ for (const view of ["saved", "legacy-politics"]) {
       },
       { key: legacyStorageKey, value: legacyLibrary },
     );
-    await page.goto(`/reader/?view=${view}&q=housing&domain=x.com&sort=oldest`);
+    await page.goto(`/?view=${view}&q=housing&domain=x.com&sort=oldest`);
     await expect(
       page.getByRole("heading", { name: "All", exact: true }),
     ).toBeVisible();
@@ -743,7 +743,7 @@ test("preserves old library data while recording read stories by source", async 
     },
     { key: legacyStorageKey, value: legacyLibrary },
   );
-  await page.goto("/reader/");
+  await page.goto("/");
   const articleCard = page.locator(".post-card").filter({ has: story(page) });
   const socialCard = page
     .locator(".post-card")
@@ -774,7 +774,7 @@ test("keeps corrupted legacy storage untouched while reading remains usable", as
     if (localStorage.getItem(key) === null)
       localStorage.setItem(key, "{broken JSON");
   }, legacyStorageKey);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page)).toBeVisible();
   await story(page).click();
   await expect(
@@ -800,7 +800,7 @@ test("shows API failures and recovers when the user retries", async ({
 }) => {
   const state = await mockReader(page);
   state.failPosts = true;
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(page.getByRole("alert")).toContainText(
     "Collection temporarily unavailable.",
   );
@@ -814,7 +814,7 @@ test("sanitizes article markup while preserving safe content and keyboard naviga
   page,
 }) => {
   await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   const trigger = story(page);
   await trigger.click();
   const reader = page.getByRole("main", { name: "Article reader" });
@@ -863,7 +863,7 @@ test("shows inline figures and credits at desktop and mobile widths", async ({
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="548"><rect width="960" height="548" fill="#eee"/><text x="30" y="70" fill="#111" font-size="32">Article diagram</text></svg>',
     }),
   );
-  await page.goto("/reader/?article=shared-id&article_source=example.com");
+  await page.goto("/?article=shared-id&article_source=example.com");
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const figure = page.locator(".article-body figure");
@@ -890,7 +890,7 @@ test("supports mobile navigation and article reading without horizontal overflow
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await page
@@ -934,7 +934,7 @@ test.describe("Phone reading", () => {
     }) => {
       await page.setViewportSize({ width, height: 720 });
       await mockReader(page);
-      await page.goto("/reader/?view=stories");
+      await page.goto("/?view=stories");
       const target = story(page, "Housing report 8");
       await target.scrollIntoViewIfNeeded();
       const feedScroll = await page.evaluate(() => window.scrollY);
@@ -985,7 +985,7 @@ test("has no serious or critical accessibility violations in the feed and reader
   page,
 }) => {
   await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page)).toBeVisible();
   const feed = await new AxeBuilder({ page }).analyze();
   expect(
@@ -1013,7 +1013,7 @@ test("uses one combined search and retains source filters and ordering", async (
   page,
 }) => {
   const state = await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page, socialPost.title)).toBeVisible();
   await expect(page.getByRole("group", { name: "Search method" })).toHaveCount(
     0,
@@ -1075,7 +1075,7 @@ test("uses one combined search and retains source filters and ordering", async (
 for (const mode of ["words", "meaning"]) {
   test(`old ${mode} search links use combined search`, async ({ page }) => {
     const state = await mockReader(page);
-    await page.goto(`/reader/?q=housing&mode=${mode}&sort=relevance`);
+    await page.goto(`/?q=housing&mode=${mode}&sort=relevance`);
     await expect(story(page)).toBeVisible();
     await expect(
       page.getByRole("searchbox", { name: "Search everything" }),
@@ -1098,7 +1098,7 @@ test("dismisses mobile navigation and switches pages without leaving an overlay"
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockReader(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(story(page)).toBeVisible();
   const navigation = page.getByRole("dialog", {
     name: "Navigation",

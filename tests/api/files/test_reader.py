@@ -1,4 +1,4 @@
-"""/reader/: the built app, its bundles and its client-side routes."""
+"""/: the built reader, its bundles, its client-side routes and old address."""
 
 import pathlib
 
@@ -6,7 +6,7 @@ import pytest
 from httpx import AsyncClient
 
 from dank.api.app import create_app
-from dank.api.files.model import client_route
+from dank.api.files.model import client_route, reader_location
 from dank.api.files.static import FileRoots
 from dank.config import Settings
 from tests.api.client import http_client
@@ -15,27 +15,33 @@ from tests.api.files.conftest import BUNDLE, INDEX
 NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
 
 
-@pytest.mark.parametrize("path", ["/", "/reader"])
-async def test_the_root_and_bare_path_redirect_without_naming_a_scheme(
-    client: AsyncClient, path: str,
+@pytest.mark.parametrize(("path", "location"), [
+    ("/reader", "/"),
+    ("/reader/", "/"),
+    ("/reader/?view=youtube&q=a%20b", "/?view=youtube&q=a%20b"),
+    ("/reader/saved/politics", "/saved/politics"),
+])
+async def test_the_old_address_redirects_without_naming_a_scheme(
+    client: AsyncClient, path: str, location: str,
 ) -> None:
     response = await client.get(path)
 
     # Relative, because behind the HTTPS proxy this server sees plain HTTP
     # and an absolute address would send a phone back to it.
     assert response.status_code == 302
-    assert response.headers["location"] == "/reader/"
+    assert response.headers["location"] == location
 
 
 @pytest.mark.parametrize("path", [
-    "/reader/",
-    "/reader/index.html",
+    "/",
+    "/?view=youtube",
+    "/index.html",
     # Deep links load the app, which reads the path itself.
-    "/reader/saved/politics",
-    "/reader/post",
-    "/reader/assets",
+    "/saved/politics",
+    "/post",
+    "/bundle",
     # The rule is the last segment's extension, not the directories'.
-    "/reader/v1.2/saved",
+    "/v1.2/saved",
 ])
 async def test_routes_and_the_entry_page_load_the_app_uncached(
     client: AsyncClient, path: str,
@@ -50,18 +56,9 @@ async def test_routes_and_the_entry_page_load_the_app_uncached(
     assert response.headers["expires"] == "0"
 
 
-@pytest.mark.parametrize("path", ["/post", "/static/app.css"])
-async def test_the_retired_viewer_pages_are_gone(
-    client: AsyncClient, path: str,
-) -> None:
-    response = await client.get(path)
-
-    assert response.status_code == 404
-
-
 async def test_the_healthcheck_can_use_head(client: AsyncClient) -> None:
-    # Caddy's healthcheck is `wget --spider /reader/`, which sends HEAD.
-    response = await client.head("/reader/")
+    # Caddy's healthcheck uses `wget --spider`, which sends HEAD.
+    response = await client.head("/")
 
     assert (response.status_code, response.content) == (200, b"")
     assert response.headers["content-type"] == "text/html; charset=utf-8"
@@ -72,9 +69,9 @@ async def test_the_healthcheck_can_use_head(client: AsyncClient) -> None:
 async def test_revalidating_the_entry_page_stays_uncached(
     client: AsyncClient,
 ) -> None:
-    etag = (await client.get("/reader/")).headers["etag"]
+    etag = (await client.get("/")).headers["etag"]
 
-    response = await client.get("/reader/", headers={"if-none-match": etag})
+    response = await client.get("/", headers={"if-none-match": etag})
 
     # A 304 has no content type for the HTML rule to catch.
     assert "no-store" in response.headers["cache-control"]
@@ -83,7 +80,7 @@ async def test_revalidating_the_entry_page_stays_uncached(
 async def test_bundles_are_files_with_validators_and_ranges(
     client: AsyncClient,
 ) -> None:
-    path = "/reader/assets/index-abc.js"
+    path = "/bundle/index-abc.js"
 
     bundle = await client.get(path)
     fresh = await client.get(
@@ -101,13 +98,17 @@ async def test_bundles_are_files_with_validators_and_ranges(
 
 @pytest.mark.parametrize("path", [
     # A missing bundle must never answer with HTML.
-    "/reader/assets/index-old.js",
-    "/reader/missing.css",
-    "/reader/saved/politics.png",
+    "/bundle/index-old.js",
+    "/missing.css",
+    "/saved/politics.png",
+    # Nor must the server's own paths, extension or not.
+    "/api",
+    "/assets",
+    "/assets/missing",
     # Traversal has no extension here, so only its own check stops it.
-    "/reader/%2e%2e/secret",
-    "/reader/assets/%2e%2e/%2e%2e/secret",
-    "/reader/..%2fsecret",
+    "/%2e%2e/secret",
+    "/bundle/%2e%2e/%2e%2e/secret",
+    "/..%2fsecret",
 ])
 async def test_missing_files_and_traversal_get_a_plain_404(
     client: AsyncClient, tmp_path: pathlib.Path, path: str,
@@ -121,14 +122,25 @@ async def test_missing_files_and_traversal_get_a_plain_404(
     assert b"secret" not in response.content
 
 
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize("path", ["/api/nope", "/api/reader/x/y/z"])
+async def test_unmatched_api_paths_keep_their_json_404(
+    client: AsyncClient, method: str, path: str,
+) -> None:
+    response = await client.request(method, path, json={})
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
 async def test_bundles_and_data_assets_stay_apart(
     client: AsyncClient, assets: pathlib.Path,
 ) -> None:
     (assets / "data.png").write_bytes(b"data")
 
     data = await client.get("/assets/data.png")
-    not_a_bundle = await client.get("/reader/assets/data.png")
-    not_data = await client.get("/assets/assets/index-abc.js")
+    not_a_bundle = await client.get("/bundle/data.png")
+    not_data = await client.get("/assets/bundle/index-abc.js")
     not_data_either = await client.get("/assets/index-abc.js")
 
     assert data.status_code == 200
@@ -137,7 +149,7 @@ async def test_bundles_and_data_assets_stay_apart(
     assert not_data_either.status_code == 404
 
 
-@pytest.mark.parametrize("path", ["/reader/", "/reader/saved", "/reader/a.js"])
+@pytest.mark.parametrize("path", ["/", "/saved", "/a.js"])
 async def test_an_unbuilt_reader_is_a_plain_404(
     settings: Settings,
     roots: FileRoots,
@@ -154,7 +166,7 @@ async def test_an_unbuilt_reader_is_a_plain_404(
 
 
 async def test_the_app_is_read_only(client: AsyncClient) -> None:
-    response = await client.post("/reader/saved", json={})
+    response = await client.post("/saved", json={})
 
     assert response.status_code == 405
 
@@ -163,12 +175,28 @@ async def test_the_app_is_read_only(client: AsyncClient) -> None:
     (".", True),
     ("saved/politics", True),
     ("v1.2/saved", True),
+    ("apis", True),
     ("missing.js", False),
-    ("assets/index-old.css", False),
+    ("bundle/index-old.css", False),
+    ("api", False),
+    ("api/reader/nope", False),
+    ("assets", False),
+    ("assets/example.com/clip", False),
     ("..", False),
     ("../secret", False),
 ])
-def test_only_extensionless_paths_inside_the_build_are_routes(
+def test_only_extensionless_app_paths_inside_the_build_are_routes(
     *, path: str, expected: bool,
 ) -> None:
     assert client_route(path) is expected
+
+
+@pytest.mark.parametrize(("path", "query", "expected"), [
+    ("", "", "/"),
+    ("", "view=x", "/?view=x"),
+    ("saved/politics", "a=1&b=2", "/saved/politics?a=1&b=2"),
+])
+def test_old_addresses_keep_their_path_and_query(
+    *, path: str, query: str, expected: str,
+) -> None:
+    assert reader_location(path, query) == expected

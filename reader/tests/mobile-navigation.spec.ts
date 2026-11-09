@@ -48,7 +48,7 @@ for (const width of [320, 390]) {
   }) => {
     await page.setViewportSize({ width, height: 700 });
     await mockNavigation(page);
-    await page.goto("/reader/");
+    await page.goto("/");
     await openNavigation(page).click();
     const navigation = page.getByRole("dialog", { name: "Navigation" });
     const xToggle = navigation.getByRole("button", {
@@ -100,7 +100,7 @@ test("tapping the drawer backdrop dismisses it and restores the opener", async (
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockNavigation(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await openNavigation(page).click();
   const navigation = page.getByRole("dialog", { name: "Navigation" });
   await expect(navigation).toBeVisible();
@@ -117,7 +117,7 @@ test("rotating to a desktop layout closes the mobile modal and unlocks the page"
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockNavigation(page);
-  await page.goto("/reader/");
+  await page.goto("/");
   await openNavigation(page).click();
   await expect(page.getByRole("dialog", { name: "Navigation" })).toBeVisible();
   await page.setViewportSize({ width: 844, height: 390 });
@@ -135,7 +135,7 @@ test("mobile direct links reveal the active group without changing desktop defau
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockNavigation(page);
-  await page.goto("/reader/?view=x&account=reporter30");
+  await page.goto("/?view=x&account=reporter30");
   await openNavigation(page).click();
   await expect(page.locator("#x-accounts")).toBeVisible();
   await expect(page.locator("#reddit-communities")).toBeHidden();

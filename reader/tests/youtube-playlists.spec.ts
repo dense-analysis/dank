@@ -6,7 +6,7 @@ import type {
   YouTubePlaylistEntry,
 } from "../src/lib/youtubePlaylists";
 
-const path = "/reader/?view=youtube&youtube_view=playlists";
+const path = "/?view=youtube&youtube_view=playlists";
 const playlist: YouTubePlaylist = {
   id: "PLsaved",
   title: "A journey through sound",
@@ -202,7 +202,7 @@ test("sidebar library to ordered playlist to video and Back preserves URL and du
   page,
 }) => {
   await fixture(page);
-  await page.goto("/reader/?view=youtube");
+  await page.goto("/?view=youtube");
   await page.getByRole("button", { name: "Playlists", exact: true }).click();
   await expect(page).toHaveURL(/youtube_view=playlists/);
   await page.getByRole("link", { name: playlist.title, exact: true }).click();

@@ -388,33 +388,48 @@ def test_recovered_figure_reaches_reader_with_caption_and_local_image(
     ))
 
 
-async def test_built_reader_serves_its_files_and_the_root_leads_to_it(
+async def test_built_reader_is_served_from_the_root(
     app: web.Application, tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "index.html").write_text("reader")
     (tmp_path / "app.js").write_text("// reader")
     monkeypatch.setattr(reader_api, "READER_DIST", tmp_path)
-    req = make_mocked_request("GET", "/reader/", app=app)
-    req._match_info = await app.router.resolve(req)  # pyright: ignore[reportPrivateUsage]
-    response = await reader_api.handle_reader(req)
-    assert isinstance(response, web.FileResponse)
-    assert response.headers["Cache-Control"] == "no-store"
-    root = make_mocked_request("GET", "/", app=app)
-    root._match_info = await app.router.resolve(root)  # pyright: ignore[reportPrivateUsage]
 
-    with pytest.raises(web.HTTPFound) as redirect:
-        await root.match_info.handler(root)
+    for path, expected in (
+        ("/", tmp_path / "index.html"),
+        ("/saved/politics", tmp_path / "index.html"),
+        ("/app.js", tmp_path / "app.js"),
+    ):
+        req = make_mocked_request("GET", path, app=app)
+        req._match_info = await app.router.resolve(req)  # pyright: ignore[reportPrivateUsage]
+        response = await req.match_info.handler(req)
+        assert isinstance(response, web.FileResponse)
+        assert response._path == expected  # pyright: ignore[reportPrivateUsage]
 
-    assert redirect.value.location == "/reader/"
-    post = await app.router.resolve(
-        make_mocked_request("GET", "/post", app=app),
-    )
-    assert post.http_exception is not None
-    assert post.http_exception.status == 404
+    assert response.headers.get("Cache-Control") is None
+    assert reader_api._reader_file("") == tmp_path / "index.html"  # pyright: ignore[reportPrivateUsage]
     assert reader_api._reader_file("../outside") is None  # pyright: ignore[reportPrivateUsage]
     assert reader_api._reader_file("missing.js") is None  # pyright: ignore[reportPrivateUsage]
-    assert reader_api._reader_file("saved/politics") == tmp_path / "index.html"  # pyright: ignore[reportPrivateUsage]
+    assert reader_api._reader_file("api/nope") is None  # pyright: ignore[reportPrivateUsage]
+    assert reader_api._reader_file("assets/missing") is None  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(("path", "location"), [
+    ("/reader", "/"),
+    ("/reader/", "/"),
+    ("/reader/?view=x&q=a%20b", "/?view=x&q=a%20b"),
+])
+async def test_the_old_reader_address_redirects_to_the_root(
+    app: web.Application, path: str, location: str,
+) -> None:
+    req = make_mocked_request("GET", path, app=app)
+    req._match_info = await app.router.resolve(req)  # pyright: ignore[reportPrivateUsage]
+
+    with pytest.raises(web.HTTPFound) as redirect:
+        await req.match_info.handler(req)
+
+    assert redirect.value.location == location
 
 
 async def test_community_identity_and_flair_choices_are_shared_with_posts(

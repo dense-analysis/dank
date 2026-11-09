@@ -11,11 +11,12 @@ import stat
 from typing import NamedTuple
 
 from fastapi import FastAPI
+from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.staticfiles import PathLike, StaticFiles
 from starlette.types import Scope
 
-from dank.api.files.model import client_route
+from dank.api.files.model import client_route, server_path
 from dank.config import Settings
 from dank.web.app import assets_path
 
@@ -36,6 +37,14 @@ class ReaderFiles(StaticFiles):
 
     async def check_config(self) -> None:
         """Let a checkout with no reader build answer 404, not fail."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        # As the fallback, this also gets unmatched API paths, whatever the
+        # method. They keep their 404 rather than a 405 or the app.
+        if server_path(path):
+            raise HTTPException(status_code=404)
+
+        return await super().get_response(path, scope)
 
     def lookup_path(self, path: str) -> tuple[str, os.stat_result | None]:
         full_path, found = super().lookup_path(path)
@@ -67,6 +76,6 @@ def mount_files(app: FastAPI, settings: Settings, roots: FileRoots) -> None:
     # The lifespan creates this directory.
     assets = StaticFiles(directory=assets_path(settings), check_dir=False)
     app.mount("/assets", assets)
-    app.mount(
-        "/reader", ReaderFiles(directory=roots.reader, check_dir=False),
-    )
+    # The fallback for any path no route or mount matched, so the reader can
+    # live at / without shadowing routes added after it.
+    app.router.default = ReaderFiles(directory=roots.reader, check_dir=False)

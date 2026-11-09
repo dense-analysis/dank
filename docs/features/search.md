@@ -19,9 +19,8 @@ make up
 ```
 
 Complete [setup](../setup.md) for your chosen mode first. Both modes serve the
-reader at [localhost:8080](http://127.0.0.1:8080), which opens
-[`/reader/`](http://127.0.0.1:8080/reader/). Native runs use your configured
-database; Compose starts its databases before the web app.
+reader at [localhost:8080](http://127.0.0.1:8080/). Native runs use your
+configured database; Compose starts its databases before the web app.
 
 Both modes read the checkout's `config.toml`. After editing it, stop the
 native web app with Ctrl+C and start it again, or recreate the Docker service:

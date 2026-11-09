@@ -81,7 +81,7 @@ test("article links support middle-click and keep search context in a new tab", 
   context,
 }) => {
   await mockReader(context);
-  await page.goto("/reader/?q=examples&sort=oldest");
+  await page.goto("/?q=examples&sort=oldest");
   const link = page.getByRole("link", {
     name: `Read ${article.title}`,
     exact: true,
@@ -115,7 +115,7 @@ test("source links filter stories from both the list and article header", async 
   context,
 }) => {
   await mockReader(context);
-  await page.goto("/reader/");
+  await page.goto("/");
   await page
     .getByRole("link", { name: "Stories from example", exact: true })
     .click();
@@ -146,7 +146,7 @@ test("article diagrams open their image URL in a new tab without a modal", async
   context,
 }) => {
   await mockReader(context);
-  await page.goto("/reader/?article=shared&article_source=example.com");
+  await page.goto("/?article=shared&article_source=example.com");
   const link = page.getByRole("link", {
     name: "Open full-size image: Architecture diagram",
     exact: true,
@@ -165,7 +165,7 @@ test("search highlights literal terms as text without executing excerpt markup",
   context,
 }) => {
   await mockReader(context);
-  await page.goto("/reader/?q=needle+C%2B%2B");
+  await page.goto("/?q=needle+C%2B%2B");
   const card = page.locator(".post-card").first();
   await expect(card.locator("h2 mark")).toHaveText("C++");
   await expect(card.locator("p mark")).toHaveText(["needle", "C++"]);
@@ -181,7 +181,7 @@ test("reopening and reloading long articles resumes the same paragraph by source
   context,
 }) => {
   await mockReader(context);
-  await page.goto("/reader/");
+  await page.goto("/");
   const story = page.getByRole("link", {
     name: `Read ${article.title}`,
     exact: true,
@@ -236,7 +236,7 @@ test("article links and highlighted previews fit a narrow mobile viewport", asyn
 }) => {
   await mockReader(context);
   await page.setViewportSize({ width: 320, height: 760 });
-  await page.goto("/reader/?q=needle+C%2B%2B");
+  await page.goto("/?q=needle+C%2B%2B");
   await expect(
     page.getByRole("link", { name: `Read ${article.title}`, exact: true }),
   ).toBeVisible();

@@ -44,7 +44,7 @@ it.each(["", "linked", channel, news])(
   "does not turn capture order into a rank outside the selected Hype feed (%s)",
   (feed) => {
     const card = renderToStaticMarkup(
-      <YouTubeCard item={item} feed={feed} open={() => {}} href="/reader/" />,
+      <YouTubeCard item={item} feed={feed} open={() => {}} href="/" />,
     );
 
     expect(card).not.toContain("yt-rank");
@@ -53,7 +53,7 @@ it.each(["", "linked", channel, news])(
 
 it("shows the captured ranking when viewing its Hype feed", () => {
   const card = renderToStaticMarkup(
-    <YouTubeCard item={item} feed={hype} open={() => {}} href="/reader/" />,
+    <YouTubeCard item={item} feed={hype} open={() => {}} href="/" />,
   );
 
   expect(card).toContain('class="yt-rank">#2');

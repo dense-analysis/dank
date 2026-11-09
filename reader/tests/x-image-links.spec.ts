@@ -112,7 +112,7 @@ for (const width of [1440, 390]) {
       "view=x&account=photographer",
       "view=x&article=123&article_source=x.com",
     ]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const scope = page.locator(
         query.includes("article=") ? ".article-page" : ".post-card",
       );
@@ -144,9 +144,7 @@ for (const unavailable of ["failed", "unsupported"] as const) {
     }) => {
       await mockImages(page, unavailable);
       await page.goto(
-        detail
-          ? "/reader/?view=x&article=123&article_source=x.com"
-          : "/reader/?view=x",
+        detail ? "/?view=x&article=123&article_source=x.com" : "/?view=x",
       );
       const scope = page.locator(detail ? ".article-page" : ".post-card");
       await scope.locator(".x-attachments").scrollIntoViewIfNeeded();

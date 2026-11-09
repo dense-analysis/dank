@@ -50,7 +50,7 @@ async function openArticle(page: Page, html = sqlHtml) {
           : { posts: [post], next_cursor: null, limited: false },
     });
   });
-  await page.goto("/reader/?article=code-example&article_source=example.com");
+  await page.goto("/?article=code-example&article_source=example.com");
   await expect(
     page.getByRole("main", { name: "Article reader" }),
   ).toBeVisible();

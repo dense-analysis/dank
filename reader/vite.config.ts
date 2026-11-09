@@ -2,7 +2,9 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  base: "/reader/",
+  base: "/",
+  // Downloaded media already owns /assets/, so bundles go elsewhere.
+  build: { assetsDir: "bundle" },
   plugins: [react()],
   server: {
     proxy: {

@@ -175,7 +175,7 @@ for (const width of [1440, 390, 320]) {
       "view=x&account=3blue1brown",
       "view=x&article=youtube-post&article_source=x.com",
     ]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const content = page.locator(".x-post-content:visible");
       const trigger = content.getByRole("button", {
         name: `Play video: ${videoTitle}`,
@@ -254,7 +254,7 @@ test("keyboard activation works without a thumbnail, and the external fallback r
   context,
 }) => {
   const embeds = await mockYouTube(context, { brokenImage: true });
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const preview = page.locator(".x-youtube-preview");
   const trigger = preview.getByRole("button", {
     name: `Play video: ${videoTitle}`,
@@ -284,7 +284,7 @@ test("opening a post and going Back unloads players instead of leaving audio in 
   context,
 }) => {
   await mockYouTube(context);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   await card.getByRole("button", { name: `Play video: ${videoTitle}` }).click();
   await expect(card.locator("iframe")).toBeVisible();
@@ -339,7 +339,7 @@ for (const width of [1440, 390]) {
         id: `mixed-${index}`,
       })),
     });
-    await page.goto("/reader/?view=x");
+    await page.goto("/?view=x");
     const card = page.locator(".post-card").first();
     const video = card.locator("video").first();
     await video.scrollIntoViewIfNeeded();
@@ -393,7 +393,7 @@ test("starting any player pauses the previous native or YouTube player, includin
 }) => {
   await page.setViewportSize({ width: 1000, height: 3000 });
   await mockYouTube(context, { posts: [mixed] });
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   const videos = card.locator("video");
   await expect(videos).toHaveCount(2);
@@ -435,7 +435,7 @@ test("a slow YouTube player cannot start over a newer video, but can be resumed 
 }) => {
   await page.setViewportSize({ width: 1000, height: 2400 });
   await mockYouTube(context, { posts: [mixed], delayedReady: true });
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   await card.getByRole("button", { name: `Play video: ${videoTitle}` }).click();
   const player = card.locator("iframe").contentFrame();
@@ -469,7 +469,7 @@ test("native playback stops on navigation and stays paused in the restored feed"
   context,
 }) => {
   await mockYouTube(context, { posts: [mixed] });
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   const video = card.locator("video").first();
   await video.scrollIntoViewIfNeeded();
@@ -529,7 +529,7 @@ for (const remote of [false, true]) {
     await mockYouTube(context, {
       posts: [mixed, redditPost(remote), redditPost(false, "second-reddit")],
     });
-    await page.goto("/reader/");
+    await page.goto("/");
     const reddit = page.locator(".reddit-card");
     await expect(reddit).toHaveCount(2);
     await expect(reddit.first().locator(".thumbnail")).toHaveCount(0);
@@ -584,7 +584,7 @@ for (const remote of [false, true]) {
     await expect(videos.first()).toHaveJSProperty("paused", true);
     await x.evaluate((v: HTMLVideoElement) => v.play());
     await expect(videos.nth(1)).toHaveJSProperty("paused", true);
-    await expect(page).toHaveURL(/\/reader\/$/);
+    await expect(page).toHaveURL(/:\d+\/$/);
   });
 }
 
@@ -598,7 +598,7 @@ for (const width of [1440, 390]) {
       redditPost(false, `clip-${i}`),
     );
     await mockYouTube(context, { posts });
-    await page.goto("/reader/");
+    await page.goto("/");
     const card = page.locator(".reddit-card").first();
     const video = card.locator("video");
     await video.evaluate((v: HTMLVideoElement) => {
@@ -669,7 +669,7 @@ for (const result of ["manifest", "fallback"] as const) {
         else await route.fallback();
       },
     );
-    await page.goto("/reader/");
+    await page.goto("/");
     const card = page.locator(".reddit-card");
     const video = card.locator("video");
     await video.evaluate((v: HTMLVideoElement) => {

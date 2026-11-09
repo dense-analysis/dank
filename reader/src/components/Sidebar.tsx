@@ -69,7 +69,7 @@ export function Sidebar({
   return (
     <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
       <div className="sidebar-header">
-        <a className="brand" href="/reader/" aria-label="DANK reader home">
+        <a className="brand" href="/" aria-label="DANK reader home">
           <span>DANK</span>
         </a>
         <button

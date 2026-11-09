@@ -372,7 +372,7 @@ async def _references(
             "title": str(row.get("title") or ""),
             "source": str(row.get("source") or ""),
             "reader_url": (
-                "/reader/?" + urlencode({
+                "/?" + urlencode({
                     "article_source": domain, "article": post_id,
                 }) if row.get("processed") else ""
             ),

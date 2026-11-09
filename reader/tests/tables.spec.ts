@@ -37,7 +37,7 @@ async function openArticle(page: Page) {
           : { posts: [post], next_cursor: null, limited: false },
     });
   });
-  await page.goto("/reader/?article=table-example&article_source=example.com");
+  await page.goto("/?article=table-example&article_source=example.com");
   await expect(
     page.getByRole("table", { name: "Benchmark comparison" }),
   ).toBeVisible();

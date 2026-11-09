@@ -252,7 +252,7 @@ for (const width of [1440, 390]) {
               },
             };
       const requests = await mock(context, [post], [detail]);
-      await page.goto("/reader/");
+      await page.goto("/");
       const card = page.locator(".post-card");
       const feed = card.locator("video");
       await play(feed, card);
@@ -290,7 +290,7 @@ for (const width of [1440, 390]) {
   }) => {
     await page.setViewportSize({ width, height: 1000 });
     await mock(context, [youtube]);
-    await page.goto("/reader/");
+    await page.goto("/");
     const card = page.locator(".post-card");
     await card
       .getByRole("button", { name: "Play video: A YouTube film" })
@@ -361,7 +361,7 @@ test("separate X attachments and posts never share a playhead", async ({
   };
   const other = { ...x, id: "another-post", title: "Another post" };
   await mock(context, [post, other]);
-  await page.goto("/reader/");
+  await page.goto("/");
   const card = page.locator(".post-card").first();
   const first = card.locator("video").nth(0);
   await play(first, card);

@@ -78,7 +78,8 @@ async def test_unknown_paths_and_methods_use_the_envelope(
 async def test_pages_and_files_answer_errors_in_plain_text(
     client: AsyncClient,
 ) -> None:
-    missing = await client.get("/nope")
+    # Extensionless paths load the reader, so this one has an extension.
+    missing = await client.get("/nope.txt")
     wrong = await client.delete("/")
 
     assert (missing.status_code, missing.text) == (404, "Not Found")

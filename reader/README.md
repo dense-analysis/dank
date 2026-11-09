@@ -1,7 +1,8 @@
 # DANK reader
 
 DANK's reader: compact stories, focused articles, combined search, source
-filters and reading preferences. It lives at `/reader/`, and `/` opens it.
+filters and reading preferences. DANK serves it at `/`; old `/reader/` links
+redirect there.
 Track outstanding work and future ideas in the [DANK project in Linear](https://linear.app/dense-analysis/project/dank-de00db7ebbb2).
 
 ## Develop
@@ -19,21 +20,23 @@ Run DANK from the checkout root in another terminal:
 uv run web --no-reload --port 8091
 ```
 
-Open [localhost:5174/reader/](http://127.0.0.1:5174/reader/).
+Open [localhost:5174](http://127.0.0.1:5174/).
 The development server proxies the reader API and downloaded media to DANK on
 port 8091. Configure DANK normally before starting it; see the main setup guide.
 
 For a single native server, run `npm run build`, then start DANK. The same web
-process serves the reader at `/reader/`. Docker builds and includes the reader
-automatically; open `/reader/` on the normal DANK server.
+process serves the reader at `/`. Docker builds and includes the reader
+automatically; open `/` on the normal DANK server. Built bundles live under
+`/bundle/`, because `/assets/` holds downloaded media.
 
 ## Install on a phone
 
-Open `/reader/` using a trusted HTTPS address reachable from your phone. In
+Open `/` using a trusted HTTPS address reachable from your phone. In
 Android Chrome, choose **Menu → Install and create shortcut → Install**.
 DANK then opens from its icon in a standalone window, without browser controls.
 Plain HTTP on a LAN IP does not enable this installation; the phone must trust
-the HTTPS certificate.
+the HTTPS certificate. A reader installed while it lived at `/reader/` keeps
+that old scope, so remove it and install it again from `/`.
 
 The installed reader needs the DANK server to stay running and reachable. On a
 local network, keep the host awake and the phone on that network. Reopen or
@@ -364,7 +367,7 @@ See [Hacker News collection settings](../docs/features/hacker-news.md).
 
 ## YouTube
 
-[**Playlists**](http://127.0.0.1:8080/reader/?view=youtube&youtube_view=playlists) opens a playlist
+[**Playlists**](http://127.0.0.1:8080/?view=youtube&youtube_view=playlists) opens a playlist
 library under YouTube. Open a playlist to browse its saved videos in the order
 YouTube returned, including repeated videos and explicit unavailable entries.
 Playlist and video links preserve the selected playlist through reload and Back.

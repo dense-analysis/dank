@@ -1,10 +1,10 @@
 {
-  "id": "/reader/",
+  "id": "/",
   "name": "DANK",
   "short_name": "DANK",
   "description": "A quiet place for everything you read.",
-  "start_url": "/reader/",
-  "scope": "/reader/",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#101113",
   "theme_color": "#101113",

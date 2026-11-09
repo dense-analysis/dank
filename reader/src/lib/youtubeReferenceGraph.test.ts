@@ -16,7 +16,7 @@ const reference: YouTubeReference = {
   title: "A source headline, not the video title",
   url: "https://www.reddit.com/r/example/comments/discussion/",
   source: "reddit",
-  reader_url: "/reader/?article=discussion&article_source=reddit.com",
+  reader_url: "/?article=discussion&article_source=reddit.com",
   kind: "comment",
   reference_id: "first",
   reference_url:

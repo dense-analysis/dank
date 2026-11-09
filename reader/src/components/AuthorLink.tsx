@@ -18,7 +18,7 @@ export function AuthorLink({
   return (
     <ReaderLink
       className="author author-link"
-      href={`/reader/?${filterParams({ ...filters, author: name, authorExact: true })}`}
+      href={`/?${filterParams({ ...filters, author: name, authorExact: true })}`}
       onNavigate={() => select(name)}
       aria-label={`Stories by ${name}`}
       title={name}

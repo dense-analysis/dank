@@ -126,7 +126,7 @@ for (const width of [1440, 390, 320]) {
     await mockCards(page);
 
     for (const query of ["", "view=x", "view=x&account=long_handle_123"]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const identity = card(page, dispatch.title).getByRole("link", {
         name: "Posts from @long_handle_123",
         exact: true,
@@ -136,7 +136,7 @@ for (const width of [1440, 390, 320]) {
       await expect(identity).toContainText("@long_handle_123");
       await expect(identity).toHaveAttribute(
         "href",
-        "/reader/?view=x&account=long_handle_123",
+        "/?view=x&account=long_handle_123",
       );
       await expect(identity.locator("img")).toHaveJSProperty(
         "naturalWidth",
@@ -193,7 +193,7 @@ test("card identity supports keyboard and new-tab navigation without confusing d
   context,
 }) => {
   await mockCards(page);
-  await page.goto("/reader/?q=dispatch&sort=oldest");
+  await page.goto("/?q=dispatch&sort=oldest");
   const origin = page.url();
   const link = card(page, dispatch.title).getByRole("link", {
     name: "Posts from @long_handle_123",
@@ -202,7 +202,7 @@ test("card identity supports keyboard and new-tab navigation without confusing d
   const newPagePromise = context.waitForEvent("page");
   await link.click({ button: "middle" });
   const opened = await newPagePromise;
-  await opened.waitForURL("**/reader/?view=x&account=long_handle_123");
+  await opened.waitForURL("**/?view=x&account=long_handle_123");
   await opened.close();
   await expect(page).toHaveURL(origin);
   await link.focus();
@@ -225,7 +225,7 @@ for (const width of [1440, 390, 320]) {
     await mockCards(page);
 
     for (const query of ["", "view=x", "view=x&account=long_handle_123"]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const originalUrl = page.url();
       const post = card(page, dispatch.title);
       const timestamp = post.getByRole("link", {
@@ -260,7 +260,7 @@ for (const width of [1440, 390, 320]) {
 
 test("non-link engagement metrics open the post once", async ({ page }) => {
   await mockCards(page);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const post = card(page, dispatch.title);
   await post
     .getByTitle("Likes not captured", { exact: true })
@@ -276,7 +276,7 @@ test("dragging text selection into card space keeps the feed open", async ({
   page,
 }) => {
   await mockCards(page);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const originalUrl = page.url();
   const post = card(page, dispatch.title);
   const start = await post.locator(".article-body p").evaluate((element) => {
@@ -309,7 +309,7 @@ test("Cmd/Ctrl-clicking card space and engagement opens a separate reader tab", 
 }) => {
   await mockCards(page);
   await page.goto(
-    "/reader/?view=x&account=long_handle_123&q=dispatch&sort=oldest&after=2026-10-01",
+    "/?view=x&account=long_handle_123&q=dispatch&sort=oldest&after=2026-10-01",
   );
   const originalUrl = page.url();
   const post = card(page, dispatch.title);

@@ -137,7 +137,7 @@ for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     const state = await fixture(page);
     await page.goto(
-      "/reader/?view=x&x_feed=for_you&x_tab=authors&q=space&after=2026-10-01",
+      "/?view=x&x_feed=for_you&x_tab=authors&q=space&after=2026-10-01",
     );
     await expect(
       page.getByRole("button", { name: "Authors", exact: true }),
@@ -200,7 +200,7 @@ test("Authors can be opened from Posts and have explicit empty and retry states"
 }) => {
   const state = await fixture(page);
   state.fail = true;
-  await page.goto("/reader/?view=x&x_feed=for_you");
+  await page.goto("/?view=x&x_feed=for_you");
   await page.getByRole("button", { name: "Authors", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Authors unavailable");
   await expect(
@@ -219,7 +219,7 @@ test("Authors paginate independently of Posts with no duplicate groups", async (
 }) => {
   const state = await fixture(page);
   state.paginated = true;
-  await page.goto("/reader/?view=x&x_feed=for_you&x_tab=authors");
+  await page.goto("/?view=x&x_feed=for_you&x_tab=authors");
   await expect(page.locator(".x-author-group")).toHaveCount(2);
   expect(
     state.authors.some((query) => query.get("cursor") === "next-authors"),

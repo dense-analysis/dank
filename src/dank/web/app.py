@@ -77,7 +77,7 @@ class AppState(NamedTuple):
 
 
 def create_app(settings: Settings) -> web.Application:
-    from dank.web.reader_api import add_reader_routes
+    from dank.web.reader_api import add_reader_app_route, add_reader_routes
     from dank.web.reader_source_icons import add_source_icon_routes
     from dank.web.sources import saved_sources_context
 
@@ -89,12 +89,13 @@ def create_app(settings: Settings) -> web.Application:
     app.cleanup_ctx.append(_clickhouse_context)
     app.cleanup_ctx.append(saved_sources_context)
     app.middlewares.append(_no_cache_middleware)
-    app.router.add_get("/", handle_root)
     add_reader_routes(app)
     add_source_icon_routes(app)
 
     if assets_dir.exists():
         app.router.add_static("/assets/", assets_dir, show_index=False)
+
+    add_reader_app_route(app)
 
     return app
 
@@ -134,11 +135,6 @@ async def _clickhouse_context(app: web.Application):
         yield
     finally:
         await client.__aexit__(None, None, None)
-
-
-async def handle_root(request: web.Request) -> web.Response:
-    # Relative, because behind the HTTPS proxy this server sees plain HTTP.
-    raise web.HTTPFound("/reader/")
 
 
 async def _search_embedding(

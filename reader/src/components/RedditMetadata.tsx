@@ -15,7 +15,7 @@ export function RedditCommunityLink({
   return (
     <ReaderLink
       className="source-link"
-      href={`/reader/?${filterParams({ ...defaultFilters, kind: "reddit", community })}`}
+      href={`/?${filterParams({ ...defaultFilters, kind: "reddit", community })}`}
       onNavigate={() => select(community)}
       aria-label={`Posts from r/${community}`}
     >
@@ -38,7 +38,7 @@ export function RedditFlair({
   return (
     <ReaderLink
       className="reddit-flair"
-      href={`/reader/?${filterParams({ ...defaultFilters, kind: "reddit", community, flairs: [flair] })}`}
+      href={`/?${filterParams({ ...defaultFilters, kind: "reddit", community, flairs: [flair] })}`}
       onNavigate={() => selectFlair(community, flair)}
       aria-label={`Posts from r/${community} with flair ${flair}`}
       title={`Show ${flair} posts from r/${community}`}

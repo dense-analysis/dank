@@ -81,7 +81,7 @@ export function CollectionInfoContent({
   ];
   const article = info.article;
   const params = new URLSearchParams(readerHref?.split("?")[1]);
-  const savedHref = article && `/reader/?${articleParams(params, article)}`;
+  const savedHref = article && `/?${articleParams(params, article)}`;
   const original = safeUrl(info.article_url);
   const isRedditVideo = !!(
     (post.reddit?.video || post.reddit?.videos?.length) &&

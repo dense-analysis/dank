@@ -191,7 +191,7 @@ async function expectIdentity(scope: Locator) {
   await expect(identity).toContainText("@3blue1brown");
   await expect(identity).toHaveAttribute(
     "href",
-    "/reader/?view=x&account=3blue1brown",
+    "/?view=x&account=3blue1brown",
   );
   await expect(identity.locator("img")).toHaveJSProperty("naturalWidth", 320);
   await expect(scope.getByText(/min read|YOU’VE REACHED THE END/)).toHaveCount(
@@ -208,7 +208,7 @@ for (const width of [1440, 390, 320]) {
     await mockX(context);
 
     for (const query of ["", "view=x", "view=x&account=3blue1brown"]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const card = page.locator(".post-card");
       await expectIdentity(card);
       await expect(card.getByText(postText, { exact: true })).toHaveCount(1);
@@ -321,7 +321,7 @@ test("preview image failure retains the working destination and keyboard target"
   await context.route("https://pbs.twimg.com/card_img/**", (route) =>
     route.fulfill({ status: 404 }),
   );
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   const preview = card.getByRole("link", { name: `Open link: ${videoTitle}` });
   await expect(preview).toBeVisible();
@@ -353,7 +353,7 @@ test("long notes retain paragraphs and separate safe inline links from opening t
   context,
 }) => {
   await mockX(context, [longNote]);
-  await page.goto("/reader/?view=x&q=explanation");
+  await page.goto("/?view=x&q=explanation");
   const card = page.locator(".post-card");
   await expect(card.getByText(longNote.title, { exact: true })).toHaveCount(0);
   await expect(card.getByText(longNote.excerpt, { exact: true })).toHaveCount(
@@ -400,7 +400,7 @@ test("media-only posts remain readable and never interpret zero reported replies
   context,
 }) => {
   await mockX(context, [mediaPost]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   await expect(card.getByText("Not collected", { exact: true })).toHaveCount(0);
   const image = card.getByRole("img", {
@@ -469,7 +469,7 @@ test("post links retain search context in a new tab and Back restores the card a
   }));
   await mockX(context, repeated);
   await page.goto(
-    "/reader/?view=x&account=3blue1brown&q=math&sort=oldest&after=2026-10-01",
+    "/?view=x&account=3blue1brown&q=math&sort=oldest&after=2026-10-01",
   );
   const originalUrl = page.url();
   const target = page.getByRole("link", {
@@ -526,7 +526,7 @@ for (const width of [1440, 390, 320]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     await mockX(context, [textPost]);
-    await page.goto("/reader/?view=x&account=3blue1brown&q=collected");
+    await page.goto("/?view=x&account=3blue1brown&q=collected");
     const originalUrl = page.url();
 
     for (const paragraph of shortParagraphs) {
@@ -560,7 +560,7 @@ test("selecting post text leaves the feed open and preserves the selected words"
   context,
 }) => {
   await mockX(context, [textPost]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const originalUrl = page.url();
   const paragraph = page
     .locator(".post-card")
@@ -606,9 +606,7 @@ for (const gesture of ["middle", "modifier"] as const) {
     context,
   }) => {
     await mockX(context, [textPost]);
-    await page.goto(
-      "/reader/?view=x&account=3blue1brown&q=collected&sort=oldest",
-    );
+    await page.goto("/?view=x&account=3blue1brown&q=collected&sort=oldest");
     const originalUrl = page.url();
     const text = page
       .locator(".post-card")
@@ -648,7 +646,7 @@ test("inline destinations and mentions remain independent from opening the card"
   await context.route("https://x.com/colleague", (route) =>
     route.fulfill({ body: "Colleague destination" }),
   );
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const originalUrl = page.url();
   const card = page.locator(".post-card");
   await expect(card.locator("a a")).toHaveCount(0);
@@ -676,7 +674,7 @@ test("playing a feed video does not open the post", async ({
   context,
 }) => {
   await mockX(context, [mediaPost]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const originalUrl = page.url();
   const video = page.locator(".post-card video").first();
   await video.scrollIntoViewIfNeeded();
@@ -703,7 +701,7 @@ test("engagement distinguishes uncaptured counts from captured zeroes", async ({
   context,
 }) => {
   await mockX(context, [longNote, mediaPost]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const unknownCard = page.locator(".post-card").filter({
     has: page.getByRole("link", {
       name: `Read ${longNote.title}`,
@@ -764,7 +762,7 @@ test("saved conversation status has its own row below engagement on a narrow rea
       ),
     grant.id,
   );
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const card = page.locator(".post-card");
   const group = card.getByRole("group", { name: "Engagement when collected" });
   const summary = card.getByText("8 saved · partial", { exact: true });
@@ -805,7 +803,7 @@ for (const shown of [true, false]) {
       "view=x",
       `view=x&article=${post.id}&article_source=x.com`,
     ]) {
-      await page.goto(`/reader/?${query}`);
+      await page.goto(`/?${query}`);
       const content = page.locator(".x-post-content:visible");
       await expect(
         content.getByRole("link", { name: url, exact: true }),
@@ -860,7 +858,7 @@ for (const width of [1440, 390, 320]) {
   }) => {
     await page.setViewportSize({ width, height: 900 });
     await mockX(context, [quoteParent, quoted]);
-    await page.goto("/reader/?view=x&account=3blue1brown");
+    await page.goto("/?view=x&account=3blue1brown");
     const parent = page
       .locator(".x-post-card")
       .filter({ hasText: "Outer commentary" });
@@ -934,7 +932,7 @@ test("missing and embedded-only quotes keep an honest external destination", asy
     },
   };
   await mockX(context, [missing]);
-  await page.goto("/reader/?view=x");
+  await page.goto("/?view=x");
   const quote = page.locator(".x-quote-card");
   await expect(quote).toContainText("Quoted post unavailable in this capture");
   await expect(

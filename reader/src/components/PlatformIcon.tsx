@@ -1,5 +1,5 @@
 // Tabler Icons (MIT): https://github.com/tabler/tabler-icons/tree/main/icons/outline
-// License: /reader/tabler-icons-license.txt
+// License: /tabler-icons-license.txt
 export function PlatformIcon({
   platform,
   size = 19,

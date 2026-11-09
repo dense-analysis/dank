@@ -17,9 +17,9 @@ BUNDLE = "console.log('reader');"
 @pytest.fixture
 def roots(tmp_path: pathlib.Path) -> FileRoots:
     reader = tmp_path / "dist"
-    (reader / "assets").mkdir(parents=True)
+    (reader / "bundle").mkdir(parents=True)
     (reader / "index.html").write_text(INDEX)
-    (reader / "assets" / "index-abc.js").write_text(BUNDLE)
+    (reader / "bundle" / "index-abc.js").write_text(BUNDLE)
     (reader / "icon.svg").write_text("<svg/>")
 
     return FileRoots(reader=reader)

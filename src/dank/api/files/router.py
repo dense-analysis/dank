@@ -1,13 +1,19 @@
-"""The file routes that aren't mounts: both lead to the reader."""
+"""The one file route that isn't a mount: the reader's old address."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
+from dank.api.files.model import reader_location
 
 router = APIRouter(include_in_schema=False)
 
 
-# Relative, because behind the HTTPS proxy this server sees plain HTTP.
-@router.get("/")
 @router.get("/reader")
-async def reader_entry() -> RedirectResponse:
-    return RedirectResponse("/reader/", status_code=302)
+@router.get("/reader/{path:path}")
+async def old_reader_address(request: Request) -> RedirectResponse:
+    # Relative, because behind the HTTPS proxy this server sees plain HTTP.
+    location = reader_location(
+        request.path_params.get("path", ""), request.url.query,
+    )
+
+    return RedirectResponse(location, status_code=302)

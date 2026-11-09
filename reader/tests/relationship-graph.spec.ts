@@ -10,7 +10,7 @@ for (const width of [1210, 720, 390, 320]) {
     await page.setViewportSize({ width, height: 958 });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/reader/tests/fixtures/relationship-graph.html");
+    await page.goto("/tests/fixtures/relationship-graph.html");
     const graph = page.locator(".relationship-graph");
     await expect(graph).toHaveAttribute("data-status", "ready");
     await expect(graph.locator("canvas")).toHaveCount(3);
@@ -91,7 +91,7 @@ test("metadata enrichment preserves the panned and zoomed graph", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1210, height: 958 });
-  await page.goto("/reader/tests/fixtures/relationship-graph.html");
+  await page.goto("/tests/fixtures/relationship-graph.html");
   await expect(page.locator(".relationship-graph")).toHaveAttribute(
     "data-status",
     "ready",
@@ -140,7 +140,7 @@ test("graph loading failures retain keyboard access to the saved evidence", asyn
   await page.route("**/node_modules/.vite/deps/cytoscape.js*", (route) =>
     route.abort(),
   );
-  await page.goto("/reader/tests/fixtures/relationship-graph.html");
+  await page.goto("/tests/fixtures/relationship-graph.html");
   await expect(page.locator(".relationship-graph")).toHaveAttribute(
     "data-status",
     "failed",
@@ -168,7 +168,7 @@ test("returning to the graph restores selection, viewport and moved nodes while 
   page,
 }) => {
   await page.setViewportSize({ width: 1210, height: 958 });
-  await page.goto("/reader/tests/fixtures/relationship-graph.html");
+  await page.goto("/tests/fixtures/relationship-graph.html");
   const graph = page.locator(".relationship-graph");
   await expect(graph).toHaveAttribute("data-status", "ready");
   const getRenderer = () =>

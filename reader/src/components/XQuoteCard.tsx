@@ -23,7 +23,7 @@ export function XQuoteCard({
   const destination =
     quote.collected && post
       ? {
-          href: `/reader/?${articleParams(navigation.params, quote)}`,
+          href: `/?${articleParams(navigation.params, quote)}`,
           open: () => navigation.openPost(quote),
         }
       : undefined;

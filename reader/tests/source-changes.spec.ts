@@ -88,7 +88,7 @@ async function fixture(
     });
   });
   await page.clock.install();
-  await page.goto("/reader/");
+  await page.goto("/");
   await expect(source(page, "first.example")).toBeVisible();
   await expect.poll(() => state.settingsRequests).toBe(inDatabase ? 1 : 0);
   // Let the first answer reach the query cache.
