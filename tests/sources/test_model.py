@@ -19,7 +19,9 @@ from dank.config import (
     load_settings,
 )
 from dank.sources.model import (
+    MAX_ADAPTERS,
     MAX_TARGETS,
+    MAX_TEXT,
     Adapter,
     InvalidSource,
     NewSource,
@@ -192,6 +194,48 @@ def test_adapters_follow_the_toml_rules(value: Source, path: str) -> None:
     assert problems(value) == [(path, "unsupported_adapter")]
 
 
+@pytest.mark.parametrize("value", [
+    # The source's feeds, and the same feeds again as the adapter's own.
+    source("example.com", feeds=["https://example.com/a"], adapters=(
+        Adapter(SourceAdapter.RSS),
+        Adapter(SourceAdapter.RSS, targets(["https://example.com/a"])),
+    )),
+    # No feeds of its own, and the source's, which are none.
+    source("example.com", adapters=(
+        Adapter(SourceAdapter.RSS, ()), Adapter(SourceAdapter.RSS),
+    )),
+])
+def test_two_adapters_that_collect_the_same_feeds_are_duplicates(
+    value: Source,
+) -> None:
+    # config.toml compares adapters by the feeds they end up with.
+    assert problems(value) == [("adapters.1", "unsupported_adapter")]
+
+
+def test_too_many_adapters() -> None:
+    value = source("example.com", adapters=tuple(
+        Adapter(SourceAdapter.RSS, targets([f"https://example.com/{n}"]))
+        for n in range(MAX_ADAPTERS + 1)
+    ))
+
+    assert problems(value) == [("adapters", "too_many")]
+
+
+def test_values_are_measured_after_normalizing() -> None:
+    # Normalizing adds a host and /videos, and lowercasing İ doubles it.
+    handle = "@" + "a" * (MAX_TEXT - len("https://youtube.com/@"))
+    value = source(
+        "youtube.com",
+        feeds=[f"https://youtube.com/{handle}"],
+        tags=["\u0130" * (MAX_TEXT // 2 + 1)],
+    )
+
+    assert problems(value) == [
+        ("feeds.0.value", "too_long"),
+        ("tags.0", "too_long"),
+    ]
+
+
 def test_rss_adapters_can_combine_with_hacker_news() -> None:
     value = source(
         "news.ycombinator.com",
@@ -258,6 +302,22 @@ def test_problems_carry_a_message_for_people() -> None:
     assert [problem.message for problem in caught.value.fields] == [
         "Use r/community or a Reddit community URL.",
     ]
+
+
+def test_adapters_left_the_same_by_disabled_feeds_collect_once() -> None:
+    value = source("example.com", adapters=(
+        Adapter(SourceAdapter.RSS, targets([
+            "https://example.com/a",
+            Target("https://example.com/b", enabled=False),
+        ])),
+        Adapter(SourceAdapter.RSS, targets(["https://example.com/a"])),
+    ))
+
+    assert compile_sources([value]).collectable == (
+        SourceConfig("example.com", (), adapters=(
+            SourceAdapterConfig(SourceAdapter.RSS, ("https://example.com/a",)),
+        )),
+    )
 
 
 def test_known_sources_keep_everything_disabled() -> None:
@@ -403,6 +463,19 @@ def test_imported_sources_collect_exactly_what_toml_does(
 
     assert [normalized(value) for value in imported] == list(imported)
     assert compile_sources(imported).collectable == settings.sources
+
+
+def test_blank_accounts_are_left_out_of_an_import(
+    tmp_path: pathlib.Path,
+) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text(
+        'sources = [{ domain = "x.com", accounts = ["", " a ", "a"] }]',
+    )
+
+    [imported] = sources_from_settings(load_settings(config), ids().__next__)
+
+    assert imported.accounts == (Target("a"),)
 
 
 def test_imported_sources_get_new_ids_and_start_enabled(

@@ -37,6 +37,8 @@ from dank.errors import FieldProblem, InvalidInput
 MAX_TARGETS = 1_000
 MAX_TAGS = 32
 MAX_TEXT = 2_048
+# There are five kinds; only RSS repeats, with different feeds.
+MAX_ADAPTERS = 16
 # DNS names are at most 253 characters (RFC 1035, section 2.3.4).
 MAX_DOMAIN = 253
 
@@ -140,7 +142,7 @@ def normalized[S: (Source, NewSource)](source: S) -> S:
     feeds = _feeds(source.feeds, native, problems)
     tags = _tags(source.tags, problems)
     _check_options(source, native, problems)
-    adapters = _adapters(source, domain, native, problems)
+    adapters = _adapters(source, domain, native, feeds, problems)
 
     if problems:
         raise InvalidSource(problems)
@@ -184,15 +186,19 @@ def _text(
 
         return None
 
-    if len(value) > MAX_TEXT:
-        _problem(
-            problems, path, "too_long",
-            f"Use at most {MAX_TEXT:,} characters.",
-        )
+    return None if _too_long(path, value, problems) else value
 
-        return None
 
-    return value
+def _too_long(path: str, value: str, problems: list[FieldProblem]) -> bool:
+    # Checked again after normalizing, which can lengthen a value.
+    if len(value) <= MAX_TEXT:
+        return False
+
+    _problem(
+        problems, path, "too_long", f"Use at most {MAX_TEXT:,} characters.",
+    )
+
+    return True
 
 
 def _targets(
@@ -225,6 +231,11 @@ def _targets(
             value = rule.normalize(value)
         except ConfigError:
             _problem(problems, where, "invalid_url", rule.message)
+            result.append(target)
+
+            continue
+
+        if _too_long(where, value, problems):
             result.append(target)
 
             continue
@@ -289,14 +300,19 @@ def _tags(
 
         return tags
 
-    values = (
-        _text(f"tags.{index}", tag, problems) for index, tag in enumerate(tags)
-    )
+    result: list[str] = []
 
-    # As in config.toml, tags ignore case and repeats.
-    return tuple(dict.fromkeys(
-        value.lower() for value in values if value is not None
-    ))
+    for index, tag in enumerate(tags):
+        path = f"tags.{index}"
+        value = _text(path, tag, problems)
+
+        # As in config.toml, tags ignore case and repeats.
+        if value is not None and not _too_long(
+            path, value := value.lower(), problems,
+        ):
+            result.append(value)
+
+    return tuple(dict.fromkeys(result))
 
 
 def _check_options(
@@ -339,6 +355,7 @@ def _adapters(
     source: Source | NewSource,
     domain: str,
     native: SourceAdapter,
+    feeds: tuple[Target, ...],
     problems: list[FieldProblem],
 ) -> tuple[Adapter, ...] | None:
     adapters = source.adapters
@@ -365,18 +382,31 @@ def _adapters(
 
         return adapters
 
+    if len(adapters) > MAX_ADAPTERS:
+        _problem(
+            problems, "adapters", "too_many",
+            f"Use at most {MAX_ADAPTERS} adapters.",
+        )
+
+        return adapters
+
     result: list[Adapter] = []
+    seen: set[tuple[SourceAdapter, tuple[str, ...]]] = set()
 
     for index, adapter in enumerate(adapters):
         path = f"adapters.{index}"
         adapter = _adapter(path, adapter, domain, native, problems)
+        # As config.toml does, compare the feeds each adapter ends up with.
+        resolved = adapter.feeds if adapter.feeds is not None else feeds
+        key = (adapter.kind, tuple(target.value for target in resolved))
 
-        if adapter in result:
+        if key in seen:
             _problem(
                 problems, path, "unsupported_adapter",
-                "This adapter is listed twice.",
+                "Another adapter already collects these feeds.",
             )
 
+        seen.add(key)
         result.append(adapter)
 
     return tuple(result)
@@ -481,15 +511,19 @@ def _config(
         match adapter:
             case Adapter(SourceAdapter.RSS, tuple() as own):
                 values = _values(own, keep)
-
-                if not _emptied(own, values):
-                    kept.append(SourceAdapterConfig(SourceAdapter.RSS, values))
+                method = None if _emptied(own, values) else (
+                    SourceAdapterConfig(SourceAdapter.RSS, values)
+                )
             case Adapter(kind) if not _broadens(
                 kind, source, accounts, feeds,
             ):
-                kept.append(SourceAdapterConfig(kind, feeds))
+                method = SourceAdapterConfig(kind, feeds)
             case _:
-                pass
+                method = None
+
+        # Disabled feeds can leave two adapters collecting the same thing.
+        if method is not None and method not in kept:
+            kept.append(method)
 
     if not kept:
         return None
@@ -529,7 +563,8 @@ def sources_from_settings(
     """config.toml's sources, each with a new ID, enabled.
 
     They compile back to the same SourceConfig values, apart from accounts
-    that config.toml listed twice, which a source lists once.
+    that config.toml listed twice or left blank: a source lists each once,
+    and leaves blanks out.
     """
     return tuple(_from_config(config, new_id()) for config in settings.sources)
 
@@ -551,9 +586,9 @@ def _from_config(config: SourceConfig, source_id: uuid.UUID) -> Source:
         id=source_id,
         enabled=True,
         domain=config.domain,
-        # config.toml doesn't strip accounts or drop repeats.
+        # config.toml doesn't strip accounts, or drop blanks and repeats.
         accounts=_new_targets(dict.fromkeys(
-            account.strip() for account in config.accounts
+            account.strip() for account in config.accounts if account.strip()
         )),
         feeds=_new_targets(config.feed_urls),
         tags=config.tags,

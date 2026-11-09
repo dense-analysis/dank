@@ -22,6 +22,7 @@ from dank.config import (
     SourceAdapter,
 )
 from dank.sources.model import (
+    MAX_ADAPTERS,
     MAX_TAGS,
     MAX_TARGETS,
     MAX_TEXT,
@@ -70,7 +71,9 @@ class SourceBody(ApiModel):
     feeds: Targets
     tags: Annotated[tuple[Text, ...], Field(max_length=MAX_TAGS)]
     # Null collects with the domain's default adapter.
-    adapters: tuple[SourceAdapterModel, ...] | None
+    adapters: Annotated[
+        tuple[SourceAdapterModel, ...], Field(max_length=MAX_ADAPTERS),
+    ] | None
     reddit: RedditOptions | None
     hacker_news: HackerNewsOptions | None
 

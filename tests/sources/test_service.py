@@ -174,7 +174,10 @@ async def test_an_import_with_a_bad_source_saves_nothing_and_says_where(
     with pytest.raises(InvalidSource) as caught:
         await service.import_settings(settings)
 
-    assert [problem.path for problem in caught.value.fields] == [
+    assert [
+        (problem.path, problem.message) for problem in caught.value.fields
+    ] == [(
         "sources.1.domain",
-    ]
+        "Use a domain such as example.com. (https://b.example)",
+    )]
     assert repository.rows == []

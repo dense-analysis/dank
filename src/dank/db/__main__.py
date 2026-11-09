@@ -9,6 +9,7 @@ import platform
 import sys
 
 import psycopg
+from sqlalchemy.exc import DBAPIError
 
 from dank.config import ConfigError, PostgresSettings, Settings, load_settings
 from dank.db import atlas, install_atlas
@@ -117,8 +118,8 @@ def _import_sources(args: argparse.Namespace) -> int:
 
         if error.fields:
             print(
-                "Sources are numbered from 0 in the order config.toml lists "
-                "them.",
+                "Sources are counted from 0, leaving out any entry "
+                "config.toml ignores.",
                 file=sys.stderr,
             )
 
@@ -236,6 +237,10 @@ def main() -> None:
     ) as error:
         # psycopg's messages name the user and host, never the password.
         print(f"dank-db: {error}", file=sys.stderr)
+        sys.exit(1)
+    except DBAPIError as error:
+        # SQLAlchemy wraps psycopg's error, and adds the statement to it.
+        print(f"dank-db: {error.orig}", file=sys.stderr)
         sys.exit(1)
 
 

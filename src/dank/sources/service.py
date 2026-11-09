@@ -105,8 +105,13 @@ class SourceService:
             try:
                 source = normalized(source)
             except InvalidSource as error:
+                # config.toml may have skipped entries it couldn't read, so
+                # the domain says which source this is too.
                 problems.extend(
-                    problem._replace(path=f"sources.{index}.{problem.path}")
+                    problem._replace(
+                        path=f"sources.{index}.{problem.path}",
+                        message=f"{problem.message} ({source.domain})",
+                    )
                     for problem in error.fields
                 )
 

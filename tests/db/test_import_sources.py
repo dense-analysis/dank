@@ -144,8 +144,10 @@ def test_a_source_the_app_cannot_take_stops_the_import(
     assert run(monkeypatch, capsys, config) == (1, "", (
         "dank-db: Some sources in config.toml can't be imported, so nothing"
         " was.\n"
-        "  sources.1.domain: Use a domain such as example.com.\n"
-        "Sources are numbered from 0 in the order config.toml lists them.\n"
+        "  sources.1.domain: Use a domain such as example.com."
+        " (https://b.example)\n"
+        "Sources are counted from 0, leaving out any entry config.toml"
+        " ignores.\n"
     ))
     assert collectable(database) == ()
 

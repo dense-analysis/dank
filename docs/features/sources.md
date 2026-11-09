@@ -28,14 +28,15 @@ Collection still reads config.toml for now.
   `Sources were already imported, so nothing changed.` and exits 1. Two runs
   started together import once.
 - **It's all or nothing.** If one source can't be imported, nothing is, and the
-  command lists each problem by the source's place in `config.toml`, counting
-  from 0, such as `sources.3.domain`.
+  command lists each problem with the source's domain and its place, counting
+  from 0, such as `sources.3.domain`. The count leaves out entries `config.toml`
+  itself ignores, such as one without a domain.
 - **It's stricter than `config.toml`.** A domain must be a host name, such as
   `example.com` rather than `https://example.com`, and its feed URLs must be
   ones that platform collects.
 - **Exact duplicates are saved once,** and the command says how many it skipped.
-  An account listed twice in one source is kept once, and whitespace around it
-  is removed.
+  An account listed twice in one source is kept once, whitespace around it is
+  removed, and a blank one is left out.
 - **An empty list imports nothing,** so you can import later.
 - It needs the schema at head and never migrates. Start the web app, or run
   `make db-upgrade`, first.
@@ -128,8 +129,9 @@ repeated add answers `duplicate_source`, which means the first one worked.
 Everything except the ID and enabled flag lives in the `config` column, so
 changing what a source holds needs no change to the table.
 
-- **A new field with a default:** change the model. Old rows read with the
-  default, and the next save writes the field.
+- **A new field with a default:** change the model, and let `decode_source`
+  read rows saved without it, which it otherwise refuses. The next save writes
+  the field. Or add it to every row with a data migration, as below.
 - **A breaking change while the data doesn't matter:** change the model, empty
   the table, and import again.
 - **A breaking change once other people have data:** change the model and write
@@ -148,8 +150,8 @@ changing what a source holds needs no change to the table.
   make db-atlas ARGS='migrate hash --env dank'
   ```
 
-Rows are read strictly, so a row in a shape this code doesn't know answers
-`503` rather than being skipped. The web app migrates before it starts and
+Rows are read strictly: a missing or unknown key, or a value of the wrong type,
+answers `503` rather than being skipped. The web app migrates before it starts and
 CLIs refuse a schema that isn't at head, so code never meets a row in an old
 shape. Update `sources_from_settings` with the model; the parity tests fail if
 it no longer matches.
@@ -157,6 +159,7 @@ it no longer matches.
 ## Limits
 
 Project heuristics far above a real source, in `dank/sources/model.py`: 1,000
-targets in a list, 32 tags and 2,048 characters in a value. The API also
+targets in a list, 32 tags, 16 adapters and 2,048 characters in a value,
+measured after normalizing. The API also
 needs a request size limit
 ([DEN-58](https://linear.app/dense-analysis/issue/DEN-58)).

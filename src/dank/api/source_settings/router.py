@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/reader/source-settings", tags=["sources"])
 
 
 @router.get("")
-async def list_sources(service: SourceServiceDep) -> SourceListResponse:
+async def list_saved_sources(service: SourceServiceDep) -> SourceListResponse:
     """Every source, disabled ones too, in the order they were added."""
     sources = await service.sources()
 
@@ -26,7 +26,7 @@ async def list_sources(service: SourceServiceDep) -> SourceListResponse:
 
 
 @router.get("/{source_id}")
-async def read_source(
+async def read_saved_source(
     source_id: uuid.UUID, service: SourceServiceDep,
 ) -> SourceOut:
     return SourceOut.model_validate(await service.source(source_id))
