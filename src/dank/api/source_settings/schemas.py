@@ -117,3 +117,6 @@ class SourceOut(SourceBody):
 class SourceListResponse(ApiModel):
     # In the order they were added.
     sources: tuple[SourceOut, ...]
+    # False while `sources_in_database` is off: collection and the reader
+    # still use config.toml's sources, not these.
+    in_database: bool

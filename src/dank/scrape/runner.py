@@ -34,6 +34,7 @@ from dank.config import (
     XSettings,
     load_settings,
 )
+from dank.db.sources import sources_in_use
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.links import is_original_source, is_platform_url, normalized_url
 from dank.logging_setup import configure_logging
@@ -2785,8 +2786,13 @@ def run_scrape_from_config(
             canonical_post_url(url) for url in x_posts
         ))
         settings = settings._replace(sources=(SourceConfig("x.com", ()),))
-    elif domain_regex:
-        settings = filter_settings_sources(settings, domain_regex)
+    else:
+        # Sources turned off in the app stay out of new collection.
+        collectable = asyncio.run(sources_in_use(settings)).collectable
+        settings = settings._replace(sources=collectable)
+
+        if domain_regex:
+            settings = filter_settings_sources(settings, domain_regex)
 
     asyncio.run(run_scrape(
         settings, headless=headless, retry_failed_pages=retry_failed_pages,

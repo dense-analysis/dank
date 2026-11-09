@@ -136,7 +136,18 @@ def _import_sources(args: argparse.Namespace) -> int:
             "config.toml.",
         )
 
-    print("Collection still reads config.toml for now.")
+    if settings.sources_in_database:
+        print("DANK uses these sources now.")
+    else:
+        # A top-level key after a [section] header would belong to that
+        # section instead, and the example configs already have the key
+        # set to false, which a second line would make invalid TOML.
+        print(
+            "DANK still uses config.toml's sources. To use these instead, "
+            "set this near the top of config.toml, before any [section], "
+            "replacing any sources_in_database line already there, and "
+            "restart DANK:\n\nsources_in_database = true",
+        )
 
     return 0
 

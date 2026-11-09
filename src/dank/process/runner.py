@@ -15,6 +15,7 @@ from dank.age import parse_age_window as parse_age_window
 from dank.categories import category_embedding
 from dank.category_config import CategorySettings
 from dank.config import Settings, SourceConfig, load_settings
+from dank.db.sources import sources_in_use
 from dank.embeddings import EmbeddingModel, get_embedding_model
 from dank.html_utils import html_text
 from dank.links import LinkPost, normalized_url, post_index_rows
@@ -710,9 +711,12 @@ def run_process_from_config(
 ) -> int:
     settings = load_settings(path)
     configure_logging(settings.logging, component="process")
+    # Sources turned off in the app still have an archive to process.
+    known = asyncio.run(sources_in_use(settings)).known
 
     return asyncio.run(run_process(
-        settings, age=age, domain_regex=domain_regex, reprocess=reprocess,
+        settings._replace(sources=known),
+        age=age, domain_regex=domain_regex, reprocess=reprocess,
     ))
 
 

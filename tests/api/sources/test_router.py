@@ -1,9 +1,12 @@
 """GET /api/reader/sources: HTTP in, JSON out."""
 
+import uuid
+
 from fastapi import FastAPI
 from httpx import AsyncClient
 
 from dank.api import deps
+from dank.api.sources.deps import saved_sources
 from dank.api.sources.model import (
     Community,
     Flair,
@@ -13,7 +16,9 @@ from dank.api.sources.model import (
     XActivity,
 )
 from dank.config import Settings, SourceConfig
+from dank.sources.model import Source
 from tests.api.sources.fakes import FakeCollectionStats
+from tests.sources.fakes import FakeSourceRepository
 
 
 def configure(
@@ -140,3 +145,51 @@ async def test_openapi_describes_each_source_kind(client: AsyncClient) -> None:
         "reddit": "#/components/schemas/RedditSourceOut",
     }
     assert schemas["XSourceOut"]["additionalProperties"] is False
+
+
+async def test_the_switch_reads_saved_sources_and_ignores_config(
+    app: FastAPI, client: AsyncClient, settings: Settings,
+) -> None:
+    switched = settings._replace(sources_in_database=True)
+    repository = FakeSourceRepository(
+        Source(
+            uuid.UUID(int=1), enabled=True, domain="saved.example",
+            tags=("news",),
+        ),
+        Source(uuid.UUID(int=2), enabled=False, domain="off.example"),
+    )
+    app.dependency_overrides[deps.settings] = lambda: switched
+    app.dependency_overrides[saved_sources] = lambda: repository
+
+    body = (await client.get("/api/reader/sources")).json()
+
+    assert [
+        (source["domain"], source["configured"], source["tags"])
+        for source in body["sources"]
+    ] == [("off.example", True, []), ("saved.example", True, ["news"])]
+
+
+async def test_the_switch_with_an_empty_table_shows_no_sources(
+    app: FastAPI, client: AsyncClient, settings: Settings,
+) -> None:
+    switched = settings._replace(sources_in_database=True)
+    app.dependency_overrides[deps.settings] = lambda: switched
+    app.dependency_overrides[saved_sources] = lambda: FakeSourceRepository()
+
+    response = await client.get("/api/reader/sources")
+
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
+
+
+async def test_the_sidebar_says_where_its_sources_come_from(
+    app: FastAPI, client: AsyncClient, settings: Settings,
+) -> None:
+    # The reader watches for edits only when the sources come from Postgres.
+    config = (await client.get("/api/reader/sources")).json()
+    switched = settings._replace(sources_in_database=True)
+    app.dependency_overrides[deps.settings] = lambda: switched
+    app.dependency_overrides[saved_sources] = lambda: FakeSourceRepository()
+    saved = (await client.get("/api/reader/sources")).json()
+
+    assert (config["in_database"], saved["in_database"]) == (False, True)

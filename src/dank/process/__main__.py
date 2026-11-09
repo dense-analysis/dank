@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import re
 
+from dank.db.sources import SourcesError
 from dank.process.runner import run_process_from_config
 
 
@@ -35,10 +36,13 @@ def main() -> None:
         except re.error as error:
             parser.error(f"Invalid --domains value: {error}")
 
-    run_process_from_config(
-        args.config, age=args.age, domain_regex=domain_regex,
-        reprocess=args.reprocess,
-    )
+    try:
+        run_process_from_config(
+            args.config, age=args.age, domain_regex=domain_regex,
+            reprocess=args.reprocess,
+        )
+    except SourcesError as error:
+        parser.exit(1, f"process: {error}\n")
 
 
 if __name__ == "__main__":

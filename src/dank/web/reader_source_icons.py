@@ -21,6 +21,7 @@ from PIL import Image, UnidentifiedImageError
 
 from dank.api.source_icons.model import domain_valid, source_icon_url
 from dank.web.app import AppState
+from dank.web.sources import current_sources
 
 # A sidebar must not start an unbounded crawl or download full-size artwork.
 MAX_ICON_BYTES = 1024 * 1024
@@ -262,9 +263,9 @@ async def handle_source_icon(request: web.Request) -> web.Response:
     if source_icon_url(domain) is None:
         raise web.HTTPNotFound()
 
-    state: AppState = request.app["state"]
+    sources = await current_sources(request)
 
-    if not any(source.domain == domain for source in state.settings.sources):
+    if not any(source.domain == domain for source in sources):
         client = request.app["clickhouse"]
         result = await client.fetch_json(
             "SELECT domain FROM posts FINAL WHERE domain = %(domain)s LIMIT 1",

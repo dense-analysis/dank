@@ -85,13 +85,19 @@ class SourcesResponse(ApiModel):
     sources: list[SourceOut]
     total_posts: int
     blog_external_count: int
+    # True while `sources_in_database` is on, so the reader knows to watch
+    # the source list for edits.
+    in_database: bool
 
     @classmethod
-    def from_overview(cls, overview: Overview) -> SourcesResponse:
+    def from_overview(
+        cls, overview: Overview, *, in_database: bool,
+    ) -> SourcesResponse:
         return cls(
             sources=[source_out(source) for source in overview.sources],
             total_posts=overview.total_posts,
             blog_external_count=overview.blog_external_count,
+            in_database=in_database,
         )
 
 

@@ -10,11 +10,15 @@ router = APIRouter(prefix="/api/reader", tags=["sources"])
 
 
 @router.get("/sources")
-async def list_sources(service: SourceServiceDep) -> SourcesResponse:
+async def list_sources(
+    service: SourceServiceDep, settings: SettingsDep,
+) -> SourcesResponse:
     """Configured and collected sources, with post counts."""
     overview = await service.overview()
 
-    return SourcesResponse.from_overview(overview)
+    return SourcesResponse.from_overview(
+        overview, in_database=settings.sources_in_database,
+    )
 
 
 @router.get("/categories")

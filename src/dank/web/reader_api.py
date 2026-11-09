@@ -36,6 +36,7 @@ from dank.web.reader_refresh import add_refresh_routes
 from dank.web.reader_x_authors import handle_x_authors
 from dank.web.reader_x_home import HOME_CONDITION, encode_home_cursor
 from dank.web.reader_youtube import add_youtube_routes
+from dank.web.sources import current_sources
 
 logger = logging.getLogger(__name__)
 READER_DIST = pathlib.Path(__file__).resolve().parents[3] / "reader" / "dist"
@@ -100,9 +101,10 @@ async def handle_sources(request: web.Request) -> web.Response:
         "SELECT domain, count() AS count FROM posts FINAL GROUP BY domain",
     )
     counts = {str(row["domain"]): int(row["count"]) for row in result.rows}
+    configured = await current_sources(request)
     tags: dict[str, set[str]] = {}
 
-    for source in state.settings.sources:
+    for source in configured:
         tags.setdefault(source.domain, set()).update(source.tags)
 
     sources: list[dict[str, Any]] = [
@@ -117,7 +119,7 @@ async def handle_sources(request: web.Request) -> web.Response:
     ]
     names = (
         urlsplit(url).path.split("/")[2]
-        for source in state.settings.sources if source.domain == "reddit.com"
+        for source in configured if source.domain == "reddit.com"
         for url in source.feed_urls
     )
     communities = {name.lower(): name for name in names}
@@ -133,13 +135,13 @@ async def handle_sources(request: web.Request) -> web.Response:
 
     for source in sources:
         if source["kind"] == "x":
-            configured = tuple(
-                account for setting in state.settings.sources
+            accounts = tuple(
+                account for setting in configured
                 if setting.domain == source["domain"]
                 for account in setting.accounts
             )
             source["accounts"] = await source_accounts(
-                client, source["domain"], configured,
+                client, source["domain"], accounts,
             )
             home = await client.fetch_json(
                 "SELECT uniqExact(post_id) AS x_home_count FROM raw_posts "
@@ -154,6 +156,7 @@ async def handle_sources(request: web.Request) -> web.Response:
         "sources": sources,
         "total_posts": sum(counts.values()),
         "blog_external_count": await external_blog_count(client),
+        "in_database": state.settings.sources_in_database,
     })
 
 
@@ -205,7 +208,9 @@ async def handle_posts(request: web.Request) -> web.Response:
     if filters.q and filters.mode in {"meaning", "combined"}:
         embedding = await _search_embedding(client, search_text=filters.q)
 
-    query, params = build_query(filters, state.settings.sources, embedding)
+    query, params = build_query(
+        filters, await current_sources(request), embedding,
+    )
     result = await client.fetch_json(query, params)
     posts = [_parse_post_row(row) for row in result.rows[:filters.limit]]
     has_more = len(result.rows) > filters.limit

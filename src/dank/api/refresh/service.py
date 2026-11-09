@@ -21,6 +21,7 @@ from dank.api.refresh.model import (
     youtube_playlist_settings,
     youtube_video_id,
 )
+from dank.api.sources.service import SourceCatalog
 from dank.config import Settings
 from dank.errors import InvalidInput
 
@@ -51,10 +52,12 @@ class RefreshService:
     def __init__(
         self,
         settings: Settings,
+        catalog: SourceCatalog,
         targets: RefreshTargets,
         queue: RefreshQueue,
     ) -> None:
         self._settings = settings
+        self._catalog = catalog
         self._targets = targets
         self._queue = queue
 
@@ -63,7 +66,12 @@ class RefreshService:
         return tuple(reversed(self._queue.jobs()))
 
     async def start(self, scope: object) -> RefreshJob:
-        plan = await resolve_scope(self._settings, self._targets, scope)
+        # The plan carries these sources to the worker, so a job collects
+        # what was enabled when it was asked for, whatever is edited later.
+        settings = self._settings._replace(
+            sources=await self._catalog.collectable(),
+        )
+        plan = await resolve_scope(settings, self._targets, scope)
 
         return self._queue.submit(plan)
 

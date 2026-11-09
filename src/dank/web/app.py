@@ -91,6 +91,7 @@ class AppState(NamedTuple):
 def create_app(settings: Settings, *, page_size: int) -> web.Application:
     from dank.web.reader_api import add_reader_routes
     from dank.web.reader_source_icons import add_source_icon_routes
+    from dank.web.sources import saved_sources_context
 
     app = web.Application()
     static_dir = _static_dir()
@@ -104,6 +105,7 @@ def create_app(settings: Settings, *, page_size: int) -> web.Application:
         assets_dir=assets_dir,
     )
     app.cleanup_ctx.append(_clickhouse_context)
+    app.cleanup_ctx.append(saved_sources_context)
     app.middlewares.append(_no_cache_middleware)
     app.router.add_get("/", handle_index)
     app.router.add_get("/post", handle_post_detail)

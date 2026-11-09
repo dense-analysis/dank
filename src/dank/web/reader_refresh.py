@@ -14,6 +14,7 @@ from dank.api.refresh.manager import RefreshManager, running_refresh
 from dank.api.refresh.service import RefreshService
 from dank.api.refresh.worker import ProcessWorker
 from dank.errors import TooManyRequests
+from dank.web.sources import source_catalog
 
 REFRESH_MANAGER = web.AppKey("reader_refresh_manager", RefreshManager)
 
@@ -55,6 +56,7 @@ async def handle_refresh(request: web.Request) -> web.Response:
 
     service = RefreshService(
         request.app["state"].settings,
+        source_catalog(request),
         ClickHouseRefreshTargets(request.app["clickhouse"]),
         manager,
     )

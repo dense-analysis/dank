@@ -7,7 +7,9 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
+from dank.api import deps
 from dank.api.source_settings.deps import source_repository
+from dank.config import Settings
 from dank.sources.model import Source, StoredSourceError
 from tests.api.client import BASE_URL, http_client
 from tests.sources.fakes import FakeSourceRepository
@@ -44,8 +46,21 @@ async def test_there_are_no_sources_until_one_is_added(
 ) -> None:
     response = await client.get(PATH)
 
-    assert (response.status_code, response.json()) == (200, {"sources": []})
+    assert (response.status_code, response.json()) == (
+        200, {"sources": [], "in_database": False},
+    )
     assert response.headers["cache-control"] == "no-store"
+
+
+async def test_the_list_says_when_these_sources_are_the_ones_in_use(
+    app: FastAPI, client: AsyncClient, settings: Settings,
+) -> None:
+    switched = settings._replace(sources_in_database=True)
+    app.dependency_overrides[deps.settings] = lambda: switched
+
+    assert (await client.get(PATH)).json() == {
+        "sources": [], "in_database": True,
+    }
 
 
 async def test_adding_answers_the_normalized_source_with_its_id(
@@ -69,7 +84,7 @@ async def test_adding_answers_the_normalized_source_with_its_id(
         "hacker_news": None,
     }
     assert uuid.UUID(saved["id"]).version == 4
-    assert (await client.get(PATH)).json() == {"sources": [saved]}
+    assert (await client.get(PATH)).json()["sources"] == [saved]
     assert (await client.get(f"{PATH}/{saved['id']}")).json() == saved
 
 
@@ -107,7 +122,7 @@ async def test_editing_replaces_the_whole_source(client: AsyncClient) -> None:
         ],
         "tags": [],
     }
-    assert (await client.get(PATH)).json() == {"sources": [response.json()]}
+    assert (await client.get(PATH)).json()["sources"] == [response.json()]
 
 
 async def test_a_broken_rule_names_each_field(client: AsyncClient) -> None:

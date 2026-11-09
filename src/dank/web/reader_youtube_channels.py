@@ -24,6 +24,7 @@ from dank.web.reader_youtube_query import (
     parse_youtube_filters,
 )
 from dank.web.reader_youtube_sources import configured_channel_keys
+from dank.web.sources import current_settings
 
 CHANNEL_KEY = (
     "if(notEmpty(JSONExtractString(payload, 'channel_id')), "
@@ -112,7 +113,9 @@ async def handle_youtube_channels(request: web.Request) -> web.Response:
         from dank.web.reader_youtube import recommendation_snapshot_time
 
         snapshot = await recommendation_snapshot_time(client)
-    configured = await load_configured_channels(client, state.settings)
+    configured = await load_configured_channels(
+        client, await current_settings(request),
+    )
     sql, params, base = channel_query(filters, configured, snapshot, after)
     result = await client.fetch_json(sql, params)
     rows = result.rows[:filters.limit]

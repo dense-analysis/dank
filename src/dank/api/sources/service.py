@@ -23,9 +23,16 @@ from dank.config import SourceConfig
 
 
 class SourceCatalog(Protocol):
-    """Configured sources: config.toml today, Postgres from DEN-22."""
+    """The sources in use: config.toml's, or the sources table's when
+    `sources_in_database` is on."""
 
-    async def sources(self) -> tuple[SourceConfig, ...]: ...
+    async def sources(self) -> tuple[SourceConfig, ...]:
+        """Every source and target, for reading the archive."""
+        ...
+
+    async def collectable(self) -> tuple[SourceConfig, ...]:
+        """Enabled sources and targets, for new collection."""
+        ...
 
 
 class CollectionStats(Protocol):

@@ -31,6 +31,7 @@ from dank.web.reader_youtube_query import (
     youtube_cursor_snapshot,
 )
 from dank.web.reader_youtube_sources import configured_sources
+from dank.web.sources import current_settings
 from dank.youtube import VIDEO_ID, payload_object, playlist_listing_labels
 
 MAX_ITEM_DISCOVERIES = 100
@@ -105,7 +106,7 @@ async def handle_youtube(request: web.Request) -> web.Response:
         from dank.web.reader_youtube_channels import load_configured_channels
 
         configured = await load_configured_channels(
-            client, request.app["state"].settings,
+            client, await current_settings(request),
         )
 
     snapshot_time = ""
@@ -386,7 +387,9 @@ async def handle_youtube_sources(request: web.Request) -> web.Response:
     state = request.app["state"]
 
     return web.json_response(await youtube_sources(
-        request.app["clickhouse"], state.settings, state.assets_dir,
+        request.app["clickhouse"],
+        await current_settings(request),
+        state.assets_dir,
     ))
 
 

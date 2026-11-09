@@ -62,5 +62,5 @@ async def test_sources_are_saved_listed_and_edited(
         409, "duplicate_source",
     )
     assert edited.json() == {**added.json(), "enabled": False}
-    assert (await client.get(PATH)).json() == {"sources": [edited.json()]}
+    assert (await client.get(PATH)).json()["sources"] == [edited.json()]
     assert (await client.get(f"{PATH}/{source_id}")).json() == edited.json()

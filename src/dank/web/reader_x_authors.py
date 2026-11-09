@@ -22,6 +22,7 @@ from dank.web.app import (
 from dank.web.reader_accounts import X_ACCOUNT_SQL
 from dank.web.reader_posts import post_payloads
 from dank.web.reader_query import build_query, parse_filters
+from dank.web.sources import current_sources
 
 AUTHOR_EXAMPLES = 3
 KNOWN_AUTHOR = "handle != '' AND handle != 'i'"
@@ -81,7 +82,7 @@ async def handle_x_authors(request: web.Request) -> web.Response:
         embedding = await _search_embedding(client, search_text=filters.q)
 
     base, params = build_query(
-        filters, state.settings.sources, embedding,
+        filters, await current_sources(request), embedding,
         paginate=False, snapshot_time=snapshot,
     )
     base = f"SELECT *, {X_ACCOUNT_SQL} AS handle FROM ({base})"

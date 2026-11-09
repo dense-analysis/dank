@@ -272,6 +272,9 @@ class Settings(NamedTuple):
     hacker_news: HackerNewsSettings = HackerNewsSettings()
     postgres: PostgresSettings = PostgresSettings()
     categories: CategorySettings = CategorySettings()
+    # Whether sources come from Postgres instead of `sources` above. One or
+    # the other, never both; see docs/features/sources.md.
+    sources_in_database: bool = False
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -872,6 +875,21 @@ def _parse_scrape_settings(value: object) -> ScrapeSettings:
     return ScrapeSettings(**values)
 
 
+def _parse_sources_in_database(
+    value: object, postgres: PostgresSettings,
+) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError("sources_in_database must be a boolean")
+
+    if value and not postgres.enabled:
+        raise ConfigError(
+            "sources_in_database needs Postgres, which is turned off "
+            "([postgres] enabled = false).",
+        )
+
+    return value
+
+
 def _parse_postgres_settings(value: object) -> PostgresSettings:
     data = _as_dict(value)
 
@@ -1151,6 +1169,11 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     except ValueError as error:
         raise ConfigError(str(error)) from None
 
+    postgres_settings = _parse_postgres_settings(data.get("postgres", {}))
+    sources_in_database = _parse_sources_in_database(
+        data.get("sources_in_database", False), postgres_settings,
+    )
+
     return Settings(
         clickhouse=clickhouse_settings,
         x=x_settings,
@@ -1170,8 +1193,9 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         reddit=_parse_reddit_settings(data.get("reddit", {})),
         youtube=_parse_youtube_settings(data.get("youtube", {})),
         hacker_news=_parse_hacker_news_settings(data.get("hacker_news", {})),
-        postgres=_parse_postgres_settings(data.get("postgres", {})),
+        postgres=postgres_settings,
         categories=category_settings,
+        sources_in_database=sources_in_database,
     )
 
 

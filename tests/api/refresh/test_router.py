@@ -3,12 +3,14 @@
 import asyncio
 import json
 import pathlib
+import uuid
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
+from dank.api import deps
 from dank.api.refresh.deps import refresh_queue
 from dank.api.refresh.manager import RefreshManager, Report, running_refresh
 from dank.api.refresh.model import (
@@ -17,9 +19,12 @@ from dank.api.refresh.model import (
     MAX_PENDING_JOBS,
     RefreshPlan,
 )
+from dank.api.sources.deps import saved_sources
 from dank.config import Settings
+from dank.sources.model import Source, Target
 from tests.api.client import http_client
 from tests.api.refresh.fakes import FakeRefreshTargets, FakeWorker
+from tests.sources.fakes import FakeSourceRepository
 
 PATH = "/api/reader/refresh"
 QUEUE_FULL = "The refresh queue is full. Try again when a job finishes."
@@ -51,6 +56,19 @@ async def statuses(client: AsyncClient) -> dict[str, str]:
 
 async def finished(manager: RefreshManager) -> None:
     await asyncio.wait_for(manager.pending.join(), 1)
+
+
+def saved(number: int, domain: str, *, enabled: bool = True) -> Source:
+    return Source(uuid.UUID(int=number), enabled, domain)
+
+
+def switch_to(
+    app: FastAPI, settings: Settings, repository: FakeSourceRepository,
+) -> None:
+    """Turn `sources_in_database` on, with this table behind it."""
+    switched = settings._replace(sources_in_database=True)
+    app.dependency_overrides[deps.settings] = lambda: switched
+    app.dependency_overrides[saved_sources] = lambda: repository
 
 
 async def test_post_returns_immediately_and_get_never_collects(
@@ -775,3 +793,116 @@ async def test_openapi_describes_the_scope_kinds_and_statuses(
         "queued", "running", "processing", "completed", "partial", "failed",
         "interrupted",
     }
+
+
+async def test_the_switch_collects_enabled_saved_sources_and_no_others(
+    app: FastAPI,
+    client: AsyncClient,
+    settings: Settings,
+    manager: RefreshManager,
+    worker: FakeWorker,
+) -> None:
+    collected: list[list[str]] = []
+
+    async def record(plan: RefreshPlan, report: Report) -> None:
+        collected.append([item.domain for item in plan.settings.sources])
+        report({"status": "completed"})
+
+    worker.script = record
+    switch_to(app, settings, FakeSourceRepository(
+        saved(1, "saved.example"), saved(2, "off.example", enabled=False),
+    ))
+
+    await start(client, {"kind": "all"})
+    await finished(manager)
+    disabled = await client.post(PATH, json={"scope": source("off.example")})
+    config_only = await client.post(
+        PATH, json={"scope": source("blog.example")},
+    )
+
+    assert collected == [["saved.example"]]
+    assert (disabled.status_code, config_only.status_code) == (400, 400)
+    assert disabled.json()["error"] == (
+        "Refresh includes a source that is no longer configured"
+    )
+
+
+async def test_jobs_keep_their_sources_and_a_request_after_an_edit_is_new(
+    app: FastAPI,
+    client: AsyncClient,
+    settings: Settings,
+    manager: RefreshManager,
+    worker: FakeWorker,
+) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    collected: list[list[tuple[str, tuple[str, ...]]]] = []
+
+    async def hold(plan: RefreshPlan, report: Report) -> None:
+        collected.append([
+            (item.domain, item.accounts) for item in plan.settings.sources
+        ])
+        entered.set()
+        await release.wait()
+        report({"status": "completed"})
+
+    x = Source(
+        uuid.UUID(int=1), enabled=True, domain="x.com",
+        accounts=(Target("alice"), Target("bob")),
+    )
+    repository = FakeSourceRepository(x, saved(2, "blog.example"))
+    switch_to(app, settings, repository)
+    worker.script = hold
+    running = await start(client, {"kind": "all"})
+    await asyncio.wait_for(entered.wait(), 1)
+    waiting = await start(client, {"kind": "x"})
+
+    await repository.update(x._replace(
+        accounts=(Target("alice"), Target("bob", enabled=False)),
+    ))
+    await repository.update(saved(2, "blog.example", enabled=False))
+    after = await start(client, {"kind": "all"})
+    after_x = await start(client, {"kind": "x"})
+    repeat = await start(client, {"kind": "all"})
+
+    assert len({
+        running["id"], waiting["id"], after["id"], after_x["id"],
+    }) == 4
+    assert repeat["id"] == after["id"]
+
+    release.set()
+    await finished(manager)
+
+    assert collected == [
+        [("x.com", ("alice", "bob")), ("blog.example", ())],
+        [("x.com", ("alice", "bob"))],
+        [("x.com", ("alice",))],
+        [("x.com", ("alice",))],
+    ]
+
+
+async def test_an_edit_to_another_source_still_joins_the_active_job(
+    app: FastAPI,
+    client: AsyncClient,
+    settings: Settings,
+    worker: FakeWorker,
+) -> None:
+    release = asyncio.Event()
+
+    async def hold(plan: RefreshPlan, report: Report) -> None:
+        await release.wait()
+        report({"status": "completed"})
+
+    repository = FakeSourceRepository(
+        saved(1, "blog.example"), saved(2, "other.example"),
+    )
+    switch_to(app, settings, repository)
+    worker.script = hold
+    first = await start(client, source("blog.example"))
+
+    await repository.update(saved(2, "other.example", enabled=False))
+    repeat = await start(client, source("blog.example"))
+
+    assert repeat["id"] == first["id"]
+
+    release.set()

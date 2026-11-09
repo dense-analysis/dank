@@ -6,15 +6,35 @@ import uuid
 from collections.abc import Iterable
 from typing import Any, NoReturn
 
+import psycopg
 import psycopg.errors
 from sqlalchemy import insert, select, text, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dank.config import ConfigError, Settings
+from dank.db import atlas
+from dank.db.engine import async_engine, async_sessions
 from dank.db.models.sources import DUPLICATE_INDEX, SourceRow
 from dank.errors import NotFound
-from dank.sources.model import Source, decode_source, encode_config
+from dank.sources.model import (
+    CompiledSources,
+    Source,
+    StoredSourceError,
+    compile_sources,
+    decode_source,
+    encode_config,
+)
 from dank.sources.service import AlreadyImported, DuplicateSource
+
+NO_SOURCES = (
+    "No sources in the database. Run make sources-import, or add one in "
+    "the app."
+)
+
+
+class SourcesError(Exception):
+    """Why a command has no sources to work on, in words for its user."""
 
 
 class PostgresSourceRepository:
@@ -101,3 +121,47 @@ def _raise_duplicate(error: IntegrityError) -> NoReturn:
         raise DuplicateSource from error
 
     raise error
+
+
+async def sources_in_use(settings: Settings) -> CompiledSources:
+    """The sources a command works on: config.toml's, or the sources table's.
+
+    The web app reads the table through a SourceCatalog instead, on the
+    engine it already holds.
+    """
+    if not settings.sources_in_database:
+        # config.toml has no way to turn a source off.
+        return CompiledSources(settings.sources, settings.sources)
+
+    try:
+        # Commands never migrate.
+        await atlas.require_head(settings.postgres)
+        engine = async_engine(settings.postgres)
+
+        try:
+            repository = PostgresSourceRepository(async_sessions(engine))
+            sources = compile_sources(await repository.list())
+        finally:
+            await engine.dispose()
+    except (
+        ConfigError, atlas.SchemaError, psycopg.Error, StoredSourceError,
+    ) as error:
+        # StoredSourceError: a row in a shape this code can't read.
+        raise SourcesError(_unreadable(error)) from error
+    except DBAPIError as error:
+        # SQLAlchemy wraps psycopg's error, and adds the statement to it.
+        raise SourcesError(_unreadable(error.orig)) from error
+
+    if not sources.known:
+        raise SourcesError(NO_SOURCES)
+
+    return sources
+
+
+def _unreadable(error: BaseException | None) -> str:
+    # An outage never falls back to config.toml's sources. psycopg's and
+    # Atlas's messages name the user and host, never the password.
+    return (
+        "sources_in_database is on, but the sources couldn't be read from "
+        f"Postgres: {error}"
+    )

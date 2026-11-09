@@ -68,6 +68,24 @@ def database(fresh_postgres: PostgresSettings) -> PostgresSettings:
     return fresh_postgres
 
 
+@pytest.mark.postgres
+def test_an_import_with_the_switch_on_is_in_use_at_once(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    database: PostgresSettings,
+) -> None:
+    config = write_config(tmp_path / "config.toml", database, '''
+        sources_in_database = true
+        sources = ["a.example"]
+    ''')
+
+    assert run(monkeypatch, capsys, config) == (0, (
+        f"Imported 1 source into Postgres database {database.database}.\n"
+        "DANK uses these sources now.\n"
+    ), "")
+
+
 def test_postgres_turned_off_is_reported(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -103,7 +121,11 @@ def test_sources_are_imported_once(
     assert first == (0, (
         f"Imported 2 sources into Postgres database {database.database}.\n"
         "Skipped 1 exact duplicate in config.toml.\n"
-        "Collection still reads config.toml for now.\n"
+        "DANK still uses config.toml's sources. To use these instead, set "
+        "this near the top of config.toml, before any [section], replacing "
+        "any sources_in_database line already there, and restart DANK:\n"
+        "\n"
+        "sources_in_database = true\n"
     ), "")
     assert second == (
         1, "", "dank-db: Sources were already imported, so nothing changed.\n",

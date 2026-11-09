@@ -1,12 +1,14 @@
 """HTTP routes for managing sources: parse, call the service, shape.
 
-Nothing reads these sources for collection yet. See docs/features/sources.md.
+Collection and the reader use these sources once `sources_in_database` is on.
+See docs/features/sources.md.
 """
 
 import uuid
 
 from fastapi import APIRouter
 
+from dank.api.deps import SettingsDep
 from dank.api.source_settings.deps import SourceServiceDep
 from dank.api.source_settings.schemas import (
     SourceBody,
@@ -18,11 +20,14 @@ router = APIRouter(prefix="/api/reader/source-settings", tags=["sources"])
 
 
 @router.get("")
-async def list_saved_sources(service: SourceServiceDep) -> SourceListResponse:
+async def list_saved_sources(
+    service: SourceServiceDep, settings: SettingsDep,
+) -> SourceListResponse:
     """Every source, disabled ones too, in the order they were added."""
-    sources = await service.sources()
-
-    return SourceListResponse.model_validate({"sources": sources})
+    return SourceListResponse.model_validate({
+        "sources": await service.sources(),
+        "in_database": settings.sources_in_database,
+    })
 
 
 @router.get("/{source_id}")

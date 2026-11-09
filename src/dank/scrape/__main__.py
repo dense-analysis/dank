@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import re
 
+from dank.db.sources import SourcesError
 from dank.scrape.runner import run_scrape_from_config
 from dank.scrape.x.conversations import canonical_post_url
 
@@ -110,23 +111,26 @@ def main() -> None:
         except re.error as error:
             parser.error(f"Invalid --domains value: {error}")
 
-    run_scrape_from_config(
-        args.config,
-        headless=args.headless,
-        domain_regex=domain_regex,
-        retry_failed_pages=args.retry_failed_pages,
-        x_posts=tuple(args.x_post),
-        reddit_details=args.reddit_details,
-        reddit_linked_articles=args.reddit_linked_articles,
-        x_details=args.x_details,
-        hacker_news_details=args.hacker_news_details,
-        youtube_metadata_only=args.youtube_metadata,
-        youtube_video_ids=tuple(args.youtube_video_id),
-        retry_youtube_thumbnails_only=args.retry_youtube_thumbnails,
-        youtube_thumbnail_ids=tuple(
-            f"video:{item}" for item in args.youtube_thumbnail_id
-        ),
-    )
+    try:
+        run_scrape_from_config(
+            args.config,
+            headless=args.headless,
+            domain_regex=domain_regex,
+            retry_failed_pages=args.retry_failed_pages,
+            x_posts=tuple(args.x_post),
+            reddit_details=args.reddit_details,
+            reddit_linked_articles=args.reddit_linked_articles,
+            x_details=args.x_details,
+            hacker_news_details=args.hacker_news_details,
+            youtube_metadata_only=args.youtube_metadata,
+            youtube_video_ids=tuple(args.youtube_video_id),
+            retry_youtube_thumbnails_only=args.retry_youtube_thumbnails,
+            youtube_thumbnail_ids=tuple(
+                f"video:{item}" for item in args.youtube_thumbnail_id
+            ),
+        )
+    except SourcesError as error:
+        parser.exit(1, f"scrape: {error}\n")
 
 
 def _validate_metadata_options(

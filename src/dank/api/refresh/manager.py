@@ -71,6 +71,8 @@ class RefreshManager:
         self.retry_after: dict[str, float] = {}
         self.changed = asyncio.Event()
         self._jobs: dict[str, RefreshJob] = {}
+        # The plan of each active job, to tell a repeat from a new request.
+        self._plans: dict[str, RefreshPlan] = {}
         self._worker = worker
         self._busy_retry_seconds = busy_retry_seconds
 
@@ -106,7 +108,15 @@ class RefreshManager:
                   if job.status in ACTIVE_STATUSES]
 
         for job in active:
-            if job.scope == plan.scope:
+            asked = self._plans.get(job.id)
+
+            # A scope names what to refresh, and the sources say what that
+            # is now: after an edit, the same scope is a different job.
+            if (
+                asked is not None
+                and asked.scope == plan.scope
+                and asked.settings.sources == plan.settings.sources
+            ):
                 return job
 
         if len(active) >= MAX_PENDING_JOBS:
@@ -129,6 +139,7 @@ class RefreshManager:
             item.id: item for item in retained_jobs((*self.jobs(), job))
         }
         self.persist()
+        self._plans[job.id] = plan
         self.pending.put_nowait((job.id, plan))
         self.changed.set()
 
@@ -143,6 +154,7 @@ class RefreshManager:
 
         if job.status not in ACTIVE_STATUSES:
             job = job._replace(finished_at=timestamp())
+            self._plans.pop(job_id, None)
 
         self._jobs[job_id] = job
         self.persist()

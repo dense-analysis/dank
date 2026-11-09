@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import tempfile
+import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -20,11 +21,16 @@ from aiohttp import web
 
 from dank.api.refresh.manager import Report, running_refresh
 from dank.api.refresh.model import MAX_PENDING_JOBS, RefreshPlan
+from dank.api.sources.saved_catalog import SavedSourceCatalog
+from dank.api.sources.service import SourceCatalog
 from dank.config import PostgresSettings, Settings, SourceConfig, load_settings
+from dank.sources.model import Source
 from dank.web.reader_api import reader_errors
 from dank.web.reader_refresh import REFRESH_MANAGER, handle_refresh
+from dank.web.sources import SOURCE_CATALOG
 from tests.api.client import BASE_URL
 from tests.api.refresh.fakes import FakeWorker
+from tests.sources.fakes import FakeSourceRepository
 
 EXAMPLE = pathlib.Path(__file__).parents[2] / "config.native.example.toml"
 URL = BASE_URL + "/api/reader/refresh"
@@ -55,10 +61,16 @@ def worker() -> FakeWorker:
 
 @asynccontextmanager
 async def serving(
-    settings: Settings, worker: FakeWorker,
+    settings: Settings,
+    worker: FakeWorker,
+    saved: SourceCatalog | None = None,
 ) -> AsyncGenerator[aiohttp.ClientSession]:
     app = web.Application(middlewares=[reader_errors])
     app["state"] = SimpleNamespace(settings=settings)
+
+    if saved is not None:
+        app[SOURCE_CATALOG] = saved
+
     # Source scopes read nothing saved, so this is never reached.
     app["clickhouse"] = None
     app.router.add_get("/api/reader/refresh", handle_refresh)
@@ -196,3 +208,35 @@ async def test_https_proxy_requests_still_require_matching_origin(
         headers={**proxied, "Origin": "https://evil.local"},
     ) as response:
         assert response.status == 403
+
+
+async def test_the_switch_collects_enabled_saved_sources_and_no_others(
+    settings: Settings, worker: FakeWorker,
+) -> None:
+    collected: list[list[str]] = []
+
+    async def record(plan: RefreshPlan, report: Report) -> None:
+        collected.append([source.domain for source in plan.settings.sources])
+        await hold(plan, report)
+
+    worker.script = record
+    saved = SavedSourceCatalog(FakeSourceRepository(
+        Source(uuid.UUID(int=1), enabled=True, domain="saved.example"),
+        Source(uuid.UUID(int=2), enabled=False, domain="off.example"),
+    ))
+
+    async with serving(
+        settings._replace(sources_in_database=True), worker, saved,
+    ) as session:
+        async with session.post(URL, json=source("saved.example")) as response:
+            assert response.status == 202
+
+        for domain in ("off.example", "source0.example"):
+            async with session.post(URL, json=source(domain)) as response:
+                assert response.status == 400
+
+        # The job starts on the event loop after the request is answered.
+        async with session.get(URL) as response:
+            assert len((await response.json())["jobs"]) == 1
+
+    assert collected == [["saved.example"]]
