@@ -408,16 +408,9 @@ def _parse_native_source(
     tags = tuple(dict.fromkeys(
         tag.lower() for tag in _source_strings(options.get("tags", []), "tags")
     ))
-    hacker_news_domains = {
-        f"{scheme}{host}{suffix}"
-        for scheme in ("", "http://", "https://")
-        for host in (
-            "hckrnews.com", "www.hckrnews.com", "news.ycombinator.com",
-        )
-        for suffix in ("", "/", "/news", "/news/")
-    }
+    canonical = canonical_source_domain(domain)
 
-    if domain in hacker_news_domains:
+    if canonical == "news.ycombinator.com":
         feeds = _source_strings(options.get("feed_urls", []), "feed_urls")
 
         if accounts or {
@@ -444,20 +437,13 @@ def _parse_native_source(
     if "hacker_news_filter" in options:
         raise ConfigError("hacker_news_filter requires a Hacker News source")
 
-    reddit_domains = {
-        f"{scheme}{host}{suffix}"
-        for scheme in ("", "http://", "https://")
-        for host in ("reddit.com", "www.reddit.com", "old.reddit.com")
-        for suffix in ("", "/")
-    }
-
-    if domain in reddit_domains:
+    if canonical == "reddit.com":
         feeds = _source_strings(options.get("feed_urls", []), "feed_urls")
         communities: dict[str, str] = {}
 
         for url in feeds:
-            canonical = _reddit_feed_url(url)
-            communities.setdefault(canonical.lower(), canonical)
+            community = reddit_feed_url(url)
+            communities.setdefault(community.lower(), community)
 
         if not communities or accounts:
             raise ConfigError(
@@ -473,12 +459,11 @@ def _parse_native_source(
     if {"reddit_sort", "reddit_time_filter"}.intersection(options):
         raise ConfigError("Reddit sorting options require a Reddit source")
 
-    if domain in {"youtube.com", "www.youtube.com", "https://youtube.com",
-                  "https://www.youtube.com"}:
+    if canonical == "youtube.com":
         return SourceConfig(
             "youtube.com", accounts,
             tuple(dict.fromkeys(
-                _youtube_feed_url(url)
+                youtube_feed_url(url)
                 for url in _source_strings(options.get("feed_urls", []),
                                            "feed_urls")
             )), tags,
@@ -492,7 +477,43 @@ def _parse_native_source(
     return SourceConfig(domain, accounts, feeds, tags)
 
 
-def _reddit_feed_url(value: str) -> str:
+# Other spellings of the domains that have their own collectors.
+_HACKER_NEWS_DOMAINS = frozenset(
+    f"{scheme}{host}{suffix}"
+    for scheme in ("", "http://", "https://")
+    for host in ("hckrnews.com", "www.hckrnews.com", "news.ycombinator.com")
+    for suffix in ("", "/", "/news", "/news/")
+)
+_REDDIT_DOMAINS = frozenset(
+    f"{scheme}{host}{suffix}"
+    for scheme in ("", "http://", "https://")
+    for host in ("reddit.com", "www.reddit.com", "old.reddit.com")
+    for suffix in ("", "/")
+)
+_YOUTUBE_DOMAINS = frozenset({
+    "youtube.com", "www.youtube.com", "https://youtube.com",
+    "https://www.youtube.com",
+})
+
+
+def canonical_source_domain(value: str) -> str:
+    """A source's domain as config.toml reads it, with aliases folded."""
+    domain = value.lower().strip()
+
+    if domain in _HACKER_NEWS_DOMAINS:
+        return "news.ycombinator.com"
+
+    if domain in _REDDIT_DOMAINS:
+        return "reddit.com"
+
+    if domain in _YOUTUBE_DOMAINS:
+        return "youtube.com"
+
+    return domain
+
+
+def reddit_feed_url(value: str) -> str:
+    """A community's canonical URL, or ConfigError."""
     # Canonical URLs also give the reader a stable community identity.
     path = value
 
@@ -712,22 +733,29 @@ def _parse_feed_urls(value: object) -> tuple[str, ...]:
     urls = _source_strings(value, "feed_urls")
 
     for url in urls:
-        try:
-            parsed = urlsplit(url)
-            valid = (
-                parsed.scheme in {"http", "https"}
-                and bool(parsed.hostname)
-                and not any(char.isspace() for char in url)
-            )
-            # Accessing the port validates malformed host:port combinations.
-            _ = parsed.port
-        except ValueError:
-            valid = False
-
-        if not valid:
-            raise ConfigError("sources.feed_urls must contain HTTP(S) URLs")
+        feed_url(url)
 
     return urls
+
+
+def feed_url(value: str) -> str:
+    """A publisher's feed URL, unchanged, or ConfigError."""
+    try:
+        parsed = urlsplit(value)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and bool(parsed.hostname)
+            and not any(char.isspace() for char in value)
+        )
+        # Accessing the port validates malformed host:port combinations.
+        _ = parsed.port
+    except ValueError:
+        valid = False
+
+    if not valid:
+        raise ConfigError("sources.feed_urls must contain HTTP(S) URLs")
+
+    return value
 
 
 def _parse_feed_entry_limit(value: object) -> int:
@@ -1152,7 +1180,8 @@ YOUTUBE_NEWS_TABS = (
 )
 
 
-def _youtube_feed_url(value: str) -> str:
+def youtube_feed_url(value: str) -> str:
+    """A YouTube listing's canonical URL, or ConfigError."""
     try:
         parsed = urlsplit(value)
     except ValueError:
@@ -1339,7 +1368,7 @@ def _youtube_hype_playlists(value: object) -> tuple[tuple[str, str], ...]:
 
         try:
             parsed = (
-                urlsplit(_youtube_feed_url(url))
+                urlsplit(youtube_feed_url(url))
                 if isinstance(url, str) else None
             )
             identifiers = (

@@ -28,10 +28,10 @@ if grep -rI aiohttp src/dank/process/; then
     exit 1
 fi
 
-# Keep API domain rules and use cases free of frameworks and drivers.
-if grep -rIlE '^(from|import) (fastapi|starlette|pydantic|sqlalchemy|clickhouse_connect|aiohttp|dank\.storage|dank\.web)' \
-    --include model.py --include service.py src/dank/api/; then
-    echo 'dank.api model.py and service.py must not import frameworks or drivers!' 1>&2
+# Keep domain rules and use cases free of frameworks and drivers.
+if grep -rIlE '^(from|import) (fastapi|starlette|pydantic|sqlalchemy|psycopg|clickhouse_connect|aiohttp|dank\.db|dank\.storage|dank\.web)' \
+    --include model.py --include service.py src/dank/api/ src/dank/sources/; then
+    echo 'model.py and service.py must not import frameworks or drivers!' 1>&2
     exit 1
 fi
 
