@@ -29,9 +29,7 @@ async def tables(client: ClickHouseClient) -> set[str]:
 async def test_startup_prepares_storage_and_shutdown_stops_refresh(
     settings: Settings, clickhouse_settings: ClickHouseSettings,
 ) -> None:
-    app = create_app(
-        settings._replace(clickhouse=clickhouse_settings), page_size=50,
-    )
+    app = create_app(settings._replace(clickhouse=clickhouse_settings))
 
     async with ClickHouseClient(clickhouse_settings) as client:
         assert not STARTUP_TABLES & await tables(client)
@@ -54,9 +52,7 @@ async def test_startup_prepares_storage_and_shutdown_stops_refresh(
 async def test_startup_upgrades_a_database_from_before_categories(
     settings: Settings, clickhouse_settings: ClickHouseSettings,
 ) -> None:
-    app = create_app(
-        settings._replace(clickhouse=clickhouse_settings), page_size=50,
-    )
+    app = create_app(settings._replace(clickhouse=clickhouse_settings))
 
     async with ClickHouseClient(clickhouse_settings) as client:
         # schema.sql only reaches a new database, so undo what it added.
@@ -77,8 +73,8 @@ async def test_each_running_app_owns_its_collection_gates(
     settings: Settings, clickhouse_settings: ClickHouseSettings,
 ) -> None:
     configured = settings._replace(clickhouse=clickhouse_settings)
-    first = create_app(configured, page_size=50)
-    second = create_app(configured, page_size=50)
+    first = create_app(configured)
+    second = create_app(configured)
 
     async with (
         first.router.lifespan_context(first) as one,

@@ -62,9 +62,7 @@ def clickhouse() -> FakeClickHouse:
 @pytest.fixture
 def app(settings: Settings, clickhouse: FakeClickHouse) -> web.Application:
     """An app with the switch on, one enabled saved source and one disabled."""
-    app = create_app(
-        settings._replace(sources_in_database=True), page_size=50,
-    )
+    app = create_app(settings._replace(sources_in_database=True))
     app["clickhouse"] = clickhouse
     app[SOURCE_CATALOG] = SavedSourceCatalog(FakeSourceRepository(
         Source(
@@ -102,7 +100,7 @@ def listed(response: web.Response) -> list[str]:
 async def test_the_sidebar_lists_config_sources_while_the_switch_is_off(
     settings: Settings, clickhouse: FakeClickHouse,
 ) -> None:
-    app = create_app(settings, page_size=50)
+    app = create_app(settings)
     app["clickhouse"] = clickhouse
 
     assert listed(await get(app, "/api/reader/sources")) == ["config.example"]
@@ -119,7 +117,7 @@ async def test_the_sidebar_lists_saved_sources_and_keeps_disabled_ones(
 async def test_the_sidebar_says_where_its_sources_come_from(
     app: web.Application, settings: Settings, clickhouse: FakeClickHouse,
 ) -> None:
-    config_app = create_app(settings, page_size=50)
+    config_app = create_app(settings)
     config_app["clickhouse"] = clickhouse
 
     config = await get(config_app, "/api/reader/sources")
@@ -184,9 +182,7 @@ async def test_settings_for_a_request_carry_the_saved_sources(
 async def test_the_switch_never_falls_back_to_config(
     settings: Settings, clickhouse: FakeClickHouse,
 ) -> None:
-    app = create_app(
-        settings._replace(sources_in_database=True), page_size=50,
-    )
+    app = create_app(settings._replace(sources_in_database=True))
     app["clickhouse"] = clickhouse
 
     response = await get(app, "/api/reader/sources")

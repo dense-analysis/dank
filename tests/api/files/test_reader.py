@@ -15,10 +15,11 @@ from tests.api.files.conftest import BUNDLE, INDEX
 NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
 
 
-async def test_the_bare_path_redirects_without_naming_a_scheme(
-    client: AsyncClient,
+@pytest.mark.parametrize("path", ["/", "/reader"])
+async def test_the_root_and_bare_path_redirect_without_naming_a_scheme(
+    client: AsyncClient, path: str,
 ) -> None:
-    response = await client.get("/reader")
+    response = await client.get(path)
 
     # Relative, because behind the HTTPS proxy this server sees plain HTTP
     # and an absolute address would send a phone back to it.
@@ -47,6 +48,15 @@ async def test_routes_and_the_entry_page_load_the_app_uncached(
     assert response.headers["cache-control"] == NO_CACHE
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["expires"] == "0"
+
+
+@pytest.mark.parametrize("path", ["/post", "/static/app.css"])
+async def test_the_retired_viewer_pages_are_gone(
+    client: AsyncClient, path: str,
+) -> None:
+    response = await client.get(path)
+
+    assert response.status_code == 404
 
 
 async def test_the_healthcheck_can_use_head(client: AsyncClient) -> None:
@@ -134,9 +144,7 @@ async def test_an_unbuilt_reader_is_a_plain_404(
     tmp_path: pathlib.Path,
     path: str,
 ) -> None:
-    app = create_app(
-        settings, page_size=50, roots=roots._replace(reader=tmp_path / "no"),
-    )
+    app = create_app(settings, roots=roots._replace(reader=tmp_path / "no"))
 
     async with http_client(app) as client:
         response = await client.get(path)

@@ -52,7 +52,7 @@ class Fetch(Protocol):
 async def aiohttp_session(
     settings: Settings,
 ) -> AsyncGenerator[aiohttp.ClientSession]:
-    runner = web.AppRunner(create_aiohttp_app(settings, page_size=50))
+    runner = web.AppRunner(create_aiohttp_app(settings))
     # Runs the aiohttp startup contexts against the throwaway database.
     await runner.setup()
 
@@ -87,7 +87,7 @@ async def aiohttp_server(settings: Settings) -> AsyncGenerator[Get]:
 
 @asynccontextmanager
 async def fastapi_server(settings: Settings) -> AsyncGenerator[Get]:
-    async with serving(create_api_app(settings, page_size=50)) as client:
+    async with serving(create_api_app(settings)) as client:
 
         async def get(target: str, *, post: Any = None) -> tuple[int, Any]:
             response = await (
@@ -117,7 +117,7 @@ async def both_servers_whole(
     """(aiohttp, FastAPI) fetches of whole responses over the same database."""
     async with (
         aiohttp_session(settings) as session,
-        serving(create_api_app(settings, page_size=50)) as client,
+        serving(create_api_app(settings)) as client,
     ):
 
         async def old(

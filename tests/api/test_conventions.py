@@ -88,7 +88,7 @@ async def test_pages_and_files_answer_errors_in_plain_text(
 
 
 @pytest.mark.parametrize("path", [
-    "/post/", "/assets", "/static", "/api/probe/", "/api/reader/sources/",
+    "/assets", "/api/probe/", "/api/reader/sources/",
 ])
 async def test_a_trailing_slash_is_a_different_path_and_never_redirects(
     client: AsyncClient, path: str,
@@ -224,7 +224,7 @@ async def test_head_answers_like_get_without_a_body(
 def test_every_route_returns_a_strict_model(settings: Settings) -> None:
     # Checked through OpenAPI, the contract the reader's types come from:
     # a named schema with additionalProperties false is an ApiModel.
-    document = create_app(settings, page_size=50).openapi()
+    document = create_app(settings).openapi()
     schemas = document["components"]["schemas"]
     operations = [
         (path, operation)

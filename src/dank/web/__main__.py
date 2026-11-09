@@ -42,13 +42,7 @@ else:
     )
 
 from dank.config import load_settings
-from dank.web.app import (
-    DEFAULT_HOST,
-    DEFAULT_PAGE_SIZE,
-    DEFAULT_PORT,
-    MAX_PAGE_SIZE,
-    create_app,
-)
+from dank.web.app import DEFAULT_HOST, DEFAULT_PORT, create_app
 
 
 def main() -> None:
@@ -70,12 +64,6 @@ def main() -> None:
         help="Port to bind",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=DEFAULT_PAGE_SIZE,
-        help="Posts per page",
-    )
-    parser.add_argument(
         "--no-reload",
         action="store_true",
         help="Disable hot code reloading",
@@ -87,16 +75,9 @@ def main() -> None:
         help="Server to run while routes move to FastAPI (default: aiohttp)",
     )
     args = parser.parse_args()
-    page_size = args.limit
-
-    if page_size <= 0:
-        page_size = DEFAULT_PAGE_SIZE
-
-    if page_size > MAX_PAGE_SIZE:
-        page_size = MAX_PAGE_SIZE
 
     if args.server == "fastapi":
-        _serve_fastapi(args, page_size)
+        _serve_fastapi(args)
 
         return
 
@@ -105,7 +86,7 @@ def main() -> None:
     if not args.no_reload:
         _start_reloader()
 
-    app = create_app(settings, page_size=page_size)
+    app = create_app(settings)
     web.run_app(
         app,
         host=args.host,
@@ -114,13 +95,13 @@ def main() -> None:
     )
 
 
-def _serve_fastapi(args: argparse.Namespace, page_size: int) -> None:
+def _serve_fastapi(args: argparse.Namespace) -> None:
     # Imported here so the default aiohttp server doesn't load FastAPI.
     from dank.api.serve import ServeOptions, serve
 
     _terminal_print(f"API docs: http://{args.host}:{args.port}/api/docs")
     serve(
-        ServeOptions(args.config, args.host, args.port, page_size),
+        ServeOptions(args.config, args.host, args.port),
         reload=not args.no_reload,
     )
 
@@ -145,7 +126,7 @@ def _terminal_print(message: str) -> None:
 
 def _start_reloader() -> None:
     watch_paths = _watch_paths()
-    extensions = {".py", ".css", ".html", ".js", ".svg"}
+    extensions = {".py"}
     inotify = INotify()
     watch_map: dict[int, pathlib.Path] = {}
     watched: set[pathlib.Path] = set()
@@ -198,7 +179,7 @@ def _start_reloader() -> None:
 def _watch_paths() -> list[pathlib.Path]:
     root = pathlib.Path(__file__).resolve().parents[3]
 
-    return [root / "src", root / "static"]
+    return [root / "src"]
 
 
 def _watch_mask() -> int:

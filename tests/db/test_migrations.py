@@ -324,7 +324,6 @@ async def test_fastapi_dependency_opens_a_session(
         refresh=cast("RefreshManager", None),
         source_icons=cast("SourceIconCache", None),
         assets_dir=pathlib.Path(),
-        page_size=1,
         metadata_gate=cast("CollectionGate", None),
         transcript_gate=cast("CollectionGate", None),
     )

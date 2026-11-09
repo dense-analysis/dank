@@ -9,11 +9,11 @@ uv run web --server fastapi          # reloads on changes under src/dank
 uv run web --server fastapi --no-reload --port 8081
 ```
 
-`web` keeps its other flags (`--config`, `--host`, `--port`, `--limit`,
-`--no-reload`). Ported so far: `GET /api/reader/sources`, `/posts`, `/post`,
-`/x/authors`, `/connections`, `/connection` and `/source-icon`, `GET` and `POST
-/api/reader/refresh`, everything under `/api/reader/youtube`, plus the pages and
-files: `/`, `/post`, `/reader`, `/assets/` and `/static/`. `/api/reader/source-settings`
+`web` keeps its other flags (`--config`, `--host`, `--port`, `--no-reload`).
+Ported so far: `GET /api/reader/sources`, `/posts`, `/post`, `/x/authors`,
+`/connections`, `/connection` and `/source-icon`, `GET` and `POST
+/api/reader/refresh`, everything under `/api/reader/youtube`, plus the files:
+`/` and `/reader`, which both lead to the reader, and `/assets/`. `/api/reader/source-settings`
 is new and only on FastAPI; see [sources](features/sources.md). OpenAPI is served
 at `/api/openapi.json`, with interactive docs at `/api/docs`.
 
@@ -83,17 +83,9 @@ src/dank/
       service.py         SourceIconService, ports IconCache, CollectedDomains
       model.py           source_icon_url(), which domains may have an icon
       clickhouse.py      ClickHouseCollectedDomains
-    viewer/
-      router.py          GET / and /post, the legacy pages
-      schemas.py         Query models; the pages have no response models
-      deps.py            picks the adapter; tests override it here
-      service.py         ViewerService, port ViewerStore
-      model.py           IndexFilters and the forgiving query rules
-      clickhouse.py      ClickHouseViewerStore
-      pages.py           ViewerPages, rendering templates/ with Jinja2
     files/
-      router.py          GET /reader, the redirect to /reader/
-      static.py          ReaderFiles, FileRoots, the /assets, /static and /reader mounts
+      router.py          GET / and /reader, the redirects to /reader/
+      static.py          ReaderFiles, FileRoots, the /assets and /reader mounts
       model.py           client_route(), which paths load the reader
     youtube/
       router.py          GET and POST /api/reader/youtube/...
@@ -282,7 +274,7 @@ answers 400 even from another origin. Nothing has run by then.
 - `/api/*` responses get `Cache-Control: no-store` unless the route sets its
   own. Starlette answers unexpected errors outside every middleware, so that
   handler sets the header itself.
-- `/static/*` and HTML responses get the aiohttp server's no-cache headers.
+- HTML responses get the aiohttp server's no-cache headers.
 - `HEAD` runs the matching `GET` route and drops the body, except on the file
   mounts, which answer it themselves. Run as a `GET`, a `HEAD` on a video would
   read the whole file only to throw it away.
@@ -290,11 +282,10 @@ answers 400 even from another origin. Nothing has run by then.
 ## Pages and files
 
 These routes answer with HTML, files or images, so they have no response model.
-The legacy pages and `/reader` stay out of OpenAPI with
-`include_in_schema=False`. `/api/reader/source-icon` stays in and declares
+`/` and `/reader` stay out of OpenAPI with `include_in_schema=False`. `/api/reader/source-icon` stays in and declares
 `image/png`.
 
-`/assets/`, `/static/` and `/reader/` are Starlette `StaticFiles` mounts, which
+`/assets/` and `/reader/` are Starlette `StaticFiles` mounts, which
 meet what audio and video need, as `tests/api/files` checks over HTTP: single and
 open-ended ranges, `If-Range`, `If-None-Match`, `If-Modified-Since`, 416 past the
 end, and `HEAD` without reading the file. No responder of our own was needed.
@@ -306,14 +297,13 @@ end, and `HEAD` without reading the file. No responder of our own was needed.
   header rule to catch.
 - A checkout with no reader build answers 404 rather than failing.
 
-`/reader` redirects with a relative `Location`, because behind the HTTPS proxy
-this server sees plain HTTP. For the same reason `redirect_slashes` is off, as it
-effectively was under aiohttp: `/post/` is a 404, not a redirect to an `http://`
-address.
+`/` and `/reader` redirect with a relative `Location`, because behind the HTTPS
+proxy this server sees plain HTTP. For the same reason `redirect_slashes` is off,
+as it effectively was under aiohttp: `/assets` is a 404, not a redirect to an
+`http://` address.
 
-`/` and `/post` take their query as text and read it in `viewer/model.py`, because
-they have always forgiven what they can't read: a bad `limit` means the default.
-`/post` still needs its two keys, and says so in plain text.
+The Jinja viewer that `/` and `/post` used to serve was retired in
+[DEN-75](https://linear.app/dense-analysis/issue/DEN-75); `/post` is now a 404.
 
 ## Startup and shutdown
 
@@ -409,8 +399,8 @@ The intended differences:
   rule.
 - When `reddit.com` has posts but no configured communities, `/sources` still
   returns empty `communities` and `flairs` lists.
-- Under `/assets/` and `/static/`, a directory answers 404 rather than 403. Neither
-  lists it.
+- Under `/assets/`, a directory answers 404 rather than 403. Neither server lists
+  it.
 - Several ranges in one request answer 206 with `multipart/byteranges` rather than
   416, and a `Range` that makes no sense answers 400 rather than 416. Browsers
   seek with single ranges, so neither affects playback.

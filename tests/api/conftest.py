@@ -46,7 +46,7 @@ def settings(tmp_path: pathlib.Path) -> Settings:
 
 @pytest.fixture
 def app(settings: Settings) -> FastAPI:
-    app = create_app(settings, page_size=50)
+    app = create_app(settings)
     # ASGITransport doesn't run the lifespan, so nothing connects to
     # ClickHouse. Feature conftests swap their driven adapters for fakes.
     app.dependency_overrides[deps.settings] = lambda: settings

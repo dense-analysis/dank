@@ -164,7 +164,6 @@ async def test_content_types_match(
     "/assets/missing.mp4",
     "/assets/%2e%2e/secret.txt",
     "/assets/link.txt",
-    "/static/missing.css",
 ])
 async def test_what_stays_hidden_matches(
     servers: tuple[Fetch, Fetch], path: str,
@@ -176,28 +175,6 @@ async def test_what_stays_hidden_matches(
 
     assert actual.status == expected.status == 404
     assert b"secret" not in actual.body
-
-
-@pytest.mark.parametrize("method", ["GET", "HEAD"])
-@pytest.mark.parametrize("headers", [{}, {"range": "bytes=0-3"}])
-async def test_static_files_match(
-    servers: tuple[Fetch, Fetch], method: str, headers: dict[str, str],
-) -> None:
-    old, new = servers
-    path = "/static/app.css"
-
-    expected = await old(path, method=method, headers=headers)
-    actual = await new(path, method=method, headers=headers)
-
-    assert actual.status == expected.status
-    assert actual.body == expected.body
-
-    for name in ("cache-control", "pragma", "expires", "content-length"):
-        assert actual.headers[name] == expected.headers[name]
-
-    # Starlette names the charset of a text file; aiohttp doesn't.
-    assert actual.headers["content-type"] == "text/css; charset=utf-8"
-    assert expected.headers["content-type"].startswith("text/css")
 
 
 async def test_the_bare_reader_path_redirects_alike(

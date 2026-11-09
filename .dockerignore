@@ -5,8 +5,6 @@
 !README.md
 !src/
 !src/**
-!static/
-!static/**
 !reader/
 reader/**
 !reader/package.json

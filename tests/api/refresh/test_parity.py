@@ -107,7 +107,7 @@ type Send = Callable[
 @asynccontextmanager
 async def aiohttp_requests(settings: Settings) -> AsyncGenerator[Send]:
     """Any request to the aiohttp server, headers and bad bodies included."""
-    runner = web.AppRunner(create_aiohttp_app(settings, page_size=50))
+    runner = web.AppRunner(create_aiohttp_app(settings))
     await runner.setup()
 
     try:
@@ -137,7 +137,7 @@ async def aiohttp_requests(settings: Settings) -> AsyncGenerator[Send]:
 
 @asynccontextmanager
 async def fastapi_requests(settings: Settings) -> AsyncGenerator[Send]:
-    async with serving(create_api_app(settings, page_size=50)) as client:
+    async with serving(create_api_app(settings)) as client:
 
         async def send(
             method: str, body: Any, headers: dict[str, str],

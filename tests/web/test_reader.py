@@ -62,7 +62,7 @@ def app(tmp_path: pathlib.Path) -> web.Application:
         ),
     )
 
-    return create_app(settings, page_size=50)
+    return create_app(settings)
 
 
 async def request(app: web.Application, path: str) -> web.Response:
@@ -388,7 +388,7 @@ def test_recovered_figure_reaches_reader_with_caption_and_local_image(
     ))
 
 
-async def test_built_reader_routes_and_existing_viewer_are_independent(
+async def test_built_reader_serves_its_files_and_the_root_leads_to_it(
     app: web.Application, tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -400,8 +400,18 @@ async def test_built_reader_routes_and_existing_viewer_are_independent(
     response = await reader_api.handle_reader(req)
     assert isinstance(response, web.FileResponse)
     assert response.headers["Cache-Control"] == "no-store"
-    root = await app.router.resolve(make_mocked_request("GET", "/", app=app))
-    assert root.handler.__name__ == "handle_index"
+    root = make_mocked_request("GET", "/", app=app)
+    root._match_info = await app.router.resolve(root)  # pyright: ignore[reportPrivateUsage]
+
+    with pytest.raises(web.HTTPFound) as redirect:
+        await root.match_info.handler(root)
+
+    assert redirect.value.location == "/reader/"
+    post = await app.router.resolve(
+        make_mocked_request("GET", "/post", app=app),
+    )
+    assert post.http_exception is not None
+    assert post.http_exception.status == 404
     assert reader_api._reader_file("../outside") is None  # pyright: ignore[reportPrivateUsage]
     assert reader_api._reader_file("missing.js") is None  # pyright: ignore[reportPrivateUsage]
     assert reader_api._reader_file("saved/politics") == tmp_path / "index.html"  # pyright: ignore[reportPrivateUsage]

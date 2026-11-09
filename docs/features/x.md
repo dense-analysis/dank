@@ -266,7 +266,7 @@ DANK also discovers media and links from the captured payloads.
 recorded as references.
 
 [Processing](processing.md) produces post text, author, timestamps and
-embeddings for the [web viewer](search.md). Check `dank.log`, or your configured
+embeddings for the [reader](search.md). Check `dank.log`, or your configured
 log file, for account progress and login failures.
 
 ## Reading saved posts

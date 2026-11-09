@@ -6,7 +6,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
 # Their mounts answer HEAD themselves. Run as a GET, a HEAD on a video would
 # read the whole file only to throw it away.
-FILE_PATHS = ("/assets/", "/static/", "/reader/")
+FILE_PATHS = ("/assets/", "/reader/")
 
 
 class ApiHeaders:
@@ -14,7 +14,7 @@ class ApiHeaders:
 
     * /api/* gets "Cache-Control: no-store" unless the route set its own,
       which is how source icons keep their day-long cache.
-    * /static/* and HTML get today's no-cache headers.
+    * HTML gets no-cache headers.
     * HEAD runs the GET route and drops the body. FastAPI, unlike aiohttp,
       doesn't answer HEAD on its own, though the file mounts do.
     """
@@ -40,7 +40,7 @@ class ApiHeaders:
 
                 if path.startswith("/api/"):
                     headers.setdefault("cache-control", "no-store")
-                elif path.startswith("/static/") or html:
+                elif html:
                     headers["cache-control"] = NO_CACHE
                     headers["pragma"] = "no-cache"
                     headers["expires"] = "0"

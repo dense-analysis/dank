@@ -1,4 +1,4 @@
-"""The reader, data assets and static files, on Starlette's StaticFiles.
+"""The reader and data assets, on Starlette's StaticFiles.
 
 StaticFiles and its FileResponse already answer range and conditional
 requests, which tests/api/files holds them to. Only the reader needs code of
@@ -26,7 +26,6 @@ class FileRoots(NamedTuple):
     """Folders from the checkout, rather than from configuration."""
 
     reader: pathlib.Path = ROOT / "reader" / "dist"
-    static: pathlib.Path = ROOT / "static"
 
 
 DEFAULT_ROOTS = FileRoots()
@@ -68,10 +67,6 @@ def mount_files(app: FastAPI, settings: Settings, roots: FileRoots) -> None:
     # The lifespan creates this directory.
     assets = StaticFiles(directory=assets_path(settings), check_dir=False)
     app.mount("/assets", assets)
-
-    if roots.static.exists():
-        app.mount("/static", StaticFiles(directory=roots.static))
-
     app.mount(
         "/reader", ReaderFiles(directory=roots.reader, check_dir=False),
     )

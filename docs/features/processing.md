@@ -102,7 +102,7 @@ first 8,192 characters of the body HTML. Model token limits also apply. These
 are whole-post representations; the processor does not create passage-level
 indexes or analyse the contents of downloaded images, audio or video.
 
-Use the [web viewer](search.md) to browse or search processed posts. See the
+Use the [reader](search.md) to browse or search processed posts. See the
 [README](../../README.md) for setup.
 
 ## Terminal progress

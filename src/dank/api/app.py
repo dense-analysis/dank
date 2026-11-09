@@ -14,17 +14,16 @@ from dank.api.refresh.router import router as refresh_router
 from dank.api.source_icons.router import router as source_icons_router
 from dank.api.source_settings.router import router as source_settings_router
 from dank.api.sources.router import router as sources_router
-from dank.api.viewer.router import router as viewer_router
 from dank.api.youtube.router import router as youtube_router
 from dank.config import Settings
 
 
 def create_app(
-    settings: Settings, *, page_size: int, roots: FileRoots = DEFAULT_ROOTS,
+    settings: Settings, *, roots: FileRoots = DEFAULT_ROOTS,
 ) -> FastAPI:
     app = FastAPI(
         title="DANK",
-        lifespan=lifespan(settings, page_size=page_size),
+        lifespan=lifespan(settings),
         # Runs before every route; it only acts on unsafe methods.
         dependencies=[Depends(same_origin_json)],
         exception_handlers=EXCEPTION_HANDLERS,
@@ -45,7 +44,6 @@ def create_app(
     app.include_router(refresh_router)
     app.include_router(youtube_router)
     app.include_router(source_icons_router)
-    app.include_router(viewer_router)
     app.include_router(files_router)
     mount_files(app, settings, roots)
 

@@ -66,7 +66,7 @@ async def test_a_job_runs_in_a_real_worker_to_the_end(
         settings, clickhouse_settings, feed_port, "/empty.xml",
     )
 
-    async with serving(create_app(selected, page_size=50)) as client:
+    async with serving(create_app(selected)) as client:
         response = await client.post(PATH, json={
             "scope": {"kind": "rss", "domains": ["feed.test"]},
         })
@@ -100,7 +100,7 @@ async def test_shutdown_stops_a_running_worker_and_interrupts_its_job(
     )
     entered = tmp_path / "feed-entered"
 
-    async with serving(create_app(selected, page_size=50)) as client:
+    async with serving(create_app(selected)) as client:
         response = await client.post(PATH, json={
             "scope": {"kind": "rss", "domains": ["feed.test"]},
         })

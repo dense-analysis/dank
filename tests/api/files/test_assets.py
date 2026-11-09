@@ -1,4 +1,4 @@
-"""/assets/ and /static/: seeking, revalidation and what stays hidden."""
+"""/assets/: seeking, revalidation and what stays hidden."""
 
 import email.utils
 import os
@@ -8,11 +8,6 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 from starlette.types import Message
-
-from dank.api.app import create_app
-from dank.api.files.static import FileRoots
-from dank.config import Settings
-from tests.api.client import http_client
 
 # More than one of Starlette's 64 KiB chunks, as any real video is.
 VIDEO = bytes(range(256)) * 4096
@@ -244,49 +239,3 @@ async def test_files_are_read_only(client: AsyncClient) -> None:
 
     assert response.status_code == 405
     assert response.headers["content-type"].startswith("text/plain")
-
-
-async def test_static_files_are_never_cached(client: AsyncClient) -> None:
-    get = await client.get("/static/app.css")
-    head = await client.head("/static/app.css")
-    part = await client.get("/static/app.css", headers={"range": "bytes=0-3"})
-    fresh = await client.get(
-        "/static/app.css", headers={"if-none-match": get.headers["etag"]},
-    )
-
-    assert get.status_code == 200
-    assert get.headers["content-type"] == "text/css; charset=utf-8"
-
-    for response in (get, head, part, fresh):
-        assert response.headers["cache-control"] == (
-            "no-store, no-cache, must-revalidate, max-age=0"
-        )
-        assert response.headers["pragma"] == "no-cache"
-        assert response.headers["expires"] == "0"
-
-    assert (head.status_code, head.content) == (200, b"")
-    assert (part.status_code, part.content) == (206, b"body")
-    assert fresh.status_code == 304
-
-
-@pytest.mark.parametrize("path", ["/static/", "/static/missing.css"])
-async def test_static_has_no_index_and_a_plain_404(
-    client: AsyncClient, path: str,
-) -> None:
-    response = await client.get(path)
-
-    assert response.status_code == 404
-    assert response.headers["content-type"].startswith("text/plain")
-
-
-async def test_static_is_only_served_when_it_exists(
-    settings: Settings, roots: FileRoots, tmp_path: pathlib.Path,
-) -> None:
-    app = create_app(
-        settings, page_size=50, roots=roots._replace(static=tmp_path / "no"),
-    )
-
-    async with http_client(app) as client:
-        response = await client.get("/static/app.css")
-
-    assert response.status_code == 404

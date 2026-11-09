@@ -19,7 +19,7 @@ perception and evolving narratives.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
 - [Collection provenance](docs/features/collection-provenance.md) — trace saved articles, discovery order and contextual connections.
-- [Browsing and search](docs/features/search.md) — explore posts in the web viewer.
+- [Browsing and search](docs/features/search.md) — start the reader, filter stories and search by meaning.
 - [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
 - [Stored data and queries](docs/features/database.md) — see which data lives where and inspect it.

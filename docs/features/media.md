@@ -166,7 +166,7 @@ skipped or unsuccessful download can have an empty local path. Processing
 includes only assets whose local files exist, adding their size and inferred
 content type.
 
-The [web viewer](search.md) shows processed images, audio and video alongside
+The [reader](search.md) shows processed images, audio and video alongside
 posts. Back up the asset directory together with the database if you want to
 preserve the downloaded files and their associations.
 

@@ -20,7 +20,6 @@ class ServeOptions(NamedTuple):
     config: str
     host: str
     port: int
-    page_size: int
 
 
 def serve(options: ServeOptions, *, reload: bool) -> None:
@@ -35,7 +34,7 @@ def serve(options: ServeOptions, *, reload: bool) -> None:
 
 def serve_once(options: ServeOptions) -> None:
     settings = load_settings(options.config)
-    app = create_app(settings, page_size=options.page_size)
+    app = create_app(settings)
     uvicorn.run(
         app,
         host=options.host,

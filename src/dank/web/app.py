@@ -6,7 +6,7 @@ from __future__ import annotations
 import datetime
 import pathlib
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import Any, NamedTuple, cast
 from urllib.parse import quote
 
 import bleach
@@ -17,21 +17,11 @@ from dank.api.posts.model import (
     AssetRow as AssetRow,
     PostRow as PostRow,
 )
-from dank.api.viewer.model import (
-    MAX_PAGE_SIZE as MAX_PAGE_SIZE,
-    index_filters,
-)
 from dank.config import Settings
 from dank.embeddings import get_embedding_model
-from dank.errors import InvalidInput, NotFound
 from dank.html_utils import html_text, remove_page_noise
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 
-if TYPE_CHECKING:
-    from dank.api.viewer.pages import ViewerPages
-    from dank.api.viewer.service import ViewerService
-
-DEFAULT_PAGE_SIZE = 50
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
 
@@ -83,37 +73,25 @@ ALLOWED_ATTRIBUTES = {
 
 class AppState(NamedTuple):
     settings: Settings
-    page_size: int
-    static_dir: pathlib.Path
     assets_dir: pathlib.Path
 
 
-def create_app(settings: Settings, *, page_size: int) -> web.Application:
+def create_app(settings: Settings) -> web.Application:
     from dank.web.reader_api import add_reader_routes
     from dank.web.reader_source_icons import add_source_icon_routes
     from dank.web.sources import saved_sources_context
 
     app = web.Application()
-    static_dir = _static_dir()
     assets_dir = assets_path(settings)
     # Keep assets discovered after the first startup immediately readable.
     assets_dir.mkdir(parents=True, exist_ok=True)
-    app["state"] = AppState(
-        settings=settings,
-        page_size=page_size,
-        static_dir=static_dir,
-        assets_dir=assets_dir,
-    )
+    app["state"] = AppState(settings=settings, assets_dir=assets_dir)
     app.cleanup_ctx.append(_clickhouse_context)
     app.cleanup_ctx.append(saved_sources_context)
     app.middlewares.append(_no_cache_middleware)
-    app.router.add_get("/", handle_index)
-    app.router.add_get("/post", handle_post_detail)
+    app.router.add_get("/", handle_root)
     add_reader_routes(app)
     add_source_icon_routes(app)
-
-    if static_dir.exists():
-        app.router.add_static("/static/", static_dir, show_index=False)
 
     if assets_dir.exists():
         app.router.add_static("/assets/", assets_dir, show_index=False)
@@ -129,10 +107,7 @@ async def _no_cache_middleware(
     response = await handler(request)
     content_type = response.headers.get("Content-Type", "").lower()
 
-    if (
-        request.path.startswith("/static/")
-        or content_type.startswith("text/html")
-    ):
+    if content_type.startswith("text/html"):
         response.headers["Cache-Control"] = (
             "no-store, no-cache, must-revalidate, max-age=0"
         )
@@ -161,46 +136,9 @@ async def _clickhouse_context(app: web.Application):
         await client.__aexit__(None, None, None)
 
 
-def _viewer(request: web.Request) -> tuple[ViewerService, ViewerPages]:
-    # Imported here because the viewer's adapters use this module's helpers.
-    from dank.api.viewer.clickhouse import ClickHouseViewerStore
-    from dank.api.viewer.pages import ViewerPages
-    from dank.api.viewer.service import ViewerService
-
-    store = ClickHouseViewerStore(
-        request.app["clickhouse"],
-        CachedSearchEmbeddings(request.app["clickhouse"], get_embedding_model),
-    )
-    service = ViewerService(store, lambda: datetime.datetime.now(datetime.UTC))
-
-    return service, ViewerPages(request.app["state"].assets_dir)
-
-
-async def handle_index(request: web.Request) -> web.Response:
-    service, pages = _viewer(request)
-    filters = index_filters(
-        request.query, page_size=request.app["state"].page_size,
-    )
-    page = await service.index(filters)
-
-    return web.Response(
-        text=pages.index(filters, page), content_type="text/html",
-    )
-
-
-async def handle_post_detail(request: web.Request) -> web.Response:
-    service, pages = _viewer(request)
-
-    try:
-        page = await service.detail(
-            request.query.get("domain"), request.query.get("post_id"),
-        )
-    except InvalidInput as error:
-        return web.Response(text=str(error), status=400)
-    except NotFound as error:
-        return web.Response(text=str(error), status=404)
-
-    return web.Response(text=pages.post(page), content_type="text/html")
+async def handle_root(request: web.Request) -> web.Response:
+    # Relative, because behind the HTTPS proxy this server sees plain HTTP.
+    raise web.HTTPFound("/reader/")
 
 
 async def _search_embedding(
@@ -330,10 +268,6 @@ def _summarize_html(raw_html: str, *, limit: int = 280) -> str:
 
 def assets_path(settings: Settings) -> pathlib.Path:
     return (settings.data_dir / "assets").expanduser().resolve()
-
-
-def _static_dir() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parents[3] / "static"
 
 
 def _asset_local_url(asset: AssetRow, assets_dir: pathlib.Path) -> str | None:

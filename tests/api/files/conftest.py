@@ -1,4 +1,4 @@
-"""A small reader build, static folder and data assets for the file routes."""
+"""A small reader build and data assets for the file routes."""
 
 import pathlib
 
@@ -21,11 +21,8 @@ def roots(tmp_path: pathlib.Path) -> FileRoots:
     (reader / "index.html").write_text(INDEX)
     (reader / "assets" / "index-abc.js").write_text(BUNDLE)
     (reader / "icon.svg").write_text("<svg/>")
-    static = tmp_path / "static"
-    static.mkdir()
-    (static / "app.css").write_text("body { color: black; }")
 
-    return FileRoots(reader=reader, static=static)
+    return FileRoots(reader=reader)
 
 
 @pytest.fixture
@@ -40,4 +37,4 @@ def assets(settings: Settings) -> pathlib.Path:
 def app(
     settings: Settings, roots: FileRoots, assets: pathlib.Path,
 ) -> FastAPI:
-    return create_app(settings, page_size=50, roots=roots)
+    return create_app(settings, roots=roots)

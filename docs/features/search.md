@@ -1,15 +1,15 @@
 # Browsing and semantic search
 
-DANK's local web viewer displays processed posts, original source links and
-available downloaded media. Collect and [process](processing.md) content before
-opening the viewer.
+DANK's reader displays processed posts, original source links and available
+downloaded media. Collect and [process](processing.md) content before opening
+it.
 
-## Start the viewer
+## Start the reader
 
 **Native**
 
 ```sh
-uv run web --no-reload
+make web MODE=native
 ```
 
 **Docker**
@@ -18,48 +18,39 @@ uv run web --no-reload
 make up
 ```
 
-Complete [setup](../setup.md) for your chosen mode first. Both viewers are
-available at [localhost:8080](http://127.0.0.1:8080) by default. Native runs use
-your configured database; Compose starts its database before the viewer. The
-default page size is 50; the `limit` URL parameter accepts up to 200 results.
+Complete [setup](../setup.md) for your chosen mode first. Both modes serve the
+reader at [localhost:8080](http://127.0.0.1:8080), which opens
+[`/reader/`](http://127.0.0.1:8080/reader/). Native runs use your configured
+database; Compose starts its databases before the web app.
 
 Both modes read the checkout's `config.toml`. After editing it, stop the
-native viewer with Ctrl+C and restart it, or recreate the Docker service:
+native web app with Ctrl+C and start it again, or recreate the Docker service:
 
 **Native**
 
 ```sh
-uv run web --no-reload
+make web MODE=native
 ```
 
 **Docker**
 
 ```sh
-docker compose up -d --force-recreate dank
+make web ARGS='--force-recreate dank'
 ```
 
-The native example disables development hot reload, which uses Linux inotify.
-The Docker image also disables reload. Use `--port 8081` on native `web` to
-change its port; for Docker, change the host port mapping as described in
-[setup](../setup.md). The viewer has no built-in authentication and defaults
-to local access in both modes.
+Native `make web` and the Docker image both run without hot reload. Pass
+`ARGS='--port 8081'` to native `make web` to change its port; for Docker, change
+the host port mapping as described in [setup](../setup.md). The web app has no
+built-in authentication and defaults to local access in both modes.
 
 ## Browse and filter
 
-With the search box empty, posts appear newest first, with Previous and Next
-links for navigation. A post's detail page displays its stored content and
-locally available assets. The Source link opens the original URL.
-
-Filters work for both browsing and search:
-
-| Filter | Behaviour |
-| --- | --- |
-| Domain | Exact domain match, such as `example.com` |
-| Account / author | Case-insensitive substring match on the author field |
-| Days back | Restrict by post creation time; `0` means all dates |
-
-The date slider covers up to 365 days. Displayed timestamps use UTC. The text
-preview on each card is an excerpt of the stored content.
+Stories appear newest first and load as you scroll. Source, tag, category,
+author and date filters apply to browsing and search alike, and stay in the
+URL. Opening a story shows its stored content and locally available media; its
+source link opens the original URL. Displayed timestamps use UTC. The
+[reader's behaviour](../../reader/README.md#behaviour) covers every filter and
+view.
 
 ## Explore source connections
 
@@ -80,13 +71,14 @@ Missing comments, uncaptured pages and unsupported page layouts limit coverage.
 
 ## Search by meaning
 
-Enter a phrase to find posts with similar text embeddings. DANK compares the
-query with each post's title and body vectors, weighting the title at 65% and
-the body at 35%. Newer posts receive an additional ranking boost.
+Search puts stories containing every search term first, then posts with similar
+text embeddings. For those, DANK compares the query with each post's title and
+body vectors, weighting the title at 65% and the body at 35%. Newer posts
+receive an additional ranking boost.
 
-Search returns the best matches up to the selected result limit. Previous and
-Next navigation applies to chronological browsing, not ranked search results.
-Query embeddings are cached in ClickHouse with a six-hour expiry policy.
+Ordered by relevance, search shows up to 30 best matches and labels the cap;
+newest and oldest orders keep loading as you scroll. Query embeddings are cached
+in ClickHouse with a six-hour expiry policy.
 
 Ranking reflects text similarity and freshness. It does not measure whether
 a source is reliable or a statement is correct; use the original source links

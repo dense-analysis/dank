@@ -34,12 +34,11 @@ class Resources(NamedTuple):
     refresh: RefreshManager
     source_icons: SourceIconCache
     assets_dir: pathlib.Path
-    page_size: int
     metadata_gate: CollectionGate
     transcript_gate: CollectionGate
 
 
-def lifespan(settings: Settings, *, page_size: int) -> Lifespan:
+def lifespan(settings: Settings) -> Lifespan:
     @asynccontextmanager
     async def run(app: FastAPI) -> AsyncGenerator[dict[str, Resources]]:
         assets_dir = assets_path(settings)
@@ -66,7 +65,6 @@ def lifespan(settings: Settings, *, page_size: int) -> Lifespan:
                         refresh=refresh,
                         source_icons=SourceIconCache(assets_dir),
                         assets_dir=assets_dir,
-                        page_size=page_size,
                         metadata_gate=collection_gate(settings.scrape),
                         transcript_gate=collection_gate(settings.scrape),
                     )}
