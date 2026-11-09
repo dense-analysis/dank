@@ -1,6 +1,6 @@
 import { filterParams } from "./navigation";
-import type { Filters, Post, PostPage, Source } from "./types";
-import { isPost, isRecord, isSource } from "./validation";
+import type { Filters, Post, PostPage, Source, SourceSettings } from "./types";
+import { isPost, isRecord, isSavedSource, isSource } from "./validation";
 
 export class ReaderRequestError extends Error {
   constructor(
@@ -63,6 +63,8 @@ export async function fetchSources(signal?: AbortSignal): Promise<{
   sources: Source[];
   total_posts: number;
   blog_external_count?: number;
+  /** True when the sources come from Postgres and can change while open. */
+  in_database?: boolean;
 }> {
   const body = await request("/sources", signal);
   if (
@@ -75,7 +77,8 @@ export async function fetchSources(signal?: AbortSignal): Promise<{
     (body.blog_external_count !== undefined &&
       (typeof body.blog_external_count !== "number" ||
         !Number.isSafeInteger(body.blog_external_count) ||
-        body.blog_external_count < 0))
+        body.blog_external_count < 0)) ||
+    (body.in_database !== undefined && typeof body.in_database !== "boolean")
   ) {
     return invalidResponse();
   }
@@ -84,7 +87,25 @@ export async function fetchSources(signal?: AbortSignal): Promise<{
     sources: body.sources,
     total_posts: body.total_posts,
     blog_external_count: body.blog_external_count as number | undefined,
+    in_database: body.in_database as boolean | undefined,
   };
+}
+
+/** Every saved source, disabled ones too. Only the FastAPI server has it. */
+export async function fetchSourceSettings(
+  signal?: AbortSignal,
+): Promise<SourceSettings> {
+  const body = await request("/source-settings", signal);
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.sources) ||
+    !body.sources.every(isSavedSource) ||
+    typeof body.in_database !== "boolean"
+  ) {
+    return invalidResponse();
+  }
+
+  return { sources: body.sources, in_database: body.in_database };
 }
 
 export function postParams(filters: Filters, limit = "30"): URLSearchParams {

@@ -146,6 +146,19 @@ export interface Post {
   media: { url: string; content_type: string }[];
 }
 
+/** A source as saved in Postgres; DEN-21's editor adds the other fields. */
+export interface SavedSource {
+  id: string;
+  enabled: boolean;
+  domain: string;
+}
+
+export interface SourceSettings {
+  sources: SavedSource[];
+  /** False while the reader and collection still use config.toml's sources. */
+  in_database: boolean;
+}
+
 export interface Source {
   configured?: boolean;
   icon_url?: string | null;

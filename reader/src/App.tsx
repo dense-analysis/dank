@@ -48,6 +48,7 @@ import { useLocation } from "./hooks/useLocation";
 import { useReaderPreferences } from "./hooks/useReaderPreferences";
 import { useReadPosts } from "./hooks/useReadPosts";
 import { useRefresh } from "./hooks/useRefresh";
+import { useSourceChanges } from "./hooks/useSourceChanges";
 import { fetchPosts, fetchSources } from "./lib/api";
 import {
   collectedAccounts,
@@ -137,6 +138,7 @@ export function App() {
     queryKey: ["youtube-sources"],
     queryFn: ({ signal }) => fetchYouTubeSources(signal),
   });
+  useSourceChanges(sources.data?.in_database === true);
   const posts = useInfiniteQuery({
     queryKey: ["posts", filters],
     queryFn: ({ pageParam, signal }) => fetchPosts(filters, pageParam, signal),

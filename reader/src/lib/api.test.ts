@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchCategories, fetchPost, fetchPosts, fetchSources } from "./api";
+import {
+  fetchCategories,
+  fetchPost,
+  fetchPosts,
+  fetchSourceSettings,
+  fetchSources,
+} from "./api";
 import { defaultFilters } from "./storage";
 import { isPost } from "./validation";
 
@@ -487,6 +493,53 @@ it("validates archive estimates and provenance while accepting communities witho
     });
     await expect(fetchSources()).rejects.toThrow("unexpected response");
   }
+});
+
+describe("source settings", () => {
+  const saved = {
+    id: "00000000-0000-0000-0000-000000000001",
+    enabled: true,
+    domain: "x.com",
+    accounts: [{ value: "alice", enabled: true }],
+    feeds: [],
+    tags: ["news"],
+    adapters: null,
+    reddit: null,
+    hacker_news: null,
+  };
+
+  it("says whether the sidebar's sources come from the database", async () => {
+    const body = { sources: [], total_posts: 0, blog_external_count: 0 };
+    respond({ ...body, in_database: true });
+    await expect(fetchSources()).resolves.toEqual({
+      ...body,
+      in_database: true,
+    });
+
+    respond({ ...body, in_database: "yes" });
+    await expect(fetchSources()).rejects.toThrow("unexpected response");
+  });
+
+  it("validates the saved sources and whether they are in use", async () => {
+    respond({ sources: [saved], in_database: true });
+    await expect(fetchSourceSettings()).resolves.toEqual({
+      sources: [saved],
+      in_database: true,
+    });
+
+    for (const bad of [
+      { sources: [saved] },
+      { sources: null, in_database: false },
+      { sources: [{ ...saved, id: 1 }], in_database: true },
+      { sources: [{ ...saved, enabled: "yes" }], in_database: true },
+      { sources: [{ ...saved, domain: null }], in_database: true },
+    ]) {
+      respond(bad);
+      await expect(fetchSourceSettings()).rejects.toThrow(
+        "unexpected response",
+      );
+    }
+  });
 });
 
 describe("category catalog", () => {

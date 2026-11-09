@@ -1,4 +1,11 @@
-import type { Post, RedditFlair, RedditPost, Source, XProfile } from "./types";
+import type {
+  Post,
+  RedditFlair,
+  RedditPost,
+  SavedSource,
+  Source,
+  XProfile,
+} from "./types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -473,6 +480,15 @@ function isXPost(
     (value.quote === undefined || (allowQuote && isXQuote(value.quote))) &&
     (value.conversation === undefined ||
       (allowConversation && isConversation(value.conversation)))
+  );
+}
+
+export function isSavedSource(value: unknown): value is SavedSource {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.enabled === "boolean" &&
+    typeof value.domain === "string"
   );
 }
 
