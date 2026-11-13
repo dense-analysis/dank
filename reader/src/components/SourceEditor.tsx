@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, CircleAlert, RotateCcw } from "lucide-react";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useSaveSource, useSourceDraft } from "../hooks/useSourceSettings";
 import type { RefreshScope } from "../lib/refresh";
 import {
@@ -7,6 +7,7 @@ import {
   collectScope,
   draftOf,
   fieldMessages,
+  hackerNewsFilterLabels,
   newDraft,
   parseTags,
   platformLabels,
@@ -15,6 +16,7 @@ import {
   type SourceDraft,
   type SourcePlatform,
   sameDraft,
+  siteOf,
   sourceTitle,
   type TargetList,
   targetLabel,
@@ -30,25 +32,27 @@ export type SourceNotice =
 
 const redditSorts = ["top", "best", "hot", "new", "rising"] as const;
 const redditTimes = ["hour", "day", "week", "month", "year", "all"] as const;
-const hackerNewsFilters = {
-  top10: "Top 10 each day",
-  top20: "Top 20 each day",
-  top50: "Top 50 each day",
-  all: "Every front-page story",
-} as const;
+const newTitles: Record<SourcePlatform, string> = {
+  rss: "Add a blog or feed",
+  x: "Add an X source",
+  reddit: "Add a Reddit source",
+  youtube: "Add a YouTube source",
+  hacker_news: "Add Hacker News",
+};
 
 /**
  * Adds or edits one source. Every save sends the whole source, and edits
  * in progress are kept if the saved source changes or the editor closes.
+ * A save that worked closes the editor, and the list says what happened.
  */
 export function SourceEditor({
   source,
   platform,
   inDatabase,
   close,
-  opened,
+  open,
+  saved: finished,
   collect,
-  initialNotice,
 }: {
   /** The saved source, or undefined for a new one. */
   source?: SavedSource;
@@ -56,10 +60,10 @@ export function SourceEditor({
   platform: SourcePlatform;
   inDatabase: boolean;
   close: () => void;
-  /** Shows another source: the one just added, or a duplicate. */
-  opened: (id: string, notice?: SourceNotice) => void;
-  /** What to say on opening, such as that this source was just added. */
-  initialNotice?: SourceNotice;
+  /** Shows another source: the one a duplicate collided with. */
+  open: (id: string) => void;
+  /** Called once a save worked, with what to say about it. */
+  saved: (id: string, notice: SourceNotice) => void;
   collect: (scope: RefreshScope) => Promise<unknown>;
 }) {
   const id = useId();
@@ -69,13 +73,26 @@ export function SourceEditor({
     saved,
   );
   const { save, saving } = useSaveSource();
-  const [notice, setNotice] = useState(initialNotice);
+  const form = useRef<HTMLFormElement>(null);
+  const [notice, setNotice] = useState<SourceNotice>();
   const [messages, setMessages] = useState(new Map<string, string>());
   const kind = source ? platformOf(source.domain) : platform;
   const dirty = edited && !sameDraft(draft, saved);
   // Someone saved this source while it was being edited here.
   const changedElsewhere = dirty && !sameDraft(baseline, saved);
   const [tags, setTags] = useState(draft.tags.join(", "));
+  // A new source is added to be collected, so that is its main action.
+  const collectable = draft.enabled && inDatabase;
+  const collectFirst = !source && collectable;
+
+  // A refused field can be off screen on a phone, above the save buttons.
+  useEffect(() => {
+    if (messages.size) {
+      form.current
+        ?.querySelector('[aria-invalid="true"], .field-error')
+        ?.scrollIntoView({ block: "center" });
+    }
+  }, [messages]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -102,25 +119,28 @@ export function SourceEditor({
     switch (outcome.status) {
       case "saved": {
         discard();
-        let result: SourceNotice = { kind: "saved", text: "Saved." };
+        const name = sourceTitle(draftOf(outcome.source));
+        let result: SourceNotice = {
+          kind: "saved",
+          text: source ? `Saved ${name}.` : `Added ${name}.`,
+        };
 
         if (andCollect) {
           try {
             await collect(
               collectScope(draftOf(outcome.source), source && baseline),
             );
-            result = { kind: "saved", text: "Saved. Collection has started." };
+            result = { ...result, text: `${result.text} Collecting it now.` };
           } catch (error) {
             // The source stays saved; only the collection needs another go.
             result = {
               kind: "problem",
-              text: `Saved, but collection couldn't start: ${error instanceof Error ? error.message : "try Refresh."}`,
+              text: `${source ? "Saved" : "Added"} ${name}, but collection couldn't start: ${error instanceof Error ? error.message : "try Refresh."}`,
             };
           }
         }
 
-        if (source) setNotice(result);
-        else opened(outcome.source.id, result);
+        finished(outcome.source.id, result);
 
         break;
       }
@@ -160,20 +180,42 @@ export function SourceEditor({
 
   return (
     <form
+      ref={form}
       className="source-editor"
-      aria-label={source ? `Edit ${sourceTitle(draft)}` : "Add a source"}
+      aria-label={source ? `Edit ${sourceTitle(draft)}` : "Set up a source"}
       noValidate
       onSubmit={(event: FormEvent) => {
         event.preventDefault();
-        void submit(false);
+        void submit(collectFirst);
       }}
     >
-      <button type="button" className="text-button" onClick={close}>
-        <ArrowLeft size={15} aria-hidden="true" /> All sources
-      </button>
-      <h2>
-        {source ? sourceTitle(draft) : `New ${platformLabels[kind]} source`}
-      </h2>
+      <header>
+        <button type="button" className="text-button" onClick={close}>
+          <ArrowLeft size={15} aria-hidden="true" /> All sources
+        </button>
+        <div className="source-editor-title">
+          <h1>{source ? sourceTitle(draft) : newTitles[kind]}</h1>
+          {source && (
+            <label className="source-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-checked={draft.enabled}
+                aria-label="Collect this source"
+                checked={draft.enabled}
+                onChange={(event) => update({ enabled: event.target.checked })}
+              />
+              <span aria-hidden="true">{draft.enabled ? "On" : "Off"}</span>
+            </label>
+          )}
+        </div>
+        {!draft.enabled && (
+          <p className="settings-help">
+            Off: nothing new is collected. Everything already saved stays
+            readable.
+          </p>
+        )}
+      </header>
       {!inDatabase && <NotInUse />}
       {changedElsewhere && (
         <p className="source-notice" role="status">
@@ -181,22 +223,6 @@ export function SourceEditor({
           edits are kept, and saving replaces that version.
         </p>
       )}
-      <div className="image-background-setting">
-        <label htmlFor={`${id}-enabled`}>
-          <input
-            id={`${id}-enabled`}
-            type="checkbox"
-            checked={draft.enabled}
-            aria-describedby={`${id}-enabled-help`}
-            onChange={(event) => update({ enabled: event.target.checked })}
-          />
-          Collect this source
-        </label>
-        <p className="settings-help" id={`${id}-enabled-help`}>
-          Turning it off stops new collection. Everything already saved stays
-          readable.
-        </p>
-      </div>
       {kind === "rss" && (
         <div className="source-field">
           <label htmlFor={`${id}-domain`}>Site</label>
@@ -212,13 +238,25 @@ export function SourceEditor({
             aria-invalid={messages.has("domain") || undefined}
             aria-describedby={`${id}-domain-help`}
             onChange={(event) => update({ domain: event.target.value })}
+            onBlur={() => {
+              // A pasted link becomes its site, and its feed when it is one.
+              const site = siteOf(draft.domain);
+              const feeds =
+                site.feed &&
+                !draft.feeds.some((feed) => feed.value === site.feed)
+                  ? [...draft.feeds, { value: site.feed, enabled: true }]
+                  : draft.feeds;
+
+              if (site.domain !== draft.domain || feeds !== draft.feeds)
+                update({ domain: site.domain, feeds });
+            }}
           />
           <p
             className={messages.has("domain") ? "field-error" : "settings-help"}
             id={`${id}-domain-help`}
           >
             {messages.get("domain") ??
-              "The site's domain, without https:// or a path."}
+              "The site's domain, or any link from it."}
           </p>
         </div>
       )}
@@ -300,12 +338,12 @@ export function SourceEditor({
                 update({
                   hacker_news: {
                     filter: event.target
-                      .value as keyof typeof hackerNewsFilters,
+                      .value as keyof typeof hackerNewsFilterLabels,
                   },
                 })
               }
             >
-              {Object.entries(hackerNewsFilters).map(([value, label]) => (
+              {Object.entries(hackerNewsFilterLabels).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
@@ -365,7 +403,7 @@ export function SourceEditor({
             <button
               type="button"
               className="text-button"
-              onClick={() => notice.existing && opened(notice.existing.id)}
+              onClick={() => notice.existing && open(notice.existing.id)}
             >
               Open it{notice.existing.enabled ? "" : " (it's turned off)"}
             </button>
@@ -382,15 +420,21 @@ export function SourceEditor({
           )}
         </div>
       )}
-      <div className="source-actions">
+      <div className="source-actions source-save">
+        {collectFirst && (
+          <button type="submit" className="primary-button" disabled={saving}>
+            {saving ? "Saving…" : "Save and collect"}
+          </button>
+        )}
         <button
-          type="submit"
-          className="primary-button"
+          type={collectFirst ? "button" : "submit"}
+          className={collectFirst ? "secondary-button" : "primary-button"}
           disabled={saving || (!!source && !dirty)}
+          onClick={collectFirst ? () => void submit(false) : undefined}
         >
-          {saving ? "Saving…" : "Save"}
+          {saving && !collectFirst ? "Saving…" : "Save"}
         </button>
-        {draft.enabled && inDatabase && (
+        {collectable && !collectFirst && (
           <button
             type="button"
             className="secondary-button"

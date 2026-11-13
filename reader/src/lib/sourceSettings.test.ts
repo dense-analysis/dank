@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ReaderRequestError } from "./api";
 import {
   accountIdentity,
+  addPlan,
   channelIdentity,
   collectScope,
   communityIdentity,
@@ -9,6 +10,8 @@ import {
   duplicateOf,
   fieldMessages,
   newDraft,
+  type ParsedSource,
+  parseSource,
   parseTags,
   platformOf,
   prepared,
@@ -16,8 +19,11 @@ import {
   sameDraft,
   savedMatches,
   siteIdentity,
+  siteOf,
+  sourceDetail,
   sourceSummary,
   sourcesAccepting,
+  sourceTitle,
   targetLabel,
   unconfirmed,
   withIdentity,
@@ -130,6 +136,167 @@ describe("describing a source", () => {
     ).toBe("@a, @b, @c and 1 more (1 off)");
     expect(sourceSummary(saved("2", { domain: "x.com" }))).toBe("For You only");
     expect(sourceSummary(saved("3", {}))).toBe("Feed found automatically");
+  });
+
+  it("titles a source by what it collects, with its platform beneath", () => {
+    const reddit = saved("1", {
+      domain: "reddit.com",
+      feeds: [on("https://www.reddit.com/r/rust/"), off("r/go")],
+    });
+
+    expect(sourceTitle(reddit)).toBe("r/rust, r/go");
+    expect(sourceDetail(reddit)).toBe("Reddit · top, past day · 1 off");
+    expect(sourceTitle(saved("2", { domain: "x.com" }))).toBe("X For You feed");
+    expect(sourceDetail(saved("2", { domain: "x.com" }))).toBe("X");
+    expect(sourceTitle(saved("3", { domain: "www.example.com" }))).toBe(
+      "example.com",
+    );
+    expect(
+      sourceDetail(saved("3", { feeds: [on("https://a.example/f")] })),
+    ).toBe("1 feed");
+    expect(sourceDetail(saved("4", { domain: "news.ycombinator.com" }))).toBe(
+      "Top 50 each day",
+    );
+  });
+});
+
+describe("reading pasted text", () => {
+  const read = (text: string) => parseSource(text) as ParsedSource;
+  const problem = (text: string) =>
+    (parseSource(text) as { problem: string }).problem;
+
+  it("reads handles, communities and platform links", () => {
+    expect(parseSource("  ")).toBeNull();
+    expect(read("r/LocalLLaMA").identity).toEqual(
+      communityIdentity("LocalLLaMA"),
+    );
+    expect(
+      read("https://old.reddit.com/r/rust/comments/abc/title/").identity,
+    ).toEqual(communityIdentity("rust"));
+    expect(read("https://twitter.com/Jack?lang=en").identity).toEqual(
+      accountIdentity("Jack"),
+    );
+    expect(read("x.com").identity).toMatchObject({
+      platform: "x",
+      list: null,
+      value: "x.com",
+    });
+    expect(read("https://m.youtube.com/@Veritasium/videos").identity).toEqual({
+      platform: "youtube",
+      list: "feeds",
+      value: "https://www.youtube.com/@Veritasium",
+      label: "@Veritasium",
+    });
+    expect(
+      read("https://www.youtube.com/playlist?list=PL123&si=x").identity.value,
+    ).toBe("https://www.youtube.com/playlist?list=PL123");
+    expect(read("https://news.ycombinator.com/news").identity.platform).toBe(
+      "hacker_news",
+    );
+  });
+
+  it("reads a bare handle as an X account, or a YouTube channel", () => {
+    const parsed = read("@jack");
+
+    expect(parsed.identity).toEqual(accountIdentity("jack"));
+    expect(parsed.other?.value).toBe("https://www.youtube.com/@jack");
+    // Too long for X, so it can only be a channel.
+    expect(read("@a-very-long-channel-name").identity.platform).toBe("youtube");
+  });
+
+  it("reads a site from a domain or any link, and a feed from its link", () => {
+    expect(read("Example.com")).toEqual({
+      identity: siteIdentity("example.com"),
+      feed: undefined,
+    });
+    expect(read("https://www.example.com/2024/a-post/")).toEqual({
+      identity: siteIdentity("example.com"),
+      feed: undefined,
+    });
+    expect(read("https://blog.example.com/feed.xml")).toEqual({
+      identity: siteIdentity("blog.example.com"),
+      feed: "https://blog.example.com/feed.xml",
+    });
+    expect(read("example.com/?feed=rss2").feed).toBe(
+      "https://example.com/?feed=rss2",
+    );
+    expect(siteOf("www.example.com")).toEqual({ domain: "www.example.com" });
+    expect(siteOf(" https://www.example.com/about ")).toEqual({
+      domain: "example.com",
+      feed: undefined,
+    });
+    expect(
+      prepared({ ...newDraft("rss"), domain: "https://a.example/x" }).domain,
+    ).toBe("a.example");
+  });
+
+  it("says what to paste when the text names no source", () => {
+    expect(problem("just words")).toBe("Add one source at a time.");
+    expect(problem("nonsense")).toContain("Paste a link");
+    expect(problem("https://x.com/home")).toContain("x.com/handle");
+    expect(problem("https://www.reddit.com/")).toContain("reddit.com/r/name");
+    expect(problem("https://youtu.be/dQw4w9WgXcQ")).toContain("not a video");
+    expect(problem("https://www.youtube.com/watch?v=abc")).toContain(
+      "not a video",
+    );
+  });
+});
+
+describe("planning an add", () => {
+  const plan = (sources: SavedSource[], text: string) =>
+    addPlan(sources, parseSource(text) as ParsedSource);
+
+  it("saves a new source when nothing collects that platform", () => {
+    expect(plan([], "@jack")).toMatchObject({
+      id: null,
+      draft: { domain: "x.com", accounts: [on("jack")], enabled: true },
+    });
+    expect(plan([], "https://example.com/feed.xml")).toMatchObject({
+      id: null,
+      draft: {
+        domain: "example.com",
+        feeds: [on("https://example.com/feed.xml")],
+      },
+    });
+    expect(plan([], "r/rust").draft.reddit).toEqual({
+      sort: "top",
+      time_filter: "day",
+    });
+  });
+
+  it("adds to a source of the platform that is on, never one that is off", () => {
+    const sources = [
+      saved("1", { domain: "x.com", enabled: false, accounts: [on("a")] }),
+      saved("2", { domain: "x.com", accounts: [on("b")], tags: ["ai"] }),
+    ];
+
+    expect(plan(sources, "@jack")).toMatchObject({
+      id: "2",
+      draft: { accounts: [on("b"), on("jack")], tags: ["ai"] },
+      before: { accounts: [on("b")] },
+    });
+    expect(plan(sources.slice(0, 1), "@jack").id).toBeNull();
+  });
+
+  it("turns a saved entry back on, and saves nothing for a collected one", () => {
+    const sources = [
+      saved("1", { domain: "x.com", accounts: [off("Jack"), on("b")] }),
+      saved("2", { domain: "example.com" }),
+    ];
+
+    expect(plan(sources, "@jack")).toMatchObject({
+      id: "1",
+      draft: { accounts: [on("Jack"), on("b")] },
+      collected: undefined,
+    });
+    expect(plan(sources, "https://x.com/B").collected?.id).toBe("1");
+    expect(plan(sources, "example.com").collected?.id).toBe("2");
+    // A feed link adds the feed to the site that is already saved.
+    expect(plan(sources, "example.com/rss")).toMatchObject({
+      id: "2",
+      draft: { feeds: [on("https://example.com/rss")] },
+      collected: undefined,
+    });
   });
 });
 

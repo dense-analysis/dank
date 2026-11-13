@@ -50,18 +50,94 @@
   color: #f0c397;
 }
 
-.source-manager-bar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+.source-manager {
+  display: grid;
+  gap: 14px;
 }
-.source-manager-bar > :first-child {
+.source-manager > .source-notice {
+  margin: 0;
+}
+.quick-add {
+  display: grid;
+  gap: 8px;
+}
+.quick-add > label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.quick-add-row {
+  display: flex;
+  gap: 8px;
+}
+.quick-add-row input {
   flex: 1;
   min-width: 0;
+  min-height: 46px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  /* 16px keeps iOS from zooming the page when the field takes focus. */
+  font: inherit;
+  font-size: 16px;
 }
-.source-manager-bar .primary-button {
+.quick-add-row input:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+}
+.quick-add-row .primary-button {
   flex: none;
-  min-height: 40px;
+  min-height: 46px;
+  box-shadow: none;
+}
+.quick-add-row .primary-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.quick-add-reading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.quick-add-reading > span {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.quick-add-reading > span > svg {
+  flex: none;
+}
+.quick-add-reading:has(svg) > span {
+  color: var(--text);
+}
+.quick-add-reading .text-button {
+  flex: none;
+  min-height: 32px;
+}
+.quick-add-reading .platform-filters {
+  position: static;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.quick-add .source-notice,
+.quick-add .source-platforms {
+  margin: 0;
+}
+.source-notice.plain {
+  color: var(--text);
 }
 .source-platforms {
   display: flex;
@@ -86,12 +162,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 18px;
-  margin-top: 6px;
-  border-bottom: 1px solid var(--line);
+}
+.source-filters:empty {
+  display: none;
 }
 .source-filters .platform-filters {
   position: static;
   margin: 0;
+  padding: 0;
   border: 0;
   background: none;
   -webkit-backdrop-filter: none;
@@ -102,6 +180,30 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  border-top: 1px solid var(--line);
+}
+.saved-sources:empty {
+  display: none;
+}
+/* Points out the source just added or saved, then settles. */
+.saved-sources > .recent {
+  animation: source-recent 2.4s ease-out;
+}
+@keyframes source-recent {
+  from {
+    background: var(--selected);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .saved-sources > .recent {
+    animation: none;
+    box-shadow: inset 2px 0 var(--green);
+  }
+}
+.saved-sources .source-total {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
 }
 .saved-sources > li {
   display: grid;
@@ -183,12 +285,32 @@
   display: grid;
   gap: 22px;
   max-width: 640px;
+  /* The page heading is hidden here, so the form keeps its own top space. */
+  padding-top: 24px;
 }
-.source-editor h2 {
-  font-size: 21px;
+.source-editor > header {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.source-editor-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.source-editor h1 {
+  min-width: 0;
+  margin: 0;
+  font-size: 22px;
   font-weight: 500;
+  line-height: 1.25;
   letter-spacing: -0.4px;
   overflow-wrap: anywhere;
+}
+.source-editor > header .settings-help {
+  margin: 0;
 }
 .source-editor .source-notice {
   margin: 0;
@@ -350,6 +472,16 @@
   opacity: 0.5;
   cursor: default;
 }
+/* The save buttons stay in reach however long the form is. */
+.source-save {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 0 -4px;
+  padding: 12px 4px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--canvas);
+}
 
 .save-source-button {
   display: inline-flex;
@@ -444,18 +576,12 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .source-manager-bar {
-    flex-wrap: wrap;
-  }
-  .source-manager-bar > :first-child {
-    flex-basis: 100%;
-  }
-  .source-manager-bar .primary-button {
-    width: 100%;
-    min-height: 44px;
-  }
-  .saved-sources .source-total {
+  /* The arrow alone says a row opens; the word needs room a phone lacks. */
+  .saved-sources .source-total > span {
     display: none;
+  }
+  .saved-sources .source-total svg {
+    display: block;
   }
   .source-actions :is(.primary-button, .secondary-button) {
     flex: 1 1 140px;

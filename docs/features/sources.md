@@ -109,18 +109,40 @@ for edits.
 Open **Sources** and choose **Manage**. **Collected** is the list of sources
 with saved posts, as before; choosing one there filters your reading.
 
-- **Add source** asks what to collect: a blog or feed, X, Reddit, YouTube or
-  Hacker News. Each has its own form: a site and its feeds, X accounts,
-  Reddit communities and how to sort them, YouTube channels and links, or
-  which Hacker News stories.
+- **Add a source** takes one thing you paste or type and works out what it
+  is, then saves it and starts collecting it:
+
+  | You paste | DANK saves |
+  | --- | --- |
+  | A domain, or a link to any page of a site | The site, finding its feed itself |
+  | A link to a feed | The site, with that feed |
+  | `@handle`, or an x.com or twitter.com profile link | An X account |
+  | `r/community`, or any Reddit link inside one | A Reddit community |
+  | A YouTube channel or playlist link | That channel or playlist |
+  | A news.ycombinator.com link | Hacker News |
+
+  A bare `@handle` is read as an X account; choose **YouTube** beneath the
+  field when it is a channel. A video link is refused, since only channels
+  and playlists are collected. An account, community or channel joins the
+  source of its platform that is on, or starts one. Something saved but
+  turned off is turned back on, and something already collected is left
+  alone and says so. If collection can't start, what you added stays saved.
+- **More options** opens a full form for each platform: a site and its
+  feeds, X accounts, Reddit communities and how to sort them, YouTube
+  channels and links, or which Hacker News stories. The **Site** field takes
+  a pasted link as well as a domain.
 - **Each source has a switch**, in the list and in its form, and so does each
   account, feed and community. Turning one off stops new collection and keeps
   everything already saved. Sources can't be deleted.
-- **Search and filter** the list by platform and by whether a source is on.
-- **Save** sends the whole source. **Save and collect** saves, then starts a
-  refresh. When this save added one account or community, only that is
-  collected; otherwise the source's platform is. If the refresh can't start,
-  the source stays saved and the form says so.
+- **Each row is titled by what it collects**, such as `r/rust, r/python`,
+  with its platform and options beneath.
+- **Search and filter** appear once there are six sources: by platform when
+  there is more than one, and by on or off when something is off.
+- **Save** sends the whole source and returns to the list, which says what
+  was saved. **Save and collect** also starts a refresh, and is the main
+  action for a new source. When this save added one account or community,
+  only that is collected; otherwise the source's platform is. If the refresh
+  can't start, the source stays saved and the list says so.
 - **Problems appear beside their field**, with the server's own message, and
   nothing you typed is lost.
 - **A duplicate** links to the source that already has those settings, and

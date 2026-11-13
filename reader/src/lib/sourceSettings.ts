@@ -117,6 +117,13 @@ export const targetLists: Record<
   },
 };
 
+export const hackerNewsFilterLabels = {
+  top10: "Top 10 each day",
+  top20: "Top 20 each day",
+  top50: "Top 50 each day",
+  all: "Every front-page story",
+} as const;
+
 export function newDraft(platform: SourcePlatform): SourceDraft {
   return {
     enabled: true,
@@ -166,7 +173,8 @@ function pair(target: SourceTarget): [string, boolean] {
  * adapter, which config.toml adds itself and the API wants written out.
  */
 export function prepared(source: SourceDraft): SourceDraft {
-  const domain = source.domain.trim();
+  // A pasted link stands for its site.
+  const domain = siteOf(source.domain).domain;
   // An adapter's feeds are typed a line at a time, so blank lines are noise.
   const draft: SourceDraft = {
     ...source,
@@ -198,12 +206,67 @@ export function prepared(source: SourceDraft): SourceDraft {
   return { ...draft, domain };
 }
 
-export function sourceTitle(source: Pick<SourceDraft, "domain">): string {
+/** A source's targets as people write them, the first few by name. */
+function targetNames(source: SourceDraft): string {
+  const platform = platformOf(source.domain);
+  const names = (["accounts", "feeds"] as const).flatMap((list) =>
+    targetLists[platform][list]
+      ? source[list].map((target) => targetLabel(platform, list, target.value))
+      : [],
+  );
+  const more = names.length - 3;
+
+  return `${names.slice(0, 3).join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+}
+
+/** What to call a source: its site, or the accounts and communities in it. */
+export function sourceTitle(source: SourceDraft): string {
   const platform = platformOf(source.domain);
 
-  return platform === "rss"
-    ? source.domain.replace(/^www\./i, "") || "New source"
-    : platformLabels[platform];
+  switch (platform) {
+    case "rss":
+      return source.domain.replace(/^www\./i, "") || "New source";
+    case "hacker_news":
+      return platformLabels.hacker_news;
+    default:
+      return (
+        targetNames(source) ||
+        {
+          x: "X For You feed",
+          reddit: "Reddit",
+          youtube: "Your YouTube feeds",
+        }[platform]
+      );
+  }
+}
+
+/** The line under a source's title: its platform, options and what is off. */
+export function sourceDetail(source: SourceDraft): string {
+  const platform = platformOf(source.domain);
+  const off = [...source.accounts, ...source.feeds].filter(
+    (target) => !target.enabled,
+  ).length;
+  const feeds = source.feeds.length;
+  const parts = {
+    rss: [
+      feeds
+        ? `${feeds} ${feeds === 1 ? "feed" : "feeds"}`
+        : "Feed found automatically",
+    ],
+    x: ["X"],
+    reddit: [
+      "Reddit",
+      source.reddit &&
+        `${source.reddit.sort}, ${source.reddit.time_filter === "all" ? "all time" : `past ${source.reddit.time_filter}`}`,
+    ],
+    youtube: ["YouTube"],
+    hacker_news: [
+      source.hacker_news && hackerNewsFilterLabels[source.hacker_news.filter],
+      feeds && `${feeds} ${feeds === 1 ? "feed" : "feeds"}`,
+    ],
+  }[platform];
+
+  return [...parts, off && `${off} off`].filter(Boolean).join(" · ");
 }
 
 /** A target as people write it: @handle, r/community, or its link. */
@@ -548,4 +611,223 @@ export function duplicateOf(
   return sources.find(
     (source) => source.id !== except && settingsKey(draftOf(source)) === key,
   );
+}
+
+/** What pasted text asks DANK to collect. */
+export interface ParsedSource {
+  identity: SourceIdentity;
+  /** The site's feed to collect, when the link was to one. */
+  feed?: string;
+  /** Another reading of the same text: a bare @handle is on X or YouTube. */
+  other?: SourceIdentity;
+}
+
+const xHosts = new Set(["x.com", "twitter.com", "mobile.twitter.com"]);
+const redditHosts = new Set(["reddit.com", "old.reddit.com", "new.reddit.com"]);
+const youtubeHosts = new Set(["youtube.com", "m.youtube.com"]);
+const hackerNewsHosts = new Set(["news.ycombinator.com", "hckrnews.com"]);
+// The first part of an x.com path that is a page rather than an account.
+const xPages = new Set([
+  "home",
+  "explore",
+  "search",
+  "i",
+  "settings",
+  "notifications",
+  "messages",
+  "compose",
+  "hashtag",
+  "login",
+]);
+// A heuristic for links that are feeds rather than pages of the site.
+const feedPath =
+  /\.(xml|rss|atom)$|(^|\/)(feeds?|rss|atom)(\/|\.|$)|[?&](feed|format|alt)=(rss|atom)/i;
+
+function parsedUrl(text: string): URL | null {
+  try {
+    const url = new URL(
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`,
+    );
+
+    return /^https?:$/.test(url.protocol) && url.hostname.includes(".")
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A site's domain from what was typed or pasted, with its feed when the
+ * link was to one. Text that isn't a link is left for the server to judge.
+ */
+export function siteOf(text: string): { domain: string; feed?: string } {
+  const entry = text.trim();
+  const url = /[/:]/.test(entry) && !/\s/.test(entry) ? parsedUrl(entry) : null;
+
+  if (!url) return { domain: entry };
+
+  return {
+    domain: url.host.toLowerCase().replace(/^www\./, ""),
+    feed: feedPath.test(url.pathname + url.search) ? url.href : undefined,
+  };
+}
+
+function channelLink(path: string): SourceIdentity {
+  return {
+    platform: "youtube",
+    list: "feeds",
+    value: `https://www.youtube.com/${path}`,
+    label: path.startsWith("@") ? path : `youtube.com/${path}`,
+  };
+}
+
+/**
+ * Reads one pasted link, handle, community or domain. Returns null for
+ * nothing, and a problem to show for text that names no source.
+ */
+export function parseSource(
+  text: string,
+): ParsedSource | { problem: string } | null {
+  const entry = text.trim();
+
+  if (!entry) return null;
+  if (/\s/.test(entry)) return { problem: "Add one source at a time." };
+
+  const handle = /^@([A-Za-z0-9_.-]+)$/.exec(entry)?.[1];
+
+  if (handle) {
+    // X handles are at most 15 letters, digits and underscores.
+    return /^[A-Za-z0-9_]{1,15}$/.test(handle)
+      ? { identity: accountIdentity(handle), other: channelLink(`@${handle}`) }
+      : { identity: channelLink(`@${handle}`) };
+  }
+
+  const community = /^\/?r\/([A-Za-z0-9_]+)\/?$/.exec(entry)?.[1];
+
+  if (community) return { identity: communityIdentity(community) };
+
+  const url = parsedUrl(entry);
+
+  if (!url) {
+    return { problem: "Paste a link, a domain, @handle or r/community." };
+  }
+
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const path = url.pathname.replace(/\/+$/, "");
+
+  if (xHosts.has(host)) {
+    const name = path.split("/")[1] ?? "";
+
+    if (!name) {
+      return {
+        identity: {
+          platform: "x",
+          list: null,
+          value: platformDomains.x,
+          label: "the X For You feed",
+        },
+      };
+    }
+
+    return /^[A-Za-z0-9_]{1,15}$/.test(name) && !xPages.has(name.toLowerCase())
+      ? { identity: accountIdentity(name) }
+      : { problem: "Paste an account's link, such as x.com/handle." };
+  }
+
+  if (redditHosts.has(host)) {
+    const name = /^\/r\/([A-Za-z0-9_]+)/.exec(path)?.[1];
+
+    return name
+      ? { identity: communityIdentity(name) }
+      : { problem: "Paste a community's link, such as reddit.com/r/name." };
+  }
+
+  if (youtubeHosts.has(host) || host === "youtu.be") {
+    const playlist = path === "/playlist" && url.searchParams.get("list");
+    const channel = /^\/(@[^/]+|(?:channel|c|user)\/[^/]+)/.exec(path)?.[1];
+
+    if (playlist) {
+      return {
+        identity: {
+          platform: "youtube",
+          list: "feeds",
+          value: `https://www.youtube.com/playlist?list=${playlist}`,
+          label: "this YouTube playlist",
+        },
+      };
+    }
+
+    if (channel) return { identity: channelLink(channel) };
+
+    return path || host === "youtu.be"
+      ? { problem: "Paste a channel's or playlist's link, not a video's." }
+      : {
+          identity: {
+            platform: "youtube",
+            list: null,
+            value: platformDomains.youtube,
+            label: "your YouTube feeds",
+          },
+        };
+  }
+
+  if (hackerNewsHosts.has(host)) {
+    return {
+      identity: {
+        platform: "hacker_news",
+        list: null,
+        value: platformDomains.hacker_news,
+        label: "Hacker News",
+      },
+    };
+  }
+
+  const site = siteOf(url.href);
+
+  return { identity: siteIdentity(site.domain), feed: site.feed };
+}
+
+/** How saving a parsed source changes what is saved. */
+export interface AddPlan {
+  /** The saved source to change, or null to add one. */
+  id: string | null;
+  draft: SourceDraft;
+  /** The source as it was, when it is already saved. */
+  before?: SourceDraft;
+  /** The source that collects this already, leaving nothing to save. */
+  collected?: SavedSource;
+}
+
+/**
+ * Where a parsed source goes: turned back on where it is saved, added to a
+ * source of its platform that is on, or saved as a new source.
+ */
+export function addPlan(
+  sources: readonly SavedSource[],
+  { identity, feed }: ParsedSource,
+): AddPlan {
+  const matches = savedMatches(sources, identity);
+  const target =
+    matches[0]?.source ??
+    sourcesAccepting(sources, identity).find((source) => source.enabled);
+  const before = target && draftOf(target);
+  let draft = withIdentity(before ?? newDraft(identity.platform), identity);
+
+  if (feed) {
+    draft = withIdentity(draft, {
+      platform: "rss",
+      list: "feeds",
+      value: feed,
+      label: feed,
+    });
+  }
+
+  return {
+    id: target?.id ?? null,
+    draft,
+    before,
+    collected:
+      target && before && sameDraft(draft, before) ? target : undefined,
+  };
 }

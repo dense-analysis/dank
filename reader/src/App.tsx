@@ -328,6 +328,8 @@ export function App() {
   const managingSources =
     section === "sources" &&
     (params.get("manage") === "1" || !!params.get("source"));
+  // One source's form has its own heading and a way back to the list.
+  const editingSource = section === "sources" && !!params.get("source");
   // What is on screen that DANK could collect, when it's one saved thing.
   const savable = readingArticle
     ? null
@@ -729,7 +731,8 @@ export function App() {
                 !forYouContext &&
                 !communityContext &&
                 section !== "youtube" &&
-                !mixedVideoDetail && (
+                !mixedVideoDetail &&
+                !editingSource && (
                   <div className="page-heading">
                     {feedSection && <p className="eyebrow">{date}</p>}
                     {section === "hacker_news" && (
@@ -795,23 +798,25 @@ export function App() {
                 <ReaderSettings />
               ) : section === "sources" ? (
                 <>
-                  <fieldset className="platform-filters sources-tabs">
-                    <legend className="visually-hidden">Sources</legend>
-                    <button
-                      type="button"
-                      aria-pressed={!managingSources}
-                      onClick={() => select("sources")}
-                    >
-                      Collected
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={managingSources}
-                      onClick={() => manageSources()}
-                    >
-                      Manage
-                    </button>
-                  </fieldset>
+                  {!editingSource && (
+                    <fieldset className="platform-filters sources-tabs">
+                      <legend className="visually-hidden">Sources</legend>
+                      <button
+                        type="button"
+                        aria-pressed={!managingSources}
+                        onClick={() => select("sources")}
+                      >
+                        Collected
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={managingSources}
+                        onClick={() => manageSources()}
+                      >
+                        Manage
+                      </button>
+                    </fieldset>
+                  )}
                   {managingSources ? (
                     <SourceManager
                       params={params}

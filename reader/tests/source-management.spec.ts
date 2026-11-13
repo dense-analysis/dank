@@ -196,9 +196,19 @@ test("adds a Reddit source and shows it saved, normalized", async ({
   await expect(
     page.getByRole("heading", { name: "No sources yet" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Add source" }).click();
+  // With nothing saved there is nothing to search or filter.
+  await expect(
+    page.getByRole("searchbox", { name: "Search saved sources" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "More options" }).click();
   await page.getByRole("button", { name: "Reddit" }).click();
   await expect(page).toHaveURL(/source=new&platform=reddit/);
+  // The form stands alone: the list's heading and tabs give way to it.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Add a Reddit source" }),
+  ).toBeVisible();
+  await expect(page.locator(".sources-tabs")).toHaveCount(0);
+  await expect(page.getByLabel("Collect this source")).toHaveCount(0);
 
   await page.getByLabel("Add a community").fill("r/LocalLLaMA r/rust");
   await page.getByLabel("Add a community").press("Enter");
@@ -206,12 +216,11 @@ test("adds a Reddit source and shows it saved, normalized", async ({
   await page.getByLabel("Tags").fill("AI, news");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect(page.getByRole("status")).toHaveText("Saved.");
-  // The new source has its own link, and the server's spelling.
-  await expect(page).toHaveURL(/source=00000000-0000-0000-0000-000000000011/);
-  await expect(
-    page.getByRole("checkbox", { name: "r/LocalLLaMA", exact: true }),
-  ).toBeChecked();
+  // Saving returns to the list, which names the new source.
+  await expect(page.getByRole("status")).toHaveText(
+    "Added r/LocalLLaMA, r/rust.",
+  );
+  await expect(page).not.toHaveURL(/source=/);
   expect(server.writes).toHaveLength(1);
   expect(server.writes[0]).toMatchObject({
     method: "POST",
@@ -225,10 +234,14 @@ test("adds a Reddit source and shows it saved, normalized", async ({
   });
   expect(server.writes[0].body).not.toHaveProperty("id");
 
-  await page.getByRole("button", { name: "All sources" }).click();
+  // The row is titled by its communities, in the server's spelling.
+  await page
+    .getByRole("link", { name: /r\/LocalLLaMA, r\/rust.*Reddit · hot/ })
+    .click();
+  await expect(page).toHaveURL(/source=00000000-0000-0000-0000-000000000011/);
   await expect(
-    page.getByRole("link", { name: /Reddit.*r\/LocalLLaMA, r\/rust/ }),
-  ).toBeVisible();
+    page.getByRole("checkbox", { name: "r/LocalLLaMA", exact: true }),
+  ).toBeChecked();
 });
 
 test("puts each refused field's message beside it and keeps the edits", async ({
@@ -269,7 +282,7 @@ test("edits a source by sending all of it, and switches an account off", async (
     }),
   ]);
   await page.goto("/?view=sources&manage=1");
-  await page.getByRole("link", { name: /X.*@alice, @bob/ }).click();
+  await page.getByRole("link", { name: /@alice, @bob/ }).click();
 
   await expect(
     page.getByRole("button", { name: "Save", exact: true }),
@@ -279,7 +292,9 @@ test("edits a source by sending all of it, and switches an account off", async (
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect(page.getByRole("status")).toHaveText("Saved.");
+  await expect(page.getByRole("status")).toHaveText(
+    "Saved @alice, @bob, @carol.",
+  );
   expect(server.writes[0]).toMatchObject({
     method: "PUT",
     path: "/api/reader/source-settings/00000000-0000-0000-0000-000000000001",
@@ -304,7 +319,7 @@ test("keeps unsaved edits when leaving the editor and when another tab saves", a
   ]);
   await page.clock.install();
   await page.goto("/?view=sources&manage=1");
-  await page.getByRole("link", { name: /X.*@alice/ }).click();
+  await page.getByRole("link", { name: /@alice/ }).click();
   await page.getByLabel("Add an account").fill("mine");
   await page.getByLabel("Add an account").press("Enter");
 
@@ -320,7 +335,7 @@ test("keeps unsaved edits when leaving the editor and when another tab saves", a
     page.getByRole("link", { name: /@alice, @theirs/ }),
   ).toBeVisible();
 
-  await page.getByRole("link", { name: /X.*@alice/ }).click();
+  await page.getByRole("link", { name: /@alice/ }).click();
   await expect(
     page.getByRole("checkbox", { name: "@mine", exact: true }),
   ).toBeChecked();
@@ -336,12 +351,21 @@ test("keeps unsaved edits when leaving the editor and when another tab saves", a
 });
 
 test("turns a source off and on from the list", async ({ page }) => {
+  // Enough sources that the list offers search and filters.
   const server = await serve(page, [
     saved(1, { domain: "x.com", accounts: [on("alice")] }),
-    saved(2, { domain: "blog.example" }),
+    ...[2, 3, 4, 5, 6].map((id) => saved(id, { domain: `blog${id}.example` })),
   ]);
   await page.goto("/?view=sources&manage=1");
-  const toggle = page.getByRole("switch", { name: /Collect X/ });
+  const toggle = page.getByRole("switch", { name: "Collect @alice" });
+
+  await expect(
+    page.getByRole("searchbox", { name: "Search saved sources" }),
+  ).toBeVisible();
+  // Nothing is off yet, so there is no on-or-off filter to offer.
+  await expect(
+    page.getByRole("button", { name: "Off", exact: true }),
+  ).toHaveCount(0);
 
   await toggle.click();
   await expect(toggle).not.toBeChecked();
@@ -351,8 +375,8 @@ test("turns a source off and on from the list", async ({ page }) => {
   });
 
   await page.getByRole("button", { name: "Off", exact: true }).click();
-  await expect(page.getByRole("link", { name: /X.*@alice/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /blog\.example/ })).toHaveCount(
+  await expect(page.getByRole("link", { name: /@alice/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /blog\d\.example/ })).toHaveCount(
     0,
   );
 
@@ -374,8 +398,9 @@ test("an unconfirmed save can be tried again, and a repeated add counts as saved
   server.sources = [saved(7, { domain: "x.com", accounts: [on("alice")] })];
   await page.getByRole("button", { name: "Try again" }).click();
 
-  await expect(page.getByRole("status")).toHaveText("Saved.");
-  await expect(page).toHaveURL(/source=00000000-0000-0000-0000-000000000007/);
+  await expect(page.getByRole("status")).toHaveText("Added @alice.");
+  await expect(page.getByRole("link", { name: /@alice/ })).toBeVisible();
+  expect(server.sources).toHaveLength(1);
 });
 
 test("a duplicate links to the source that already has those settings", async ({
@@ -411,16 +436,14 @@ test("save and collect keeps the source when collection can't start", async ({
   await page.getByRole("button", { name: "Save and collect" }).click();
 
   await expect(
-    editor(page)
-      .getByRole("alert")
-      .filter({ hasText: "Saved, but collection couldn't start" }),
+    page.getByRole("alert").filter({
+      hasText: "Saved @alice, @bob, but collection couldn't start",
+    }),
   ).toBeVisible();
   // Only the account this save added is collected.
   expect(server.refreshes).toEqual([{ kind: "x", account: "bob" }]);
   expect(server.sources[0].accounts).toEqual([on("alice"), on("bob")]);
-  await expect(
-    page.getByRole("button", { name: "Save", exact: true }),
-  ).toBeDisabled();
+  await expect(page.getByRole("link", { name: /@alice, @bob/ })).toBeVisible();
 });
 
 test("says when the saved sources aren't the ones in use", async ({ page }) => {
@@ -501,6 +524,127 @@ test("saves a discovered site as a new source", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
 });
 
+test("adds a pasted link by working out what it is, and collects it", async ({
+  page,
+}) => {
+  const server = await serve(page, []);
+  await page.goto("/?view=sources&manage=1");
+  const box = page.getByRole("textbox", { name: "Add a source" });
+
+  await box.fill("https://www.reddit.com/r/rust/comments/abc/a_post/");
+  await expect(page.getByText("Reddit · r/rust")).toBeVisible();
+  await box.press("Enter");
+
+  await expect(page.getByRole("status")).toContainText(
+    "Added r/rust. Collecting it now.",
+  );
+  await expect(box).toHaveValue("");
+  await expect(box).toBeFocused();
+  await expect(page.getByRole("link", { name: /r\/rust/ })).toBeVisible();
+  expect(server.writes[0]).toMatchObject({
+    method: "POST",
+    body: {
+      enabled: true,
+      domain: "reddit.com",
+      feeds: [on("r/rust")],
+      reddit: { sort: "top", time_filter: "day" },
+    },
+  });
+  expect(server.refreshes).toEqual([{ kind: "reddit", community: "rust" }]);
+
+  // A link to any page of a site saves the site, without its path.
+  await box.fill("https://www.blog.example/2024/a-post/");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Added blog.example.");
+  expect(server.writes[1].body).toMatchObject({
+    domain: "blog.example",
+    feeds: [],
+  });
+  expect(server.refreshes[1]).toEqual({
+    kind: "rss",
+    domains: ["blog.example"],
+  });
+
+  await box.fill("not a source");
+  await box.press("Enter");
+  await expect(page.getByRole("alert")).toHaveText("Add one source at a time.");
+  expect(server.writes).toHaveLength(2);
+});
+
+test("adds a handle to the X source that is on, or as a YouTube channel", async ({
+  page,
+}) => {
+  const server = await serve(
+    page,
+    [saved(1, { domain: "x.com", accounts: [on("alice")], tags: ["ai"] })],
+    { refreshFails: true },
+  );
+  await page.goto("/?view=sources&manage=1");
+  const box = page.getByRole("textbox", { name: "Add a source" });
+  const said = page.getByRole("form", { name: "Add a source" });
+
+  await box.fill("@Alice");
+  await box.press("Enter");
+  await expect(page.getByRole("status")).toContainText(
+    "DANK already collects @Alice.",
+  );
+  expect(server.writes).toHaveLength(0);
+
+  await box.fill("@bob");
+  await expect(page.getByText("X · @bob")).toBeVisible();
+  await box.press("Enter");
+  // Added all the same when collection can't start.
+  await expect(said.getByRole("alert")).toContainText(
+    "Added @bob, but collection couldn't start",
+  );
+  expect(server.writes[0]).toMatchObject({
+    method: "PUT",
+    path: "/api/reader/source-settings/00000000-0000-0000-0000-000000000001",
+    body: { accounts: [on("alice"), on("bob")], tags: ["ai"] },
+  });
+  expect(server.refreshes).toEqual([{ kind: "x", account: "bob" }]);
+
+  await box.fill("@carol");
+  await said.getByRole("button", { name: "YouTube" }).click();
+  await expect(page.getByText("YouTube · @carol")).toBeVisible();
+  await box.press("Enter");
+  await expect(said.getByRole("alert")).toContainText("Added @carol");
+  expect(server.writes[1]).toMatchObject({
+    method: "POST",
+    body: {
+      domain: "youtube.com",
+      feeds: [on("https://www.youtube.com/@carol")],
+    },
+  });
+});
+
+test("a pasted link in the site field becomes the site and its feed", async ({
+  page,
+}) => {
+  const server = await serve(page, []);
+  await page.goto("/?view=sources&source=new&platform=rss");
+
+  await page.getByLabel("Site").fill("https://www.blog.example/feed.xml");
+  await page.getByLabel("Tags").click();
+  await expect(page.getByLabel("Site")).toHaveValue("blog.example");
+  await expect(
+    page.getByRole("checkbox", { name: "blog.example/feed.xml", exact: true }),
+  ).toBeChecked();
+
+  // Collecting is the point of a new source, so it is the main action.
+  await page.getByLabel("Site").press("Enter");
+  await expect(page.getByRole("status")).toHaveText(
+    "Added blog.example. Collecting it now.",
+  );
+  expect(server.writes[0].body).toMatchObject({
+    domain: "blog.example",
+    feeds: [on("https://www.blog.example/feed.xml")],
+  });
+  expect(server.refreshes).toEqual([
+    { kind: "rss", domains: ["blog.example"] },
+  ]);
+});
+
 test("the editor fits a phone, with touch-sized controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await serve(page, [
@@ -518,6 +662,11 @@ test("the editor fits a phone, with touch-sized controls", async ({ page }) => {
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+
+  // The save buttons stay on screen however long the form is.
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toBeInViewport({ ratio: 1 });
 
   for (const control of [
     page.getByRole("button", { name: "Save", exact: true }),

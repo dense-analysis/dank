@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, Rss } from "lucide-react";
+import { Check, ChevronRight, CircleAlert } from "lucide-react";
 import { useState } from "react";
 import {
   useEditedSources,
@@ -12,7 +12,7 @@ import {
   platformOf,
   platforms,
   type SourcePlatform,
-  sourceSummary,
+  sourceDetail,
   sourceTitle,
 } from "../lib/sourceSettings";
 import type { SavedSource } from "../lib/types";
@@ -20,8 +20,13 @@ import { PlatformIcon } from "./PlatformIcon";
 import { SourceMark } from "./PostCard";
 import { SearchField } from "./SearchField";
 import { NotInUse, SourceEditor, type SourceNotice } from "./SourceEditor";
+import { SourceQuickAdd } from "./SourceQuickAdd";
 
 type Collecting = "all" | "on" | "off";
+
+// A short list is read at a glance, so search and filters wait until the
+// list is longer than a phone screen shows at once.
+const FILTERS_FROM = 6;
 
 function platformParam(value: string | null): SourcePlatform {
   return platforms.find((platform) => platform === value) ?? "rss";
@@ -58,8 +63,10 @@ export function SourceManager({
   const [query, setQuery] = useState("");
   const [platform, setPlatform] = useState<SourcePlatform | "all">("all");
   const [collecting, setCollecting] = useState<Collecting>("all");
-  const [adding, setAdding] = useState(false);
-  const [notice, setNotice] = useState<{ id: string; notice: SourceNotice }>();
+  // What the editor said as it closed, shown above the list.
+  const [notice, setNotice] = useState<SourceNotice>();
+  // The source just added or saved, pointed out in the list.
+  const [recent, setRecent] = useState<string>();
   const [toggle, setToggle] = useState<{ id: string; problem?: string }>();
   const editing = params.get("source");
 
@@ -97,6 +104,11 @@ export function SourceManager({
 
   const { sources, in_database: inDatabase } = settings.data;
 
+  function edit(id: string) {
+    setNotice(undefined);
+    navigate(open(id));
+  }
+
   if (editing) {
     const source = sources.find((item) => item.id === editing);
 
@@ -122,11 +134,12 @@ export function SourceManager({
         source={source}
         platform={platformParam(params.get("platform"))}
         inDatabase={inDatabase}
-        initialNotice={notice?.id === source?.id ? notice?.notice : undefined}
         close={() => navigate(open(null))}
-        opened={(id, said) => {
-          setNotice(said && { id, notice: said });
-          navigate(open(id), true);
+        open={(id) => navigate(open(id), true)}
+        saved={(id, said) => {
+          setNotice(said);
+          setRecent(id);
+          navigate(open(null), true);
         }}
         collect={collect}
       />
@@ -153,16 +166,20 @@ export function SourceManager({
     );
   }
 
-  const text = query.trim().toLowerCase();
+  const filtering = sources.length >= FILTERS_FROM;
+  const text = filtering ? query.trim().toLowerCase() : "";
   const present = platforms.filter((item) =>
     sources.some((source) => platformOf(source.domain) === item),
   );
   const matches = sources.filter(
     (source) =>
-      (platform === "all" || platformOf(source.domain) === platform) &&
-      (collecting === "all" || source.enabled === (collecting === "on")) &&
+      (!filtering ||
+        ((platform === "all" || platformOf(source.domain) === platform) &&
+          (collecting === "all" ||
+            source.enabled === (collecting === "on")))) &&
       [
         sourceTitle(source),
+        platformLabels[platformOf(source.domain)],
         source.domain,
         ...source.tags,
         ...source.accounts.map((target) => target.value),
@@ -176,85 +193,91 @@ export function SourceManager({
   return (
     <div className="source-manager">
       {!inDatabase && <NotInUse />}
-      <div className="source-manager-bar">
-        <SearchField
-          label="Search saved sources"
-          placeholder="Find a source, account or tag"
-          value={query}
-          onChange={setQuery}
-          onClear={() => setQuery("")}
-        />
-        <button
-          type="button"
-          className="primary-button"
-          aria-expanded={adding}
-          onClick={() => setAdding(!adding)}
+      <SourceQuickAdd
+        sources={sources}
+        inDatabase={inDatabase}
+        collect={collect}
+        added={(source) => {
+          setNotice(undefined);
+          setRecent(source.id);
+        }}
+        edit={edit}
+        setUp={(item) => {
+          setNotice(undefined);
+          navigate(open("new", { platform: item }));
+        }}
+      />
+      {notice && (
+        <p
+          className={`source-notice ${notice.kind}`}
+          role={notice.kind === "saved" ? "status" : "alert"}
         >
-          <Plus size={15} aria-hidden="true" /> Add source
-        </button>
-      </div>
-      {adding && (
-        <fieldset className="source-platforms">
-          <legend>What do you want to collect?</legend>
-          {platforms.map((item) => (
-            <button
-              type="button"
-              className="secondary-button"
-              key={item}
-              onClick={() => {
-                setAdding(false);
-                navigate(open("new", { platform: item }));
-              }}
-            >
-              {item === "rss" ? (
-                <Rss size={20} aria-hidden="true" />
-              ) : (
-                <PlatformIcon platform={item} size={20} />
-              )}
-              {platformLabels[item]}
-            </button>
-          ))}
-        </fieldset>
+          {notice.kind === "saved" ? (
+            <Check size={16} aria-hidden="true" />
+          ) : (
+            <CircleAlert size={16} aria-hidden="true" />
+          )}
+          <span>{notice.text}</span>
+        </p>
       )}
-      {sources.length > 0 && (
-        <div className="source-filters">
-          <fieldset className="platform-filters">
-            <legend className="visually-hidden">Platform</legend>
-            {(["all", ...present] as const).map((item) => (
-              <button
-                type="button"
-                key={item}
-                aria-pressed={platform === item}
-                onClick={() => setPlatform(item)}
-              >
-                {item === "all" ? "All" : platformLabels[item]}
-              </button>
-            ))}
-          </fieldset>
-          <fieldset className="platform-filters">
-            <legend className="visually-hidden">Collection</legend>
-            {(
-              [
-                ["all", "On and off"],
-                ["on", "On"],
-                ["off", "Off"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                aria-pressed={collecting === value}
-                onClick={() => setCollecting(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </fieldset>
-        </div>
+      {filtering && (
+        <>
+          <SearchField
+            label="Search saved sources"
+            placeholder="Find a source, account or tag"
+            value={query}
+            onChange={setQuery}
+            onClear={() => setQuery("")}
+          />
+          <div className="source-filters">
+            {present.length > 1 && (
+              <fieldset className="platform-filters">
+                <legend className="visually-hidden">Platform</legend>
+                {(["all", ...present] as const).map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    aria-pressed={platform === item}
+                    onClick={() => setPlatform(item)}
+                  >
+                    {item === "all" ? "All" : platformLabels[item]}
+                  </button>
+                ))}
+              </fieldset>
+            )}
+            {sources.some((source) => !source.enabled) && (
+              <fieldset className="platform-filters">
+                <legend className="visually-hidden">Collection</legend>
+                {(
+                  [
+                    ["all", "On and off"],
+                    ["on", "On"],
+                    ["off", "Off"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    type="button"
+                    key={value}
+                    aria-pressed={collecting === value}
+                    onClick={() => setCollecting(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </fieldset>
+            )}
+          </div>
+        </>
       )}
       <ul className="saved-sources">
         {matches.map((source) => (
-          <li key={source.id} className={source.enabled ? "" : "off"}>
+          <li
+            key={source.id}
+            className={[
+              source.enabled ? "" : "off",
+              recent === source.id ? "recent" : "",
+            ].join(" ")}
+          >
             <a
               className="source-row"
               href={`/?${open(source.id)}`}
@@ -262,13 +285,13 @@ export function SourceManager({
                 if (event.metaKey || event.ctrlKey || event.shiftKey) return;
 
                 event.preventDefault();
-                navigate(open(source.id));
+                edit(source.id);
               }}
             >
               <SourceIcon domain={source.domain} />
               <span>
                 <strong>{sourceTitle(source)}</strong>
-                <small>{sourceSummary(source)}</small>
+                <small>{sourceDetail(source)}</small>
                 {(source.tags.length > 0 || edited.has(source.id)) && (
                   <span className="source-tags">
                     {edited.has(source.id) && (
@@ -281,7 +304,7 @@ export function SourceManager({
                 )}
               </span>
               <span className="source-total">
-                Edit <ChevronRight size={16} aria-hidden="true" />
+                <span>Edit</span> <ChevronRight size={16} aria-hidden="true" />
               </span>
             </a>
             <label className="source-switch">
@@ -291,7 +314,7 @@ export function SourceManager({
                 aria-checked={source.enabled}
                 checked={source.enabled}
                 disabled={toggle?.id === source.id && !toggle.problem}
-                aria-label={`Collect ${sourceTitle(source)}: ${sourceSummary(source)}`}
+                aria-label={`Collect ${sourceTitle(source)}`}
                 onChange={() => void switchSource(source)}
               />
               <span aria-hidden="true">{source.enabled ? "On" : "Off"}</span>
@@ -307,10 +330,7 @@ export function SourceManager({
       {!sources.length ? (
         <div className="empty-state">
           <h2>No sources yet</h2>
-          <p>
-            Add a blog, an X account, a Reddit community, a YouTube channel or
-            Hacker News, and DANK starts collecting it.
-          </p>
+          <p>Paste something above and DANK starts collecting it.</p>
         </div>
       ) : (
         !matches.length && (
