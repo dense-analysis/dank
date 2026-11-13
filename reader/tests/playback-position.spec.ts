@@ -6,9 +6,23 @@ import {
   type Locator,
   test,
 } from "@playwright/test";
+import {
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+  redditVideo,
+  xAccount,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
+// Spread the builders rather than call them with these fields, so `satisfies`
+// keeps the media and video narrow for the tests that derive from them.
 const x = {
+  ...post(),
   id: "x-clip",
   domain: "x.com",
   source: "x",
@@ -21,6 +35,7 @@ const x = {
   thumbnail: null,
   media: [],
   x: {
+    ...xPost(),
     handle: "filmmaker",
     name: "Filmmaker",
     icon_url: null,
@@ -72,11 +87,13 @@ function reddit(remote = false) {
     html: "<p>The Reddit clip</p>",
     x: undefined,
     reddit: {
+      ...redditPost(),
       community: "videos",
       score: 1,
       comments: 0,
       flair: null,
       video: {
+        ...redditVideo(),
         url: remote
           ? "https://video.reddit.test/playlist.m3u8"
           : "/assets/position-one.mp4",
@@ -139,49 +156,49 @@ async function mock(context: BrowserContext, posts: Post[], details = posts) {
     }),
   );
   await context.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    const params = new URL(route.request().url()).searchParams;
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              {
-                domain: "x.com",
+              xSource({
                 name: "X",
-                kind: "x",
-                tags: [],
                 count: posts.length,
                 accounts: [
-                  {
+                  xAccount({
                     handle: "filmmaker",
                     name: "Filmmaker",
-                    icon_url: null,
                     count: posts.length,
-                  },
+                  }),
                 ],
-              },
-              {
-                domain: "reddit.com",
+              }),
+              redditSource({
                 name: "Reddit",
-                kind: "reddit",
-                tags: [],
                 count: posts.length,
-                communities: [{ name: "videos", count: posts.length }],
-              },
+                communities: [
+                  redditCommunity({ name: "videos", count: posts.length }),
+                ],
+              }),
             ],
             total_posts: posts.length,
-          }
-        : url.pathname.endsWith("/post")
-          ? details.find(
-              (p) =>
-                p.id === url.searchParams.get("id") &&
-                p.domain === url.searchParams.get("domain"),
-            )
-          : { posts, next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post": {
+        const detail = details.find(
+          (p) => p.id === params.get("id") && p.domain === params.get("domain"),
+        );
+
+        return detail ? route.fulfill({ json: detail }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts, next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
   return requests;
 }

@@ -1,293 +1,68 @@
-export interface RedditComment {
-  id: string;
-  parent_id: string;
-  author: string;
-  body_html: string;
-  body: string;
-  score: number | null;
-  created_utc: number | null;
-  permalink: string;
-  is_op: boolean;
-  depth: number;
-}
+/**
+ * The reader's names for the server's shapes. Every one comes from
+ * api.gen.ts, which `make openapi` generates from the FastAPI schema, so a
+ * contract change can't drift between Python and TypeScript. Only the reader's
+ * own state (filters, sections) is declared here.
+ */
+import type { components } from "./api.gen";
 
-export interface RedditCommentCapture {
-  status: "captured" | "disabled" | "failed" | "deferred" | "not_captured";
-  sort: string;
-  limit: number;
-  total_available: number | null;
-  has_more: boolean;
-  comments: RedditComment[];
-  captured_at?: string;
-  latest_attempt_status?: "disabled" | "failed" | "deferred";
-}
+type Schemas = components["schemas"];
 
-export interface RedditVideo {
-  url: string;
-  source_url?: string | null;
-  poster_url: string | null;
-  remote: boolean;
-  hls_url?: string | null;
-  fallback_url?: string | null;
-}
+export type RedditComment = Schemas["RedditCommentOut"];
+export type RedditCommentCapture = Schemas["RedditCommentCaptureOut"];
+export type RedditVideo = Schemas["RedditVideoOut"];
+export type RedditImage = Schemas["RedditImageOut"];
+/** A feed post's Reddit fields; an opened post also has its comments. */
+export type RedditPost = Schemas["RedditOut"] &
+  Partial<Pick<Schemas["RedditDetailOut"], "comment_capture">>;
+export type RedditFlair = Schemas["FlairOut"];
+export type CommunityPostTotal = Schemas["PostTotalOut"];
+export type RedditCommunity = Schemas["CommunityOut"];
 
-export interface RedditImage {
-  url: string;
-  source_url: string;
-}
+/** A collected post another one links to; linked posts carry an excerpt. */
+export type PostReference = Schemas["LinkedPostOut"];
+export type CollectionOrigin = Schemas["CollectionOriginOut"];
+export type CollectionInfo = Schemas["CollectionInfoOut"];
+export type YouTubePost = Schemas["YouTubeOut"];
+export type CategoryAssignment = Schemas["CategoryAssignmentOut"];
 
-export interface RedditPost {
-  community: string;
-  score: number | null;
-  comments: number | null;
-  flair: string | null;
-  icon_url?: string | null;
-  comment_capture?: RedditCommentCapture | null;
-  video?: RedditVideo | null;
-  videos?: RedditVideo[];
-  images?: RedditImage[];
-}
-
-export interface RedditFlair {
-  name: string;
-  count: number;
-}
-
-export interface CommunityPostTotal {
-  count: number;
-  source: "arctic_shift";
-  updated_at: string;
-  captured_at: string;
-}
-
-export interface RedditCommunity {
-  name: string;
-  count: number;
-  icon_url?: string | null;
-  flairs?: RedditFlair[];
-  post_total?: CommunityPostTotal | null;
-}
-
-export interface PostReference {
-  excerpt?: string;
-  id: string;
-  domain: string;
-  url: string;
-  title: string;
-  source: string;
-}
-
-export interface CollectionOrigin {
-  domain: string;
-  id: string;
-  source: string;
-  url: string;
-  label: string;
-  observed_at: string;
-  kind: "reference" | "article";
-}
-
-export interface CollectionInfo {
-  article_url: string;
-  article: PostReference | null;
-  article_status: "collected" | "incomplete" | "unavailable";
-  post_first_seen_at: string | null;
-  link_first_seen_at: string | null;
-  first_seen_at: string | null;
-  first_seen_from: CollectionOrigin[];
-  article_collected_at: string | null;
-  collected_via: CollectionOrigin | null;
-  seen_before_post: boolean | null;
-  post_published_at?: string | null;
-  discovered_before_publication?: boolean | null;
-  earlier_discovered_at?: string | null;
-  earlier_discovered_from?: CollectionOrigin[];
-  coverage: "saved_history";
-}
-
-export interface YouTubePost {
-  kind: "video" | "short" | "post";
-  video_id: string | null;
-  channel: { id: string; name: string; url: string };
-  duration_text: string;
-  views_text: string;
-  thumbnail_url: string | null;
-  video_url: string | null;
-}
-
-export interface CategoryAssignment {
-  name: string;
-  confidence: number;
-  similarity: number;
-}
-
-export interface Post {
-  categories?: CategoryAssignment[];
-  id: string;
-  domain: string;
-  url: string;
-  author: string;
-  title: string;
-  excerpt: string;
-  html: string;
-  collection_incomplete?: boolean;
-  collection_info?: CollectionInfo | null;
-  published_at?: string | null;
-  linked_post?: PostReference | null;
-  links?: PostReference[];
-  links_count?: number;
-  created_at: string;
-  source: string;
+/** A feed post, or one opened on its own, whose platform fields add detail. */
+export type Post = Omit<Schemas["PostOut"], "x" | "reddit" | "hacker_news"> & {
+  x?: XPost | null;
   reddit?: RedditPost | null;
   hacker_news?: HackerNewsPost | null;
-  x?: XPost | null;
-  youtube?: YouTubePost | null;
-  thumbnail: string | null;
-  media: { url: string; content_type: string }[];
-}
+};
 
-/** A source as saved in Postgres; DEN-21's editor adds the other fields. */
-export interface SavedSource {
-  id: string;
-  enabled: boolean;
-  domain: string;
-}
+export type SavedSource = Schemas["SourceOut"];
+export type SourceSettings = Schemas["SourceListResponse"];
+export type SourcesPage = Schemas["SourcesResponse"];
+export type Source = SourcesPage["sources"][number];
 
-export interface SourceSettings {
-  sources: SavedSource[];
-  /** False while the reader and collection still use config.toml's sources. */
-  in_database: boolean;
-}
+export type XProfile = Pick<Schemas["XOut"], "handle" | "name" | "icon_url">;
+export type XAccount = Schemas["XAccountOut"];
+export type XLink = Schemas["XLinkOut"];
+export type XMedia = Schemas["XMediaOut"];
+export type XReplyTo = Schemas["XReplyToOut"];
+export type XQuote = Schemas["XQuoteOut"];
+/** A feed post's X fields; an opened post also has its conversation. */
+export type XPost = Schemas["XOut"] &
+  Partial<Pick<Schemas["XDetailOut"], "conversation">>;
+export type XConversationStatus = Schemas["XOut"]["replies_status"];
+export type XConversationNode = Schemas["XConversationNodeOut"];
+export type XConversation = Schemas["XConversationOut"];
+/** A post saved inside a quote or a conversation, with its X fields. */
+export type CapturedPost = Schemas["CapturedPostOut"];
+/** Any post an X card can show: from a feed, a quote or a conversation. */
+export type XCardPost = Post | CapturedPost;
 
-export interface Source {
-  configured?: boolean;
-  icon_url?: string | null;
-  kind?: "rss" | "x" | "reddit" | "youtube" | "hacker_news";
-  accounts?: XAccount[];
-  for_you_count?: number;
-  communities?: RedditCommunity[];
-  flairs?: RedditFlair[];
-  domain: string;
-  name: string;
-  tags: string[];
-  count: number;
-}
+export type HackerNewsFilter = Schemas["HackerNewsFilter"];
+/** A feed story's fields; an opened story also has its discussion. */
+export type HackerNewsPost = Schemas["HackerNewsOut"] &
+  Partial<
+    Pick<Schemas["HackerNewsDetailOut"], "comment_capture" | "comments_items">
+  >;
 
-export interface XProfile {
-  handle: string;
-  name: string;
-  icon_url?: string | null;
-}
-
-export interface XAccount extends XProfile {
-  count: number;
-  total_posts?: number | null;
-}
-
-export interface XLink {
-  url: string;
-  title: string;
-  description: string;
-  image_url: string | null;
-}
-
-export interface XMedia {
-  type: "image" | "video" | "gif";
-  url: string;
-  poster_url: string | null;
-  alt: string;
-  remote: boolean;
-  source_url?: string;
-  aspect_ratio?: number;
-}
-
-export interface XReplyTo {
-  id: string;
-  domain: string;
-  url: string;
-  is_self: boolean | null;
-  collected: boolean;
-}
-
-export interface XQuote {
-  id: string;
-  domain: string;
-  url: string;
-  collected: boolean;
-  post?: Post;
-}
-
-export interface XPost extends XProfile {
-  quote?: XQuote;
-  reply_to?: XReplyTo;
-  conversation_id?: string;
-  links?: XLink[];
-  media?: XMedia[];
-  reply_count?: number | null;
-  replies_status?: XConversationStatus;
-  replies_captured_count?: number;
-  repost_count?: number | null;
-  like_count?: number | null;
-  view_count?: number | null;
-  captured_at?: string | null;
-  conversation?: XConversation;
-}
-
-export type XConversationStatus =
-  | "captured"
-  | "partial"
-  | "failed"
-  | "disabled"
-  | "not_collected";
-
-export interface XConversationNode extends Post {
-  parent_id: string | null;
-  depth: number;
-  is_author: boolean;
-  missing_parent: boolean;
-  collected?: boolean;
-}
-
-export interface XConversation {
-  status: XConversationStatus;
-  captured_at: string | null;
-  has_more: boolean;
-  reason: string | null;
-  reported_replies: number | null;
-  limit: number;
-  context: XConversationNode[];
-  replies: XConversationNode[];
-  local_posts_count?: number;
-  local_posts_limited?: boolean;
-  latest_attempt_status?: XConversationStatus;
-  latest_attempt_at?: string | null;
-}
-
-export type HackerNewsFilter = "top10" | "top20" | "top50" | "all";
-
-export interface HackerNewsPost {
-  submitted_at?: string | null;
-  points: number | null;
-  comments: number | null;
-  discussion_url: string;
-  external_url: string | null;
-  day: string;
-  rank: number | null;
-  comment_capture?: {
-    status: "captured" | "partial" | "disabled" | "failed" | "not_captured";
-    captured: number;
-    total: number | null;
-    reason: string | null;
-  };
-  comments_items?: {
-    id: string;
-    parent_id: string;
-    author: string;
-    html: string;
-    created_at: string | null;
-    depth: number;
-  }[];
-}
+export type PostPage = Schemas["PostsResponse"];
 
 export type FeedKind =
   | "all"
@@ -320,10 +95,4 @@ export interface Filters {
   authorExact: boolean;
   after: string;
   before: string;
-}
-
-export interface PostPage {
-  posts: Post[];
-  next_cursor: string | null;
-  limited: boolean;
 }

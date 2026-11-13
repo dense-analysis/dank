@@ -56,6 +56,7 @@ clickhouse-query = "dank.tools.clickhouse_query:main"
 embed-text = "dank.tools.embed_text:main"
 download-embedding-model = "dank.tools.download_embedding_model:main"
 dank-db = "dank.db.__main__:main"
+dank-openapi = "dank.api.openapi:main"
 
 [dependency-groups]
 dev = [

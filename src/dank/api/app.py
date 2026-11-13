@@ -11,6 +11,7 @@ from dank.api.headers import ApiHeaders
 from dank.api.lifespan import lifespan
 from dank.api.posts.router import router as posts_router
 from dank.api.refresh.router import router as refresh_router
+from dank.api.schemas import ErrorBody
 from dank.api.source_icons.router import router as source_icons_router
 from dank.api.source_settings.router import router as source_settings_router
 from dank.api.sources.router import router as sources_router
@@ -27,6 +28,9 @@ def create_app(
         # Runs before every route; it only acts on unsafe methods.
         dependencies=[Depends(same_origin_json)],
         exception_handlers=EXCEPTION_HANDLERS,
+        # Every error answers with the envelope, so OpenAPI says so in place
+        # of FastAPI's 422, which this app never sends.
+        responses={"default": {"model": ErrorBody, "description": "Error"}},
         openapi_url="/api/openapi.json",
         docs_url="/api/docs",
         # No OAuth flows, so Swagger UI needs no redirect page.

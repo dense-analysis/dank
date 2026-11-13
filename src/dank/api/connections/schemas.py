@@ -69,7 +69,7 @@ class ConnectionTargetOut(ApiModel):
 class ConnectionEvidenceOut(ApiModel):
     domain: str
     post_id: str
-    kind: str
+    kind: Literal["post", "comment"]
     reference_id: str
     reference_url: str
     author: str
@@ -87,7 +87,9 @@ class ConnectionOut(ApiModel):
 
 
 class ConnectionContextOut(ApiModel):
-    source: str | None = None
+    source: (
+        Literal["reddit", "hacker_news", "x", "youtube", "rss"] | None
+    ) = None
     community: str | None = None
 
 

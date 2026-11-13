@@ -5,7 +5,17 @@ import {
   type Locator,
   test,
 } from "@playwright/test";
+import {
+  capturedX,
+  conversationNode,
+  post as postFixture,
+  xAccount,
+  xConversation,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post, XMedia } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const sourceUrl = "https://x.com/mathematician/status/123456/video/1";
 const otherUrl = "https://x.com/another/status/654321/video/1";
@@ -22,7 +32,7 @@ const media: XMedia & { source_url: string; aspect_ratio?: number } = {
 };
 
 function videoPost(asset = media): Post {
-  return {
+  return postFixture({
     id: "123456",
     domain: "x.com",
     source: "x",
@@ -34,7 +44,7 @@ function videoPost(asset = media): Post {
     created_at: "2026-10-16T17:41:00Z",
     thumbnail: null,
     media: [],
-    x: {
+    x: xPost({
       handle: "mathematician",
       name: "A Mathematician",
       icon_url: null,
@@ -49,8 +59,8 @@ function videoPost(asset = media): Post {
       ],
       reply_count: 3,
       replies_status: "not_collected",
-    },
-  };
+    }),
+  });
 }
 
 async function mockVideo(context: BrowserContext, post = videoPost()) {
@@ -76,30 +86,36 @@ async function mockVideo(context: BrowserContext, post = videoPost()) {
     );
   });
   await context.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              {
+              xSource({
                 domain: "x.com",
                 name: "X",
                 kind: "x",
                 count: 1,
                 tags: [],
-                accounts: [{ ...current.post.x, count: 1 }],
-              },
+                accounts: [xAccount({ ...current.post.x, count: 1 })],
+              }),
             ],
             total_posts: 1,
-          }
-        : url.pathname.endsWith("/post")
-          ? current.post
-          : { posts: [current.post], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: current.post });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/posts"],
+            posts: [current.post],
+          },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
 
   return current;
@@ -296,21 +312,22 @@ test("portrait reply videos use the same natural player dimensions as the post",
   context,
 }) => {
   const original = videoPost();
-  const reply = {
+  const reply = conversationNode({
     ...original,
     id: "reply",
+    x: capturedX({ ...original.x, media: original.x?.media ?? [] }),
     parent_id: original.id,
     depth: 0,
     is_author: false,
     missing_parent: false,
-  };
+  });
   const post: Post = {
     ...original,
-    x: {
+    x: xPost({
       ...original.x,
       handle: "mathematician",
       name: "A Mathematician",
-      conversation: {
+      conversation: xConversation({
         status: "captured",
         captured_at: "2026-10-17T00:00:00Z",
         reported_replies: 1,
@@ -319,8 +336,8 @@ test("portrait reply videos use the same natural player dimensions as the post",
         limit: 10,
         context: [],
         replies: [reply],
-      },
-    },
+      }),
+    }),
   };
   await mockVideo(context, post);
   await page.goto("/?view=x&article=123456&article_source=x.com");

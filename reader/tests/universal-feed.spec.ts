@@ -1,21 +1,21 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  feedSource,
+  hackerNewsPost,
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+  xAccount,
+  xPost,
+  xSource,
+  youtubeItem,
+} from "../src/lib/api.fixture";
 import type { Post, Source } from "../src/lib/types";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
-type MixedPost = Post & {
-  youtube?: {
-    kind: "video" | "short" | "post";
-    video_id: string | null;
-    channel: { id: string; name: string; url: string };
-    duration_text: string;
-    views_text: string;
-    thumbnail_url: string | null;
-    video_url: string | null;
-  };
-};
-
-const blog: MixedPost = {
+const blog: Post = post({
   id: "followed",
   domain: "followed.example",
   source: "rss",
@@ -27,24 +27,29 @@ const blog: MixedPost = {
   created_at: "2026-10-21T12:00:00Z",
   thumbnail: null,
   media: [],
-};
-const discovered: MixedPost = {
+});
+const discovered: Post = {
   ...blog,
   id: "discovered",
   domain: "discovered.example",
   url: "https://discovered.example/analysis",
   title: "Analysis discovered through Hacker News",
 };
-const reddit: MixedPost = {
+const reddit: Post = {
   ...blog,
   id: "reddit",
   domain: "reddit.com",
   source: "reddit",
   url: "https://www.reddit.com/r/research/comments/reddit/analysis/",
   title: "Analysis discussed on Reddit",
-  reddit: { community: "research", score: 42, comments: 5, flair: "Research" },
+  reddit: redditPost({
+    community: "research",
+    score: 42,
+    comments: 5,
+    flair: "Research",
+  }),
 };
-const x: MixedPost = {
+const x: Post = {
   ...blog,
   id: "x",
   domain: "x.com",
@@ -53,16 +58,21 @@ const x: MixedPost = {
   title: "Analysis shared on X",
   html: "<p>Analysis shared on X.</p>",
   excerpt: "Analysis shared on X.",
-  x: { handle: "ada", name: "Ada Writer", icon_url: null, reply_count: 2 },
+  x: xPost({
+    handle: "ada",
+    name: "Ada Writer",
+    icon_url: null,
+    reply_count: 2,
+  }),
 };
-const hackerNews: MixedPost = {
+const hackerNews: Post = {
   ...blog,
   id: "hacker-news",
   domain: "news.ycombinator.com",
   source: "hacker_news",
   url: "https://news.ycombinator.com/item?id=hacker-news",
   title: "Analysis discussed on Hacker News",
-  hacker_news: {
+  hacker_news: hackerNewsPost({
     submitted_at: blog.created_at,
     day: "2026-10-21",
     rank: 1,
@@ -70,7 +80,7 @@ const hackerNews: MixedPost = {
     comments: 3,
     external_url: null,
     discussion_url: "https://news.ycombinator.com/item?id=hacker-news",
-  },
+  }),
 };
 const video = {
   ...blog,
@@ -96,8 +106,8 @@ const video = {
     thumbnail_url: "/assets/universal-video.svg",
     video_url: null,
   },
-} satisfies MixedPost;
-const short: MixedPost = {
+} satisfies Post;
+const short: Post = {
   ...video,
   id: "video:abcdefghijk",
   url: "https://www.youtube.com/shorts/abcdefghijk",
@@ -109,7 +119,7 @@ const short: MixedPost = {
     duration_text: "0:42",
   },
 };
-const community: MixedPost = {
+const community: Post = {
   ...video,
   id: "post:community",
   url: "https://www.youtube.com/post/community",
@@ -134,60 +144,62 @@ const posts = [
   short,
   community,
 ];
-const sources: (Source & { configured: boolean })[] = [
-  {
+const sources: Source[] = [
+  feedSource({
     domain: blog.domain,
     name: "Followed Blog",
     kind: "rss",
     tags: ["research"],
     count: 1,
     configured: true,
-  },
-  {
+  }),
+  feedSource({
     domain: discovered.domain,
     name: "Discovered Publisher",
     kind: "rss",
     tags: [],
     count: 1,
     configured: false,
-  },
-  {
+  }),
+  redditSource({
     domain: reddit.domain,
     name: "Reddit",
     kind: "reddit",
     tags: [],
     count: 1,
     configured: true,
-    communities: [{ name: "research", count: 1 }],
-  },
-  {
+    communities: [redditCommunity({ name: "research", count: 1 })],
+  }),
+  xSource({
     domain: x.domain,
     name: "X",
     kind: "x",
     tags: [],
     count: 1,
     configured: true,
-    accounts: [{ handle: "ada", name: "Ada Writer", count: 1, icon_url: null }],
-  },
-  {
+    accounts: [
+      xAccount({ handle: "ada", name: "Ada Writer", count: 1, icon_url: null }),
+    ],
+  }),
+  feedSource({
     domain: hackerNews.domain,
     name: "Hacker News",
     kind: "hacker_news",
     tags: [],
     count: 1,
     configured: true,
-  },
-  {
+  }),
+  feedSource({
     domain: video.domain,
     name: "YouTube",
     kind: "youtube",
     tags: [],
     count: 3,
     configured: true,
-  },
+  }),
 ];
 
-function platform(post: MixedPost) {
+function platform(post: Post) {
   return post.source === "rss" || post.source === "hacker_news"
     ? "stories"
     : post.source;
@@ -227,23 +239,25 @@ async function fixture(page: Page) {
         .filter(
           (
             post,
-          ): post is MixedPost & {
-            youtube: NonNullable<MixedPost["youtube"]>;
+          ): post is Post & {
+            youtube: NonNullable<Post["youtube"]>;
           } => !!post.youtube,
         )
-        .map((post) => ({
-          ...post.youtube,
-          id: post.id,
-          title: post.title,
-          url: post.url,
-          text: post.excerpt,
-          published_text: "1 day ago",
-          observed_at: post.created_at,
-          detail_capture: { status: "disabled" },
-          discoveries: [],
-          references: [],
-          reference_count: 0,
-        }));
+        .map((post) =>
+          youtubeItem({
+            ...post.youtube,
+            id: post.id,
+            title: post.title,
+            url: post.url,
+            text: post.excerpt,
+            published_text: "1 day ago",
+            observed_at: post.created_at,
+            detail_capture: { status: "disabled" },
+            discoveries: [],
+            references: [],
+            reference_count: 0,
+          }),
+        );
 
       return route.fulfill({
         json: {

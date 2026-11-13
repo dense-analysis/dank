@@ -4,7 +4,6 @@ import {
   connectionNeighbor,
   connectionTargetLabel,
   fetchPostConnections,
-  isPostConnections,
 } from "./postConnections";
 import {
   connectionsFixture,
@@ -49,7 +48,7 @@ it("keeps upstream errors explicit", async () => {
       .fn()
       .mockResolvedValue(
         new Response(
-          JSON.stringify({ detail: "Connection index is unavailable." }),
+          JSON.stringify({ error: "Connection index is unavailable." }),
           { status: 503 },
         ),
       ),
@@ -57,105 +56,6 @@ it("keeps upstream errors explicit", async () => {
   await expect(
     fetchPostConnections("example.com", "kernel-article"),
   ).rejects.toThrow("Connection index is unavailable.");
-});
-
-it("validates bounded direction counts and unique evidence identity", () => {
-  expect(isPostConnections(connectionsFixture)).toBe(true);
-  expect(
-    isPostConnections({ ...connectionsFixture, incoming_count: 120 }),
-  ).toBe(true);
-  expect(isPostConnections({ ...connectionsFixture, outgoing_count: 0 })).toBe(
-    false,
-  );
-  expect(isPostConnections({ ...connectionsFixture, limit: 1 })).toBe(false);
-  expect(isPostConnections({ ...connectionsFixture, incoming_count: -1 })).toBe(
-    false,
-  );
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      coverage: "inferred_similarity",
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      incoming: [outgoingConnection],
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      incoming_count: 2,
-      incoming: [incomingConnection, incomingConnection],
-    }),
-  ).toBe(false);
-});
-
-it("rejects mismatched origin evidence, missing comment identity and invalid metadata", () => {
-  const withEvidence = (overrides: Record<string, unknown>) => ({
-    ...connectionsFixture,
-    incoming: [
-      {
-        ...incomingConnection,
-        evidence: { ...incomingConnection.evidence, ...overrides },
-      },
-    ],
-  });
-  expect(isPostConnections(withEvidence({ domain: "wrong.example" }))).toBe(
-    false,
-  );
-  expect(isPostConnections(withEvidence({ post_id: "wrong" }))).toBe(false);
-  expect(isPostConnections(withEvidence({ reference_id: "" }))).toBe(false);
-  expect(isPostConnections(withEvidence({ observed_at: "yesterday" }))).toBe(
-    false,
-  );
-  expect(isPostConnections(withEvidence({ excerpt: 10 }))).toBe(false);
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      incoming: [
-        {
-          ...incomingConnection,
-          target: {
-            ...incomingConnection.target,
-            post: outgoingConnection.target.post,
-          },
-        },
-      ],
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      outgoing: [{ ...incomingConnection, direction: "outgoing" }],
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      outgoing: [
-        {
-          ...videoConnection,
-          target: {
-            ...videoConnection.target,
-            youtube_item_id: "video:not-valid",
-          },
-        },
-      ],
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...connectionsFixture,
-      outgoing: [
-        {
-          ...videoConnection,
-          target: { ...videoConnection.target, title: false },
-        },
-      ],
-    }),
-  ).toBe(false);
 });
 
 it("explores the neighboring post while evidence retains its original source", () => {
@@ -178,6 +78,7 @@ it("uses a video's authoritative title and never borrows the linking headline", 
   expect(
     connectionTargetLabel({
       url: "https://example.com/unknown",
+      title: "",
       post: null,
       youtube_item_id: null,
     }),
@@ -207,38 +108,10 @@ it("carries source and community context while keeping All and Blogs broad", asy
   );
 });
 
-it("validates related evidence against a saved publisher reached by the root", () => {
-  expect(isPostConnections(redditConnectionsFixture)).toBe(true);
+it("explores the other post that links to a shared publisher", () => {
   expect(connectionNeighbor(sharedArticleConnection).post).toEqual(
     sharedArticleConnection.origin,
   );
-  expect(
-    isPostConnections({ ...redditConnectionsFixture, related_count: 0 }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...redditConnectionsFixture,
-      related: [sharedArticleConnection, sharedArticleConnection],
-      related_count: 2,
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({ ...redditConnectionsFixture, related: [null] }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...redditConnectionsFixture,
-      context: { source: "x", community: "kernel" },
-    }),
-  ).toBe(false);
-  expect(
-    isPostConnections({
-      ...redditConnectionsFixture,
-      related: [
-        { ...sharedArticleConnection, target: outgoingConnection.target },
-      ],
-    }),
-  ).toBe(false);
 });
 
 it("rejects responses from another source context", async () => {

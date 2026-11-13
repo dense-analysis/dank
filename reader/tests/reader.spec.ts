@@ -1,7 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, post, xPost, xSource } from "../src/lib/api.fixture";
 import { parseFilters } from "../src/lib/navigation";
 import type { Post, Source } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const legacyStorageKey = "dank-reader:library:v1";
 const readStorageKey = "dank-reader:read:v1";
@@ -15,7 +17,7 @@ const maliciousHtml = `
   <form><input name="location"><button>Injected action</button></form>
   <p style="position:fixed" id="main">Untrusted style</p>
 `;
-const article: Post = {
+const article: Post = post({
   id: "shared-id",
   domain: "example.com",
   url: "https://example.com/housing",
@@ -27,7 +29,7 @@ const article: Post = {
   source: "rss",
   thumbnail: null,
   media: [],
-};
+});
 const socialPost: Post = {
   ...article,
   domain: "x.com",
@@ -36,16 +38,16 @@ const socialPost: Post = {
   title: "Housing dispatch from the city",
   html: "<p>A short eyewitness housing dispatch.</p>",
   source: "x",
-  x: { handle: "reporter", name: "City Reporter", icon_url: null },
+  x: xPost({ handle: "reporter", name: "City Reporter", icon_url: null }),
 };
 const sources: Source[] = [
-  {
+  feedSource({
     domain: "example.com",
     name: "Example News",
     tags: ["politics", "news"],
     count: 15,
-  },
-  { domain: "x.com", name: "X", tags: ["social"], count: 1 },
+  }),
+  xSource({ domain: "x.com", name: "X", tags: ["social"], count: 1 }),
 ];
 
 interface MockReader {
@@ -74,35 +76,48 @@ async function mockReader(page: Page): Promise<MockReader> {
 
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      await route.fulfill({ json: { categories: [] } });
-      return;
-    }
-
     state.requests.push(url);
 
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: { sources, total_posts: state.posts.length },
-      });
-      return;
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources,
+            total_posts: state.posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const post = state.posts.find(
+          (item) =>
+            item.domain === url.searchParams.get("domain") &&
+            item.id === url.searchParams.get("id"),
+        );
+        return post
+          ? route.fulfill({ json: post })
+          : route.fulfill({
+              status: 404,
+              json: {
+                error: "Story not found.",
+                code: "not_found",
+                fields: [],
+              },
+            });
+      }
+      case "/api/reader/posts":
+        break;
+      default:
+        return fulfillEmpty(route);
     }
-    if (url.pathname.endsWith("/post")) {
-      const post = state.posts.find(
-        (item) =>
-          item.domain === url.searchParams.get("domain") &&
-          item.id === url.searchParams.get("id"),
-      );
-      await route.fulfill({
-        status: post ? 200 : 404,
-        json: post ?? { detail: "Story not found." },
-      });
-      return;
-    }
+
     if (state.failPosts) {
       await route.fulfill({
         status: 503,
-        json: { detail: "Collection temporarily unavailable." },
+        json: {
+          error: "Collection temporarily unavailable.",
+          code: "unavailable",
+          fields: [],
+        },
       });
       return;
     }
@@ -321,7 +336,9 @@ test("opens a full article page and restores filters, loaded pages, focus and sc
   await expect(
     page.getByRole("combobox", { name: "Order stories" }),
   ).toHaveValue("oldest");
-  const request = state.requests.find((url) => url.pathname.endsWith("/posts"));
+  const request = state.requests.find(
+    (url) => url.pathname === "/api/reader/posts",
+  );
   expect(parseFilters(request?.searchParams ?? new URLSearchParams())).toEqual(
     parseFilters(filters),
   );
@@ -406,7 +423,7 @@ for (const width of [1280, 390]) {
     expect(
       state.requests
         .slice(initialRequests)
-        .filter((url) => url.pathname.endsWith("/posts"))
+        .filter((url) => url.pathname === "/api/reader/posts")
         .map((url) => url.searchParams.get("cursor")),
     ).toEqual(["5", "10"]);
   });
@@ -485,7 +502,7 @@ test("preserves loaded stories on a next-page error and retries only on request"
   await expect(page.getByRole("alert")).toHaveCount(0);
   expect(
     state.requests
-      .filter((url) => url.pathname.endsWith("/posts"))
+      .filter((url) => url.pathname === "/api/reader/posts")
       .at(-1)
       ?.searchParams.get("cursor"),
   ).toBe("5");
@@ -528,7 +545,7 @@ test("starts a fresh cursor sequence after filters change", async ({
   expect(
     state.requests
       .slice(initialRequests)
-      .filter((url) => url.pathname.endsWith("/posts"))
+      .filter((url) => url.pathname === "/api/reader/posts")
       .map((url) => [
         url.searchParams.get("q"),
         url.searchParams.get("cursor"),
@@ -569,7 +586,7 @@ test("opens source-specific deep links and returns to their filtered timeline", 
   expect(
     state.requests.some(
       (url) =>
-        url.pathname.endsWith("/post") &&
+        url.pathname === "/api/reader/post" &&
         url.searchParams.get("domain") === "x.com",
     ),
   ).toBe(true);
@@ -1065,7 +1082,7 @@ test("uses one combined search and retains source filters and ordering", async (
   await expect
     .poll(() =>
       state.requests
-        .filter((url) => url.pathname.endsWith("/posts"))
+        .filter((url) => url.pathname === "/api/reader/posts")
         .at(-1)
         ?.searchParams.has("mode"),
     )
@@ -1085,7 +1102,7 @@ for (const mode of ["words", "meaning"]) {
     ).toHaveCount(0);
     expect(
       state.requests
-        .find((url) => url.pathname.endsWith("/posts"))
+        .find((url) => url.pathname === "/api/reader/posts")
         ?.searchParams.get("mode"),
     ).toBe("combined");
     await page.getByRole("button", { name: "Search", exact: true }).click();

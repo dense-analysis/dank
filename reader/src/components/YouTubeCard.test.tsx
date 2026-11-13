@@ -1,12 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import { youtubeItem } from "../lib/api.fixture";
 import type { YouTubeItem } from "../lib/youtubeCollection";
 import { YouTubeCard } from "./YouTubeCard";
 
 const hype = "https://www.youtube.com/feed/hype";
 const news = "https://www.youtube.com/feed/news_destination";
 const channel = "https://www.youtube.com/@newsroom";
-const item: YouTubeItem = {
+const item: YouTubeItem = youtubeItem({
   id: "video:dQw4w9WgXcQ",
   kind: "video",
   video_id: "dQw4w9WgXcQ",
@@ -38,7 +39,7 @@ const item: YouTubeItem = {
   })),
   references: [],
   reference_count: 0,
-};
+});
 
 it.each(["", "linked", channel, news])(
   "does not turn capture order into a rank outside the selected Hype feed (%s)",

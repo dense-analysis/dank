@@ -1,11 +1,21 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  feedSource,
+  post,
+  redditPost,
+  redditSource,
+  redditVideo,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 async function mockMedia(page: Page, ratio = 9 / 16) {
   const image = "/assets/preview-image.svg";
   const poster = "/assets/preview-poster.svg";
   const posts: Post[] = [
-    {
+    post({
       id: "x-media",
       domain: "x.com",
       source: "x",
@@ -17,7 +27,7 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
       created_at: "2026-10-17T00:00:00Z",
       thumbnail: null,
       media: [],
-      x: {
+      x: xPost({
         handle: "photographer",
         name: "Photographer",
         reply_count: 191,
@@ -41,9 +51,9 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
             remote: false,
           },
         ],
-      },
-    },
-    {
+      }),
+    }),
+    post({
       id: "reddit-image",
       domain: "reddit.com",
       source: "reddit",
@@ -55,9 +65,14 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
       created_at: "2026-10-17T00:00:00Z",
       thumbnail: image,
       media: [],
-      reddit: { community: "photos", score: 1, comments: 0, flair: null },
-    },
-    {
+      reddit: redditPost({
+        community: "photos",
+        score: 1,
+        comments: 0,
+        flair: null,
+      }),
+    }),
+    post({
       id: "reddit-video",
       domain: "reddit.com",
       source: "reddit",
@@ -69,18 +84,18 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
       created_at: "2026-10-17T00:00:00Z",
       thumbnail: null,
       media: [],
-      reddit: {
+      reddit: redditPost({
         community: "photos",
         score: 1,
         comments: 0,
         flair: null,
-        video: {
+        video: redditVideo({
           url: "/assets/preview-video.mp4",
           poster_url: poster,
           remote: false,
-        },
-      },
-    },
+        }),
+      }),
+    }),
   ];
   const blog: Post = {
     ...posts[1],
@@ -127,55 +142,50 @@ async function mockMedia(page: Page, ratio = 9 / 16) {
     });
   });
   await page.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    const params = new URL(route.request().url()).searchParams;
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              {
-                domain: "example.com",
-                name: "Example",
-                kind: "rss",
-                count: 1,
-                tags: [],
-              },
-              {
+              feedSource({ domain: "example.com", name: "Example", count: 1 }),
+              feedSource({
                 domain: "news.ycombinator.com",
                 name: "Hacker News",
                 kind: "hacker_news",
                 count: 1,
-                tags: [],
-              },
-              { domain: "x.com", name: "X", kind: "x", count: 1, tags: [] },
-              {
-                domain: "reddit.com",
-                name: "Reddit",
-                kind: "reddit",
-                count: 2,
-                tags: [],
-              },
+              }),
+              xSource({ name: "X", count: 1 }),
+              redditSource({ name: "Reddit", count: 2 }),
             ],
             total_posts: posts.length,
-          }
-        : url.pathname.endsWith("/post")
-          ? posts.find((post) => post.id === url.searchParams.get("id"))
-          : {
-              posts: posts.filter((post) => {
-                const kind = url.searchParams.get("kind");
-                return (
-                  !kind ||
-                  kind === "all" ||
-                  post.source === (kind === "stories" ? "rss" : kind)
-                );
-              }),
-              next_cursor: null,
-              limited: false,
-            },
-    });
+          },
+        });
+      case "/api/reader/post": {
+        const detail = posts.find((post) => post.id === params.get("id"));
+
+        return detail ? route.fulfill({ json: detail }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        const kind = params.get("kind");
+
+        return route.fulfill({
+          json: {
+            posts: posts.filter(
+              (post) =>
+                !kind ||
+                kind === "all" ||
+                post.source === (kind === "stories" ? "rss" : kind),
+            ),
+            next_cursor: null,
+            limited: false,
+          },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
+    }
   });
 
   return () => videoRequests;

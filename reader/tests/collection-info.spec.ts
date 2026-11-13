@@ -1,5 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  hackerNewsPost,
+  post,
+  redditPost,
+  redditVideo,
+} from "../src/lib/api.fixture";
 import type { CollectionInfo, Post } from "../src/lib/types";
 
 const publisher = {
@@ -36,7 +42,7 @@ const info: CollectionInfo = {
   earlier_discovered_from: [firstOrigin],
   coverage: "saved_history",
 };
-const reddit: Post = {
+const reddit: Post = post({
   id: "t3_later",
   domain: "reddit.com",
   source: "reddit",
@@ -48,11 +54,16 @@ const reddit: Post = {
   created_at: "2026-10-19T08:30:00Z",
   thumbnail: null,
   media: [],
-  reddit: { community: "science", score: 42, comments: 7, flair: null },
+  reddit: redditPost({
+    community: "science",
+    score: 42,
+    comments: 7,
+    flair: null,
+  }),
   linked_post: publisher,
   collection_info: info,
-};
-const article: Post = {
+});
+const article: Post = post({
   ...publisher,
   author: "Researcher",
   created_at: "2026-10-18T06:00:00Z",
@@ -60,7 +71,7 @@ const article: Post = {
   thumbnail: null,
   media: [],
   collection_info: info,
-};
+});
 
 async function fixtures(page: Page, post = reddit) {
   await page.route("**/api/reader/**", async (route) => {
@@ -332,14 +343,14 @@ test("own post text is not attributed to the saved publisher", async ({
     reddit: undefined,
     html: "",
     excerpt: "An HN submission with its own text.",
-    hacker_news: {
+    hacker_news: hackerNewsPost({
       points: 20,
       comments: 2,
       rank: 1,
       day: "2026-10-19",
       discussion_url: "https://news.ycombinator.com/item?id=2",
       external_url: publisher.url,
-    },
+    }),
   });
   await page.goto("/?view=all");
   await page
@@ -440,18 +451,18 @@ test("Reddit-first links and native videos have information without an eye", asy
     linked_post: null,
     excerpt: "https://v.redd.it/native-video",
     html: "<p>https://v.redd.it/native-video</p>",
-    reddit: {
+    reddit: redditPost({
       community: "science",
       score: 42,
       comments: 7,
       flair: null,
-      video: {
+      video: redditVideo({
         url: "https://v.redd.it/native-video/DASH_720.mp4",
         source_url: "https://v.redd.it/native-video",
         remote: true,
         poster_url: null,
-      },
-    },
+      }),
+    }),
     collection_info: {
       ...redditFirst,
       article_url: "https://v.redd.it/native-video",

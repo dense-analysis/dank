@@ -68,7 +68,7 @@ export function collectedAccounts(sources: Source[]): XAccount[] {
   const accounts = new Map<string, XAccount>();
 
   for (const source of sourcesForFeed(sources, "x")) {
-    for (const account of source.accounts ?? []) {
+    for (const account of source.kind === "x" ? source.accounts : []) {
       const handle = account.handle.toLowerCase();
       const existing = accounts.get(handle);
       accounts.set(handle, {
@@ -83,8 +83,8 @@ export function collectedAccounts(sources: Source[]): XAccount[] {
         // The profile total belongs to the account, not each stored domain.
         total_posts:
           source.domain === "x.com"
-            ? (account.total_posts ?? existing?.total_posts)
-            : (existing?.total_posts ?? account.total_posts),
+            ? (account.total_posts ?? existing?.total_posts ?? null)
+            : (existing?.total_posts ?? account.total_posts ?? null),
       });
     }
   }

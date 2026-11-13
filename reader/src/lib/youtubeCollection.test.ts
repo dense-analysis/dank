@@ -1,18 +1,16 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { feedSource, youtubeItem } from "./api.fixture";
 import { sourceKind, sourcesForFeed } from "./collections";
-import { isSource } from "./validation";
 import {
   fetchYouTubeItems,
-  fetchYouTubeSources,
   formatYouTubeViews,
-  isYouTubeItem,
   type YouTubeItem,
   youtubeFilters,
   youtubeImageUrl,
   youtubeShelves,
 } from "./youtubeCollection";
 
-const video: YouTubeItem = {
+const video: YouTubeItem = youtubeItem({
   id: "video:dQw4w9WgXcQ",
   kind: "video",
   video_id: "dQw4w9WgXcQ",
@@ -46,26 +44,9 @@ const video: YouTubeItem = {
   ],
   references: [],
   reference_count: 0,
-};
-afterEach(() => vi.unstubAllGlobals());
-
-it("rejects malformed nested discovery and reference payloads before rendering", () => {
-  expect(isYouTubeItem(video)).toBe(true);
-  expect(
-    isYouTubeItem({
-      ...video,
-      discoveries: [{ ...video.discoveries[0], rank: -1 }],
-    }),
-  ).toBe(false);
-  expect(isYouTubeItem({ ...video, references: [{ domain: "x.com" }] })).toBe(
-    false,
-  );
-  expect(isYouTubeItem({ ...video, channel: null })).toBe(false);
-  expect(isYouTubeItem({ ...video, kind: "live" })).toBe(false);
-  expect(isYouTubeItem({ ...video, video_id: "javascript:alert(1)" })).toBe(
-    false,
-  );
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 it("permits only YouTube-owned thumbnails and local assets", () => {
   expect(youtubeImageUrl(video.thumbnail_url)).toBe(video.thumbnail_url);
@@ -137,27 +118,11 @@ it("retains filters in requests and supports exact canonical item lookup", async
   expect(page.next_cursor).toBe("cursor-next");
 });
 
-it("reports malformed sources and API errors instead of empty feed success", async () => {
+it("reports API errors instead of empty feed success", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          feeds: [],
-          channels: [{ id: "missing fields" }],
-          total: 0,
-          linked_count: 0,
-        }),
-      ),
-    ),
-  );
-  await expect(fetchYouTubeSources()).rejects.toThrow(
-    "unexpected YouTube sources",
-  );
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ detail: "Database unavailable" }), {
+      new Response(JSON.stringify({ error: "Database unavailable" }), {
         status: 503,
       }),
     ),
@@ -168,14 +133,13 @@ it("reports malformed sources and API errors instead of empty feed success", asy
 });
 
 it("recognizes generic YouTube sources without mixing them into blog filters", () => {
-  const source = {
+  const source = feedSource({
     domain: "youtube.com",
-    kind: "youtube" as const,
+    kind: "youtube",
     name: "YouTube",
     tags: [],
     count: 2,
-  };
-  expect(isSource(source)).toBe(true);
+  });
   expect(sourceKind("www.youtube.com")).toBe("youtube");
   expect(sourcesForFeed([source], "stories")).toEqual([]);
   expect(sourcesForFeed([source], "all")).toEqual([source]);
@@ -205,109 +169,6 @@ it("channel shelves ignore unrelated recommendation ranks and topics", () => {
   const shelf = youtubeShelves([video], "", true)[0][1];
   expect(shelf.title).toBe("Videos");
   expect(shelf.context).toBe("");
-});
-
-it("rejects malformed channel totals and avatars", async () => {
-  for (const extra of [
-    { reported_video_count: -1 },
-    { avatar_url: 5 },
-    { reported_video_count_text: {} },
-  ]) {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            feeds: [],
-            channels: [
-              {
-                id: "channel",
-                name: "Channel",
-                url: "https://www.youtube.com/@channel",
-                count: 7,
-                ...extra,
-              },
-            ],
-            total: 7,
-            linked_count: 0,
-          }),
-        ),
-      ),
-    );
-    await expect(fetchYouTubeSources()).rejects.toThrow(
-      "unexpected YouTube sources",
-    );
-  }
-});
-
-it("validates observed versions without making them separate video identities", () => {
-  const item = {
-    ...video,
-    thumbnail_variants: [
-      {
-        url: "/assets/saved.jpg",
-        first_seen: video.observed_at,
-        last_seen: video.observed_at,
-      },
-    ],
-    title_history: [
-      {
-        title: "Earlier title",
-        first_seen: video.observed_at,
-        last_seen: video.observed_at,
-      },
-    ],
-  };
-  expect(isYouTubeItem(item)).toBe(true);
-  expect(item.id).toBe(video.id);
-  expect(
-    isYouTubeItem({
-      ...item,
-      thumbnail_variants: [{ url: "/assets/missing-dates.jpg" }],
-    }),
-  ).toBe(false);
-  expect(
-    isYouTubeItem({
-      ...item,
-      title_history: [{ ...item.title_history[0], title: null }],
-    }),
-  ).toBe(false);
-});
-
-it("validates the title combinations nested under thumbnails", () => {
-  const version = {
-    url: "/assets/image.jpg",
-    first_seen: video.observed_at,
-    last_seen: video.observed_at,
-    title_pairs: [
-      {
-        title: "A paired title",
-        first_seen: video.observed_at,
-        last_seen: video.observed_at,
-        association: "captured",
-      },
-    ],
-  };
-  expect(isYouTubeItem({ ...video, thumbnail_variants: [version] })).toBe(true);
-  expect(
-    isYouTubeItem({
-      ...video,
-      thumbnail_variants: [
-        {
-          ...version,
-          title_pairs: [{ ...version.title_pairs[0], association: "guessed" }],
-        },
-      ],
-    }),
-  ).toBe(false);
-  expect(
-    isYouTubeItem({
-      ...video,
-      thumbnail_variants: [
-        { ...version, title_pairs: [{ title: "Missing dates" }] },
-      ],
-    }),
-  ).toBe(false);
 });
 
 it.each([

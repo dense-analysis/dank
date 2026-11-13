@@ -1,10 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
+import { post, redditPost, xPost } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
 
 const url = "https://publisher.test/research";
 const publisherText =
   "The saved publisher explains the research and its results.";
-const reddit: Post = {
+const reddit: Post = post({
   id: "t3_link",
   domain: "reddit.com",
   source: "reddit",
@@ -16,7 +17,12 @@ const reddit: Post = {
   thumbnail: "/preview.svg",
   media: [],
   created_at: "2026-10-19T09:00:00Z",
-  reddit: { community: "science", score: 42, comments: 7, flair: null },
+  reddit: redditPost({
+    community: "science",
+    score: 42,
+    comments: 7,
+    flair: null,
+  }),
   linked_post: {
     domain: "publisher.test",
     id: "research",
@@ -25,7 +31,7 @@ const reddit: Post = {
     title: "Publisher title",
     excerpt: publisherText,
   },
-};
+});
 
 async function fixtures(page: Page, post = reddit) {
   await page.route("**/preview.svg", (route) =>
@@ -163,7 +169,7 @@ test("link-only X previews show saved publisher text without a duplicate raw URL
     reddit: undefined,
     thumbnail: null,
     html: `<p><a href="${url}">${url}</a></p>`,
-    x: {
+    x: xPost({
       handle: "writer",
       name: "Writer",
       icon_url: null,
@@ -175,7 +181,7 @@ test("link-only X previews show saved publisher text without a duplicate raw URL
           image_url: null,
         },
       ],
-    },
+    }),
   });
   await page.goto("/?view=x");
   await expect(page.locator(".x-link-description")).toHaveText(publisherText);

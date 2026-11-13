@@ -5,6 +5,7 @@ import {
   ReaderPreferencesProvider,
   useReaderPreferences,
 } from "../hooks/useReaderPreferences";
+import { redditVideo } from "../lib/api.fixture";
 import { ArticleBody } from "./ArticleBody";
 
 // Pixel classification is covered in the browser; these tests exercise portal lifetime.
@@ -126,7 +127,12 @@ it("changes raw image and video visibility without replacing images or their man
   const videoUrl = "https://v.redd.it/clip";
   const images = [{ url: "/assets/chart.svg", source_url: original }];
   const videos = [
-    { url: videoUrl, source_url: videoUrl, poster_url: null, remote: true },
+    redditVideo({
+      url: videoUrl,
+      source_url: videoUrl,
+      poster_url: null,
+      remote: true,
+    }),
   ];
   const videoKeys = new Set(["reddit-video:clip"]);
 

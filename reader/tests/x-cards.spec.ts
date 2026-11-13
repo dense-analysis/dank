@@ -1,8 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { post, xPost, xSource } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const dispatch: Post = {
+const dispatch: Post = post({
   id: "one",
   domain: "x.com",
   url: "https://x.com/long_handle_123/status/one",
@@ -12,14 +14,14 @@ const dispatch: Post = {
   html: "<p>The captured dispatch.</p>",
   created_at: "2026-10-17T12:00:00Z",
   source: "x",
-  x: {
+  x: xPost({
     handle: "long_handle_123",
     name: "Shared display name",
     icon_url: "https://pbs.twimg.com/profile_images/1/avatar.jpg",
-  },
+  }),
   thumbnail: null,
   media: [],
-};
+});
 const posts: Post[] = [
   dispatch,
   {
@@ -27,18 +29,22 @@ const posts: Post[] = [
     id: "missing",
     url: "https://x.com/missing/status/missing",
     title: "No captured profile image",
-    x: { handle: "missing", name: "Shared display name", icon_url: null },
+    x: xPost({
+      handle: "missing",
+      name: "Shared display name",
+      icon_url: null,
+    }),
   },
   {
     ...dispatch,
     id: "broken",
     url: "https://x.com/broken/status/broken",
     title: "Unavailable profile image",
-    x: {
+    x: xPost({
       handle: "broken",
       name: "Shared display name",
       icon_url: "https://pbs.twimg.com/profile_images/2/broken.jpg",
-    },
+    }),
   },
   {
     ...dispatch,
@@ -62,53 +68,48 @@ async function mockCards(page: Page) {
           },
     ),
   );
-  await page.context().route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
+  await page.context().route("**/api/reader/**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
+
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              xSource({
+                domain: "x.com",
+                name: "X",
+                kind: "x",
+                count: 3,
+                tags: [],
+                accounts: [],
+              }),
+            ],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find((post) => post.id === params.get("id"));
+
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/posts"],
+            posts: posts.filter(
+              (post) =>
+                (params.get("kind") === "all" ||
+                  post.source === params.get("kind")) &&
+                (!params.get("account") ||
+                  post.x?.handle === params.get("account")),
+            ),
+          },
+        });
+      default:
+        return fulfillEmpty(route);
     }
-
-    const params = url.searchParams;
-
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: {
-          sources: [
-            {
-              domain: "x.com",
-              name: "X",
-              kind: "x",
-              count: 3,
-              tags: [],
-              accounts: [],
-            },
-          ],
-          total_posts: posts.length,
-        },
-      });
-      return;
-    }
-
-    if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json: posts.find((post) => post.id === params.get("id")),
-      });
-      return;
-    }
-
-    await route.fulfill({
-      json: {
-        posts: posts.filter(
-          (post) =>
-            (params.get("kind") === "all" ||
-              post.source === params.get("kind")) &&
-            (!params.get("account") ||
-              post.x?.handle === params.get("account")),
-        ),
-        next_cursor: null,
-        limited: false,
-      },
-    });
   });
 }
 

@@ -1,8 +1,16 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  feedSource,
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+} from "../src/lib/api.fixture";
 import type { Post, Source } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const redditPost: Post = {
+const redditStory: Post = post({
   id: "reddit-one",
   domain: "reddit.com",
   url: "https://www.reddit.com/r/LocalLLaMA/comments/reddit-one/local_models/",
@@ -14,15 +22,15 @@ const redditPost: Post = {
   source: "reddit",
   thumbnail: null,
   media: [],
-  reddit: {
+  reddit: redditPost({
     community: "LocalLLaMA",
     score: 128,
     comments: 42,
     flair: "Discussion",
-  },
-};
+  }),
+});
 const blogPost: Post = {
-  ...redditPost,
+  ...redditStory,
   id: "blog-one",
   domain: "example.com",
   title: "A collected blog article",
@@ -30,72 +38,85 @@ const blogPost: Post = {
   reddit: undefined,
 };
 const otherPost: Post = {
-  ...redditPost,
+  ...redditStory,
   id: "reddit-two",
   title: "A community research discussion",
-  reddit: { community: "accelerate", score: null, comments: null, flair: null },
+  reddit: redditPost({
+    community: "accelerate",
+    score: null,
+    comments: null,
+    flair: null,
+  }),
 };
 
 async function mockReddit(
   page: Page,
   configured = true,
-  posts = [blogPost, redditPost, otherPost],
+  posts = [blogPost, redditStory, otherPost],
 ) {
   const requests: URL[] = [];
   const sources: Source[] = [
-    { domain: "example.com", name: "Example", count: 1, tags: [] },
+    feedSource({ domain: "example.com", name: "Example", count: 1, tags: [] }),
     ...(configured
       ? [
-          {
+          redditSource({
             domain: "reddit.com",
             name: "Reddit",
-            kind: "reddit" as const,
+            kind: "reddit",
             count: 2,
             tags: ["community"],
             communities: [
-              { name: "LocalLLaMA", count: 1 },
-              { name: "accelerate", count: 1 },
-              { name: "EmptyCommunity", count: 0 },
+              redditCommunity({ name: "LocalLLaMA", count: 1 }),
+              redditCommunity({ name: "accelerate", count: 1 }),
+              redditCommunity({ name: "EmptyCommunity", count: 0 }),
             ],
-          },
+          }),
         ]
       : []),
   ];
-  await page.route("**/api/reader/**", async (route) => {
+  await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
     requests.push(url);
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({ json: { sources, total_posts: posts.length } });
-      return;
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources,
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const detail = posts.find(
+          (post) => post.id === url.searchParams.get("id"),
+        );
+
+        return detail ? route.fulfill({ json: detail }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        const params = url.searchParams;
+        const selected = posts.filter(
+          (post) =>
+            (params.get("kind") === "all" ||
+              (params.get("kind") === "reddit"
+                ? post.source === "reddit"
+                : post.source !== "reddit" && post.source !== "x")) &&
+            (!params.get("community") ||
+              post.reddit?.community === params.get("community")) &&
+            (!params.get("author") || post.author === params.get("author")) &&
+            (!params.get("q") ||
+              post.title
+                .toLowerCase()
+                .includes((params.get("q") ?? "").toLowerCase())),
+        );
+
+        return route.fulfill({
+          json: { posts: selected, next_cursor: null, limited: false },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
     }
-    if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json: posts.find((post) => post.id === url.searchParams.get("id")),
-      });
-      return;
-    }
-    const params = url.searchParams;
-    const selected = posts.filter(
-      (post) =>
-        (params.get("kind") === "all" ||
-          (params.get("kind") === "reddit"
-            ? post.source === "reddit"
-            : post.source !== "reddit" && post.source !== "x")) &&
-        (!params.get("community") ||
-          post.reddit?.community === params.get("community")) &&
-        (!params.get("author") || post.author === params.get("author")) &&
-        (!params.get("q") ||
-          post.title
-            .toLowerCase()
-            .includes((params.get("q") ?? "").toLowerCase())),
-    );
-    await route.fulfill({
-      json: { posts: selected, next_cursor: null, limited: false },
-    });
   });
   return requests;
 }
@@ -116,22 +137,27 @@ for (const width of [1440, 980, 390, 320]) {
     const flair = "🔒 Established r/accelerate contributors only";
     const posts: Post[] = [
       {
-        ...redditPost,
+        ...redditStory,
         title: "Waymo in Toronto",
         excerpt: "Learn more.",
         thumbnail: "/favicon.svg",
-        reddit: { community: "accelerate", score: 32, comments: 2, flair },
+        reddit: redditPost({
+          community: "accelerate",
+          score: 32,
+          comments: 2,
+          flair,
+        }),
       },
       {
         ...otherPost,
         title: "A short post without a thumbnail or flair",
       },
       {
-        ...redditPost,
+        ...redditStory,
         id: "long-label",
         title:
           "A longer discussion title that spans multiple lines in the feed",
-        reddit: {
+        reddit: redditPost({
           community: "accelerate",
           score: 21,
           comments: 18,
@@ -139,7 +165,7 @@ for (const width of [1440, 980, 390, 320]) {
             `${flair} — a very long community label that exceeds the reading column`.repeat(
               2,
             ),
-        },
+        }),
       },
     ];
     await mockReddit(page, true, posts);
@@ -229,11 +255,11 @@ test("keeps Blogs separate and exposes configured Reddit communities with access
     page.getByRole("heading", { name: blogPost.title }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: redditPost.title }),
+    page.getByRole("heading", { name: redditStory.title }),
   ).toHaveCount(0);
   expect(
     requests
-      .find((url) => url.pathname.endsWith("/posts"))
+      .find((url) => url.pathname === "/api/reader/posts")
       ?.searchParams.get("kind"),
   ).toBe("stories");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
@@ -250,7 +276,7 @@ test("keeps Blogs separate and exposes configured Reddit communities with access
     page.getByRole("heading", { name: "Reddit", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: redditPost.title }),
+    page.getByRole("heading", { name: redditStory.title }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: otherPost.title }),
@@ -282,7 +308,7 @@ test("keeps Blogs separate and exposes configured Reddit communities with access
   ).toBeVisible();
   await page.getByRole("button", { name: "Show all Reddit posts" }).click();
   await expect(
-    page.getByRole("heading", { name: redditPost.title }),
+    page.getByRole("heading", { name: redditStory.title }),
   ).toBeVisible();
 });
 
@@ -333,7 +359,7 @@ test("retains community, search, author and article navigation in Reddit", async
     )
     .toBe(true);
   const story = page.getByRole("link", {
-    name: `Read ${redditPost.title}`,
+    name: `Read ${redditStory.title}`,
     exact: true,
   });
   await expect(story).toHaveAttribute(
@@ -344,7 +370,7 @@ test("retains community, search, author and article navigation in Reddit", async
   await story.click();
   const article = page.getByRole("main", { name: "Article reader" });
   await expect(
-    article.getByRole("heading", { name: redditPost.title }),
+    article.getByRole("heading", { name: redditStory.title }),
   ).toBeVisible();
   await expect(
     article.getByTitle("Comment count when collected", { exact: true }),
@@ -382,7 +408,7 @@ test("supports Reddit communities on mobile without leaving the navigation overl
   await dialog.getByRole("button", { name: /r\/LocalLLaMA/ }).click();
   await expect(dialog).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: redditPost.title }),
+    page.getByRole("heading", { name: redditStory.title }),
   ).toBeVisible();
   await noOverflow(page);
   await page.screenshot({
@@ -390,7 +416,7 @@ test("supports Reddit communities on mobile without leaving the navigation overl
     fullPage: true,
   });
   await page
-    .getByRole("link", { name: `Read ${redditPost.title}`, exact: true })
+    .getByRole("link", { name: `Read ${redditStory.title}`, exact: true })
     .click();
   await expect(
     page.getByRole("main", { name: "Article reader" }),

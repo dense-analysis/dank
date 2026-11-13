@@ -1,9 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { feedSource, post } from "../src/lib/api.fixture";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 for (const width of [320, 390, 1280]) {
   test(`category selection and labels at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    const post = {
+    const story = post({
       id: "1",
       domain: "example.com",
       url: "https://example.com/1",
@@ -16,32 +18,47 @@ for (const width of [320, 390, 1280]) {
       thumbnail: null,
       media: [],
       categories: [{ name: "Software", confidence: 0.9, similarity: 0.95 }],
-    };
+    });
     await page.route("**/api/reader/**", async (route) => {
       const url = new URL(route.request().url());
-      const json = url.pathname.endsWith("/categories")
-        ? {
-            categories: ["Software", "Science"],
-          }
-        : url.pathname.endsWith("/sources")
-          ? {
+      switch (apiPath(route)) {
+        case "/api/reader/categories":
+          return route.fulfill({
+            json: { categories: ["Software", "Science"] },
+          });
+        case "/api/reader/sources":
+          return route.fulfill({
+            json: {
+              ...emptyResponses["/api/reader/sources"],
               sources: [
-                { domain: "example.com", name: "Example", tags: [], count: 1 },
+                feedSource({
+                  domain: "example.com",
+                  name: "Example",
+                  count: 1,
+                }),
               ],
               total_posts: 1,
-            }
-          : url.pathname.endsWith("/post")
-            ? post
-            : {
-                posts:
-                  url.searchParams.getAll("category").includes("Science") &&
-                  !url.searchParams.getAll("category").includes("Software")
-                    ? []
-                    : [post],
-                next_cursor: null,
-                limited: false,
-              };
-      await route.fulfill({ json });
+            },
+          });
+        case "/api/reader/post":
+          return route.fulfill({ json: story });
+        case "/api/reader/posts": {
+          const categories = url.searchParams.getAll("category");
+          return route.fulfill({
+            json: {
+              posts:
+                categories.includes("Science") &&
+                !categories.includes("Software")
+                  ? []
+                  : [story],
+              next_cursor: null,
+              limited: false,
+            },
+          });
+        }
+        default:
+          return fulfillEmpty(route);
+      }
     });
     await page.goto("/");
     const filters = page.getByRole("group", { name: "Filter by category" });

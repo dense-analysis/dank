@@ -19,8 +19,9 @@ function watching(state: {
   data?: SourceSettings;
   error: Error | null;
 }): boolean {
-  // The aiohttp server has no source list until DEN-51. Any other failure,
-  // such as a passing Postgres outage, is tried again at the next check.
+  // A server without the source list answers 404, so stop asking. Any
+  // other failure, such as a passing Postgres outage, is tried again at the
+  // next check.
   if (state.error instanceof ReaderRequestError && state.error.status === 404)
     return false;
 

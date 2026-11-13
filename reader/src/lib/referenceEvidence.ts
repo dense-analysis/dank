@@ -1,7 +1,7 @@
-import { ReaderRequestError, request } from "./api";
+import { apiGet, ReaderRequestError } from "./api";
 import { matchesLinkUrl } from "./linkIdentity";
+import type { PostConnectionEvidence } from "./postConnections";
 import type { ReferenceTarget } from "./referenceFocus";
-import { isRecord } from "./validation";
 
 interface ArchivedReference {
   excerpt: string;
@@ -26,32 +26,29 @@ export async function fetchReferenceEvidence(
 
   if (target.saved) params.set("observed_at", target.saved);
 
-  let body: unknown;
+  let evidence: PostConnectionEvidence;
 
   try {
-    body = await request(`/connection?${params}`, signal);
+    ({ evidence } = await apiGet("/api/reader/connection", {
+      query: params,
+      signal,
+    }));
   } catch (error) {
     if (error instanceof ReaderRequestError && error.status === 404)
       return null;
     throw error;
   }
-  if (body === null) return null;
-  const evidence = isRecord(body) && body.evidence;
 
+  // The archive must hold the exact reference the page asked about.
   if (
-    !isRecord(evidence) ||
     evidence.domain !== domain ||
     evidence.post_id !== postId ||
     evidence.kind !== target.kind ||
     evidence.reference_id !== target.id ||
-    typeof evidence.matched_url !== "string" ||
     !matchesLinkUrl(evidence.matched_url, target.url) ||
-    typeof evidence.observed_at !== "string" ||
     !Number.isFinite(Date.parse(evidence.observed_at)) ||
     (target.saved &&
-      Date.parse(evidence.observed_at) !== Date.parse(target.saved)) ||
-    typeof evidence.excerpt !== "string" ||
-    typeof evidence.reference_url !== "string"
+      Date.parse(evidence.observed_at) !== Date.parse(target.saved))
   )
     throw new Error("The saved reference could not be verified.");
 

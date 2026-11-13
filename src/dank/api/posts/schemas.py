@@ -258,16 +258,16 @@ class HackerNewsDetailOut(HackerNewsOut):
     comments_items: list[HackerNewsCommentOut]
 
 
-class YouTubeChannelOut(ApiModel):
+class PostYouTubeChannelOut(ApiModel):
     id: str
     name: str
     url: str
 
 
 class YouTubeOut(ApiModel):
-    kind: str
+    kind: Literal["video", "short", "post"]
     video_id: str | None
-    channel: YouTubeChannelOut
+    channel: PostYouTubeChannelOut
     duration_text: str
     views_text: str
     thumbnail_url: str | None

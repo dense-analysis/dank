@@ -1,7 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, post as postFixture } from "../src/lib/api.fixture";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const post = {
+const post = postFixture({
   id: "reading-font",
   domain: "example.com",
   title: "A story worth your time",
@@ -13,26 +15,35 @@ const post = {
   source: "rss",
   thumbnail: null,
   media: [],
-};
+});
 
 async function mockReader(page: Page) {
   await page.route("**/api/reader/**", (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-    return route.fulfill({
-      json: path.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              { domain: post.domain, name: "Example News", tags: [], count: 1 },
+              feedSource({
+                domain: post.domain,
+                name: "Example News",
+                tags: [],
+                count: 1,
+              }),
             ],
             total_posts: 1,
-          }
-        : path.endsWith("/post")
-          ? post
-          : { posts: [post], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: post });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts: [post], next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
 }
 

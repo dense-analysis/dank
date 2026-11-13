@@ -5,7 +5,7 @@ import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { sanitizeArticle } from "../lib/article";
 import { matchesLinkUrl } from "../lib/linkIdentity";
 import { postKey } from "../lib/storage";
-import type { Post, XMedia } from "../lib/types";
+import type { XCardPost, XMedia } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
 import { xMedia, xMediaUrl } from "../lib/x";
 import {
@@ -32,7 +32,7 @@ export function XPostContent({
   referenceUrl,
   quoteNavigation,
 }: {
-  post: Post;
+  post: XCardPost;
   quoteNavigation?: XQuoteNavigation;
   compact?: boolean;
   query?: string;

@@ -1,50 +1,31 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, redditSource, xSource } from "../src/lib/api.fixture";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 async function fixture(page: Page) {
-  await page.route("**/api/reader/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-
-    if (path.endsWith("/source-icon")) {
-      await route.fulfill({ status: 404, body: "" });
-      return;
+  await page.route("**/api/reader/**", (route) => {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              feedSource({
+                domain: "example.com",
+                name: "example.com",
+                count: 1,
+                tags: ["Tech"],
+              }),
+              redditSource({ name: "Reddit", count: 2 }),
+              xSource({ name: "X", count: 0 }),
+            ],
+            total_posts: 3,
+          },
+        });
+      default:
+        return fulfillEmpty(route);
     }
-
-    await route.fulfill({
-      json: path.endsWith("/refresh")
-        ? { jobs: [] }
-        : path.endsWith("/youtube/sources")
-          ? { feeds: [], channels: [], total: 0, linked_count: 0 }
-          : path.endsWith("/youtube")
-            ? { items: [], total: 0, next_cursor: null }
-            : path.endsWith("/sources")
-              ? {
-                  sources: [
-                    {
-                      domain: "example.com",
-                      name: "example.com",
-                      count: 1,
-                      tags: ["Tech"],
-                    },
-                    {
-                      domain: "reddit.com",
-                      name: "Reddit",
-                      kind: "reddit",
-                      count: 2,
-                      tags: [],
-                    },
-                    {
-                      domain: "x.com",
-                      name: "X",
-                      kind: "x",
-                      count: 0,
-                      tags: [],
-                    },
-                  ],
-                  total_posts: 3,
-                }
-              : { posts: [], next_cursor: null, limited: false },
-    });
   });
 }
 

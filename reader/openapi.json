@@ -1,0 +1,7246 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DANK",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/reader/sources": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "List Sources",
+        "description": "Configured and collected sources, with post counts.",
+        "operationId": "list_sources_api_reader_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/categories": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "List Categories",
+        "description": "Category names configured for the reader.",
+        "operationId": "list_categories_api_reader_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoriesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/source-settings": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "List Saved Sources",
+        "description": "Every source, disabled ones too, in the order they were added.",
+        "operationId": "list_saved_sources_api_reader_source_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceListResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Add Source",
+        "description": "Add a source. The server gives it an ID and normalizes its values.",
+        "operationId": "add_source_api_reader_source_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/source-settings/{source_id}": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Read Saved Source",
+        "operationId": "read_saved_source_api_reader_source_settings__source_id__get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Update Source",
+        "description": "Replace a source, including whether it and each target are enabled.\n\nRepeating an edit is safe. When two tabs edit one source, the last save\nwins.",
+        "operationId": "update_source_api_reader_source_settings__source_id__put",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/posts": {
+      "get": {
+        "tags": [
+          "posts"
+        ],
+        "summary": "List Posts",
+        "description": "One page of collected posts, filtered, searched and ordered.",
+        "operationId": "list_posts_api_reader_posts_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "words",
+                "meaning",
+                "combined"
+              ],
+              "type": "string",
+              "default": "words",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest",
+                "relevance"
+              ],
+              "type": "string",
+              "default": "newest",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Tag"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Platform"
+            }
+          },
+          {
+            "name": "flair",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Flair"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Author"
+            }
+          },
+          {
+            "name": "author_match",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "contains",
+                "exact"
+              ],
+              "type": "string",
+              "default": "contains",
+              "title": "Author Match"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "default": "",
+              "title": "After"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "default": "",
+              "title": "Before"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "all",
+                "stories",
+                "reddit",
+                "x",
+                "youtube",
+                "hacker_news"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "community",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Community"
+            }
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Account"
+            }
+          },
+          {
+            "name": "x_feed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "for_you"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "X Feed"
+            }
+          },
+          {
+            "name": "hn_filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "top10",
+                    "top20",
+                    "top50",
+                    "all"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hn Filter"
+            }
+          },
+          {
+            "name": "x_view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "posts",
+                    "replies"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X View"
+            }
+          },
+          {
+            "name": "blog_feed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sources",
+                    "external"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Blog Feed"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/post": {
+      "get": {
+        "tags": [
+          "posts"
+        ],
+        "summary": "Read Post",
+        "description": "One post, with its archived discussion.",
+        "operationId": "read_post_api_reader_post_get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostDetailOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/x/authors": {
+      "get": {
+        "tags": [
+          "posts"
+        ],
+        "summary": "List X Authors",
+        "description": "Authors in the saved For You feed, most recommended first.",
+        "operationId": "list_x_authors_api_reader_x_authors_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "words",
+                "meaning",
+                "combined"
+              ],
+              "type": "string",
+              "default": "words",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest",
+                "relevance"
+              ],
+              "type": "string",
+              "default": "newest",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Tag"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Platform"
+            }
+          },
+          {
+            "name": "flair",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Flair"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Author"
+            }
+          },
+          {
+            "name": "author_match",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "contains",
+                "exact"
+              ],
+              "type": "string",
+              "default": "contains",
+              "title": "Author Match"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "default": "",
+              "title": "After"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "default": "",
+              "title": "Before"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "all",
+                "stories",
+                "reddit",
+                "x",
+                "youtube",
+                "hacker_news"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "community",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Community"
+            }
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Account"
+            }
+          },
+          {
+            "name": "x_feed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "for_you"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "X Feed"
+            }
+          },
+          {
+            "name": "hn_filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "top10",
+                    "top20",
+                    "top50",
+                    "all"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hn Filter"
+            }
+          },
+          {
+            "name": "x_view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "posts",
+                    "replies"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X View"
+            }
+          },
+          {
+            "name": "blog_feed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sources",
+                    "external"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Blog Feed"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XAuthorsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/connections": {
+      "get": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "List Connections",
+        "description": "A post's incoming, outgoing and related links, from saved evidence.",
+        "operationId": "list_connections_api_reader_connections_get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "title": "Id"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Source"
+            }
+          },
+          {
+            "name": "community",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Community"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/connection": {
+      "get": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "Read Connection",
+        "description": "One saved link, found exactly even beyond a neighbourhood's limit.",
+        "operationId": "read_connection_api_reader_connection_get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "title": "Id"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "post",
+                "comment"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "reference_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Reference Id"
+            }
+          },
+          {
+            "name": "observed_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Observed At"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/refresh": {
+      "get": {
+        "tags": [
+          "refresh"
+        ],
+        "summary": "List Refresh Jobs",
+        "description": "Recent refresh jobs, newest first. Reading never starts a collection.",
+        "operationId": "list_refresh_jobs_api_reader_refresh_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshJobsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "refresh"
+        ],
+        "summary": "Start Refresh",
+        "description": "Queue a collection, or return the active job with the same scope.",
+        "operationId": "start_refresh_api_reader_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshJobResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube": {
+      "get": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "List Youtube Items",
+        "description": "One page of saved videos, Shorts and posts.",
+        "operationId": "list_youtube_items_api_reader_youtube_get",
+        "parameters": [
+          {
+            "name": "feed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Feed"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "video",
+                "short",
+                "post"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest",
+                "most-linked"
+              ],
+              "type": "string",
+              "default": "newest",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "channel_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "configured"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "Channel Scope"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "ge": 1,
+              "le": 500,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YouTubeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube/sources": {
+      "get": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "List Youtube Sources",
+        "description": "Configured feeds and channels, with what each has collected.",
+        "operationId": "list_youtube_sources_api_reader_youtube_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YouTubeSourcesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube/channels": {
+      "get": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "List Youtube Channels",
+        "description": "Channels in the selected items, most items first, with examples.",
+        "operationId": "list_youtube_channels_api_reader_youtube_channels_get",
+        "parameters": [
+          {
+            "name": "feed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Feed"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "video",
+                "short",
+                "post"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest",
+                "most-linked"
+              ],
+              "type": "string",
+              "default": "newest",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "channel_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "",
+                "configured"
+              ],
+              "type": "string",
+              "default": "",
+              "title": "Channel Scope"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "ge": 1,
+              "le": 50,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YouTubeChannelsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube/playlists": {
+      "get": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "List Youtube Playlists",
+        "description": "The saved playlist library.",
+        "operationId": "list_youtube_playlists_api_reader_youtube_playlists_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "ge": 1,
+              "le": 100,
+              "default": 30,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "recent",
+                "az"
+              ],
+              "type": "string",
+              "default": "recent",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube/playlists/{playlist_id}": {
+      "get": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "Read Youtube Playlist",
+        "description": "One saved playlist and a page of its entries, duplicates included.",
+        "operationId": "read_youtube_playlist_api_reader_youtube_playlists__playlist_id__get",
+        "parameters": [
+          {
+            "name": "playlist_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,200}$",
+              "title": "Playlist Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "ge": 1,
+              "le": 100,
+              "default": 30,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube/metadata/{video_id}": {
+      "post": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "Collect Video Metadata",
+        "description": "Fetch a known video's preview, unless a saved one is still valid.",
+        "operationId": "collect_video_metadata_api_reader_youtube_metadata__video_id__post",
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{11}$",
+              "title": "Video Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMetadataOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/youtube/transcript/{video_id}": {
+      "get": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "Read Video Transcript",
+        "description": "A known video's saved captions. This never contacts YouTube.",
+        "operationId": "read_video_transcript_api_reader_youtube_transcript__video_id__get",
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{11}$",
+              "title": "Video Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTranscriptOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "youtube"
+        ],
+        "summary": "Collect Video Transcript",
+        "description": "Fetch a known video's captions, unless saved ones can be reused.",
+        "operationId": "collect_video_transcript_api_reader_youtube_transcript__video_id__post",
+        "parameters": [
+          {
+            "name": "video_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{11}$",
+              "title": "Video Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTranscriptOut"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reader/source-icon": {
+      "get": {
+        "tags": [
+          "source icons"
+        ],
+        "summary": "Read Source Icon",
+        "description": "A source's favicon as a small PNG, captured on first use.",
+        "operationId": "read_source_icon_api_reader_source_icon_get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Domain"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AllScope": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "kind": {
+            "type": "string",
+            "const": "all",
+            "title": "Kind"
+          },
+          "platforms": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "rss",
+                    "x",
+                    "reddit",
+                    "hacker_news",
+                    "youtube"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platforms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "AllScope"
+      },
+      "CapturedPostOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
+          "x": {
+            "$ref": "#/components/schemas/CapturedXOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "url",
+          "author",
+          "title",
+          "html",
+          "excerpt",
+          "source",
+          "created_at",
+          "thumbnail",
+          "media",
+          "x"
+        ],
+        "title": "CapturedPostOut"
+      },
+      "CapturedXOut": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/XLinkOut"
+            },
+            "type": "array",
+            "title": "Links"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/XMediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
+          "reply_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Count"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XQuoteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "handle",
+          "name",
+          "icon_url",
+          "links",
+          "media",
+          "reply_count"
+        ],
+        "title": "CapturedXOut",
+        "description": "X fields of a post known only from another post's archive."
+      },
+      "CategoriesResponse": {
+        "properties": {
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "categories"
+        ],
+        "title": "CategoriesResponse"
+      },
+      "CategoryAssignmentOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "confidence",
+          "similarity"
+        ],
+        "title": "CategoryAssignmentOut"
+      },
+      "ChannelRefOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url"
+        ],
+        "title": "ChannelRefOut"
+      },
+      "CollectBody": {
+        "properties": {},
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CollectBody",
+        "description": "An empty object: collection has no options, and the reader sends {}."
+      },
+      "CollectionInfoOut": {
+        "properties": {
+          "article_url": {
+            "type": "string",
+            "title": "Article Url"
+          },
+          "article": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostReferenceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "post_first_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post First Seen At"
+          },
+          "link_first_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link First Seen At"
+          },
+          "first_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen At"
+          },
+          "first_seen_from": {
+            "items": {
+              "$ref": "#/components/schemas/CollectionOriginOut"
+            },
+            "type": "array",
+            "title": "First Seen From"
+          },
+          "article_collected_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Collected At"
+          },
+          "collected_via": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionOriginOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seen_before_post": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seen Before Post"
+          },
+          "article_status": {
+            "type": "string",
+            "enum": [
+              "collected",
+              "incomplete",
+              "unavailable"
+            ],
+            "title": "Article Status"
+          },
+          "coverage": {
+            "type": "string",
+            "const": "saved_history",
+            "title": "Coverage"
+          },
+          "post_published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Published At"
+          },
+          "discovered_before_publication": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discovered Before Publication"
+          },
+          "earlier_discovered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earlier Discovered At"
+          },
+          "earlier_discovered_from": {
+            "items": {
+              "$ref": "#/components/schemas/CollectionOriginOut"
+            },
+            "type": "array",
+            "title": "Earlier Discovered From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "article_url",
+          "article",
+          "post_first_seen_at",
+          "link_first_seen_at",
+          "first_seen_at",
+          "first_seen_from",
+          "article_collected_at",
+          "collected_via",
+          "seen_before_post",
+          "article_status",
+          "coverage",
+          "post_published_at",
+          "discovered_before_publication",
+          "earlier_discovered_at",
+          "earlier_discovered_from"
+        ],
+        "title": "CollectionInfoOut"
+      },
+      "CollectionOriginOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "reference",
+              "article"
+            ],
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "id",
+          "source",
+          "url",
+          "label",
+          "observed_at",
+          "kind"
+        ],
+        "title": "CollectionOriginOut"
+      },
+      "CommunityOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "flairs": {
+            "items": {
+              "$ref": "#/components/schemas/FlairOut"
+            },
+            "type": "array",
+            "title": "Flairs"
+          },
+          "post_total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostTotalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "count",
+          "icon_url",
+          "flairs",
+          "post_total"
+        ],
+        "title": "CommunityOut"
+      },
+      "ConnectionContextOut": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "reddit",
+                  "hacker_news",
+                  "x",
+                  "youtube",
+                  "rss"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "community": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConnectionContextOut"
+      },
+      "ConnectionEvidenceOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "post_id": {
+            "type": "string",
+            "title": "Post Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "post",
+              "comment"
+            ],
+            "title": "Kind"
+          },
+          "reference_id": {
+            "type": "string",
+            "title": "Reference Id"
+          },
+          "reference_url": {
+            "type": "string",
+            "title": "Reference Url"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "matched_url": {
+            "type": "string",
+            "title": "Matched Url"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "post_id",
+          "kind",
+          "reference_id",
+          "reference_url",
+          "author",
+          "matched_url",
+          "excerpt",
+          "observed_at"
+        ],
+        "title": "ConnectionEvidenceOut"
+      },
+      "ConnectionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "incoming",
+              "outgoing",
+              "related"
+            ],
+            "title": "Direction"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/ConnectionPostOut"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ConnectionTargetOut"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ConnectionEvidenceOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "direction",
+          "origin",
+          "target",
+          "evidence"
+        ],
+        "title": "ConnectionOut"
+      },
+      "ConnectionPostOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "id",
+          "url",
+          "title",
+          "source"
+        ],
+        "title": "ConnectionPostOut"
+      },
+      "ConnectionTargetOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "post": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionPostOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "youtube_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Youtube Item Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "post",
+          "title",
+          "youtube_item_id"
+        ],
+        "title": "ConnectionTargetOut"
+      },
+      "ConnectionsResponse": {
+        "properties": {
+          "root": {
+            "$ref": "#/components/schemas/ConnectionPostOut"
+          },
+          "incoming": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOut"
+            },
+            "type": "array",
+            "title": "Incoming"
+          },
+          "outgoing": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOut"
+            },
+            "type": "array",
+            "title": "Outgoing"
+          },
+          "related": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectionOut"
+            },
+            "type": "array",
+            "title": "Related"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ConnectionContextOut"
+          },
+          "related_count": {
+            "type": "integer",
+            "title": "Related Count"
+          },
+          "incoming_count": {
+            "type": "integer",
+            "title": "Incoming Count"
+          },
+          "outgoing_count": {
+            "type": "integer",
+            "title": "Outgoing Count"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "coverage": {
+            "type": "string",
+            "const": "saved_evidence",
+            "title": "Coverage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root",
+          "incoming",
+          "outgoing",
+          "related",
+          "context",
+          "related_count",
+          "incoming_count",
+          "outgoing_count",
+          "limit",
+          "coverage"
+        ],
+        "title": "ConnectionsResponse"
+      },
+      "DetailCaptureOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "failed",
+              "disabled"
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "DetailCaptureOut"
+      },
+      "DiscoveryOut": {
+        "properties": {
+          "feed_url": {
+            "type": "string",
+            "title": "Feed Url"
+          },
+          "feed_name": {
+            "type": "string",
+            "title": "Feed Name"
+          },
+          "feed_kind": {
+            "type": "string",
+            "title": "Feed Kind"
+          },
+          "tab": {
+            "type": "string",
+            "title": "Tab"
+          },
+          "shelf": {
+            "type": "string",
+            "title": "Shelf"
+          },
+          "region": {
+            "type": "string",
+            "title": "Region"
+          },
+          "playlist_id": {
+            "type": "string",
+            "title": "Playlist Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "feed_url",
+          "feed_name",
+          "feed_kind",
+          "tab",
+          "shelf",
+          "region",
+          "playlist_id",
+          "run_id",
+          "observed_at",
+          "rank"
+        ],
+        "title": "DiscoveryOut"
+      },
+      "ErrorBody": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "title": "Error"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "type": "array",
+            "title": "Fields",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "error",
+          "code"
+        ],
+        "title": "ErrorBody"
+      },
+      "FeedSourceOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rss",
+              "hacker_news",
+              "youtube"
+            ],
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "name",
+          "icon_url",
+          "configured",
+          "tags",
+          "count",
+          "kind"
+        ],
+        "title": "FeedSourceOut"
+      },
+      "FieldError": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "code",
+          "message"
+        ],
+        "title": "FieldError"
+      },
+      "FlairOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "count"
+        ],
+        "title": "FlairOut"
+      },
+      "HackerNewsCommentCaptureOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "partial",
+              "failed",
+              "disabled"
+            ],
+            "title": "Status"
+          },
+          "captured": {
+            "type": "integer",
+            "title": "Captured"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "captured",
+          "total",
+          "reason"
+        ],
+        "title": "HackerNewsCommentCaptureOut"
+      },
+      "HackerNewsCommentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "parent_id": {
+            "type": "string",
+            "title": "Parent Id"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "parent_id",
+          "author",
+          "html",
+          "created_at",
+          "depth"
+        ],
+        "title": "HackerNewsCommentOut"
+      },
+      "HackerNewsDetailOut": {
+        "properties": {
+          "points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "discussion_url": {
+            "type": "string",
+            "title": "Discussion Url"
+          },
+          "external_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Url"
+          },
+          "day": {
+            "type": "string",
+            "title": "Day"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "comment_capture": {
+            "$ref": "#/components/schemas/HackerNewsCommentCaptureOut"
+          },
+          "comments_items": {
+            "items": {
+              "$ref": "#/components/schemas/HackerNewsCommentOut"
+            },
+            "type": "array",
+            "title": "Comments Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "points",
+          "comments",
+          "discussion_url",
+          "external_url",
+          "day",
+          "rank",
+          "submitted_at",
+          "comment_capture",
+          "comments_items"
+        ],
+        "title": "HackerNewsDetailOut"
+      },
+      "HackerNewsFilter": {
+        "type": "string",
+        "enum": [
+          "top10",
+          "top20",
+          "top50",
+          "all"
+        ],
+        "title": "HackerNewsFilter"
+      },
+      "HackerNewsOptions": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/HackerNewsFilter"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "filter"
+        ],
+        "title": "HackerNewsOptions"
+      },
+      "HackerNewsOut": {
+        "properties": {
+          "points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "discussion_url": {
+            "type": "string",
+            "title": "Discussion Url"
+          },
+          "external_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Url"
+          },
+          "day": {
+            "type": "string",
+            "title": "Day"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "points",
+          "comments",
+          "discussion_url",
+          "external_url",
+          "day",
+          "rank",
+          "submitted_at"
+        ],
+        "title": "HackerNewsOut"
+      },
+      "HackerNewsScope": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "kind": {
+            "type": "string",
+            "const": "hacker_news",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "HackerNewsScope"
+      },
+      "LinkedPostOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "id",
+          "url",
+          "title",
+          "source"
+        ],
+        "title": "LinkedPostOut"
+      },
+      "MediaOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "content_type"
+        ],
+        "title": "MediaOut"
+      },
+      "MetadataStateOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "failed",
+              "unavailable",
+              "disabled"
+            ],
+            "title": "Status"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "retry_after": {
+            "type": "string",
+            "title": "Retry After"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "captured_at": {
+            "type": "string",
+            "title": "Captured At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "provider",
+          "observed_at",
+          "retry_after",
+          "available",
+          "captured_at"
+        ],
+        "title": "MetadataStateOut"
+      },
+      "PlaylistItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "short",
+              "post"
+            ],
+            "title": "Kind"
+          },
+          "video_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/ChannelRefOut"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "thumbnail_variants": {
+            "items": {
+              "$ref": "#/components/schemas/ThumbnailVariantOut"
+            },
+            "type": "array",
+            "title": "Thumbnail Variants"
+          },
+          "video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Url"
+          },
+          "duration_text": {
+            "type": "string",
+            "title": "Duration Text"
+          },
+          "views_text": {
+            "type": "string",
+            "title": "Views Text"
+          },
+          "published_text": {
+            "type": "string",
+            "title": "Published Text"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "metadata_capture": {
+            "$ref": "#/components/schemas/MetadataStateOut"
+          },
+          "detail_capture": {
+            "$ref": "#/components/schemas/DetailCaptureOut"
+          },
+          "discoveries": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryOut"
+            },
+            "type": "array",
+            "title": "Discoveries"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/VideoReferenceOut"
+            },
+            "type": "array",
+            "title": "References"
+          },
+          "reference_count": {
+            "type": "integer",
+            "title": "Reference Count"
+          },
+          "title_history": {
+            "items": {
+              "$ref": "#/components/schemas/TitleVersionOut"
+            },
+            "type": "array",
+            "title": "Title History"
+          },
+          "playlist_position": {
+            "type": "integer",
+            "title": "Playlist Position"
+          },
+          "playlist_entry_id": {
+            "type": "string",
+            "title": "Playlist Entry Id"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "video_id",
+          "url",
+          "title",
+          "text",
+          "channel",
+          "thumbnail_url",
+          "thumbnail_variants",
+          "video_url",
+          "duration_text",
+          "views_text",
+          "published_text",
+          "observed_at",
+          "metadata_capture",
+          "detail_capture",
+          "discoveries",
+          "references",
+          "reference_count",
+          "title_history",
+          "playlist_position",
+          "playlist_entry_id",
+          "available"
+        ],
+        "title": "PlaylistItemOut"
+      },
+      "PlaylistOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/ChannelRefOut"
+          },
+          "video_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Count"
+          },
+          "collected_count": {
+            "type": "integer",
+            "title": "Collected Count"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "checked_at": {
+            "type": "string",
+            "title": "Checked At"
+          },
+          "order": {
+            "type": "string",
+            "title": "Order"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "url",
+          "description",
+          "thumbnail_url",
+          "channel",
+          "video_count",
+          "collected_count",
+          "status",
+          "complete",
+          "observed_at",
+          "checked_at",
+          "order",
+          "snapshot_id"
+        ],
+        "title": "PlaylistOut"
+      },
+      "PlaylistResponse": {
+        "properties": {
+          "playlist": {
+            "$ref": "#/components/schemas/PlaylistOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "playlist",
+          "items",
+          "next_cursor",
+          "total"
+        ],
+        "title": "PlaylistResponse"
+      },
+      "PlaylistsResponse": {
+        "properties": {
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistOut"
+            },
+            "type": "array",
+            "title": "Playlists"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "playlists",
+          "total",
+          "next_cursor"
+        ],
+        "title": "PlaylistsResponse"
+      },
+      "PostDetailOut": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryAssignmentOut"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "collection_incomplete": {
+            "type": "boolean",
+            "title": "Collection Incomplete"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PostReferenceOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
+          },
+          "links_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links Count"
+          },
+          "linked_post": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkedPostOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collection_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionInfoOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "youtube": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/YouTubeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "x": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XDetailOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reddit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditDetailOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hacker_news": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HackerNewsDetailOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "url",
+          "author",
+          "title",
+          "excerpt",
+          "html",
+          "collection_incomplete",
+          "created_at",
+          "source",
+          "thumbnail",
+          "media"
+        ],
+        "title": "PostDetailOut"
+      },
+      "PostOut": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryAssignmentOut"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "collection_incomplete": {
+            "type": "boolean",
+            "title": "Collection Incomplete"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PostReferenceOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
+          },
+          "links_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links Count"
+          },
+          "linked_post": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkedPostOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collection_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CollectionInfoOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "youtube": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/YouTubeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "x": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reddit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hacker_news": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HackerNewsOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "url",
+          "author",
+          "title",
+          "excerpt",
+          "html",
+          "collection_incomplete",
+          "created_at",
+          "source",
+          "thumbnail",
+          "media"
+        ],
+        "title": "PostOut"
+      },
+      "PostReferenceOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "id",
+          "url",
+          "title",
+          "source"
+        ],
+        "title": "PostReferenceOut"
+      },
+      "PostScope": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "post",
+            "title": "Kind"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "post_id": {
+            "type": "string",
+            "title": "Post Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "domain",
+          "post_id"
+        ],
+        "title": "PostScope"
+      },
+      "PostTotalOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "captured_at": {
+            "type": "string",
+            "title": "Captured At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "count",
+          "source",
+          "updated_at",
+          "captured_at"
+        ],
+        "title": "PostTotalOut"
+      },
+      "PostYouTubeChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url"
+        ],
+        "title": "PostYouTubeChannelOut"
+      },
+      "PostsResponse": {
+        "properties": {
+          "posts": {
+            "items": {
+              "$ref": "#/components/schemas/PostOut"
+            },
+            "type": "array",
+            "title": "Posts"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "limited": {
+            "type": "boolean",
+            "title": "Limited"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "posts",
+          "next_cursor",
+          "limited"
+        ],
+        "title": "PostsResponse"
+      },
+      "RedditCommentCaptureOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "disabled",
+              "failed",
+              "deferred",
+              "not_captured"
+            ],
+            "title": "Status"
+          },
+          "sort": {
+            "type": "string",
+            "title": "Sort"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "total_available": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Available"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/RedditCommentOut"
+            },
+            "type": "array",
+            "title": "Comments"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "latest_attempt_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disabled",
+                  "failed",
+                  "deferred"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Attempt Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "sort",
+          "limit",
+          "total_available",
+          "has_more",
+          "comments"
+        ],
+        "title": "RedditCommentCaptureOut"
+      },
+      "RedditCommentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "parent_id": {
+            "type": "string",
+            "title": "Parent Id"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "body_html": {
+            "type": "string",
+            "title": "Body Html"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "created_utc": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Utc"
+          },
+          "permalink": {
+            "type": "string",
+            "title": "Permalink"
+          },
+          "is_op": {
+            "type": "boolean",
+            "title": "Is Op"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "parent_id",
+          "author",
+          "body",
+          "body_html",
+          "score",
+          "created_utc",
+          "permalink",
+          "is_op",
+          "depth"
+        ],
+        "title": "RedditCommentOut"
+      },
+      "RedditDetailOut": {
+        "properties": {
+          "community": {
+            "type": "string",
+            "title": "Community"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "flair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flair"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "video": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditVideoOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "videos": {
+            "items": {
+              "$ref": "#/components/schemas/RedditVideoOut"
+            },
+            "type": "array",
+            "title": "Videos"
+          },
+          "external_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Url"
+          },
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RedditImageOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images"
+          },
+          "comment_capture": {
+            "$ref": "#/components/schemas/RedditCommentCaptureOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "community",
+          "score",
+          "comments",
+          "flair",
+          "icon_url",
+          "video",
+          "videos",
+          "comment_capture"
+        ],
+        "title": "RedditDetailOut"
+      },
+      "RedditImageOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "source_url"
+        ],
+        "title": "RedditImageOut"
+      },
+      "RedditOptions": {
+        "properties": {
+          "sort": {
+            "$ref": "#/components/schemas/RedditSort"
+          },
+          "time_filter": {
+            "$ref": "#/components/schemas/RedditTimeFilter"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sort",
+          "time_filter"
+        ],
+        "title": "RedditOptions"
+      },
+      "RedditOut": {
+        "properties": {
+          "community": {
+            "type": "string",
+            "title": "Community"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "flair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flair"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "video": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditVideoOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "videos": {
+            "items": {
+              "$ref": "#/components/schemas/RedditVideoOut"
+            },
+            "type": "array",
+            "title": "Videos"
+          },
+          "external_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Url"
+          },
+          "images": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RedditImageOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Images"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "community",
+          "score",
+          "comments",
+          "flair",
+          "icon_url",
+          "video",
+          "videos"
+        ],
+        "title": "RedditOut"
+      },
+      "RedditScope": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "kind": {
+            "type": "string",
+            "const": "reddit",
+            "title": "Kind"
+          },
+          "community": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Community"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "RedditScope"
+      },
+      "RedditSort": {
+        "type": "string",
+        "enum": [
+          "best",
+          "hot",
+          "new",
+          "top",
+          "rising"
+        ],
+        "title": "RedditSort"
+      },
+      "RedditSourceOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "kind": {
+            "type": "string",
+            "const": "reddit",
+            "title": "Kind"
+          },
+          "communities": {
+            "items": {
+              "$ref": "#/components/schemas/CommunityOut"
+            },
+            "type": "array",
+            "title": "Communities"
+          },
+          "flairs": {
+            "items": {
+              "$ref": "#/components/schemas/FlairOut"
+            },
+            "type": "array",
+            "title": "Flairs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "name",
+          "icon_url",
+          "configured",
+          "tags",
+          "count",
+          "kind",
+          "communities",
+          "flairs"
+        ],
+        "title": "RedditSourceOut"
+      },
+      "RedditTimeFilter": {
+        "type": "string",
+        "enum": [
+          "hour",
+          "day",
+          "week",
+          "month",
+          "year",
+          "all"
+        ],
+        "title": "RedditTimeFilter"
+      },
+      "RedditVideoOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "source_url": {
+            "type": "string",
+            "title": "Source Url"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "remote": {
+            "type": "boolean",
+            "title": "Remote"
+          },
+          "hls_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hls Url"
+          },
+          "fallback_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "source_url",
+          "poster_url",
+          "remote",
+          "hls_url",
+          "fallback_url"
+        ],
+        "title": "RedditVideoOut"
+      },
+      "RefreshJobOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AllScope"
+              },
+              {
+                "$ref": "#/components/schemas/RssScope"
+              },
+              {
+                "$ref": "#/components/schemas/RedditScope"
+              },
+              {
+                "$ref": "#/components/schemas/XScope"
+              },
+              {
+                "$ref": "#/components/schemas/HackerNewsScope"
+              },
+              {
+                "$ref": "#/components/schemas/YouTubeScope"
+              },
+              {
+                "$ref": "#/components/schemas/PostScope"
+              }
+            ],
+            "title": "Scope",
+            "discriminator": {
+              "propertyName": "kind",
+              "mapping": {
+                "all": "#/components/schemas/AllScope",
+                "hacker_news": "#/components/schemas/HackerNewsScope",
+                "post": "#/components/schemas/PostScope",
+                "reddit": "#/components/schemas/RedditScope",
+                "rss": "#/components/schemas/RssScope",
+                "x": "#/components/schemas/XScope",
+                "youtube": "#/components/schemas/YouTubeScope"
+              }
+            }
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "processing",
+              "completed",
+              "partial",
+              "failed",
+              "interrupted"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "posts_saved": {
+            "type": "integer",
+            "title": "Posts Saved"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "label",
+          "status",
+          "message",
+          "created_at",
+          "finished_at",
+          "posts_saved",
+          "run_id"
+        ],
+        "title": "RefreshJobOut"
+      },
+      "RefreshJobResponse": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/RefreshJobOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "title": "RefreshJobResponse"
+      },
+      "RefreshJobsResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/RefreshJobOut"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "jobs"
+        ],
+        "title": "RefreshJobsResponse"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "scope": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AllScope"
+              },
+              {
+                "$ref": "#/components/schemas/RssScope"
+              },
+              {
+                "$ref": "#/components/schemas/RedditScope"
+              },
+              {
+                "$ref": "#/components/schemas/XScope"
+              },
+              {
+                "$ref": "#/components/schemas/HackerNewsScope"
+              },
+              {
+                "$ref": "#/components/schemas/YouTubeScope"
+              },
+              {
+                "$ref": "#/components/schemas/PostScope"
+              }
+            ],
+            "title": "Scope",
+            "discriminator": {
+              "propertyName": "kind",
+              "mapping": {
+                "all": "#/components/schemas/AllScope",
+                "hacker_news": "#/components/schemas/HackerNewsScope",
+                "post": "#/components/schemas/PostScope",
+                "reddit": "#/components/schemas/RedditScope",
+                "rss": "#/components/schemas/RssScope",
+                "x": "#/components/schemas/XScope",
+                "youtube": "#/components/schemas/YouTubeScope"
+              }
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "title": "RefreshRequest"
+      },
+      "RssScope": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "kind": {
+            "type": "string",
+            "const": "rss",
+            "title": "Kind"
+          },
+          "blog_feed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "sources",
+                  "external"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blog Feed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "RssScope"
+      },
+      "SourceAdapter": {
+        "type": "string",
+        "enum": [
+          "rss",
+          "hacker_news",
+          "x",
+          "reddit",
+          "youtube"
+        ],
+        "title": "SourceAdapter"
+      },
+      "SourceAdapterModel": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/SourceAdapter"
+          },
+          "feeds": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SourceTargetModel"
+                },
+                "type": "array",
+                "maxItems": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feeds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "feeds"
+        ],
+        "title": "SourceAdapterModel"
+      },
+      "SourceBody": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Domain"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/SourceTargetModel"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Accounts"
+          },
+          "feeds": {
+            "items": {
+              "$ref": "#/components/schemas/SourceTargetModel"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Feeds"
+          },
+          "tags": {
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Tags"
+          },
+          "adapters": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SourceAdapterModel"
+                },
+                "type": "array",
+                "maxItems": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapters"
+          },
+          "reddit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hacker_news": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HackerNewsOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled",
+          "domain",
+          "accounts",
+          "feeds",
+          "tags",
+          "adapters",
+          "reddit",
+          "hacker_news"
+        ],
+        "title": "SourceBody",
+        "description": "A whole source, without its ID."
+      },
+      "SourceListResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceOut"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "in_database": {
+            "type": "boolean",
+            "title": "In Database"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sources",
+          "in_database"
+        ],
+        "title": "SourceListResponse"
+      },
+      "SourceOut": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Domain"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/SourceTargetModel"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Accounts"
+          },
+          "feeds": {
+            "items": {
+              "$ref": "#/components/schemas/SourceTargetModel"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Feeds"
+          },
+          "tags": {
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Tags"
+          },
+          "adapters": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SourceAdapterModel"
+                },
+                "type": "array",
+                "maxItems": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapters"
+          },
+          "reddit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RedditOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hacker_news": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HackerNewsOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled",
+          "domain",
+          "accounts",
+          "feeds",
+          "tags",
+          "adapters",
+          "reddit",
+          "hacker_news",
+          "id"
+        ],
+        "title": "SourceOut"
+      },
+      "SourceTargetModel": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "maxLength": 2048,
+            "title": "Value"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "enabled"
+        ],
+        "title": "SourceTargetModel",
+        "description": "An account handle or feed URL."
+      },
+      "SourcesResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/FeedSourceOut"
+                },
+                {
+                  "$ref": "#/components/schemas/XSourceOut"
+                },
+                {
+                  "$ref": "#/components/schemas/RedditSourceOut"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "hacker_news": "#/components/schemas/FeedSourceOut",
+                  "reddit": "#/components/schemas/RedditSourceOut",
+                  "rss": "#/components/schemas/FeedSourceOut",
+                  "x": "#/components/schemas/XSourceOut",
+                  "youtube": "#/components/schemas/FeedSourceOut"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "total_posts": {
+            "type": "integer",
+            "title": "Total Posts"
+          },
+          "blog_external_count": {
+            "type": "integer",
+            "title": "Blog External Count"
+          },
+          "in_database": {
+            "type": "boolean",
+            "title": "In Database"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sources",
+          "total_posts",
+          "blog_external_count",
+          "in_database"
+        ],
+        "title": "SourcesResponse"
+      },
+      "ThumbnailTitleOut": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "first_seen": {
+            "type": "string",
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "type": "string",
+            "title": "Last Seen"
+          },
+          "association": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "matched"
+            ],
+            "title": "Association"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "first_seen",
+          "last_seen",
+          "association"
+        ],
+        "title": "ThumbnailTitleOut"
+      },
+      "ThumbnailVariantOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "first_seen": {
+            "type": "string",
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "type": "string",
+            "title": "Last Seen"
+          },
+          "title_pairs": {
+            "items": {
+              "$ref": "#/components/schemas/ThumbnailTitleOut"
+            },
+            "type": "array",
+            "title": "Title Pairs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "first_seen",
+          "last_seen",
+          "title_pairs"
+        ],
+        "title": "ThumbnailVariantOut"
+      },
+      "TitleVersionOut": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "first_seen": {
+            "type": "string",
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "type": "string",
+            "title": "Last Seen"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "first_seen",
+          "last_seen"
+        ],
+        "title": "TitleVersionOut"
+      },
+      "TranscriptSegmentOut": {
+        "properties": {
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Start"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Duration"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "duration",
+          "text"
+        ],
+        "title": "TranscriptSegmentOut"
+      },
+      "VideoMetadataOut": {
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "title": "Video Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "failed",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "retry_after": {
+            "type": "string",
+            "title": "Retry After"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "captured_at": {
+            "type": "string",
+            "title": "Captured At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "video_id",
+          "status",
+          "provider",
+          "cached",
+          "observed_at",
+          "retry_after",
+          "available",
+          "captured_at"
+        ],
+        "title": "VideoMetadataOut"
+      },
+      "VideoReferenceOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "post_id": {
+            "type": "string",
+            "title": "Post Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "post",
+              "comment"
+            ],
+            "title": "Kind"
+          },
+          "reference_id": {
+            "type": "string",
+            "title": "Reference Id"
+          },
+          "reference_url": {
+            "type": "string",
+            "title": "Reference Url"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "matched_url": {
+            "type": "string",
+            "title": "Matched Url"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "reader_url": {
+            "type": "string",
+            "title": "Reader Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "post_id",
+          "kind",
+          "reference_id",
+          "reference_url",
+          "author",
+          "matched_url",
+          "excerpt",
+          "observed_at",
+          "url",
+          "title",
+          "source",
+          "reader_url"
+        ],
+        "title": "VideoReferenceOut"
+      },
+      "VideoTranscriptOut": {
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "title": "Video Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_collected",
+              "captured",
+              "unavailable",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "retry_after": {
+            "type": "string",
+            "title": "Retry After"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "language_name": {
+            "type": "string",
+            "title": "Language Name"
+          },
+          "generated": {
+            "type": "boolean",
+            "title": "Generated"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegmentOut"
+            },
+            "type": "array",
+            "title": "Segments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "video_id",
+          "status",
+          "observed_at",
+          "retry_after",
+          "language",
+          "language_name",
+          "generated",
+          "segments"
+        ],
+        "title": "VideoTranscriptOut"
+      },
+      "XAccountOut": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "total_posts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Posts"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "handle",
+          "name",
+          "icon_url",
+          "total_posts",
+          "count"
+        ],
+        "title": "XAccountOut"
+      },
+      "XAuthorOut": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "posts": {
+            "items": {
+              "$ref": "#/components/schemas/PostOut"
+            },
+            "type": "array",
+            "title": "Posts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "handle",
+          "name",
+          "icon_url",
+          "count",
+          "posts"
+        ],
+        "title": "XAuthorOut"
+      },
+      "XAuthorsResponse": {
+        "properties": {
+          "authors": {
+            "items": {
+              "$ref": "#/components/schemas/XAuthorOut"
+            },
+            "type": "array",
+            "title": "Authors"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "unattributed_posts": {
+            "type": "integer",
+            "title": "Unattributed Posts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authors",
+          "next_cursor",
+          "total",
+          "unattributed_posts"
+        ],
+        "title": "XAuthorsResponse"
+      },
+      "XConversationNodeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "thumbnail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/MediaOut"
+            },
+            "type": "array",
+            "title": "Media"
+          },
+          "x": {
+            "$ref": "#/components/schemas/CapturedXOut"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          },
+          "missing_parent": {
+            "type": "boolean",
+            "title": "Missing Parent"
+          },
+          "is_author": {
+            "type": "boolean",
+            "title": "Is Author"
+          },
+          "collected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collected"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "url",
+          "author",
+          "title",
+          "html",
+          "excerpt",
+          "source",
+          "created_at",
+          "thumbnail",
+          "media",
+          "x",
+          "parent_id",
+          "depth",
+          "missing_parent",
+          "is_author"
+        ],
+        "title": "XConversationNodeOut"
+      },
+      "XConversationOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "partial",
+              "failed",
+              "disabled",
+              "not_collected"
+            ],
+            "title": "Status"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reported_replies": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Replies"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "captured_count": {
+            "type": "integer",
+            "title": "Captured Count"
+          },
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/XConversationNodeOut"
+            },
+            "type": "array",
+            "title": "Context"
+          },
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/XConversationNodeOut"
+            },
+            "type": "array",
+            "title": "Replies"
+          },
+          "latest_attempt_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "captured",
+                  "partial",
+                  "failed",
+                  "disabled",
+                  "not_collected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Attempt Status"
+          },
+          "latest_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Attempt At"
+          },
+          "local_posts_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Posts Count"
+          },
+          "local_posts_limited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Posts Limited"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "captured_at",
+          "has_more",
+          "reason",
+          "reported_replies",
+          "limit",
+          "captured_count",
+          "context",
+          "replies"
+        ],
+        "title": "XConversationOut"
+      },
+      "XDetailOut": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/XLinkOut"
+            },
+            "type": "array",
+            "title": "Links"
+          },
+          "replies_status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "partial",
+              "failed",
+              "disabled",
+              "not_collected"
+            ],
+            "title": "Replies Status"
+          },
+          "replies_captured_count": {
+            "type": "integer",
+            "title": "Replies Captured Count"
+          },
+          "reply_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Count"
+          },
+          "repost_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repost Count"
+          },
+          "like_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Like Count"
+          },
+          "view_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Count"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "media": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XMediaOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "reply_to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XReplyToOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XQuoteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/XConversationOut"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "handle",
+          "name",
+          "icon_url",
+          "links",
+          "replies_status",
+          "replies_captured_count",
+          "reply_count",
+          "repost_count",
+          "like_count",
+          "view_count",
+          "captured_at",
+          "conversation"
+        ],
+        "title": "XDetailOut"
+      },
+      "XLinkOut": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "title",
+          "description",
+          "image_url"
+        ],
+        "title": "XLinkOut"
+      },
+      "XMediaOut": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "gif"
+            ],
+            "title": "Type"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "alt": {
+            "type": "string",
+            "title": "Alt"
+          },
+          "remote": {
+            "type": "boolean",
+            "title": "Remote"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "url",
+          "poster_url",
+          "alt",
+          "remote"
+        ],
+        "title": "XMediaOut"
+      },
+      "XOut": {
+        "properties": {
+          "handle": {
+            "type": "string",
+            "title": "Handle"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/XLinkOut"
+            },
+            "type": "array",
+            "title": "Links"
+          },
+          "replies_status": {
+            "type": "string",
+            "enum": [
+              "captured",
+              "partial",
+              "failed",
+              "disabled",
+              "not_collected"
+            ],
+            "title": "Replies Status"
+          },
+          "replies_captured_count": {
+            "type": "integer",
+            "title": "Replies Captured Count"
+          },
+          "reply_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Count"
+          },
+          "repost_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repost Count"
+          },
+          "like_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Like Count"
+          },
+          "view_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Count"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "media": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/XMediaOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "reply_to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XReplyToOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XQuoteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "handle",
+          "name",
+          "icon_url",
+          "links",
+          "replies_status",
+          "replies_captured_count",
+          "reply_count",
+          "repost_count",
+          "like_count",
+          "view_count",
+          "captured_at"
+        ],
+        "title": "XOut"
+      },
+      "XQuoteOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "collected": {
+            "type": "boolean",
+            "title": "Collected"
+          },
+          "post": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapturedPostOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "url",
+          "collected"
+        ],
+        "title": "XQuoteOut"
+      },
+      "XReplyToOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "is_self": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Self"
+          },
+          "collected": {
+            "type": "boolean",
+            "title": "Collected"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "url",
+          "is_self",
+          "collected"
+        ],
+        "title": "XReplyToOut"
+      },
+      "XScope": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "kind": {
+            "type": "string",
+            "const": "x",
+            "title": "Kind"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "feed_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "XScope"
+      },
+      "XSourceOut": {
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "kind": {
+            "type": "string",
+            "const": "x",
+            "title": "Kind"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/XAccountOut"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "for_you_count": {
+            "type": "integer",
+            "title": "For You Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "domain",
+          "name",
+          "icon_url",
+          "configured",
+          "tags",
+          "count",
+          "kind",
+          "accounts",
+          "for_you_count"
+        ],
+        "title": "XSourceOut"
+      },
+      "YouTubeChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "video_count": {
+            "type": "integer",
+            "title": "Video Count"
+          },
+          "short_count": {
+            "type": "integer",
+            "title": "Short Count"
+          },
+          "post_count": {
+            "type": "integer",
+            "title": "Post Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/YouTubeItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url",
+          "configured",
+          "count",
+          "video_count",
+          "short_count",
+          "post_count",
+          "items"
+        ],
+        "title": "YouTubeChannelOut"
+      },
+      "YouTubeChannelsResponse": {
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/YouTubeChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "unattributed_items": {
+            "type": "integer",
+            "title": "Unattributed Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channels",
+          "next_cursor",
+          "total",
+          "unattributed_items"
+        ],
+        "title": "YouTubeChannelsResponse"
+      },
+      "YouTubeFeedOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "region": {
+            "type": "string",
+            "title": "Region"
+          },
+          "tab": {
+            "type": "string",
+            "title": "Tab"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "name",
+          "kind",
+          "region",
+          "tab",
+          "count"
+        ],
+        "title": "YouTubeFeedOut"
+      },
+      "YouTubeItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "short",
+              "post"
+            ],
+            "title": "Kind"
+          },
+          "video_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/ChannelRefOut"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "thumbnail_variants": {
+            "items": {
+              "$ref": "#/components/schemas/ThumbnailVariantOut"
+            },
+            "type": "array",
+            "title": "Thumbnail Variants"
+          },
+          "video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Url"
+          },
+          "duration_text": {
+            "type": "string",
+            "title": "Duration Text"
+          },
+          "views_text": {
+            "type": "string",
+            "title": "Views Text"
+          },
+          "published_text": {
+            "type": "string",
+            "title": "Published Text"
+          },
+          "observed_at": {
+            "type": "string",
+            "title": "Observed At"
+          },
+          "metadata_capture": {
+            "$ref": "#/components/schemas/MetadataStateOut"
+          },
+          "detail_capture": {
+            "$ref": "#/components/schemas/DetailCaptureOut"
+          },
+          "discoveries": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryOut"
+            },
+            "type": "array",
+            "title": "Discoveries"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/VideoReferenceOut"
+            },
+            "type": "array",
+            "title": "References"
+          },
+          "reference_count": {
+            "type": "integer",
+            "title": "Reference Count"
+          },
+          "title_history": {
+            "items": {
+              "$ref": "#/components/schemas/TitleVersionOut"
+            },
+            "type": "array",
+            "title": "Title History"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "video_id",
+          "url",
+          "title",
+          "text",
+          "channel",
+          "thumbnail_url",
+          "thumbnail_variants",
+          "video_url",
+          "duration_text",
+          "views_text",
+          "published_text",
+          "observed_at",
+          "metadata_capture",
+          "detail_capture",
+          "discoveries",
+          "references",
+          "reference_count",
+          "title_history"
+        ],
+        "title": "YouTubeItemOut"
+      },
+      "YouTubeOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "short",
+              "post"
+            ],
+            "title": "Kind"
+          },
+          "video_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Id"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/PostYouTubeChannelOut"
+          },
+          "duration_text": {
+            "type": "string",
+            "title": "Duration Text"
+          },
+          "views_text": {
+            "type": "string",
+            "title": "Views Text"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
+          "video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "video_id",
+          "channel",
+          "duration_text",
+          "views_text",
+          "thumbnail_url",
+          "video_url"
+        ],
+        "title": "YouTubeOut"
+      },
+      "YouTubeResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/YouTubeItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "total"
+        ],
+        "title": "YouTubeResponse"
+      },
+      "YouTubeScope": {
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "kind": {
+            "type": "string",
+            "const": "youtube",
+            "title": "Kind"
+          },
+          "channel_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel Id"
+          },
+          "feed_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Id"
+          },
+          "playlist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "YouTubeScope"
+      },
+      "YouTubeSourceChannelOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "reported_video_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Video Count"
+          },
+          "reported_video_count_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Video Count Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "url",
+          "count",
+          "avatar_url",
+          "reported_video_count",
+          "reported_video_count_text"
+        ],
+        "title": "YouTubeSourceChannelOut"
+      },
+      "YouTubeSourcesResponse": {
+        "properties": {
+          "feeds": {
+            "items": {
+              "$ref": "#/components/schemas/YouTubeFeedOut"
+            },
+            "type": "array",
+            "title": "Feeds"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/components/schemas/YouTubeSourceChannelOut"
+            },
+            "type": "array",
+            "title": "Channels"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "linked_count": {
+            "type": "integer",
+            "title": "Linked Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "feeds",
+          "channels",
+          "total",
+          "linked_count"
+        ],
+        "title": "YouTubeSourcesResponse"
+      }
+    }
+  }
+}

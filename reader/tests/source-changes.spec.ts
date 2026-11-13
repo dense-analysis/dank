@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource } from "../src/lib/api.fixture";
 import type { Source } from "../src/lib/types";
 
 // The interval the reader checks the saved sources at.
@@ -19,14 +20,14 @@ function saved(id: number, domain: string) {
 }
 
 function inSidebar(domain: string): Source {
-  return {
+  return feedSource({
     domain,
     name: domain,
     kind: "rss",
     count: 1,
     tags: [],
     configured: true,
-  };
+  });
 }
 
 /**
@@ -57,7 +58,14 @@ async function fixture(
 
       return state.settingsRequests > failing
         ? route.fulfill({ json: { sources, in_database: inDatabase } })
-        : route.fulfill({ status: failStatus, json: { error: "No" } });
+        : route.fulfill({
+            status: failStatus,
+            json: {
+              error: "No",
+              code: failStatus === 404 ? "not_found" : "unavailable",
+              fields: [],
+            },
+          });
     }
 
     if (url.pathname.endsWith("/source-icon")) {

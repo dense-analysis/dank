@@ -6,6 +6,9 @@
 - Use TypeScript strict mode, React components and plain CSS. Keep product state
   explicit; URL filters, query cache and local library each have one authority.
 - Keep the HTTP contract in src/lib and source identity as (domain, post id).
+  API types come from `src/lib/api.gen.ts`; after a server route or model
+  change, run `make openapi` and commit `openapi.json` and `api.gen.ts`. Build
+  test data with `src/lib/api.fixture.ts` rather than partial literals.
 - Render collected HTML only through the article sanitizer. Do not add remote
   scripts, embed scraped iframes or silently replace API errors with demo data.
 - Keep presentation consistent across sources even when their collection

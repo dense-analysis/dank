@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
+import {
+  hackerNewsPost,
+  post,
+  redditPost,
+  xPost,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 test.use({ timezoneId: "Europe/London", locale: "en-GB" });
 
@@ -16,73 +23,86 @@ test("All and source readers share recent dates and switch yesterday to an exact
     "hacker_news",
     "youtube",
   ].flatMap((source) =>
-    [recent, yesterday].map((date, index) => ({
-      id: `${source}-${index}`,
-      domain:
-        source === "rss"
-          ? "example.com"
-          : source === "hacker_news"
-            ? "news.ycombinator.com"
-            : `${source}.com`,
-      source,
-      url: "https://example.com/story",
-      author: "Writer",
-      title: `${source} story ${index}`,
-      html: `<p>${source} story ${index}</p>`,
-      excerpt: `${source} story ${index}`,
-      created_at: date,
-      thumbnail: null,
-      media: [],
-      ...(source === "reddit"
-        ? {
-            reddit: {
-              community: "example",
-              score: 1,
-              comments: 0,
-              flair: null,
-            },
-          }
-        : {}),
-      ...(source === "x"
-        ? { x: { handle: "writer", name: "Writer", media: [] } }
-        : {}),
-      ...(source === "hacker_news"
-        ? {
-            hacker_news: {
-              submitted_at: date,
-              points: 1,
-              comments: 0,
-              day: "2026-10-18",
-              rank: 1,
-              discussion_url: "https://news.ycombinator.com/item?id=1",
-              external_url: null,
-            },
-          }
-        : {}),
-    })),
+    [recent, yesterday].map((date, index) =>
+      post({
+        id: `${source}-${index}`,
+        domain:
+          source === "rss"
+            ? "example.com"
+            : source === "hacker_news"
+              ? "news.ycombinator.com"
+              : `${source}.com`,
+        source,
+        url: "https://example.com/story",
+        author: "Writer",
+        title: `${source} story ${index}`,
+        html: `<p>${source} story ${index}</p>`,
+        excerpt: `${source} story ${index}`,
+        created_at: date,
+        thumbnail: null,
+        media: [],
+        ...(source === "reddit"
+          ? {
+              reddit: redditPost({
+                community: "example",
+                score: 1,
+                comments: 0,
+                flair: null,
+              }),
+            }
+          : {}),
+        ...(source === "x"
+          ? { x: xPost({ handle: "writer", name: "Writer", media: [] }) }
+          : {}),
+        ...(source === "hacker_news"
+          ? {
+              hacker_news: hackerNewsPost({
+                submitted_at: date,
+                points: 1,
+                comments: 0,
+                day: "2026-10-18",
+                rank: 1,
+                discussion_url: "https://news.ycombinator.com/item?id=1",
+                external_url: null,
+              }),
+            }
+          : {}),
+      }),
+    ),
   );
   await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find(
+          (post) => post.id === url.searchParams.get("id"),
+        );
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        const kind = url.searchParams.get("kind");
+        return route.fulfill({
+          json: {
+            posts: posts.filter(
+              (post) =>
+                kind === "all" ||
+                post.source === (kind === "stories" ? "rss" : kind),
+            ),
+            next_cursor: null,
+            limited: false,
+          },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
     }
-
-    const kind = url.searchParams.get("kind");
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? { sources: [], total_posts: posts.length }
-        : url.pathname.endsWith("/post")
-          ? posts.find((post) => post.id === url.searchParams.get("id"))
-          : {
-              posts: posts.filter(
-                (post) =>
-                  kind === "all" ||
-                  post.source === (kind === "stories" ? "rss" : kind),
-              ),
-              next_cursor: null,
-              limited: false,
-            },
-    });
   });
 
   for (const view of ["all", "stories", "reddit", "x", "hacker_news"]) {

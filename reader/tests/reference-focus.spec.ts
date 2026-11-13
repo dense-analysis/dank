@@ -1,4 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
+import {
+  hackerNewsPost,
+  post,
+  redditPost,
+  xPost,
+  youtubeItem,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
 import type {
   YouTubeItem,
@@ -18,7 +25,7 @@ const filler = Array.from(
 function article(
   source: "reddit" | "hacker_news" | "rss" | "x" = "reddit",
 ): Post {
-  const base: Post = {
+  const base: Post = post({
     domain:
       source === "reddit"
         ? "reddit.com"
@@ -37,10 +44,10 @@ function article(
     created_at: saved,
     thumbnail: null,
     media: [],
-  };
+  });
 
   if (source === "reddit")
-    base.reddit = {
+    base.reddit = redditPost({
       community: "gamedev",
       score: 30,
       comments: 2,
@@ -78,9 +85,9 @@ function article(
           },
         ],
       },
-    };
+    });
   if (source === "hacker_news")
-    base.hacker_news = {
+    base.hacker_news = hackerNewsPost({
       points: 20,
       comments: 2,
       discussion_url: base.url,
@@ -111,12 +118,12 @@ function article(
           depth: 1,
         },
       ],
-    };
+    });
   if (source === "rss")
     base.html += `<div id="comment-other">${matchingHtml}</div><div id="comment-target">${matchingHtml}</div>`;
   if (source === "x") {
     base.html = `<p>${videoUrl}</p>${filler}`;
-    base.x = {
+    base.x = xPost({
       handle: "reporter",
       name: "Reporter",
       links: [
@@ -127,7 +134,7 @@ function article(
           image_url: null,
         },
       ],
-    };
+    });
   }
 
   return base;
@@ -158,7 +165,7 @@ function reference(post: Post): YouTubeReference {
 }
 async function fixtures(page: Page, post = article(), linkedPost?: Post) {
   const ref = reference(post);
-  const video: YouTubeItem = {
+  const video: YouTubeItem = youtubeItem({
     id: `video:${videoId}`,
     kind: "video",
     video_id: videoId,
@@ -175,7 +182,7 @@ async function fixtures(page: Page, post = article(), linkedPost?: Post) {
     discoveries: [],
     references: [ref],
     reference_count: 1,
-  };
+  });
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/reader/categories") {

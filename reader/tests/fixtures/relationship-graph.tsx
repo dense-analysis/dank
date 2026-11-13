@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import YouTubeReferenceGraph from "../../src/components/YouTubeReferenceGraph";
+import { youtubeItem } from "../../src/lib/api.fixture";
 import type {
   YouTubeItem,
   YouTubeReference,
@@ -25,7 +26,7 @@ const reference: YouTubeReference = {
     "...and they've seen it happen in real time. What I think we're really seeing is that these AI models have always been fully automated plagiarism.",
   observed_at: "2026-10-17T12:00:00Z",
 };
-const item: YouTubeItem = {
+const item: YouTubeItem = youtubeItem({
   id: "video:NnV_cWeoo5Q",
   video_id: "NnV_cWeoo5Q",
   kind: "video",
@@ -56,7 +57,7 @@ const item: YouTubeItem = {
     reference,
   ],
   reference_count: 2,
-};
+});
 
 function Fixture() {
   const [video, setVideo] = useState(item);

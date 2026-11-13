@@ -1,11 +1,23 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
-import type { PostConnection } from "../src/lib/postConnections";
-import type { Post, PostReference } from "../src/lib/types";
+import {
+  feedSource,
+  post,
+  redditPost,
+  redditSource,
+  xSource,
+} from "../src/lib/api.fixture";
+import type {
+  ConnectionsContext,
+  PostConnection,
+  PostConnectionsData,
+} from "../src/lib/postConnections";
+import type { Post, PostReference, Source } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 function destination(kind: "blog" | "x" | "reddit"): Post {
   const domain = kind === "blog" ? "example.com" : `${kind}.com`;
-  return {
+  return post({
     id: "original",
     domain,
     url:
@@ -22,19 +34,43 @@ function destination(kind: "blog" | "x" | "reddit"): Post {
     thumbnail: null,
     ...(kind === "reddit"
       ? {
-          reddit: {
+          reddit: redditPost({
             community: "research",
             score: 15,
             comments: 3,
             flair: null,
-          },
+          }),
         }
       : {}),
-  };
+  });
 }
 function reference(post: Post): PostReference {
   const { domain, id, url, title, source } = post;
   return { domain, id, url, title, source };
+}
+/** The sidebar entry for the platform the destination was saved from. */
+function savedSource(post: Post): Source {
+  const fields = { domain: post.domain, name: post.domain, count: 1, tags: [] };
+
+  if (post.source === "x") return xSource(fields);
+  if (post.source === "reddit") return redditSource(fields);
+
+  return feedSource(fields);
+}
+const contextSources = [
+  "reddit",
+  "hacker_news",
+  "x",
+  "youtube",
+  "rss",
+] as const;
+/** The server answers connections in the scope the request asked for. */
+function requestedContext(params: URLSearchParams): ConnectionsContext {
+  return {
+    source:
+      contextSources.find((source) => source === params.get("source")) ?? null,
+    community: params.get("community"),
+  };
 }
 async function fixtures(
   page: Page,
@@ -102,6 +138,7 @@ async function fixtures(
     target: {
       url: original.url,
       post: reference(original),
+      title: original.title,
       youtube_item_id: null,
     },
     evidence: {
@@ -116,70 +153,56 @@ async function fixtures(
       observed_at: story.created_at,
     },
   }));
-  await page.route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
+  await page.route("**/api/reader/**", (route) => {
+    const params = new URL(route.request().url()).searchParams;
 
-    if (url.pathname.includes("/youtube/")) {
-      await route.fulfill({
-        json: { feeds: [], channels: [], total: 0, linked_count: 0 },
-      });
-    } else if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: {
-          sources: [
-            {
-              domain: story.domain,
-              name: "Hacker News",
-              count: 2,
-              kind: "hacker_news",
-              tags: [],
-            },
-            {
-              domain: original.domain,
-              name: original.domain,
-              count: 1,
-              kind:
-                original.source === "linked_article" ? "rss" : original.source,
-              tags: [],
-            },
-          ],
-          total_posts: 3,
-        },
-      });
-    } else if (url.pathname.endsWith("/connections")) {
-      const discussion = url.searchParams.get("domain") === story.domain;
-      await route.fulfill({
-        json: {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              feedSource({
+                domain: story.domain,
+                name: "Hacker News",
+                count: 2,
+                kind: "hacker_news",
+                tags: [],
+              }),
+              savedSource(original),
+            ],
+            total_posts: 3,
+          },
+        });
+      case "/api/reader/connections": {
+        const discussion = params.get("domain") === story.domain;
+        const connections: PostConnectionsData = {
+          ...emptyResponses["/api/reader/connections"],
           root: reference(discussion ? story : original),
+          context: requestedContext(params),
           incoming: discussion ? [] : incoming,
           outgoing: discussion
             ? [{ ...incoming[0], direction: "outgoing" }]
             : [],
           incoming_count: discussion ? 0 : incoming.length,
           outgoing_count: discussion ? 1 : 0,
-          limit: 100,
-          coverage: "saved_evidence",
-        },
-      });
-    } else if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json:
-          url.searchParams.get("domain") === story.domain ? story : original,
-      });
-    } else {
-      await route.fulfill({
-        json: {
-          posts:
-            url.searchParams.get("kind") === "hacker_news"
-              ? [story]
-              : [original],
-          next_cursor: null,
-          limited: false,
-        },
-      });
+        };
+
+        return route.fulfill({ json: connections });
+      }
+      case "/api/reader/post":
+        return route.fulfill({
+          json: params.get("domain") === story.domain ? story : original,
+        });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/posts"],
+            posts: params.get("kind") === "hacker_news" ? [story] : [original],
+          },
+        });
+      default:
+        return fulfillEmpty(route);
     }
   });
   return { original, story };

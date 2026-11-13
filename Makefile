@@ -27,7 +27,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas sources-import test lint test-postgres
+.PHONY: help config up web down logs scrape process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas sources-import openapi test lint test-postgres
 
 help:
 	@printf '%s\n' \
@@ -56,6 +56,7 @@ help:
 		'  db-atlas        On the host: run an Atlas command with telemetry off; pass ARGS' \
 		'  atlas           On the host: install the pinned Atlas binary; ARGS=--dir=DIR shares one' \
 		'  sources-import  Import the sources in config.toml into Postgres, once' \
+		'  openapi         On the host: regenerate the API schema and the reader'\''s types' \
 		'  test            On the host: run the tests; pass paths or options through ARGS' \
 		'  lint            On the host: run all linters, which can fix files' \
 		'  test-postgres   Run the Postgres tests against a disposable server' \
@@ -162,6 +163,11 @@ atlas:
 
 sources-import:
 	$(RUN) dank-db import-sources
+
+# The reader's types follow the schema, so regenerate both together.
+openapi:
+	$(UV) run dank-openapi
+	npm --prefix reader run api:generate
 
 test:
 	$(UV) run pytest $(ARGS)

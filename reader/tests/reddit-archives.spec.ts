@@ -1,7 +1,15 @@
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+  redditVideo,
+} from "../src/lib/api.fixture";
 import type { Post, RedditCommentCapture, RedditVideo } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const capture: RedditCommentCapture = {
   status: "captured",
@@ -52,14 +60,14 @@ const capture: RedditCommentCapture = {
     },
   ],
 };
-const remoteVideo: RedditVideo = {
+const remoteVideo: RedditVideo = redditVideo({
   source_url: "https://v.redd.it/landing",
   url: "https://video.reddit.test/playlist.m3u8",
   hls_url: "https://video.reddit.test/playlist.m3u8",
   poster_url: null,
   remote: true,
-};
-const post: Post = {
+});
+const videoPost: Post = post({
   id: "video",
   domain: "reddit.com",
   url: "https://www.reddit.com/r/accelerate/comments/video/landing/",
@@ -71,20 +79,20 @@ const post: Post = {
   source: "reddit",
   thumbnail: null,
   media: [],
-  reddit: {
+  reddit: redditPost({
     community: "accelerate",
     score: 242,
     comments: 298,
     flair: null,
     video: remoteVideo,
     comment_capture: capture,
-  },
-};
+  }),
+});
 
-const reddit = post.reddit;
+const reddit = videoPost.reddit;
 if (!reddit) throw new Error("Expected Reddit fixture");
 
-async function mockArchive(page: Page, detail: Post = post) {
+async function mockArchive(page: Page, detail: Post = videoPost) {
   const streams: string[] = [];
   await page.route("https://video.reddit.test/**", async (route) => {
     const name = new URL(route.request().url()).pathname.slice(1);
@@ -109,36 +117,40 @@ async function mockArchive(page: Page, detail: Post = post) {
     }),
   );
   await page.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    const listPost = {
-      ...detail,
-      reddit: detail.reddit
-        ? { ...detail.reddit, video: undefined, comment_capture: undefined }
-        : null,
-    };
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              {
-                domain: "reddit.com",
+              redditSource({
                 name: "Reddit",
-                kind: "reddit",
-                tags: [],
                 count: 1,
-                communities: [{ name: "accelerate", count: 1 }],
-              },
+                communities: [
+                  redditCommunity({ name: "accelerate", count: 1 }),
+                ],
+              }),
             ],
             total_posts: 1,
-          }
-        : url.pathname.endsWith("/post")
-          ? detail
-          : { posts: [listPost], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: detail });
+      case "/api/reader/posts": {
+        const listPost: Post = {
+          ...detail,
+          reddit: detail.reddit
+            ? { ...detail.reddit, video: null, comment_capture: undefined }
+            : null,
+        };
+
+        return route.fulfill({
+          json: { posts: [listPost], next_cursor: null, limited: false },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
+    }
   });
   return streams;
 }
@@ -146,10 +158,10 @@ async function mockArchive(page: Page, detail: Post = post) {
 async function openPost(page: Page) {
   await page.goto("/?view=reddit&community=accelerate");
   await page
-    .getByRole("link", { name: `Read ${post.title}`, exact: true })
+    .getByRole("link", { name: `Read ${videoPost.title}`, exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: post.title, exact: true }),
+    page.getByRole("heading", { name: videoPost.title, exact: true }),
   ).toBeVisible();
 }
 
@@ -172,7 +184,7 @@ for (const width of [1280, 390]) {
     await expect(page.getByText("OP", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("link", { name: "More comments on Reddit" }),
-    ).toHaveAttribute("href", post.url);
+    ).toHaveAttribute("href", videoPost.url);
     expect(streams).toEqual([]);
     expect(
       await page.evaluate(
@@ -195,7 +207,7 @@ for (const width of [1280, 390]) {
 test("plays remote HLS with audio only after pressing play", async ({
   page,
 }) => {
-  const streams = await mockArchive(page, { ...post, html: "" });
+  const streams = await mockArchive(page, { ...videoPost, html: "" });
   await openPost(page);
   await expect(page.getByText("Full text not collected")).toHaveCount(0);
   const video = page.getByLabel("Reddit video");
@@ -228,7 +240,7 @@ test("plays archived video locally without duplicate media or a remote label", a
   page,
 }) => {
   const streams = await mockArchive(page, {
-    ...post,
+    ...videoPost,
     html: "",
     media: [{ url: "/assets/archived.mp4", content_type: "video/mp4" }],
     reddit: {
@@ -268,7 +280,7 @@ test("offers the original when a stream fails", async ({ page }) => {
   ).toBeVisible({ timeout: 15000 });
   await expect(
     page.getByRole("link", { name: "Read original", exact: true }),
-  ).toHaveAttribute("href", post.url);
+  ).toHaveAttribute("href", videoPost.url);
 });
 
 for (const status of [
@@ -282,7 +294,7 @@ for (const status of [
     page,
   }) => {
     await mockArchive(page, {
-      ...post,
+      ...videoPost,
       reddit: {
         ...reddit,
         video: null,
@@ -302,7 +314,7 @@ for (const status of [
     ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "Read comments on Reddit" }),
-    ).toHaveAttribute("href", post.url);
+    ).toHaveAttribute("href", videoPost.url);
     await expect(
       page.getByText("No comments when this post was collected."),
     ).toHaveCount(0);
@@ -313,7 +325,7 @@ test("distinguishes captured-empty, unknown historical totals, and retained comm
   page,
 }) => {
   await mockArchive(page, {
-    ...post,
+    ...videoPost,
     reddit: {
       ...reddit,
       comments: 0,
@@ -332,7 +344,7 @@ test("distinguishes captured-empty, unknown historical totals, and retained comm
   ).toBeVisible();
   await page.unroute("**/api/reader/**");
   await mockArchive(page, {
-    ...post,
+    ...videoPost,
     reddit: {
       ...reddit,
       comments: null,
@@ -346,7 +358,7 @@ test("distinguishes captured-empty, unknown historical totals, and retained comm
   ).toBeVisible();
   await page.unroute("**/api/reader/**");
   await mockArchive(page, {
-    ...post,
+    ...videoPost,
     reddit: {
       ...reddit,
       video: null,
@@ -405,7 +417,7 @@ test("falls back to a verified MP4 with audio when HLS fails", async ({
   page,
 }) => {
   await mockArchive(page, {
-    ...post,
+    ...videoPost,
     reddit: {
       ...reddit,
       video: {
@@ -446,7 +458,7 @@ test("falls back to a verified MP4 with audio when HLS fails", async ({
 
 test("keeps archived comments when a refresh is deferred", async ({ page }) => {
   await mockArchive(page, {
-    ...post,
+    ...videoPost,
     reddit: {
       ...reddit,
       video: null,
@@ -472,7 +484,7 @@ test("older Reddit video attachments share playback with the Reddit stream playe
 }) => {
   await page.setViewportSize({ width: 1000, height: 2400 });
   await mockArchive(page, {
-    ...post,
+    ...videoPost,
     media: [{ url: "/assets/archived.mp4", content_type: "video/mp4" }],
   });
   await openPost(page);

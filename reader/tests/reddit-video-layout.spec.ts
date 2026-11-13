@@ -5,18 +5,26 @@ import {
   type Locator,
   test,
 } from "@playwright/test";
+import {
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+  redditVideo,
+} from "../src/lib/api.fixture";
 import type { Post, RedditVideo } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const raw = "https://v.redd.it/portrait";
 const other = "https://v.redd.it/another";
-const asset: RedditVideo = {
+const asset: RedditVideo = redditVideo({
   url: "/assets/reddit-portrait.mp4",
   source_url: `${raw}/HLSPlaylist.m3u8?a=signed`,
   poster_url: "/assets/reddit-poster.svg",
   remote: false,
-};
-function post(video: RedditVideo | null = asset): Post {
-  return {
+});
+function portraitPost(video: RedditVideo | null = asset): Post {
+  return post({
     id: "portrait",
     domain: "reddit.com",
     source: "reddit",
@@ -28,10 +36,20 @@ function post(video: RedditVideo | null = asset): Post {
     created_at: "2026-10-17T00:00:00Z",
     thumbnail: null,
     media: [],
-    reddit: { community: "videos", score: 3, comments: 2, flair: null, video },
-  };
+    reddit: redditPost({
+      community: "videos",
+      score: 3,
+      comments: 2,
+      flair: null,
+      video,
+    }),
+  });
 }
-async function mock(context: BrowserContext, detail = post(), ratio = 9 / 16) {
+async function mock(
+  context: BrowserContext,
+  detail = portraitPost(),
+  ratio = 9 / 16,
+) {
   const state = { requests: 0, fail: false, posterFail: false };
   await context.route("**/assets/reddit-poster.svg", (route) =>
     route.fulfill(
@@ -57,26 +75,30 @@ async function mock(context: BrowserContext, detail = post(), ratio = 9 / 16) {
     );
   });
   await context.route("**/api/reader/**", (route) => {
-    const path = new URL(route.request().url()).pathname;
-    return route.fulfill({
-      json: path.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              {
-                domain: "reddit.com",
+              redditSource({
                 name: "Reddit",
-                kind: "reddit",
-                tags: [],
                 count: 1,
-                communities: [{ name: "videos", count: 1 }],
-              },
+                communities: [redditCommunity({ name: "videos", count: 1 })],
+              }),
             ],
             total_posts: 1,
-          }
-        : path.endsWith("/post")
-          ? detail
-          : { posts: [detail], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: detail });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts: [detail], next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
   return state;
 }
@@ -137,7 +159,7 @@ for (const ratio of [1, 16 / 9]) {
     page,
     context,
   }) => {
-    const state = await mock(context, post(), ratio);
+    const state = await mock(context, portraitPost(), ratio);
     await page.goto("/");
     await expectRatio(page.locator(".reddit-card video"), ratio);
     expect(state.requests).toBe(0);
@@ -148,7 +170,7 @@ for (const poster of ["wrong-ratio", "unavailable"] as const) {
     page,
     context,
   }) => {
-    const state = await mock(context, post(), 16 / 9);
+    const state = await mock(context, portraitPost(), 16 / 9);
     state.posterFail = poster === "unavailable";
     await page.goto("/?article=portrait&article_source=reddit.com");
     const reader = page.getByRole("main", { name: "Article reader" });
@@ -198,10 +220,12 @@ for (const detail of [false, true]) {
     else await expect(scope.locator(".post-open p")).toContainText(raw);
     await expect(
       scope.getByRole("link", {
-        name: detail ? "Read original" : `Open original: ${post().title}`,
+        name: detail
+          ? "Read original"
+          : `Open original: ${portraitPost().title}`,
         exact: true,
       }),
-    ).toHaveAttribute("href", post().url);
+    ).toHaveAttribute("href", portraitPost().url);
     expect(state.requests).toBe(1);
   });
 }
@@ -209,7 +233,7 @@ test("Reddit links remain readable when no video was captured", async ({
   page,
   context,
 }) => {
-  await mock(context, post(null));
+  await mock(context, portraitPost(null));
   await page.goto("/");
   await expect(page.locator(".post-open p")).toContainText(raw);
   await page
@@ -225,7 +249,7 @@ test("URL-only feed excerpts leave the title and player without placeholder text
   context,
 }) => {
   await mock(context, {
-    ...post(),
+    ...portraitPost(),
     excerpt: raw,
     html: `<p><a href="${raw}">${raw}</a></p><img src="/assets/reddit-poster.svg">`,
   });
@@ -241,7 +265,7 @@ for (const width of [1440, 390]) {
     context,
   }) => {
     await page.setViewportSize({ width, height: 900 });
-    await mock(context, post({ ...asset, remote: true }));
+    await mock(context, portraitPost({ ...asset, remote: true }));
 
     for (const query of [
       "",
@@ -260,10 +284,12 @@ for (const width of [1440, 390]) {
       await expect(scope.locator(".video-caption a")).toHaveCount(0);
       await expect(
         scope.getByRole("link", {
-          name: detail ? "Read original" : `Open original: ${post().title}`,
+          name: detail
+            ? "Read original"
+            : `Open original: ${portraitPost().title}`,
           exact: true,
         }),
-      ).toHaveAttribute("href", post().url);
+      ).toHaveAttribute("href", portraitPost().url);
     }
   });
 }
@@ -273,7 +299,10 @@ test("a Reddit video from another site retains its own caption source link", asy
   context,
 }) => {
   const external = "https://media.example.com/clip.mp4";
-  await mock(context, post({ ...asset, source_url: external, remote: true }));
+  await mock(
+    context,
+    portraitPost({ ...asset, source_url: external, remote: true }),
+  );
   await page.goto("/?view=reddit");
   const card = page.locator(".reddit-card");
   await expect(card.locator(".video-caption")).toHaveText(
@@ -284,8 +313,8 @@ test("a Reddit video from another site retains its own caption source link", asy
   ).toHaveAttribute("href", external);
   await expect(
     card.getByRole("link", {
-      name: `Open original: ${post().title}`,
+      name: `Open original: ${portraitPost().title}`,
       exact: true,
     }),
-  ).toHaveAttribute("href", post().url);
+  ).toHaveAttribute("href", portraitPost().url);
 });

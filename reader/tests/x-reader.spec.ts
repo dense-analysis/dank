@@ -6,13 +6,22 @@ import {
   type Locator,
   test,
 } from "@playwright/test";
-import type { Post } from "../src/lib/types";
+import {
+  capturedPost,
+  capturedX,
+  post,
+  xAccount,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
+import type { CapturedPost, Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const postText =
   "Some reflections on AI in math. I found it helpful to simply list out the various parts of what a mathematician does, why math is valuable, and where the funding comes from. From there, what happens if AI gets more capable?";
 const videoTitle = "There's never been a better time to go into math";
 const videoUrl = "https://www.youtube.com/watch?v=math-video";
-const profile = {
+const profile = xPost({
   handle: "3blue1brown",
   name: "Grant Sanderson",
   icon_url: "https://pbs.twimg.com/profile_images/123/grant.jpg",
@@ -29,10 +38,10 @@ const profile = {
   repost_count: 136,
   like_count: 931,
   view_count: 54000,
-  replies_status: "not_collected" as const,
+  replies_status: "not_collected",
   captured_at: "2026-10-17T00:00:00Z",
-};
-const grant: Post = {
+});
+const grant: Post = post({
   id: "2111135480116850944",
   domain: "x.com",
   url: "https://x.com/3blue1brown/status/2111135480116850944",
@@ -45,7 +54,7 @@ const grant: Post = {
   x: profile,
   media: [],
   thumbnail: null,
-};
+});
 const paragraphs = Array.from(
   { length: 12 },
   (_, index) =>
@@ -140,41 +149,38 @@ async function mockX(context: BrowserContext, posts = [grant]) {
       body: "Captured video destination",
     }),
   );
-  await context.route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
+  await context.route("**/api/reader/**", (route) => {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              xSource({
+                domain: "x.com",
+                name: "X",
+                kind: "x",
+                count: posts.length,
+                tags: [],
+                accounts: [xAccount({ ...profile, count: posts.length })],
+              }),
+            ],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const id = new URL(route.request().url()).searchParams.get("id");
+        const found = posts.find((post) => post.id === id);
 
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: {
-          sources: [
-            {
-              domain: "x.com",
-              name: "X",
-              kind: "x",
-              count: posts.length,
-              tags: [],
-              accounts: [{ ...profile, count: posts.length }],
-            },
-          ],
-          total_posts: posts.length,
-        },
-      });
-      return;
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/posts"], posts },
+        });
+      default:
+        return fulfillEmpty(route);
     }
-
-    if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json: posts.find((post) => post.id === url.searchParams.get("id")),
-      });
-      return;
-    }
-
-    await route.fulfill({
-      json: { posts, next_cursor: null, limited: false },
-    });
   });
 }
 
@@ -834,6 +840,13 @@ const quoted: Post = {
     media: [attachments.media[1]],
   },
 };
+/** The quoted post as its quote embeds it, with a capture's X fields. */
+function embedded(post: Post): CapturedPost {
+  return capturedPost({
+    ...post,
+    x: capturedX({ ...post.x, media: post.x?.media ?? [] }),
+  });
+}
 const quoteParent: Post = {
   ...grant,
   id: "100",
@@ -846,7 +859,7 @@ const quoteParent: Post = {
       domain: quoted.domain,
       url: quoted.url,
       collected: true,
-      post: quoted,
+      post: embedded(quoted),
     },
   },
 };

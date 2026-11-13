@@ -7,4 +7,5 @@ test-results/
 !package-lock.json
 !tsconfig.json
 !biome.json
+!openapi.json
 artifacts/

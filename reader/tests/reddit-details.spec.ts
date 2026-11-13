@@ -1,9 +1,16 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+} from "../src/lib/api.fixture";
 import type { Post, Source } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-function post(id: string, community: string, flair: string): Post {
-  return {
+function redditStory(id: string, community: string, flair: string): Post {
+  return post({
     id,
     domain: "reddit.com",
     url: `https://www.reddit.com/r/${community}/comments/${id}/`,
@@ -15,23 +22,23 @@ function post(id: string, community: string, flair: string): Post {
     source: "reddit",
     thumbnail: null,
     media: [],
-    reddit: {
+    reddit: redditPost({
       community,
       score: 43,
       comments: 10,
       flair,
       icon_url: `/assets/${community}.svg`,
-    },
-  };
+    }),
+  });
 }
 const posts = [
-  post("new-model", "LocalLLaMA", "New Model"),
-  post("local-discussion", "LocalLLaMA", "Discussion"),
-  post("accelerate-discussion", "accelerate", "Discussion"),
-  post("research", "accelerate", "Research"),
+  redditStory("new-model", "LocalLLaMA", "New Model"),
+  redditStory("local-discussion", "LocalLLaMA", "Discussion"),
+  redditStory("accelerate-discussion", "accelerate", "Discussion"),
+  redditStory("research", "accelerate", "Research"),
 ];
 const sources: Source[] = [
-  {
+  redditSource({
     domain: "reddit.com",
     name: "Reddit",
     kind: "reddit",
@@ -43,7 +50,7 @@ const sources: Source[] = [
       { name: "Research", count: 1 },
     ],
     communities: [
-      {
+      redditCommunity({
         name: "LocalLLaMA",
         count: 2,
         icon_url: "/assets/LocalLLaMA.svg",
@@ -51,8 +58,8 @@ const sources: Source[] = [
           { name: "New Model", count: 1 },
           { name: "Discussion", count: 1 },
         ],
-      },
-      {
+      }),
+      redditCommunity({
         name: "accelerate",
         count: 2,
         icon_url: "/assets/accelerate.svg",
@@ -60,10 +67,10 @@ const sources: Source[] = [
           { name: "Research", count: 1 },
           { name: "Discussion", count: 1 },
         ],
-      },
-      { name: "Empty", count: 0, icon_url: null, flairs: [] },
+      }),
+      redditCommunity({ name: "Empty", count: 0, icon_url: null, flairs: [] }),
     ],
-  },
+  }),
 ];
 
 async function mockDetails(
@@ -82,48 +89,51 @@ async function mockDetails(
           },
     ),
   );
-  await page.route("**/api/reader/**", async (route) => {
+  await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
     const params = url.searchParams;
     requests.push(url);
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources,
+            total_posts: items.length,
+          },
+        });
+      case "/api/reader/post": {
+        const detail = items.find((item) => item.id === params.get("id"));
 
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({ json: { sources, total_posts: items.length } });
-      return;
+        return detail ? route.fulfill({ json: detail }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        const selected = items.filter(
+          (item) =>
+            ["all", "reddit"].includes(params.get("kind") ?? "") &&
+            (!params.get("community") ||
+              item.reddit?.community.toLowerCase() ===
+                params.get("community")?.toLowerCase()) &&
+            (!params.getAll("flair").length ||
+              params.getAll("flair").includes(item.reddit?.flair ?? "")) &&
+            (!params.get("q") ||
+              item.title
+                .toLowerCase()
+                .includes(params.get("q")?.toLowerCase() ?? "")) &&
+            (!params.get("author") || item.author === params.get("author")) &&
+            (!params.get("after") ||
+              item.created_at.slice(0, 10) >= (params.get("after") ?? "")) &&
+            (!params.get("before") ||
+              item.created_at.slice(0, 10) <= (params.get("before") ?? "")),
+        );
+
+        return route.fulfill({
+          json: { posts: selected, next_cursor: null, limited: false },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
     }
-
-    if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json: items.find((item) => item.id === params.get("id")),
-      });
-      return;
-    }
-
-    const selected = items.filter(
-      (item) =>
-        ["all", "reddit"].includes(params.get("kind") ?? "") &&
-        (!params.get("community") ||
-          item.reddit?.community.toLowerCase() ===
-            params.get("community")?.toLowerCase()) &&
-        (!params.getAll("flair").length ||
-          params.getAll("flair").includes(item.reddit?.flair ?? "")) &&
-        (!params.get("q") ||
-          item.title
-            .toLowerCase()
-            .includes(params.get("q")?.toLowerCase() ?? "")) &&
-        (!params.get("author") || item.author === params.get("author")) &&
-        (!params.get("after") ||
-          item.created_at.slice(0, 10) >= (params.get("after") ?? "")) &&
-        (!params.get("before") ||
-          item.created_at.slice(0, 10) <= (params.get("before") ?? "")),
-    );
-    await route.fulfill({
-      json: { posts: selected, next_cursor: null, limited: false },
-    });
   });
 
   return requests;

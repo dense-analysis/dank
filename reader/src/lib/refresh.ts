@@ -1,48 +1,31 @@
-import { request } from "./api";
+import { apiGet, apiPost } from "./api";
+import type { components } from "./api.gen";
 import { feedLabels, sectionFromView } from "./collections";
 import { parseFilters } from "./navigation";
-import { isRecord, isStringArray } from "./validation";
 
-export type RefreshPlatform =
-  | "rss"
-  | "x"
-  | "reddit"
-  | "hacker_news"
-  | "youtube";
+type Schemas = components["schemas"];
 
-export interface RefreshScope {
-  kind: "all" | "rss" | "reddit" | "x" | "hacker_news" | "youtube" | "post";
-  blog_feed?: "sources" | "external";
-  platforms?: RefreshPlatform[];
-  domains?: string[];
-  tags?: string[];
-  community?: string;
-  account?: string;
-  channel_id?: string;
-  playlist_id?: string;
-  feed_id?: string;
-  domain?: string;
-  post_id?: string;
-}
+export type RefreshScope = Schemas["RefreshRequest"]["scope"];
+export type RefreshPlatform = NonNullable<
+  Schemas["AllScope"]["platforms"]
+>[number];
+export type RefreshJob = Schemas["RefreshJobOut"];
 
-export interface RefreshJob {
-  id: string;
-  scope: RefreshScope;
-  label: string;
-  status:
-    | "queued"
-    | "running"
-    | "processing"
-    | "completed"
-    | "partial"
-    | "failed"
-    | "interrupted";
-  message: string;
-  created_at: string;
-  finished_at: string | null;
-  posts_saved: number;
-  run_id?: string | null;
-}
+type KeysOf<U> = U extends unknown ? keyof U : never;
+type ValueOf<U, K extends PropertyKey> = U extends unknown
+  ? K extends keyof U
+    ? U[K]
+    : never
+  : never;
+
+/**
+ * Every kind's fields at once, derived from the schema's scope variants, for
+ * code that builds a scope a field at a time or reads any kind. The server
+ * checks which fields go with which kind.
+ */
+export type RefreshScopeFields = {
+  [K in KeysOf<RefreshScope>]?: ValueOf<RefreshScope, K>;
+} & { kind: RefreshScope["kind"] };
 
 export function refreshContext(params: URLSearchParams) {
   const domain = params.get("article_source");
@@ -50,7 +33,7 @@ export function refreshContext(params: URLSearchParams) {
   const section = sectionFromView(params.get("view"));
   const youtubeItem = params.get("youtube_item");
   const filters = parseFilters(params);
-  let scope: RefreshScope;
+  let scope: RefreshScopeFields;
   let label: string;
 
   if (domain && post) {
@@ -85,7 +68,7 @@ export function refreshContext(params: URLSearchParams) {
 
     if (feed === "linked" && !channel) {
       return {
-        scope,
+        scope: scope as RefreshScope,
         label: "linked videos",
         disabled: "Refresh the original sources to update linked videos",
       };
@@ -139,7 +122,7 @@ export function refreshContext(params: URLSearchParams) {
     !scope.post_id?.startsWith("video:")
   ) {
     return {
-      scope,
+      scope: scope as RefreshScope,
       label,
       disabled:
         "Individual YouTube community posts cannot be refreshed yet. Refresh the channel feed instead.",
@@ -162,10 +145,11 @@ export function refreshContext(params: URLSearchParams) {
     }
   }
 
-  return { scope, label, disabled: undefined };
+  return { scope: scope as RefreshScope, label, disabled: undefined };
 }
 
-export function refreshDestination(scope: RefreshScope): URLSearchParams {
+export function refreshDestination(sent: RefreshScope): URLSearchParams {
+  const scope: RefreshScopeFields = sent;
   const params = new URLSearchParams();
 
   if (scope.kind === "post") {
@@ -207,7 +191,9 @@ export function refreshDestination(scope: RefreshScope): URLSearchParams {
   return params;
 }
 
-export function refreshScopeKey(scope: RefreshScope): string {
+export function refreshScopeKey(sent: RefreshScope): string {
+  const scope: RefreshScopeFields = sent;
+
   return JSON.stringify([
     scope.kind,
     scope.blog_feed ?? "",
@@ -228,92 +214,16 @@ export function refreshActive(job: RefreshJob): boolean {
   return ["queued", "running", "processing"].includes(job.status);
 }
 
-function isScope(value: unknown): value is RefreshScope {
-  return (
-    isRecord(value) &&
-    ["all", "rss", "reddit", "x", "hacker_news", "youtube", "post"].includes(
-      String(value.kind),
-    ) &&
-    (value.blog_feed === undefined ||
-      (value.kind === "rss" &&
-        ["sources", "external"].includes(String(value.blog_feed)))) &&
-    (value.platforms === undefined ||
-      (value.kind === "all" &&
-        isStringArray(value.platforms) &&
-        value.platforms.every((platform) =>
-          ["rss", "x", "reddit", "hacker_news", "youtube"].includes(platform),
-        ))) &&
-    ["domains", "tags"].every(
-      (key) => value[key] === undefined || isStringArray(value[key]),
-    ) &&
-    [
-      "community",
-      "account",
-      "channel_id",
-      "playlist_id",
-      "feed_id",
-      "domain",
-      "post_id",
-    ].every((key) => value[key] === undefined || typeof value[key] === "string")
-  );
-}
-
-export function isRefreshJob(value: unknown): value is RefreshJob {
-  return (
-    isRecord(value) &&
-    ["id", "label", "message", "created_at"].every(
-      (key) => typeof value[key] === "string",
-    ) &&
-    isScope(value.scope) &&
-    [
-      "queued",
-      "running",
-      "processing",
-      "completed",
-      "partial",
-      "failed",
-      "interrupted",
-    ].includes(String(value.status)) &&
-    (value.finished_at === null || typeof value.finished_at === "string") &&
-    typeof value.posts_saved === "number" &&
-    Number.isSafeInteger(value.posts_saved) &&
-    value.posts_saved >= 0 &&
-    (value.run_id === undefined ||
-      value.run_id === null ||
-      typeof value.run_id === "string")
-  );
-}
-
 export async function fetchRefreshJobs(
   signal?: AbortSignal,
 ): Promise<RefreshJob[]> {
-  const body = await request("/refresh", signal);
-
-  if (
-    !isRecord(body) ||
-    !Array.isArray(body.jobs) ||
-    !body.jobs.every(isRefreshJob)
-  ) {
-    throw new Error(
-      "The reader received an unexpected refresh status. Please try again.",
-    );
-  }
+  const body = await apiGet("/api/reader/refresh", { signal });
 
   return body.jobs;
 }
 
 export async function startRefresh(scope: RefreshScope): Promise<RefreshJob> {
-  const body = await request("/refresh", undefined, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scope }),
-  });
-
-  if (!isRecord(body) || !isRefreshJob(body.job)) {
-    throw new Error(
-      "The reader could not confirm the refresh. Check its status before trying again.",
-    );
-  }
+  const body = await apiPost("/api/reader/refresh", { scope });
 
   return body.job;
 }

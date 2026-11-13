@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { refreshJob, youtubeItem } from "../src/lib/api.fixture";
 import type { RefreshJob, RefreshScope } from "../src/lib/refresh";
 import type {
   YouTubePlaylist,
@@ -11,6 +12,7 @@ const playlist: YouTubePlaylist = {
   id: "PLsaved",
   title: "A journey through sound",
   url: "https://www.youtube.com/playlist?list=PLsaved",
+  description: "",
   thumbnail_url: "https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg",
   channel: {
     id: "music",
@@ -33,35 +35,37 @@ function entry(
   available = true,
 ): YouTubePlaylistEntry {
   return {
-    id: `video:${id}`,
-    kind: "video",
-    video_id: available ? id : null,
-    title,
-    text: "",
-    url: `https://www.youtube.com/watch?v=${id}`,
-    channel: playlist.channel,
-    thumbnail_url: playlist.thumbnail_url,
-    duration_text: "4:15",
-    views_text: "100 views",
-    published_text: "",
-    observed_at: playlist.observed_at,
-    detail_capture: { status: "disabled" },
-    discoveries: [
-      {
-        feed_url: playlist.url,
-        feed_name: playlist.title,
-        feed_kind: "playlist",
-        tab: "",
-        shelf: "",
-        rank: position,
-        region: "",
-        playlist_id: playlist.id,
-        observed_at: playlist.observed_at,
-        run_id: "run-one",
-      },
-    ],
-    references: [],
-    reference_count: 0,
+    ...youtubeItem({
+      id: `video:${id}`,
+      kind: "video",
+      video_id: available ? id : null,
+      title,
+      text: "",
+      url: `https://www.youtube.com/watch?v=${id}`,
+      channel: playlist.channel,
+      thumbnail_url: playlist.thumbnail_url,
+      duration_text: "4:15",
+      views_text: "100 views",
+      published_text: "",
+      observed_at: playlist.observed_at,
+      detail_capture: { status: "disabled" },
+      discoveries: [
+        {
+          feed_url: playlist.url,
+          feed_name: playlist.title,
+          feed_kind: "playlist",
+          tab: "",
+          shelf: "",
+          rank: position,
+          region: "",
+          playlist_id: playlist.id,
+          observed_at: playlist.observed_at,
+          run_id: "run-one",
+        },
+      ],
+      references: [],
+      reference_count: 0,
+    }),
     playlist_entry_id: `entry-${position}`,
     playlist_position: position,
     available,
@@ -104,7 +108,7 @@ async function fixture(page: Page) {
           scope: RefreshScope;
         };
         state.scopes.push(scope);
-        const job: RefreshJob = {
+        const job: RefreshJob = refreshJob({
           id: "job-one",
           scope,
           label: "YouTube playlist",
@@ -113,7 +117,7 @@ async function fixture(page: Page) {
           created_at: playlist.checked_at,
           finished_at: playlist.checked_at,
           posts_saved: 0,
-        };
+        });
         state.jobs = [job];
         return route.fulfill({ status: 202, json: { job } });
       }
@@ -130,7 +134,11 @@ async function fixture(page: Page) {
       if (state.fail || (state.failLibraryMore && cursor))
         return route.fulfill({
           status: 503,
-          json: { detail: "Playlists temporarily unavailable" },
+          json: {
+            error: "Playlists temporarily unavailable",
+            code: "unavailable",
+            fields: [],
+          },
         });
       const rows = state.playlists.filter((item) =>
         item.title
@@ -161,7 +169,11 @@ async function fixture(page: Page) {
       if (state.fail || (state.failMore && url.searchParams.has("cursor")))
         return route.fulfill({
           status: 503,
-          json: { detail: "Playlist videos temporarily unavailable" },
+          json: {
+            error: "Playlist videos temporarily unavailable",
+            code: "unavailable",
+            fields: [],
+          },
         });
       const offset = Number(url.searchParams.get("cursor") ?? 0);
       return route.fulfill({

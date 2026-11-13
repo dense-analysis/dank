@@ -1,10 +1,19 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  feedSource,
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+  refreshJob,
+  youtubeItem,
+} from "../src/lib/api.fixture";
 import type { RefreshJob, RefreshScope } from "../src/lib/refresh";
 import type { Post } from "../src/lib/types";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
-const saved: Post = {
+const saved: Post = post({
   id: "post-one",
   domain: "reddit.com",
   url: "https://www.reddit.com/r/LocalLLaMA/comments/post-one/",
@@ -16,8 +25,13 @@ const saved: Post = {
   source: "reddit",
   thumbnail: null,
   media: [],
-  reddit: { community: "LocalLLaMA", score: 3, comments: 0, flair: null },
-};
+  reddit: redditPost({
+    community: "LocalLLaMA",
+    score: 3,
+    comments: 0,
+    flair: null,
+  }),
+});
 
 async function fixture(page: Page) {
   const state = {
@@ -50,20 +64,22 @@ async function fixture(page: Page) {
           await route.fulfill({
             status: 409,
             json: {
-              detail:
+              error:
                 "The refresh queue is full. Try again when a refresh finishes.",
+              code: "conflict",
+              fields: [],
             },
           });
           return;
         }
 
-        const job: RefreshJob = {
+        const job: RefreshJob = refreshJob({
           id: `job-${state.requests.length}`,
           scope,
           label:
             scope.kind === "post"
               ? "This post"
-              : scope.community
+              : scope.kind === "reddit" && scope.community
                 ? `r/${scope.community}`
                 : scope.kind,
           status: "running",
@@ -71,7 +87,7 @@ async function fixture(page: Page) {
           created_at: "2026-10-22T10:00:00Z",
           finished_at: null,
           posts_saved: 0,
-        };
+        });
         state.jobs.unshift(job);
         await route.fulfill({ status: 202, json: { job } });
       } else {
@@ -79,7 +95,11 @@ async function fixture(page: Page) {
         await route.fulfill({
           status: state.statusFail ? 503 : 200,
           json: state.statusFail
-            ? { detail: "Temporarily unavailable" }
+            ? {
+                error: "Temporarily unavailable",
+                code: "unavailable",
+                fields: [],
+              }
             : { jobs: state.jobs },
         });
       }
@@ -90,7 +110,7 @@ async function fixture(page: Page) {
       await route.fulfill({
         status: state.youtubeSourcesFail ? 503 : 200,
         json: state.youtubeSourcesFail
-          ? { detail: "YouTube unavailable" }
+          ? { error: "YouTube unavailable", code: "unavailable", fields: [] }
           : { feeds: [], channels: [], total: 0, linked_count: 0 },
       });
       return;
@@ -111,21 +131,26 @@ async function fixture(page: Page) {
       await route.fulfill({
         json: {
           sources: [
-            {
+            redditSource({
               domain: "reddit.com",
               name: "Reddit",
               kind: "reddit",
               tags: [],
               count: state.posts.length,
-              communities: [{ name: "LocalLLaMA", count: state.posts.length }],
-            },
-            {
+              communities: [
+                redditCommunity({
+                  name: "LocalLLaMA",
+                  count: state.posts.length,
+                }),
+              ],
+            }),
+            feedSource({
               domain: "news.ycombinator.com",
               name: "Hacker News",
               kind: "hacker_news",
               tags: [],
               count: 0,
-            },
+            }),
           ],
           total_posts: state.posts.length,
         },
@@ -149,7 +174,11 @@ async function fixture(page: Page) {
     if (state.postsFail) {
       await route.fulfill({
         status: 503,
-        json: { detail: "Saved stories temporarily unavailable." },
+        json: {
+          error: "Saved stories temporarily unavailable.",
+          code: "unavailable",
+          fields: [],
+        },
       });
       return;
     }
@@ -545,35 +574,34 @@ for (const width of [320, 1280]) {
   }, testInfo) => {
     await page.setViewportSize({ width, height: 800 });
     const state = await fixture(page);
+    const running = {
+      created_at: "2026-10-22T10:00:00Z",
+      message: "Collecting in the background.",
+    };
     state.jobs = [
-      {
+      refreshJob({
+        ...running,
         id: "blogs",
         scope: { kind: "rss" },
         label: "Blogs",
         status: "running",
-      },
-      {
+      }),
+      refreshJob({
+        ...running,
         id: "hn",
         scope: { kind: "hacker_news" },
         label: "Hacker News",
         status: "running",
-      },
-      {
+      }),
+      refreshJob({
+        ...running,
         id: "all",
         scope: { kind: "all" },
         label: "All sources",
         status: "queued",
-      },
-    ].map((job) => ({
-      created_at: "2026-10-22T10:00:00Z",
-      finished_at: null,
-      posts_saved: 0,
-      message:
-        job.status === "queued"
-          ? "Waiting for an overlapping refresh."
-          : "Collecting in the background.",
-      ...job,
-    })) as RefreshJob[];
+        message: "Waiting for an overlapping refresh.",
+      }),
+    ];
     await page.goto("/");
     const heading = page.locator(".refresh-status-heading [aria-live]");
     await expect(heading).toHaveText("2 refreshing · 1 waiting");
@@ -668,21 +696,28 @@ test("each completed refresh opens its own destination and dismisses only that r
   page,
 }) => {
   const state = await fixture(page);
-  state.jobs = [
-    { id: "blogs", scope: { kind: "rss" }, label: "Blogs" },
-    {
-      id: "reddit",
-      scope: { kind: "reddit", community: "LocalLLaMA" },
-      label: "r/LocalLLaMA",
-    },
-  ].map((job) => ({
-    status: "completed",
+  const done = {
     message: "1 post saved.",
     created_at: "2026-10-22T10:00:00Z",
     finished_at: "2026-10-22T10:01:00Z",
     posts_saved: 1,
-    ...job,
-  })) as RefreshJob[];
+  };
+  state.jobs = [
+    refreshJob({
+      ...done,
+      id: "blogs",
+      scope: { kind: "rss" },
+      label: "Blogs",
+      status: "completed",
+    }),
+    refreshJob({
+      ...done,
+      id: "reddit",
+      scope: { kind: "reddit", community: "LocalLLaMA" },
+      label: "r/LocalLLaMA",
+      status: "completed",
+    }),
+  ];
   await page.goto("/?view=hacker_news");
   await page.getByRole("button", { name: "Show refresh details" }).click();
   await expect(
@@ -717,7 +752,7 @@ test("refreshing a YouTube video replaces an older cached feed preview", async (
 }) => {
   const state = await fixture(page);
   state.youtubeItems = [
-    {
+    youtubeItem({
       id: "video:dQw4w9WgXcQ",
       kind: "video",
       video_id: "dQw4w9WgXcQ",
@@ -738,7 +773,7 @@ test("refreshing a YouTube video replaces an older cached feed preview", async (
       discoveries: [],
       references: [],
       reference_count: 0,
-    },
+    }),
   ];
   await page.goto("/?view=youtube");
   await page
@@ -774,7 +809,7 @@ test("a compact completed result identifies its destination without overflowing"
   const state = await fixture(page);
   const label = "Blogs · a-very-long-publisher-domain.example.com";
   state.jobs = [
-    {
+    refreshJob({
       id: "blogs",
       scope: { kind: "rss" },
       label,
@@ -783,7 +818,7 @@ test("a compact completed result identifies its destination without overflowing"
       created_at: "2026-10-22T10:00:00Z",
       finished_at: "2026-10-22T10:01:00Z",
       posts_saved: 1,
-    },
+    }),
   ];
   await page.goto("/");
   await expect(
@@ -808,16 +843,19 @@ for (const width of [320, 1280]) {
   }) => {
     await page.setViewportSize({ width, height: 800 });
     const state = await fixture(page);
-    state.jobs = ["completed", "partial", "failed"].map((status, index) => ({
-      id: `saved-${index}`,
-      scope: { kind: "all" },
-      label: "All sources",
-      status,
-      message: "Saved refresh result.",
-      created_at: "2026-10-22T10:00:00Z",
-      finished_at: "2026-10-22T10:01:00Z",
-      posts_saved: status === "failed" ? 0 : 1,
-    })) as RefreshJob[];
+    const statuses: RefreshJob["status"][] = ["completed", "partial", "failed"];
+    state.jobs = statuses.map((status, index) =>
+      refreshJob({
+        id: `saved-${index}`,
+        scope: { kind: "all" },
+        label: "All sources",
+        status,
+        message: "Saved refresh result.",
+        created_at: "2026-10-22T10:00:00Z",
+        finished_at: "2026-10-22T10:01:00Z",
+        posts_saved: status === "failed" ? 0 : 1,
+      }),
+    );
     await page.goto("/");
     const panel = page.getByRole("complementary", {
       name: "Background refresh",

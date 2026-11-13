@@ -1,10 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
+import { refreshJob, youtubeItem } from "../src/lib/api.fixture";
 import type { RefreshJob } from "../src/lib/refresh";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
 import type { YouTubeTranscript } from "../src/lib/youtubeTranscript";
 
 const id = "L_6pAVHYoFM";
-const item: YouTubeItem = {
+const item: YouTubeItem = youtubeItem({
   id: `video:${id}`,
   video_id: id,
   kind: "video",
@@ -21,7 +22,7 @@ const item: YouTubeItem = {
   references: [],
   reference_count: 0,
   detail_capture: { status: "disabled" },
-};
+});
 const blank: YouTubeTranscript = {
   video_id: id,
   status: "not_collected",
@@ -55,7 +56,11 @@ async function fixture(page: Page, initial = blank) {
         if (state.fail)
           return route.fulfill({
             status: 503,
-            json: { error: "Transcript collection is busy; try again shortly" },
+            json: {
+              error: "Transcript collection is busy; try again shortly",
+              code: "busy",
+              fields: [],
+            },
           });
         state.result = saved;
       } else state.reads++;
@@ -199,7 +204,7 @@ test("accepting a completed video refresh reloads saved captions without collect
       expect(route.request().postDataJSON()).toEqual({
         scope: { kind: "post", domain: "youtube.com", post_id: `video:${id}` },
       });
-      jobs[0] = {
+      jobs[0] = refreshJob({
         id: "video-refresh",
         scope: { kind: "post", domain: "youtube.com", post_id: `video:${id}` },
         label: "This video",
@@ -208,7 +213,7 @@ test("accepting a completed video refresh reloads saved captions without collect
         created_at: "2026-10-22T12:00:00Z",
         finished_at: null,
         posts_saved: 0,
-      };
+      });
       return route.fulfill({ status: 202, json: { job: jobs[0] } });
     }
 

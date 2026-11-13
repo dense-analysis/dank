@@ -1,5 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { post as postFixture, xPost, xSource } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const firstPhoto = "https://x.com/photographer/status/123/photo/1";
 const secondPhoto = "https://twitter.com/another/status/456/photo/2";
@@ -9,7 +11,7 @@ async function mockImages(
   page: Page,
   unavailable: "failed" | "unsupported" | null = null,
 ) {
-  const post: Post = {
+  const post: Post = postFixture({
     id: "123",
     domain: "x.com",
     source: "x",
@@ -21,7 +23,7 @@ async function mockImages(
     created_at: "2026-10-17T00:00:00Z",
     thumbnail: null,
     media: [],
-    x: {
+    x: xPost({
       handle: "photographer",
       name: "Photographer",
       media: [
@@ -45,8 +47,8 @@ async function mockImages(
           remote: false,
         },
       ],
-    },
-  };
+    }),
+  });
   await page.route("**/assets/photo-*.svg", (route) =>
     route.fulfill(
       unavailable === "failed" &&
@@ -59,23 +61,32 @@ async function mockImages(
     ),
   );
   await page.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              { domain: "x.com", name: "X", kind: "x", tags: [], count: 1 },
+              xSource({
+                domain: "x.com",
+                name: "X",
+                kind: "x",
+                tags: [],
+                count: 1,
+              }),
             ],
             total_posts: 1,
-          }
-        : url.pathname.endsWith("/post")
-          ? post
-          : { posts: [post], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: post });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/posts"], posts: [post] },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
 }
 

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { post, youtubeItem } from "../src/lib/api.fixture";
 import type { YouTubeItem, YouTubeSources } from "../src/lib/youtubeCollection";
 
 const news = "https://www.youtube.com/feed/news_destination";
@@ -13,7 +14,7 @@ function item(
   title: string,
   kind: YouTubeItem["kind"] = "video",
 ): YouTubeItem {
-  return {
+  return youtubeItem({
     id: `${kind === "post" ? "post" : "video"}:${id}`,
     video_id: kind === "post" ? null : id,
     kind,
@@ -53,7 +54,7 @@ function item(
     ],
     references: [],
     reference_count: 0,
-  };
+  });
 }
 const first = {
   ...item("dQw4w9WgXcQ", "Inside the cities shaping a greener future"),
@@ -218,7 +219,11 @@ async function fixture(page: Page) {
       if (state.fail || (state.failMore && params.has("cursor")))
         return route.fulfill({
           status: 503,
-          json: { detail: "Collection temporarily unavailable" },
+          json: {
+            error: "Collection temporarily unavailable",
+            code: "unavailable",
+            fields: [],
+          },
         });
       const selected = state.data.filter(
         (entry) =>
@@ -309,9 +314,9 @@ async function fixture(page: Page) {
       return route.fulfill({ json: { sources: [], total_posts: 0 } });
     if (url.pathname.endsWith("/post"))
       return route.fulfill({
-        json: {
-          id: params.get("id"),
-          domain: params.get("domain"),
+        json: post({
+          id: params.get("id") ?? "",
+          domain: params.get("domain") ?? "",
           url: "https://example.com/story",
           title: "Urban design worth watching",
           author: "Reporter",
@@ -321,7 +326,7 @@ async function fixture(page: Page) {
           html: "<p>A collected source article</p>",
           media: [],
           thumbnail: null,
-        },
+        }),
       });
     return route.fulfill({
       json: { posts: [], next_cursor: null, limited: false },
@@ -1220,6 +1225,9 @@ for (const width of [1440, 390]) {
         name: `Recommended channel ${i}`,
         url: `https://www.youtube.com/channel/UCgroup${i}`,
         count: 3,
+        avatar_url: null,
+        reported_video_count: null,
+        reported_video_count_text: null,
       })),
     };
     await page.goto(

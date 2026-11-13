@@ -228,7 +228,11 @@ test("failed connection requests show a recoverable error and empty evidence sta
     fails
       ? route.fulfill({
           status: 503,
-          json: { detail: "Connection index is unavailable." },
+          json: {
+            error: "Connection index is unavailable.",
+            code: "unavailable",
+            fields: [],
+          },
         })
       : route.fulfill({
           json: {
@@ -295,7 +299,7 @@ test("a crowded mobile graph opens at readable scale and reveals selected destin
     return {
       ...outgoingConnection,
       id: `outgoing-${index}`,
-      target: { url, post, youtube_item_id: null },
+      target: { url, post, title: post?.title ?? url, youtube_item_id: null },
       evidence: {
         ...outgoingConnection.evidence,
         kind: index < 4 ? ("post" as const) : ("comment" as const),

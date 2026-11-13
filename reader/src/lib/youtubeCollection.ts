@@ -1,103 +1,19 @@
-import { request } from "./api";
+import { apiGet } from "./api";
+import type { components } from "./api.gen";
 import { formatCount } from "./counts";
-import { isRecord } from "./validation";
-import {
-  isYouTubeMetadataCapture,
-  type YouTubeMetadataCapture,
-} from "./youtubeMetadata";
 
-export type YouTubeKind = "video" | "short" | "post";
-export interface YouTubeDiscovery {
-  feed_url: string;
-  feed_name: string;
-  feed_kind: string;
-  tab: string;
-  shelf: string;
-  rank: number | null;
-  region: string;
-  playlist_id: string;
-  observed_at: string;
-  run_id: string;
-}
-export interface YouTubeReference {
-  domain: string;
-  post_id: string;
-  url: string;
-  title: string;
-  source: string;
-  reader_url: string;
-  kind: "post" | "comment";
-  reference_id: string;
-  reference_url: string;
-  author: string;
-  matched_url: string;
-  excerpt: string;
-  observed_at: string;
-}
-export interface YouTubeTitlePair extends YouTubeTitleVersion {
-  association: "captured" | "matched";
-}
-export interface YouTubeThumbnailVariant {
-  url: string;
-  title_pairs?: YouTubeTitlePair[];
-  first_seen: string;
-  last_seen: string;
-}
-export interface YouTubeTitleVersion {
-  title: string;
-  first_seen: string;
-  last_seen: string;
-}
-export interface YouTubeItem {
-  id: string;
-  kind: YouTubeKind;
-  video_id: string | null;
-  url: string;
-  title: string;
-  text: string;
-  channel: { id: string; name: string; url: string };
-  thumbnail_url: string | null;
-  thumbnail_variants?: YouTubeThumbnailVariant[];
-  title_history?: YouTubeTitleVersion[];
-  video_url?: string | null;
-  duration_text: string;
-  views_text: string;
-  published_text: string;
-  observed_at: string;
-  detail_capture: { status: "disabled" | "captured" | "failed" };
-  metadata_capture?: YouTubeMetadataCapture;
-  discoveries: YouTubeDiscovery[];
-  references: YouTubeReference[];
-  reference_count: number;
-}
-export interface YouTubeFeed {
-  id: string;
-  name: string;
-  kind: string;
-  url: string;
-  count: number;
-  region: string;
-  tab: string;
-}
-export interface YouTubeSources {
-  feeds: YouTubeFeed[];
-  channels: {
-    id: string;
-    name: string;
-    url: string;
-    count: number;
-    avatar_url?: string | null;
-    reported_video_count?: number | null;
-    reported_video_count_text?: string | null;
-  }[];
-  total: number;
-  linked_count: number;
-}
-export interface YouTubePage {
-  items: YouTubeItem[];
-  next_cursor: string | null;
-  total: number;
-}
+type Schemas = components["schemas"];
+
+export type YouTubeItem = Schemas["YouTubeItemOut"];
+export type YouTubeKind = YouTubeItem["kind"];
+export type YouTubeDiscovery = Schemas["DiscoveryOut"];
+export type YouTubeReference = Schemas["VideoReferenceOut"];
+export type YouTubeTitleVersion = Schemas["TitleVersionOut"];
+export type YouTubeTitlePair = Schemas["ThumbnailTitleOut"];
+export type YouTubeThumbnailVariant = Schemas["ThumbnailVariantOut"];
+export type YouTubeFeed = Schemas["YouTubeFeedOut"];
+export type YouTubeSources = Schemas["YouTubeSourcesResponse"];
+export type YouTubePage = Schemas["YouTubeResponse"];
 export interface YouTubeFilters {
   channel_scope?: "configured";
   sort?: "newest" | "oldest" | "most-linked";
@@ -107,171 +23,27 @@ export interface YouTubeFilters {
   q: string;
 }
 
-function strings(value: Record<string, unknown>, keys: string[]) {
-  return keys.every((key) => typeof value[key] === "string");
-}
-function count(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-export function isYouTubeItem(value: unknown): value is YouTubeItem {
-  return (
-    isRecord(value) &&
-    strings(value, [
-      "id",
-      "url",
-      "title",
-      "text",
-      "duration_text",
-      "views_text",
-      "published_text",
-      "observed_at",
-    ]) &&
-    ["video", "short", "post"].includes(String(value.kind)) &&
-    (value.video_id === null ||
-      (typeof value.video_id === "string" &&
-        /^[A-Za-z0-9_-]{11}$/.test(value.video_id))) &&
-    isRecord(value.channel) &&
-    strings(value.channel, ["id", "name", "url"]) &&
-    (value.thumbnail_url === null || typeof value.thumbnail_url === "string") &&
-    (value.thumbnail_variants === undefined ||
-      (Array.isArray(value.thumbnail_variants) &&
-        value.thumbnail_variants.every(
-          (version) =>
-            isRecord(version) &&
-            strings(version, ["url", "first_seen", "last_seen"]) &&
-            (version.title_pairs === undefined ||
-              (Array.isArray(version.title_pairs) &&
-                version.title_pairs.every(
-                  (pair) =>
-                    isRecord(pair) &&
-                    strings(pair, ["title", "first_seen", "last_seen"]) &&
-                    (pair.association === "captured" ||
-                      pair.association === "matched"),
-                ))),
-        ))) &&
-    (value.title_history === undefined ||
-      (Array.isArray(value.title_history) &&
-        value.title_history.every(
-          (version) =>
-            isRecord(version) &&
-            strings(version, ["title", "first_seen", "last_seen"]),
-        ))) &&
-    (value.video_url === undefined ||
-      value.video_url === null ||
-      typeof value.video_url === "string") &&
-    isRecord(value.detail_capture) &&
-    ["disabled", "captured", "failed"].includes(
-      String(value.detail_capture.status),
-    ) &&
-    (value.metadata_capture === undefined ||
-      isYouTubeMetadataCapture(value.metadata_capture)) &&
-    Array.isArray(value.discoveries) &&
-    value.discoveries.every(
-      (item) =>
-        isRecord(item) &&
-        strings(item, [
-          "feed_url",
-          "feed_name",
-          "feed_kind",
-          "tab",
-          "shelf",
-          "region",
-          "playlist_id",
-          "observed_at",
-          "run_id",
-        ]) &&
-        (item.rank === null || count(item.rank)),
-    ) &&
-    Array.isArray(value.references) &&
-    value.references.every(
-      (item) =>
-        isRecord(item) &&
-        strings(item, [
-          "domain",
-          "post_id",
-          "url",
-          "title",
-          "source",
-          "reader_url",
-          "reference_id",
-          "reference_url",
-          "author",
-          "matched_url",
-          "excerpt",
-          "observed_at",
-        ]) &&
-        (item.kind === "post" || item.kind === "comment"),
-    ) &&
-    count(value.reference_count)
-  );
-}
-
-export async function fetchYouTubeSources(
+export function fetchYouTubeSources(
   signal?: AbortSignal,
 ): Promise<YouTubeSources> {
-  const body = await request("/youtube/sources", signal);
-  if (
-    !isRecord(body) ||
-    !count(body.total) ||
-    !count(body.linked_count) ||
-    !Array.isArray(body.feeds) ||
-    !body.feeds.every(
-      (item) =>
-        isRecord(item) &&
-        strings(item, ["id", "name", "kind", "url", "region", "tab"]) &&
-        count(item.count),
-    ) ||
-    !Array.isArray(body.channels) ||
-    !body.channels.every(
-      (item) =>
-        isRecord(item) &&
-        strings(item, ["id", "name", "url"]) &&
-        count(item.count) &&
-        (item.avatar_url == null || typeof item.avatar_url === "string") &&
-        (item.reported_video_count == null ||
-          count(item.reported_video_count)) &&
-        (item.reported_video_count_text == null ||
-          typeof item.reported_video_count_text === "string"),
-    )
-  ) {
-    throw new Error(
-      "The reader received an unexpected YouTube sources response. Please try again.",
-    );
-  }
-
-  return body as unknown as YouTubeSources;
+  return apiGet("/api/reader/youtube/sources", { signal });
 }
-export async function fetchYouTubeItems(
+
+export function fetchYouTubeItems(
   filters: YouTubeFilters,
   cursor?: string,
   signal?: AbortSignal,
   id?: string,
   limit = 30,
 ): Promise<YouTubePage> {
-  const params = new URLSearchParams({ limit: String(limit) });
+  const query = new URLSearchParams({ limit: String(limit) });
   for (const [key, value] of Object.entries(filters)) {
-    if (value) params.set(key, value);
+    if (value) query.set(key, value);
   }
-  if (cursor) params.set("cursor", cursor);
-  if (id) params.set("id", id);
-  const body = await request(`/youtube?${params}`, signal);
-  if (
-    !isRecord(body) ||
-    !Array.isArray(body.items) ||
-    !body.items.every(isYouTubeItem) ||
-    !count(body.total) ||
-    (body.next_cursor !== null && typeof body.next_cursor !== "string")
-  ) {
-    throw new Error(
-      "The reader received an unexpected YouTube feed response. Please try again.",
-    );
-  }
+  if (cursor) query.set("cursor", cursor);
+  if (id) query.set("id", id);
 
-  return {
-    items: body.items,
-    next_cursor: body.next_cursor,
-    total: body.total,
-  };
+  return apiGet("/api/reader/youtube", { query, signal });
 }
 
 export function youtubeFilters(params: URLSearchParams): YouTubeFilters {

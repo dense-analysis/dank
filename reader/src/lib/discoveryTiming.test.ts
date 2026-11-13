@@ -22,7 +22,7 @@ it("compares actual Reddit publication with first discovery, preserving directio
   });
 });
 
-it.each([null, undefined, "", "not a date"])(
+it.each([null, "", "not a date"])(
   "does not invent publication from missing or invalid dates: %s",
   (value) => {
     expect(

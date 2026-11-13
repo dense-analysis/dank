@@ -1,10 +1,16 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  post as postFixture,
+  refreshJob,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
 import type { XAuthor } from "../src/lib/xAuthors";
 
 function post(id: string, handle = "alice"): Post {
-  return {
+  return postFixture({
     id,
     domain: "x.com",
     url: `https://x.com/${handle}/status/${id}`,
@@ -16,8 +22,8 @@ function post(id: string, handle = "alice"): Post {
     source: "x",
     thumbnail: null,
     media: [],
-    x: { handle, name: "Shared name", icon_url: null },
-  };
+    x: xPost({ handle, name: "Shared name", icon_url: null }),
+  });
 }
 const groups: XAuthor[] = [
   {
@@ -58,7 +64,7 @@ async function fixture(page: Page) {
       await route.fulfill({
         status: state.fail ? 503 : 200,
         json: state.fail
-          ? { error: "Authors unavailable" }
+          ? { error: "Authors unavailable", code: "unavailable", fields: [] }
           : {
               authors: state.empty
                 ? []
@@ -81,7 +87,7 @@ async function fixture(page: Page) {
       await route.fulfill({
         json: {
           sources: [
-            {
+            xSource({
               domain: "x.com",
               name: "X",
               kind: "x",
@@ -89,7 +95,7 @@ async function fixture(page: Page) {
               tags: [],
               for_you_count: 10,
               accounts: [],
-            },
+            }),
           ],
           total_posts: 20,
         },
@@ -101,7 +107,7 @@ async function fixture(page: Page) {
         await route.fulfill({
           status: 202,
           json: {
-            job: {
+            job: refreshJob({
               id: "capture",
               scope,
               label: "X For You",
@@ -110,7 +116,7 @@ async function fixture(page: Page) {
               created_at: "2026-10-25T12:00:00Z",
               finished_at: null,
               posts_saved: 0,
-            },
+            }),
           },
         });
       } else await route.fulfill({ json: { jobs: [] } });

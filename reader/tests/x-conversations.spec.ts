@@ -1,6 +1,16 @@
 import AxeBuilder from "@axe-core/playwright";
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import {
+  capturedX,
+  conversationNode,
+  post as postFixture,
+  xAccount,
+  xConversation,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post, XConversation, XConversationNode } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const capturedAt = "2026-10-17T00:10:00Z";
 const attemptedAt = "2026-10-17T01:10:00Z";
@@ -15,7 +25,7 @@ function node(
   body: string,
   overrides: Partial<XConversationNode> = {},
 ): XConversationNode {
-  return {
+  return conversationNode({
     id,
     domain: "x.com",
     url: `https://x.com/mathematician/status/${id}`,
@@ -27,19 +37,19 @@ function node(
     source: "x",
     thumbnail: null,
     media: [],
-    x: {
+    x: capturedX({
       handle: "mathematician",
       name: "A Mathematician",
       icon_url: "https://pbs.twimg.com/profile_images/math.jpg",
       links: [],
       media: [],
-    },
+    }),
     parent_id: null,
     depth: 0,
     is_author: false,
     missing_parent: false,
     ...overrides,
-  };
+  });
 }
 
 const parent = node("parent", parentText, { is_author: true });
@@ -47,7 +57,7 @@ const reply = node("reply", replyText, {
   parent_id: "focus",
   author: "Curious Reader",
   html: `<p>${replyText}</p><p><a href="https://example.com/research">Read the research</a><a href="javascript:window.badReply=true">Unsafe link</a></p><script>window.badReply=true</script><iframe src="https://unsafe.example"></iframe>`,
-  x: {
+  x: capturedX({
     handle: "curious_reader",
     name: "Curious Reader",
     icon_url: "https://pbs.twimg.com/profile_images/reader.jpg",
@@ -68,14 +78,14 @@ const reply = node("reply", replyText, {
         remote: true,
       },
     ],
-  },
+  }),
 });
 const continuation = node("continuation", continuationText, {
   parent_id: "reply",
   depth: 1,
   is_author: true,
 });
-const conversation: XConversation = {
+const conversation: XConversation = xConversation({
   status: "captured",
   captured_at: capturedAt,
   has_more: false,
@@ -84,7 +94,7 @@ const conversation: XConversation = {
   limit: 50,
   context: [parent],
   replies: [reply, continuation],
-};
+});
 
 function post(capture: XConversation | null = conversation): Post {
   const focused = node("focus", focusText, {
@@ -92,17 +102,17 @@ function post(capture: XConversation | null = conversation): Post {
     is_author: true,
   });
 
-  return {
+  return postFixture({
     ...focused,
-    x: {
+    x: xPost({
       ...focused.x,
       handle: "mathematician",
       name: "A Mathematician",
       reply_count: capture?.reported_replies ?? 0,
       captured_at: capturedAt,
       conversation: capture ?? undefined,
-    },
-  };
+    }),
+  });
 }
 
 async function mockConversation(context: BrowserContext, detail = post()) {
@@ -117,45 +127,47 @@ async function mockConversation(context: BrowserContext, detail = post()) {
     route.fulfill({ contentType: "text/html", body: "Reply video source" }),
   );
   await context.route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    if (url.pathname.endsWith("/post")) {
-      await current.pause;
-      await route.fulfill({ json: current.detail });
-      return;
-    }
-
     const detail = current.detail;
-    const { conversation: capture, ...profile } = detail.x ?? {};
-    const summary = {
-      ...detail,
-      x: {
-        ...profile,
-        replies_status: capture?.status ?? "not_collected",
-        replies_captured_count: capture?.replies.length ?? 0,
-      },
-    };
+    const { conversation: capture, ...profile } = detail.x ?? xPost();
 
-    await route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              {
+              xSource({
                 domain: "x.com",
                 name: "X",
                 kind: "x",
                 tags: [],
                 count: 1,
-                accounts: [{ ...profile, count: 1 }],
-              },
+                accounts: [xAccount({ ...profile, count: 1 })],
+              }),
             ],
             total_posts: 1,
-          }
-        : { posts: [summary], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        await current.pause;
+        return route.fulfill({ json: current.detail });
+      case "/api/reader/posts": {
+        const summary: Post = {
+          ...detail,
+          x: {
+            ...profile,
+            replies_status: capture?.status ?? "not_collected",
+            replies_captured_count: capture?.replies.length ?? 0,
+          },
+        };
+
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/posts"], posts: [summary] },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
+    }
   });
 
   return current;

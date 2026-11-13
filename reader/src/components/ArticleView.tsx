@@ -394,7 +394,7 @@ export function ArticleView({
                       ? referenceTarget.id
                       : undefined
                   }
-                  redditImages={post.reddit?.images}
+                  redditImages={post.reddit?.images ?? undefined}
                   redditVideos={post.reddit ? redditVideos : undefined}
                   redditVideoKeys={redditVideoKeys}
                   redditPostId={post.reddit ? post.id : undefined}

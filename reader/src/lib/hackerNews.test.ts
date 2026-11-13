@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { fetchPosts } from "./api";
+import { feedSource, hackerNewsPost, post } from "./api.fixture";
 import { sourceKind, sourcesForFeed } from "./collections";
 import {
   hackerNewsCaptureReason,
@@ -9,9 +10,8 @@ import {
 import { filterParams, parseFilters } from "./navigation";
 import { defaultFilters } from "./storage";
 import type { HackerNewsPost, Post } from "./types";
-import { isPost, isSource } from "./validation";
 
-const story: HackerNewsPost = {
+const story: HackerNewsPost = hackerNewsPost({
   submitted_at: "2026-10-16T12:00:00Z",
   points: 100,
   comments: 8,
@@ -19,8 +19,8 @@ const story: HackerNewsPost = {
   external_url: "https://example.com/article",
   day: "2026-10-17",
   rank: 3,
-};
-const post: Post = {
+});
+const discussion: Post = post({
   id: "123",
   domain: "news.ycombinator.com",
   source: "hacker_news",
@@ -33,7 +33,7 @@ const post: Post = {
   thumbnail: null,
   media: [],
   hacker_news: story,
-};
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -55,14 +55,16 @@ it.each(["top10", "top20", "top50", "all"] as const)(
         async () =>
           new Response(
             JSON.stringify({
-              posts: [post],
+              posts: [discussion],
               next_cursor: null,
               limited: false,
             }),
           ),
       ),
     );
-    await expect(fetchPosts(filters)).resolves.toMatchObject({ posts: [post] });
+    await expect(fetchPosts(filters)).resolves.toMatchObject({
+      posts: [discussion],
+    });
     const params = new URL(
       String(vi.mocked(fetch).mock.calls[0][0]),
       "https://reader.test",
@@ -90,55 +92,17 @@ it("defaults absent and invalid selections to Top 50% and drops HN-only filters 
 });
 
 it("includes Hacker News in Blogs while preserving its dedicated view", () => {
-  const source = {
+  const source = feedSource({
     domain: "news.ycombinator.com",
     name: "Hacker News",
+    kind: "hacker_news",
     tags: [],
     count: 3,
-  };
+  });
   expect(sourceKind(source.domain)).toBe("hacker_news");
   expect(sourceKind("www.hckrnews.com")).toBe("hacker_news");
   expect(sourcesForFeed([source], "stories")).toEqual([source]);
   expect(sourcesForFeed([source], "hacker_news")).toEqual([source]);
-  expect(isSource({ ...source, kind: "hacker_news" })).toBe(true);
-});
-
-it("accepts summary metadata without comments and validates detailed capture data", () => {
-  expect(isPost(post)).toBe(true);
-  const comment = {
-    id: "456",
-    parent_id: "123",
-    author: "reader",
-    html: "<p>Reply</p>",
-    created_at: "2026-10-17T12:00:00Z",
-    depth: 0,
-  };
-  const detail = {
-    ...story,
-    comment_capture: {
-      status: "partial",
-      captured: 1,
-      total: 8,
-      reason: "Comment limit reached.",
-    },
-    comments_items: [comment],
-  };
-  expect(isPost({ ...post, hacker_news: detail })).toBe(true);
-
-  for (const bad of [
-    { points: -1 },
-    { submitted_at: "invalid" },
-    { submitted_at: 123 },
-    { day: "2026-02-30" },
-    { day: "" },
-    { rank: 0 },
-    { comments: "8" },
-    { comment_capture: { ...detail.comment_capture, status: "invented" } },
-    { comments_items: [{ ...comment, depth: -1 }] },
-    { comments_items: [{ ...comment, created_at: "bad" }] },
-  ]) {
-    expect(isPost({ ...post, hacker_news: { ...detail, ...bad } })).toBe(false);
-  }
 });
 
 it.each([
@@ -228,33 +192,6 @@ it("uses the full saved body to recognize a truncated URL excerpt", () => {
   expect(hackerNewsExcerpt("A useful project", url, "")).toBe(
     "A useful project",
   );
-});
-
-it("validates collected destination identities and incoming references", () => {
-  const linked = {
-    id: "article",
-    domain: "example.com",
-    url: "https://example.com/article",
-    title: "Original article",
-    source: "rss",
-  };
-  expect(
-    isPost({ ...post, linked_post: linked, links: [linked], links_count: 1 }),
-  ).toBe(true);
-  expect(
-    isPost({ ...post, linked_post: null, links: [], links_count: 0 }),
-  ).toBe(true);
-  for (const invalid of [
-    { linked_post: { ...linked, id: 1 } },
-    { linked_post: { ...linked, excerpt: 123 } },
-    { linked_post: "https://example.com/article" },
-    { links: [{ ...linked, domain: null }] },
-    { links: [null] },
-    { links: linked },
-    { links_count: -1 },
-  ]) {
-    expect(isPost({ ...post, ...invalid })).toBe(false);
-  }
 });
 
 it("uses the saved publisher excerpt only when HN has no body", () => {

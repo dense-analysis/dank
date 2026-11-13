@@ -1,28 +1,36 @@
 import { expect, type Page, test } from "@playwright/test";
+import {
+  redditCommunity,
+  redditSource,
+  xAccount,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Source } from "../src/lib/types";
 
 const sources: Source[] = [
-  {
+  xSource({
     domain: "x.com",
     name: "X",
     kind: "x",
     count: 30,
     tags: [],
-    accounts: Array.from({ length: 30 }, (_, index) => ({
-      handle: `reporter${index + 1}`,
-      name: `City Reporter ${index + 1}`,
-      count: 1,
-      icon_url: null,
-    })),
-  },
-  {
+    accounts: Array.from({ length: 30 }, (_, index) =>
+      xAccount({
+        handle: `reporter${index + 1}`,
+        name: `City Reporter ${index + 1}`,
+        count: 1,
+        icon_url: null,
+      }),
+    ),
+  }),
+  redditSource({
     domain: "reddit.com",
     name: "Reddit",
     kind: "reddit",
     count: 1,
     tags: [],
-    communities: [{ name: "LocalLLaMA", count: 1 }],
-  },
+    communities: [redditCommunity({ name: "LocalLLaMA", count: 1 })],
+  }),
 ];
 
 async function mockNavigation(page: Page) {

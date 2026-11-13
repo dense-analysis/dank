@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { youtubeItem } from "./api.fixture";
 import {
   compactGraphLabel,
   graphTopology,
@@ -26,7 +27,7 @@ const reference: YouTubeReference = {
   excerpt: "We have seen it happen in real time.",
   observed_at: "2026-10-17T12:00:00Z",
 };
-const item: YouTubeItem = {
+const item: YouTubeItem = youtubeItem({
   id: "video:NnV_cWeoo5Q",
   video_id: "NnV_cWeoo5Q",
   kind: "video",
@@ -43,7 +44,7 @@ const item: YouTubeItem = {
   discoveries: [],
   references: [reference],
   reference_count: 1,
-};
+});
 
 it("makes two discussions converge on the video through their exact comment evidence", () => {
   const second = {

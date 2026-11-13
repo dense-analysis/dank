@@ -7,7 +7,10 @@
       "!!dist",
       "!!node_modules",
       "!!test-results",
-      "!!playwright-report"
+      "!!playwright-report",
+      "!!tools/openapi-types/node_modules",
+      "!!openapi.json",
+      "!!src/lib/api.gen.ts"
     ]
   },
   "formatter": {

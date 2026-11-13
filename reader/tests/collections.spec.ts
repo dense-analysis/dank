@@ -1,8 +1,19 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import {
+  feedSource,
+  post,
+  redditCommunity,
+  redditPost,
+  redditSource,
+  xAccount,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post, Source } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const blog: Post = {
+const blog: Post = post({
   id: "blog",
   domain: "example.com",
   url: "https://example.com/story",
@@ -14,7 +25,7 @@ const blog: Post = {
   source: "rss",
   thumbnail: null,
   media: [],
-};
+});
 const dispatches: Post[] = Array.from({ length: 4 }, (_, index) => ({
   ...blog,
   id: `dispatch-${index}`,
@@ -23,7 +34,7 @@ const dispatches: Post[] = Array.from({ length: 4 }, (_, index) => ({
   title: `City dispatch ${index + 1}`,
   html: `<p>City dispatch ${index + 1}</p>`,
   source: "x",
-  x: { handle: "reporter", name: "City Reporter", icon_url: null },
+  x: xPost({ handle: "reporter", name: "City Reporter", icon_url: null }),
 }));
 const observer: Post = {
   ...dispatches[0],
@@ -31,7 +42,7 @@ const observer: Post = {
   url: "https://x.com/observer/status/observer",
   title: "City dispatch from another account",
   html: "<p>City dispatch from another account</p>",
-  x: { handle: "observer", name: "City Observer", icon_url: null },
+  x: xPost({ handle: "observer", name: "City Observer", icon_url: null }),
 };
 const reddit: Post = {
   ...blog,
@@ -40,65 +51,70 @@ const reddit: Post = {
   url: "https://www.reddit.com/r/LocalLLaMA/comments/reddit/",
   title: "Community discussion",
   source: "reddit",
-  reddit: { community: "LocalLLaMA", score: 12, comments: 3, flair: null },
+  reddit: redditPost({
+    community: "LocalLLaMA",
+    score: 12,
+    comments: 3,
+    flair: null,
+  }),
 };
 const posts = [blog, dispatches[0], reddit, observer, ...dispatches.slice(1)];
 const sources: Source[] = [
-  {
+  feedSource({
     domain: "example.com",
     name: "Example News",
     kind: "rss",
     count: 1,
     tags: ["news"],
-  },
-  {
+  }),
+  xSource({
     domain: "x.com",
     name: "X",
     kind: "x",
     count: 5,
     tags: ["social"],
     accounts: [
-      {
+      xAccount({
         handle: "reporter",
         name: "City Reporter",
         count: 4,
         total_posts: 10161,
         icon_url: "https://pbs.twimg.com/profile_images/123/reporter.jpg",
-      },
-      {
+      }),
+      xAccount({
         handle: "observer",
         name: "City Observer",
         count: 1,
         icon_url: "/assets/observer.svg",
-      },
-      {
+      }),
+      xAccount({
         handle: "quiet_account",
         name: "No posts yet",
         count: 0,
         icon_url: null,
-      },
-      {
+      }),
+      xAccount({
         handle: "broken",
         name: "Unavailable icon",
         count: 0,
         icon_url: "https://pbs.twimg.com/profile_images/123/broken.jpg",
-      },
-      {
+      }),
+      xAccount({
         handle: "untrusted",
         name: "Untrusted icon",
         count: 0,
         icon_url: "https://untrusted.example/icon.svg",
-      },
+      }),
     ],
-  },
-  {
+  }),
+  redditSource({
     domain: "reddit.com",
     name: "Reddit",
     kind: "reddit",
     count: 1,
     tags: ["community"],
-    communities: [{ name: "LocalLLaMA", count: 1 }],
-  },
+    communities: [redditCommunity({ name: "LocalLLaMA", count: 1 })],
+  }),
 ];
 
 for (const width of [320, 390, 1280]) {
@@ -195,34 +211,32 @@ async function mockCollections(
   await page.route("https://untrusted.example/**", (route) => route.abort());
   await page.route("**/api/reader/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
     const params = url.searchParams;
     state.requests.push(url);
 
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: {
-          sources: availableSources.filter(
-            (source) => xEnabled || source.kind !== "x",
-          ),
-          total_posts: posts.length,
-        },
-      });
-      return;
-    }
-
-    if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json: posts.find(
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: availableSources.filter(
+              (source) => xEnabled || source.kind !== "x",
+            ),
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find(
           (post) =>
             post.id === params.get("id") &&
             post.domain === params.get("domain"),
-        ),
-      });
-      return;
+        );
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        break;
+      default:
+        return fulfillEmpty(route);
     }
 
     const selected = posts.filter((post) => {
@@ -321,7 +335,7 @@ test("All mixes collections while Blogs, X and Reddit keep their own feeds", asy
   expect([
     ...new Set(
       state.requests
-        .filter((url) => url.pathname.endsWith("/posts"))
+        .filter((url) => url.pathname === "/api/reader/posts")
         .map((url) => url.searchParams.get("kind")),
     ),
   ]).toEqual(["all", "stories", "x", "reddit"]);
@@ -537,7 +551,7 @@ test("account search, author, loaded pages and history survive article navigatio
     before: "2026-10-31",
   });
   const lastPage = state.requests
-    .filter((url) => url.pathname.endsWith("/posts"))
+    .filter((url) => url.pathname === "/api/reader/posts")
     .at(-1);
   expect(Object.fromEntries(lastPage?.searchParams ?? [])).toMatchObject({
     kind: "x",
@@ -574,7 +588,7 @@ test("account search, author, loaded pages and history survive article navigatio
   await expect(story(page, observer)).toBeVisible();
   await expect(page.locator(".post-card")).toHaveCount(1);
   const switched = state.requests
-    .filter((url) => url.pathname.endsWith("/posts"))
+    .filter((url) => url.pathname === "/api/reader/posts")
     .at(-1)?.searchParams;
   expect(switched?.get("account")).toBe("observer");
   expect(switched?.has("cursor")).toBe(false);
@@ -730,22 +744,26 @@ for (const width of [1440, 390, 320]) {
       if (source.kind === "x") {
         return {
           ...source,
-          accounts: Array.from({ length: 20 }, (_, index) => ({
-            handle: `account_${index + 1}`,
-            name: index === 0 ? "Grant Sanderson" : `Reporter ${index + 1}`,
-            icon_url: null,
-            count: index,
-          })),
+          accounts: Array.from({ length: 20 }, (_, index) =>
+            xAccount({
+              handle: `account_${index + 1}`,
+              name: index === 0 ? "Grant Sanderson" : `Reporter ${index + 1}`,
+              icon_url: null,
+              count: index,
+            }),
+          ),
         };
       }
 
       if (source.kind === "reddit") {
         return {
           ...source,
-          communities: Array.from({ length: 20 }, (_, index) => ({
-            name: `community_${index + 1}`,
-            count: index,
-          })),
+          communities: Array.from({ length: 20 }, (_, index) =>
+            redditCommunity({
+              name: `community_${index + 1}`,
+              count: index,
+            }),
+          ),
         };
       }
 
@@ -819,16 +837,16 @@ for (const width of [320, 390, 1280]) {
         : {
             ...source,
             communities: [
-              {
+              redditCommunity({
                 name: "LocalLLaMA",
                 count: 238,
                 post_total: {
                   count: 1866004,
-                  source: "arctic_shift" as const,
+                  source: "arctic_shift",
                   updated_at: "2026-10-11T09:26:38Z",
                   captured_at: "2026-10-17T15:00:00Z",
                 },
-              },
+              }),
             ],
           },
     );
@@ -870,16 +888,16 @@ test("a successful zero archive count remains distinct from an unknown total", a
       : {
           ...source,
           communities: [
-            {
+            redditCommunity({
               name: "LocalLLaMA",
               count: 0,
               post_total: {
                 count: 0,
-                source: "arctic_shift" as const,
+                source: "arctic_shift",
                 updated_at: "2026-10-11T09:26:38Z",
                 captured_at: "2026-10-17T15:00:00Z",
               },
-            },
+            }),
           ],
         },
   );

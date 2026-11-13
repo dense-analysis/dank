@@ -1,7 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
+import { youtubeItem } from "../src/lib/api.fixture";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
-const video: YouTubeItem = {
+const video: YouTubeItem = youtubeItem({
   id: "video:dQw4w9WgXcQ",
   video_id: "dQw4w9WgXcQ",
   kind: "video",
@@ -62,7 +63,7 @@ const video: YouTubeItem = {
       last_seen: "2026-10-16T10:00:00Z",
     },
   ],
-};
+});
 
 async function fixture(page: Page, item = video, broken: string[] = []) {
   const requests: string[] = [];

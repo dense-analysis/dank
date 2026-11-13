@@ -1,10 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { post } from "../src/lib/api.fixture";
 import type { HackerNewsPost, Post } from "../src/lib/types";
 
 function story(index: number): Post {
   const day = index < 4 ? "2026-10-17" : "2026-10-16";
-  return {
+  return post({
     id: String(index + 1),
     domain: "news.ycombinator.com",
     source: "hacker_news",
@@ -25,7 +26,7 @@ function story(index: number): Post {
       discussion_url: `https://news.ycombinator.com/item?id=${index + 1}`,
       external_url: `https://example.com/software-${index + 1}`,
     },
-  };
+  });
 }
 const stories = Array.from({ length: 8 }, (_, index) => story(index));
 const capture = {
@@ -308,7 +309,11 @@ test("failed capture is explicit and API failure never becomes an empty feed", a
   await page.route("**/api/reader/posts?**", (route) =>
     route.fulfill({
       status: 503,
-      json: { detail: "Hacker News data unavailable." },
+      json: {
+        error: "Hacker News data unavailable.",
+        code: "unavailable",
+        fields: [],
+      },
     }),
   );
   await page.goto("/?view=hacker_news");

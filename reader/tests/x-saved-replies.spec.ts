@@ -1,9 +1,19 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import {
+  capturedX,
+  conversationNode,
+  post,
+  xAccount,
+  xConversation,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post, XConversationNode } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const profile = { handle: "author", name: "Author", icon_url: null };
-const root: Post = {
+const root: Post = post({
   id: "100",
   domain: "x.com",
   url: "https://x.com/author/status/100",
@@ -15,8 +25,8 @@ const root: Post = {
   created_at: "2026-10-16T03:40:00Z",
   media: [],
   thumbnail: null,
-  x: { ...profile, replies_status: "not_collected", reply_count: 191 },
-};
+  x: xPost({ ...profile, replies_status: "not_collected", reply_count: 191 }),
+});
 const reply: Post = {
   ...root,
   id: "101",
@@ -25,7 +35,7 @@ const reply: Post = {
   excerpt: "Three notes.",
   html: "<p>Three notes.</p>",
   created_at: "2026-10-16T04:04:00Z",
-  x: {
+  x: xPost({
     ...root.x,
     ...profile,
     reply_to: {
@@ -35,25 +45,26 @@ const reply: Post = {
       is_self: true,
       collected: true,
     },
-  },
+  }),
 };
 function node(post: Post, parent: string | null): XConversationNode {
-  return {
+  return conversationNode({
     ...post,
+    x: capturedX({ ...post.x, media: post.x?.media ?? [] }),
     parent_id: parent,
     depth: 0,
     is_author: true,
     missing_parent: false,
     collected: true,
-  };
+  });
 }
 function detail(post: Post): Post {
   return {
     ...post,
-    x: {
+    x: xPost({
       ...post.x,
       ...profile,
-      conversation: {
+      conversation: xConversation({
         status: "not_collected",
         captured_at: null,
         has_more: false,
@@ -63,8 +74,8 @@ function detail(post: Post): Post {
         local_posts_count: 1,
         context: post.id === "101" ? [node(root, null)] : [],
         replies: post.id === "100" ? [node(reply, "100")] : [],
-      },
-    },
+      }),
+    }),
   };
 }
 
@@ -73,43 +84,41 @@ for (const mobile of [false, true]) {
     page,
   }) => {
     if (mobile) await page.setViewportSize({ width: 390, height: 844 });
-    await page.route("**/api/reader/**", async (route) => {
-      const url = new URL(route.request().url());
-      if (url.pathname === "/api/reader/categories") {
-        return route.fulfill({ json: { categories: [] } });
-      }
+    await page.route("**/api/reader/**", (route) => {
+      const params = new URL(route.request().url()).searchParams;
 
-      if (url.pathname.endsWith("/sources")) {
-        await route.fulfill({
-          json: {
-            total_posts: 2,
-            sources: [
-              {
-                domain: "x.com",
-                name: "X",
-                kind: "x",
-                tags: [],
-                count: 2,
-                accounts: [{ ...profile, count: 2 }],
-              },
-            ],
-          },
-        });
-      } else if (url.pathname.endsWith("/post")) {
-        await route.fulfill({
-          json: detail(url.searchParams.get("id") === "101" ? reply : root),
-        });
-      } else {
-        await route.fulfill({
-          json: {
-            posts:
-              url.searchParams.get("x_view") === "replies"
-                ? [reply, root]
-                : [root],
-            next_cursor: null,
-            limited: false,
-          },
-        });
+      switch (apiPath(route)) {
+        case "/api/reader/sources":
+          return route.fulfill({
+            json: {
+              ...emptyResponses["/api/reader/sources"],
+              total_posts: 2,
+              sources: [
+                xSource({
+                  domain: "x.com",
+                  name: "X",
+                  kind: "x",
+                  tags: [],
+                  count: 2,
+                  accounts: [xAccount({ ...profile, count: 2 })],
+                }),
+              ],
+            },
+          });
+        case "/api/reader/post":
+          return route.fulfill({
+            json: detail(params.get("id") === "101" ? reply : root),
+          });
+        case "/api/reader/posts":
+          return route.fulfill({
+            json: {
+              ...emptyResponses["/api/reader/posts"],
+              posts:
+                params.get("x_view") === "replies" ? [reply, root] : [root],
+            },
+          });
+        default:
+          return fulfillEmpty(route);
       }
     });
     await page.goto("/?view=x&account=author");

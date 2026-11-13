@@ -2,12 +2,43 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { type BrowserContext, expect, test } from "@playwright/test";
+import {
+  post as postFixture,
+  redditCommunity,
+  redditPost as redditFields,
+  redditSource,
+  redditVideo,
+  xAccount,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const videoUrl = "https://youtu.be/LKrwhjOI8Nc?t=90";
 const videoTitle = "There's never been a better time to go into math";
 const postText = "Some reflections on AI in math.";
-const post = {
+const profile = xPost({
+  handle: "3blue1brown",
+  name: "Grant Sanderson",
+  icon_url: null,
+  links: [
+    {
+      url: videoUrl,
+      title: videoTitle,
+      description: "Thoughts on the future of math.",
+      image_url: "/assets/youtube-thumb.svg",
+    },
+  ],
+  media: [],
+  reply_count: 24,
+  repost_count: 136,
+  like_count: 931,
+  view_count: 54000,
+  replies_status: "not_collected",
+  captured_at: "2026-10-17T00:00:00Z",
+});
+const post: Post = postFixture({
   id: "youtube-post",
   domain: "x.com",
   source: "x",
@@ -19,27 +50,8 @@ const post = {
   html: `<p>${postText}</p><p><a href="${videoUrl}">${videoUrl}</a></p>`,
   media: [],
   thumbnail: null,
-  x: {
-    handle: "3blue1brown",
-    name: "Grant Sanderson",
-    icon_url: null,
-    links: [
-      {
-        url: videoUrl,
-        title: videoTitle,
-        description: "Thoughts on the future of math.",
-        image_url: "/assets/youtube-thumb.svg",
-      },
-    ],
-    media: [],
-    reply_count: 24,
-    repost_count: 136,
-    like_count: 931,
-    view_count: 54000,
-    replies_status: "not_collected",
-    captured_at: "2026-10-17T00:00:00Z",
-  },
-} satisfies Post;
+  x: profile,
+});
 
 async function mockYouTube(
   context: BrowserContext,
@@ -105,58 +117,61 @@ async function mockYouTube(
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   });
-  await context.route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
+  await context.route("**/api/reader/**", (route) => {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              xSource({
+                domain: "x.com",
+                name: "X",
+                kind: "x",
+                count: posts.filter((item) => item.domain === "x.com").length,
+                tags: [],
+                accounts: [
+                  xAccount({
+                    ...profile,
+                    count: posts.filter((item) => item.domain === "x.com")
+                      .length,
+                  }),
+                ],
+              }),
+              ...(posts.some((item) => item.reddit)
+                ? [
+                    redditSource({
+                      domain: "reddit.com",
+                      name: "Reddit",
+                      kind: "reddit",
+                      tags: [],
+                      count: posts.filter((item) => item.reddit).length,
+                      communities: [
+                        redditCommunity({
+                          name: "videos",
+                          count: posts.filter((item) => item.reddit).length,
+                        }),
+                      ],
+                    }),
+                  ]
+                : []),
+            ],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const id = new URL(route.request().url()).searchParams.get("id");
+        const detail = posts.find((item) => item.id === id);
 
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: {
-          sources: [
-            {
-              domain: "x.com",
-              name: "X",
-              kind: "x",
-              count: posts.filter((item) => item.domain === "x.com").length,
-              tags: [],
-              accounts: [
-                {
-                  ...post.x,
-                  count: posts.filter((item) => item.domain === "x.com").length,
-                },
-              ],
-            },
-            ...(posts.some((item) => item.reddit)
-              ? [
-                  {
-                    domain: "reddit.com",
-                    name: "Reddit",
-                    kind: "reddit",
-                    tags: [],
-                    count: posts.filter((item) => item.reddit).length,
-                    communities: [
-                      {
-                        name: "videos",
-                        count: posts.filter((item) => item.reddit).length,
-                      },
-                    ],
-                  },
-                ]
-              : []),
-          ],
-          total_posts: posts.length,
-        },
-      });
-      return;
+        return detail ? route.fulfill({ json: detail }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts, next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
     }
-
-    await route.fulfill({
-      json: url.pathname.endsWith("/post")
-        ? posts.find((item) => item.id === url.searchParams.get("id"))
-        : { posts, next_cursor: null, limited: false },
-    });
   });
 
   return embeds;
@@ -307,11 +322,11 @@ test("opening a post and going Back unloads players instead of leaving audio in 
 const mixed: Post = {
   ...post,
   x: {
-    ...post.x,
+    ...profile,
     links: [
-      ...post.x.links,
+      ...profile.links,
       {
-        ...post.x.links[0],
+        ...profile.links[0],
         url: "https://youtu.be/M7lc1UVf-VE",
         title: "Second video",
       },
@@ -488,7 +503,7 @@ test("native playback stops on navigation and stays paused in the restored feed"
 });
 
 function redditPost(remote = false, id = "reddit-video"): Post {
-  const video = {
+  const video = redditVideo({
     url: remote
       ? "https://video.reddit.test/playlist.m3u8"
       : "/assets/playback-reddit.mp4",
@@ -496,7 +511,7 @@ function redditPost(remote = false, id = "reddit-video"): Post {
     fallback_url: remote ? "https://video.reddit.test/archived.mp4" : null,
     poster_url: "/assets/youtube-thumb.svg",
     remote,
-  };
+  });
 
   return {
     ...post,
@@ -509,14 +524,14 @@ function redditPost(remote = false, id = "reddit-video"): Post {
     html: "",
     excerpt: "",
     thumbnail: video.poster_url,
-    reddit: {
+    reddit: redditFields({
       community: "videos",
       score: 12,
       comments: 3,
       flair: null,
       video,
       videos: [video],
-    },
+    }),
   };
 }
 

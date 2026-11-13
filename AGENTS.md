@@ -99,6 +99,9 @@ imports or calls into a forbidden module.
   Make target in the same change, list it in `make help`, and add it to the
   command table in `README.md`. `tests/test_makefile.py` checks this.
 * Run `make lint` to run all linters to check for and autofix errors.
+* After changing an API route or a response model, run `make openapi` and
+  commit `reader/openapi.json` and `reader/src/lib/api.gen.ts`. A test fails
+  while the schema is stale.
 * You can run tests with `make test`. Pass paths or options through `ARGS`, as
   in `make test ARGS='tests/db -k upgrade'`.
 * You can scrape data with `uv run scrape`.

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Post } from "../lib/types";
+import type { XCardPost } from "../lib/types";
 import { xProfile } from "../lib/x";
 import { PostTime } from "./PostTime";
 import { ReaderLink } from "./ReaderLink";
@@ -11,7 +11,7 @@ export function XPostHeader({
   navigation,
   badge,
 }: {
-  post: Post;
+  post: XCardPost;
   badge?: ReactNode;
   selectAccount: (handle: string) => void;
   navigation?: { href: string; open: () => void };

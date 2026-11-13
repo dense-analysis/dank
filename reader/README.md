@@ -42,6 +42,31 @@ The installed reader needs the DANK server to stay running and reachable. On a
 local network, keep the host awake and the phone on that network. Reopen or
 refresh DANK after deploying updates. Offline reading is not included.
 
+## API types
+
+The reader's API types come from the server. `make openapi`, from the checkout
+root, writes the FastAPI schema to `openapi.json` and generates
+`src/lib/api.gen.ts` from it with
+[openapi-typescript](https://openapi-ts.dev/). Commit both after changing a route
+or a response model. `src/lib/types.ts` and the feature modules give the
+generated shapes the reader's names; don't write server shapes by hand.
+
+Requests go through `apiGet`, `apiPost` and `apiPut` in `src/lib/api.ts`, typed by
+the schema's paths. Failures arrive as `ReaderRequestError`, carrying the error
+envelope's `code` and `fields`, so a form can show `fieldMessage("body.domain")`
+beside its input. The server validates every answer against the schema, so the
+reader doesn't check response shapes again; guards in `src/lib/validation.ts`
+are for saved browser state, URL filters and proxy error pages.
+
+Two checks keep the files current: a Python test fails while `openapi.json`
+differs from the app, and `npm run check` fails while `api.gen.ts` differs from
+`openapi.json`. The generator lives in `tools/openapi-types` with its own
+TypeScript 5, because TypeScript 7 drops the compiler API it uses; npm installs
+it on first use.
+
+`src/lib/api.fixture.ts` builds complete API objects for tests, so a fixture
+states only the fields it is about.
+
 ## Checks
 
 ```sh

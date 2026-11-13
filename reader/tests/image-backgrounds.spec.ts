@@ -1,6 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, post } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const diagram = (background = "") =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="288">${background}<path d="M40 40V248H440M40 240L140 200L240 160L340 150L440 100" fill="none" stroke="black" stroke-width="2"/><text x="40" y="25" fill="black">Development effort</text></svg>`;
@@ -35,7 +37,7 @@ async function openArticle(page: Page, html = defaultHtml, automatic = false) {
       );
     });
   }
-  const post: Post = {
+  const article: Post = post({
     id: "image-example",
     domain: "example.com",
     title: "Reading figures",
@@ -47,7 +49,7 @@ async function openArticle(page: Page, html = defaultHtml, automatic = false) {
     source: "rss",
     thumbnail: null,
     media: [],
-  };
+  });
   const pngs = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 480;
@@ -90,19 +92,26 @@ async function openArticle(page: Page, html = defaultHtml, automatic = false) {
     });
   });
   await page.route("**/api/reader/**", (route) => {
-    const path = new URL(route.request().url()).pathname;
-    return route.fulfill({
-      json: path.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              { domain: post.domain, name: "Example", tags: [], count: 1 },
+              feedSource({ domain: article.domain, name: "Example", count: 1 }),
             ],
             total_posts: 1,
-          }
-        : path.endsWith("/post")
-          ? post
-          : { posts: [post], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: article });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts: [article], next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
   await page.goto("/?article=image-example&article_source=example.com");
   await expect(page.locator(".article-body img").first()).toBeAttached();

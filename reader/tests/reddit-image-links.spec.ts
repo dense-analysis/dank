@@ -1,5 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { post, redditPost, redditSource } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const original = "https://i.redd.it/first.jpg";
 const second = "https://i.redd.it/second.jpg";
@@ -16,7 +18,7 @@ async function mockImages(
 ) {
   const firstImage = "/assets/reddit-first.svg";
   const secondImage = "/assets/reddit-second.svg";
-  const post: Post = {
+  const savedGallery: Post = post({
     id: "t3_abc",
     domain: "reddit.com",
     source: "reddit",
@@ -28,7 +30,7 @@ async function mockImages(
     created_at: "2026-10-17T00:00:00Z",
     thumbnail: options.noThumbnail ? null : firstImage,
     media: [],
-    reddit: {
+    reddit: redditPost({
       community: "photos",
       score: 5,
       comments: 0,
@@ -37,8 +39,8 @@ async function mockImages(
         { url: firstImage, source_url: original },
         { url: secondImage, source_url: second },
       ],
-    },
-  };
+    }),
+  });
   await page.route("**/assets/reddit-*.svg", (route) =>
     route.fulfill(
       options.failed &&
@@ -51,29 +53,24 @@ async function mockImages(
     ),
   );
   await page.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
-            sources: [
-              {
-                domain: "reddit.com",
-                name: "Reddit",
-                kind: "reddit",
-                tags: [],
-                count: 1,
-              },
-            ],
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [redditSource({ name: "Reddit", count: 1 })],
             total_posts: 1,
-          }
-        : url.pathname.endsWith("/post")
-          ? post
-          : { posts: [post], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: savedGallery });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts: [savedGallery], next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
 }
 

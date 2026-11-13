@@ -1,13 +1,22 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  post,
+  redditPost,
+  redditSource,
+  redditVideo,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const xImage = "https://x.com/author/status/123/photo/1";
 const xVideo = "https://x.com/author/status/123/video/2";
 const youtube = "https://youtu.be/dQw4w9WgXcQ";
 const redditImage = "https://i.redd.it/first.jpg";
-const redditVideo = "https://v.redd.it/clip";
+const redditClip = "https://v.redd.it/clip";
 const gallery = "https://www.reddit.com/gallery/abc";
-const base: Post = {
+const base: Post = post({
   id: "123",
   domain: "x.com",
   source: "x",
@@ -19,7 +28,7 @@ const base: Post = {
   created_at: "2026-10-17T00:00:00Z",
   thumbnail: null,
   media: [],
-};
+});
 
 async function mockMedia(page: Page) {
   let requests = 0;
@@ -33,19 +42,19 @@ async function mockMedia(page: Page) {
     excerpt: `Photo. ${redditImage} ${gallery}`,
     thumbnail: "/assets/image.svg",
     html: `<img src="/assets/image.svg" alt="Photograph"><p><a href="${redditImage}">${redditImage}</a> <a href="${gallery}">${gallery}</a></p>`,
-    reddit: {
+    reddit: redditPost({
       community: "photos",
       score: 1,
       comments: 0,
       flair: null,
       images: [{ url: "/assets/image.svg", source_url: redditImage }],
-    },
+    }),
   };
   const posts: Post[] = [
     {
       ...base,
       html: `<p>Look. <a href="${xImage}">${xImage}</a> <a href="${xVideo}">${xVideo}</a> <a href="${youtube}">${youtube}</a></p><p>See <a href="${xImage}">the image</a>.</p>`,
-      x: {
+      x: xPost({
         handle: "author",
         name: "Author",
         media: [
@@ -75,28 +84,28 @@ async function mockMedia(page: Page) {
             image_url: null,
           },
         ],
-      },
+      }),
     },
     photo,
     {
       ...photo,
       id: "t3_clip",
       title: "Reddit clip",
-      excerpt: `Clip. ${redditVideo}`,
-      html: `<img src="/assets/image.svg" alt="Photograph"><p><a href="${redditImage}">${redditImage}</a> <a href="${redditVideo}">${redditVideo}</a></p>`,
-      reddit: {
+      excerpt: `Clip. ${redditClip}`,
+      html: `<img src="/assets/image.svg" alt="Photograph"><p><a href="${redditImage}">${redditImage}</a> <a href="${redditClip}">${redditClip}</a></p>`,
+      reddit: redditPost({
         ...photo.reddit,
         community: "photos",
         score: 1,
         comments: 0,
         flair: null,
-        video: {
+        video: redditVideo({
           url: "/assets/video.mp4",
-          source_url: redditVideo,
+          source_url: redditClip,
           poster_url: "/assets/image.svg",
           remote: false,
-        },
-      },
+        }),
+      }),
     },
   ];
   await page.route("**/assets/image.svg", (route) =>
@@ -110,30 +119,36 @@ async function mockMedia(page: Page) {
     return route.abort();
   });
   await page.route("**/api/reader/**", (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    return route.fulfill({
-      json: url.pathname.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              { domain: "x.com", name: "X", kind: "x", count: 1, tags: [] },
-              {
+              xSource({ domain: "x.com", name: "X", count: 1, tags: [] }),
+              redditSource({
                 domain: "reddit.com",
                 name: "Reddit",
-                kind: "reddit",
                 count: 2,
                 tags: [],
-              },
+              }),
             ],
             total_posts: 3,
-          }
-        : url.pathname.endsWith("/post")
-          ? posts.find((post) => post.id === url.searchParams.get("id"))
-          : { posts, next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post": {
+        const id = new URL(route.request().url()).searchParams.get("id");
+        const found = posts.find((post) => post.id === id);
+
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/posts"], posts },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
 
   return () => requests;
@@ -200,8 +215,8 @@ for (const width of [1440, 390]) {
         await expect(photoSummary).toContainText(gallery);
       }
 
-      if (hideVideos) await expect(clipSummary).not.toContainText(redditVideo);
-      else await expect(clipSummary).toContainText(redditVideo);
+      if (hideVideos) await expect(clipSummary).not.toContainText(redditClip);
+      else await expect(clipSummary).toContainText(redditClip);
 
       await page.goto("/?article=123&article_source=x.com");
       const reader = page.locator(".article-page");
@@ -221,7 +236,7 @@ for (const width of [1440, 390]) {
         400,
       );
       await expectRaw(reader, redditImage, hideImages);
-      await expectRaw(reader, redditVideo, hideVideos);
+      await expectRaw(reader, redditClip, hideVideos);
       await expect(
         reader.getByLabel("Reddit video", { exact: true }),
       ).toBeVisible();

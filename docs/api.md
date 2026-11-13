@@ -171,6 +171,8 @@ inputs:
 | Anything else (ClickHouse is down) | 503 | `unavailable`, logged |
 
 Validation errors use 400 rather than FastAPI's 422, as the reader expects.
+OpenAPI declares the envelope as every route's `default` response, in place of
+FastAPI's 422, so the reader's generated types know it.
 A route that needs resources but runs without the lifespan, such as a
 test missing a dependency override, answers 503.
 
@@ -339,6 +341,16 @@ the manager through `RefreshQueue`.
   seconds, then kills its process group. If the server dies or reloads first,
   which `watchfiles` forces after 5 seconds, `watch_owner` sees the pipe close
   and stops the collection. The next start marks the job interrupted.
+
+## Reader types
+
+`dank-openapi` writes the app's schema to `reader/openapi.json` without starting
+a server, and the reader generates `reader/src/lib/api.gen.ts` from it. Run both
+with `make openapi` after changing a route or a model, and commit the two files.
+`tests/api/test_openapi_file.py` fails while the schema is stale. Two models with
+one name get mangled schema names, so give each response model a unique name.
+A `Literal` is worth declaring wherever the reader relies on a closed set: it
+becomes a union type there. See [the reader's API types](../reader/README.md#api-types).
 
 ## Testing
 

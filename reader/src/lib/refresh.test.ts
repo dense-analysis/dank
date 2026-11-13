@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { refreshJob } from "./api.fixture";
 import {
   fetchRefreshJobs,
-  isRefreshJob,
   type RefreshJob,
   type RefreshScope,
   refreshContext,
@@ -10,7 +10,7 @@ import {
   startRefresh,
 } from "./refresh";
 
-const job: RefreshJob = {
+const job: RefreshJob = refreshJob({
   id: "one",
   scope: { kind: "reddit", community: "LocalLLaMA" },
   label: "r/LocalLLaMA",
@@ -19,7 +19,7 @@ const job: RefreshJob = {
   created_at: "2026-10-22T10:00:00Z",
   finished_at: null,
   posts_saved: 0,
-};
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -172,30 +172,6 @@ describe("contextual collection scope", () => {
 });
 
 describe("refresh API boundary", () => {
-  it("validates status before displaying server jobs", () => {
-    expect(isRefreshJob(job)).toBe(true);
-    expect(
-      isRefreshJob({
-        ...job,
-        scope: { kind: "all", platforms: ["rss", "youtube"] },
-      }),
-    ).toBe(true);
-    expect(
-      isRefreshJob({ ...job, scope: { kind: "all", platforms: ["stories"] } }),
-    ).toBe(false);
-    expect(
-      isRefreshJob({
-        ...job,
-        scope: { kind: "reddit", platforms: ["youtube"] },
-      }),
-    ).toBe(false);
-    expect(isRefreshJob({ ...job, status: "unknown" })).toBe(false);
-    expect(isRefreshJob({ ...job, posts_saved: -1 })).toBe(false);
-    expect(isRefreshJob({ ...job, scope: { kind: "post", post_id: 22 } })).toBe(
-      false,
-    );
-  });
-
   it("starts only the selected scope using a JSON POST", async () => {
     const fetcher = vi
       .fn()
@@ -222,7 +198,7 @@ describe("refresh API boundary", () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            detail:
+            error:
               "The refresh queue is full. Try again after a collection finishes.",
           }),
           { status: 409 },
@@ -234,18 +210,12 @@ describe("refresh API boundary", () => {
     );
   });
 
-  it("rejects malformed job history", async () => {
+  it("reads the job history", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify({ jobs: [{ ...job, status: "done" }] })),
-        ),
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ jobs: [job] }))),
     );
-    await expect(fetchRefreshJobs()).rejects.toThrow(
-      "unexpected refresh status",
-    );
+    await expect(fetchRefreshJobs()).resolves.toEqual([job]);
   });
 });
 
@@ -301,10 +271,6 @@ it.each(["sources", "external"] as const)(
     expect(refreshContext(params)?.scope).toEqual(scope);
     expect(refreshDestination(scope).toString()).toBe(params.toString());
     expect(refreshScopeKey(scope)).not.toBe(refreshScopeKey({ kind: "rss" }));
-    expect(isRefreshJob({ ...job, scope })).toBe(true);
-    expect(
-      isRefreshJob({ ...job, scope: { kind: "reddit", blog_feed: blogFeed } }),
-    ).toBe(false);
   },
 );
 
@@ -344,8 +310,4 @@ it("returns playlist refreshes to their collection and keeps scopes distinct", (
   expect(refreshScopeKey(scope)).not.toBe(
     refreshScopeKey({ ...scope, playlist_id: "PLtwo" }),
   );
-  expect(isRefreshJob({ ...job, scope })).toBe(true);
-  expect(
-    isRefreshJob({ ...job, scope: { kind: "youtube", playlist_id: 123 } }),
-  ).toBe(false);
 });

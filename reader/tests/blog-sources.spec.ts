@@ -1,8 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, post } from "../src/lib/api.fixture";
 import type { Post, Source } from "../src/lib/types";
 
-const github: Post = {
+const github: Post = post({
   id: "github-release",
   domain: "github.blog",
   url: "https://github.blog/release",
@@ -14,7 +15,7 @@ const github: Post = {
   source: "rss",
   thumbnail: null,
   media: [],
-};
+});
 const lobster: Post = {
   ...github,
   id: "lobster-release",
@@ -47,8 +48,8 @@ const hackerNews: Post = {
   },
 };
 const posts = [github, lobster, external, hackerNews];
-const sources: (Source & { icon_url?: string | null })[] = [
-  {
+const sources: Source[] = [
+  feedSource({
     domain: github.domain,
     name: "github.blog",
     kind: "rss",
@@ -56,8 +57,8 @@ const sources: (Source & { icon_url?: string | null })[] = [
     tags: [],
     configured: true,
     icon_url: "/api/reader/source-icon?domain=github.blog",
-  },
-  {
+  }),
+  feedSource({
     domain: lobster.domain,
     name: "lobste.rs",
     kind: "rss",
@@ -65,8 +66,8 @@ const sources: (Source & { icon_url?: string | null })[] = [
     tags: [],
     configured: true,
     icon_url: "/assets/broken-blog.svg",
-  },
-  {
+  }),
+  feedSource({
     domain: "empty.example",
     name: "Empty Blog",
     kind: "rss",
@@ -74,23 +75,23 @@ const sources: (Source & { icon_url?: string | null })[] = [
     tags: [],
     configured: true,
     icon_url: null,
-  },
-  {
+  }),
+  feedSource({
     domain: external.domain,
     name: "Discovered Publisher",
     kind: "rss",
     count: 1,
     tags: [],
     configured: false,
-  },
-  {
+  }),
+  feedSource({
     domain: hackerNews.domain,
     name: "Hacker News",
     kind: "hacker_news",
     count: 1,
     tags: [],
     configured: true,
-  },
+  }),
 ];
 
 async function fixture(page: Page) {

@@ -1,3 +1,4 @@
+import { collectionInfo } from "./api.fixture";
 import type { PostConnection, PostConnectionsData } from "./postConnections";
 import type { CollectionInfo, PostReference } from "./types";
 
@@ -23,6 +24,7 @@ export const incomingConnection: PostConnection = {
   origin: connectionDiscussion,
   target: {
     url: connectionRoot.url,
+    title: connectionRoot.title,
     post: connectionRoot,
     youtube_item_id: null,
   },
@@ -45,6 +47,7 @@ export const outgoingConnection: PostConnection = {
   origin: connectionRoot,
   target: {
     url: "https://source.example/research",
+    title: "The original security research",
     post: {
       domain: "source.example",
       id: "research",
@@ -72,6 +75,7 @@ export const externalConnection: PostConnection = {
   id: "outgoing-external",
   target: {
     url: "https://uncollected.example/a-long-destination-with-a-query?identity=one",
+    title: "",
     post: null,
     youtube_item_id: null,
   },
@@ -105,10 +109,13 @@ export const videoConnection: PostConnection = {
 
 export const connectionsFixture: PostConnectionsData = {
   root: connectionRoot,
+  context: {},
   incoming: [incomingConnection],
   outgoing: [outgoingConnection, externalConnection, videoConnection],
+  related: [],
   incoming_count: 1,
   outgoing_count: 3,
+  related_count: 0,
   limit: 100,
   coverage: "saved_evidence",
 };
@@ -162,7 +169,7 @@ export function discoveryFixture(throughReddit = false): CollectionInfo {
     : "2026-10-16T09:00:00Z";
   const origin = throughReddit ? connectionDiscussion : connectionRoot;
 
-  return {
+  return collectionInfo({
     article_url: connectionRoot.url,
     article: connectionRoot,
     article_status: "collected",
@@ -182,5 +189,5 @@ export function discoveryFixture(throughReddit = false): CollectionInfo {
     collected_via: null,
     seen_before_post: !throughReddit,
     coverage: "saved_history",
-  };
+  });
 }

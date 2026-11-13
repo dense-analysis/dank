@@ -1,7 +1,9 @@
 import { type BrowserContext, expect, test } from "@playwright/test";
+import { feedSource, post } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const article: Post = {
+const article: Post = post({
   id: "shared",
   domain: "example.com",
   url: "https://example.com/story",
@@ -19,7 +21,7 @@ const article: Post = {
   source: "rss",
   thumbnail: null,
   media: [],
-};
+});
 const other: Post = {
   ...article,
   domain: "other.example",
@@ -35,44 +37,51 @@ async function mockReader(context: BrowserContext) {
   );
   await context.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
     const posts = [article, other];
-    if (url.pathname.endsWith("/sources"))
-      return route.fulfill({
-        json: {
-          sources: posts.map((post) => ({
-            domain: post.domain,
-            name: post.domain,
-            tags: [],
-            count: 1,
-          })),
-          total_posts: 2,
-        },
-      });
-    if (url.pathname.endsWith("/post"))
-      return route.fulfill({
-        json: posts.find(
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: posts.map((post) =>
+              feedSource({
+                domain: post.domain,
+                name: post.domain,
+                tags: [],
+                count: 1,
+              }),
+            ),
+            total_posts: 2,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find(
           (post) => post.domain === url.searchParams.get("domain"),
-        ),
-      });
-    const domains = url.searchParams.getAll("domain");
-    return route.fulfill({
-      json: {
-        posts: posts
-          .filter((post) => !domains.length || domains.includes(post.domain))
-          .map((post) => ({
-            ...post,
-            excerpt: url.searchParams.has("q")
-              ? '… A needle in C++ examples. <img src=x onerror="window.previewAttack=true">'
-              : post.excerpt,
-          })),
-        next_cursor: null,
-        limited: false,
-      },
-    });
+        );
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        const domains = url.searchParams.getAll("domain");
+        return route.fulfill({
+          json: {
+            posts: posts
+              .filter(
+                (post) => !domains.length || domains.includes(post.domain),
+              )
+              .map((post) => ({
+                ...post,
+                excerpt: url.searchParams.has("q")
+                  ? '… A needle in C++ examples. <img src=x onerror="window.previewAttack=true">'
+                  : post.excerpt,
+              })),
+            next_cursor: null,
+            limited: false,
+          },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
+    }
   });
 }
 

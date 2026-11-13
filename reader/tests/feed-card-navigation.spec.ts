@@ -1,8 +1,18 @@
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import {
+  feedSource,
+  post,
+  redditPost,
+  redditSource,
+  xPost,
+  xSource,
+  youtubeItem,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const blog: Post = {
+const blog: Post = post({
   id: "blog",
   domain: "example.com",
   source: "rss",
@@ -14,7 +24,7 @@ const blog: Post = {
   created_at: "2026-10-17T12:00:00Z",
   media: [],
   thumbnail: null,
-};
+});
 const reddit: Post = {
   ...blog,
   id: "reddit",
@@ -22,7 +32,12 @@ const reddit: Post = {
   source: "reddit",
   url: "https://reddit.com/r/research/comments/reddit/example",
   title: "A collected Reddit post",
-  reddit: { community: "research", score: 12, comments: 3, flair: "Research" },
+  reddit: redditPost({
+    community: "research",
+    score: 12,
+    comments: 3,
+    flair: "Research",
+  }),
 };
 const x: Post = {
   ...blog,
@@ -31,7 +46,12 @@ const x: Post = {
   source: "x",
   url: "https://x.com/writer/status/x",
   title: "A collected X post",
-  x: { handle: "writer", name: "Writer", icon_url: null, reply_count: 3 },
+  x: xPost({
+    handle: "writer",
+    name: "Writer",
+    icon_url: null,
+    reply_count: 3,
+  }),
 };
 const hn: Post = {
   ...blog,
@@ -52,7 +72,7 @@ const hn: Post = {
   },
 };
 const posts = [blog, reddit, x, hn];
-const video: YouTubeItem = {
+const video: YouTubeItem = youtubeItem({
   id: "video:dQw4w9WgXcQ",
   video_id: "dQw4w9WgXcQ",
   kind: "video",
@@ -73,7 +93,7 @@ const video: YouTubeItem = {
   discoveries: [],
   references: [],
   reference_count: 0,
-};
+});
 const communityPost: YouTubeItem = {
   ...video,
   id: "post:community",
@@ -90,60 +110,66 @@ async function fixtures(context: BrowserContext) {
   );
   await context.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
-
-    if (url.pathname.endsWith("/youtube/sources"))
-      return route.fulfill({
-        json: { feeds: [], channels: [], total: 2, linked_count: 0 },
-      });
-    if (url.pathname.endsWith("/youtube"))
-      return route.fulfill({
-        json: {
-          items: [video, communityPost].filter(
-            (item) =>
-              !url.searchParams.has("id") ||
-              item.id === url.searchParams.get("id"),
-          ),
-          total: 2,
-          next_cursor: null,
-        },
-      });
-    if (url.pathname.endsWith("/sources"))
-      return route.fulfill({
-        json: {
-          sources: posts.map((post) => ({
-            domain: post.domain,
-            name: post.domain,
-            kind: post.source,
-            count: 1,
-            tags: [],
-          })),
-          total_posts: 4,
-        },
-      });
-    if (url.pathname.endsWith("/post"))
-      return route.fulfill({
-        json: posts.find(
+    switch (apiPath(route)) {
+      case "/api/reader/youtube/sources":
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/youtube/sources"], total: 2 },
+        });
+      case "/api/reader/youtube":
+        return route.fulfill({
+          json: {
+            items: [video, communityPost].filter(
+              (item) =>
+                !url.searchParams.has("id") ||
+                item.id === url.searchParams.get("id"),
+            ),
+            total: 2,
+            next_cursor: null,
+          },
+        });
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              feedSource({ domain: blog.domain, name: blog.domain, count: 1 }),
+              redditSource({ name: reddit.domain, count: 1 }),
+              xSource({ name: x.domain, count: 1 }),
+              feedSource({
+                domain: hn.domain,
+                name: hn.domain,
+                kind: "hacker_news",
+                count: 1,
+              }),
+            ],
+            total_posts: 4,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find(
           (post) =>
             post.id === url.searchParams.get("id") &&
             post.domain === url.searchParams.get("domain"),
-        ),
-      });
-    const kind = url.searchParams.get("kind");
-
-    return route.fulfill({
-      json: {
-        posts: posts.filter(
-          (post) =>
-            kind === "all" ||
-            post.source === (kind === "stories" ? "rss" : kind),
-        ),
-        next_cursor: null,
-        limited: false,
-      },
-    });
+        );
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        const kind = url.searchParams.get("kind");
+        return route.fulfill({
+          json: {
+            posts: posts.filter(
+              (post) =>
+                kind === "all" ||
+                post.source === (kind === "stories" ? "rss" : kind),
+            ),
+            next_cursor: null,
+            limited: false,
+          },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
+    }
   });
 }
 

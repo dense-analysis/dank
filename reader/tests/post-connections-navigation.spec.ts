@@ -1,5 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { Core } from "cytoscape";
+import { post, redditPost, youtubeItem } from "../src/lib/api.fixture";
+import type {
+  ConnectionsContext,
+  PostConnectionsData,
+} from "../src/lib/postConnections";
 import {
   connectionDiscussion,
   connectionRoot,
@@ -10,6 +15,7 @@ import {
 } from "../src/lib/postConnections.fixture";
 import type { Post, PostReference } from "../src/lib/types";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const saved = "2026-10-17T12:00:00Z";
 const rootQuery = new URLSearchParams({
@@ -27,8 +33,30 @@ const commentNode = JSON.stringify([
   incomingConnection.evidence.reference_id,
 ]);
 
-function postFrom(reference: PostReference, html: string): Post {
+function referenceTo(post: Post): PostReference {
+  const { domain, id, url, title, source } = post;
+  return { domain, id, url, title, source };
+}
+
+const contextSources = [
+  "reddit",
+  "hacker_news",
+  "x",
+  "youtube",
+  "rss",
+] as const;
+
+/** The server answers connections in the scope the request asked for. */
+function requestedContext(params: URLSearchParams): ConnectionsContext {
   return {
+    source:
+      contextSources.find((source) => source === params.get("source")) ?? null,
+    community: params.get("community"),
+  };
+}
+
+function postFrom(reference: PostReference, html: string): Post {
+  return post({
     ...reference,
     html,
     author: "Writer",
@@ -36,7 +64,7 @@ function postFrom(reference: PostReference, html: string): Post {
     created_at: saved,
     thumbnail: null,
     media: [],
-  };
+  });
 }
 
 async function fixtures(page: Page, missingComment = false) {
@@ -50,7 +78,7 @@ async function fixtures(page: Page, missingComment = false) {
     "<p>The collected research source.</p>",
   );
   const source = postFrom(connectionDiscussion, "<p>The saved discussion.</p>");
-  source.reddit = {
+  source.reddit = redditPost({
     community: "kernel",
     score: 12,
     comments: 2,
@@ -92,8 +120,8 @@ async function fixtures(page: Page, missingComment = false) {
             ]),
       ],
     },
-  };
-  const video: YouTubeItem = {
+  });
+  const video: YouTubeItem = youtubeItem({
     id: videoConnection.target.youtube_item_id ?? "",
     kind: "video",
     video_id: "NnV_cWeoo5Q",
@@ -110,61 +138,79 @@ async function fixtures(page: Page, missingComment = false) {
     discoveries: [],
     references: [],
     reference_count: 0,
-  };
+  });
   const posts = [original, source, neighbor];
   const requests: string[] = [];
-  await page.context().route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
+  await page.context().route("**/api/reader/**", (route) => {
+    const path = apiPath(route);
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(path);
 
-    requests.push(url.pathname);
-    if (url.pathname.endsWith("/youtube/sources"))
-      return route.fulfill({
-        json: { feeds: [], channels: [], total: 1, linked_count: 1 },
-      });
-    if (url.pathname.endsWith("/youtube"))
-      return route.fulfill({
-        json: { items: [video], total: 1, next_cursor: null },
-      });
-    if (url.pathname.endsWith("/sources"))
-      return route.fulfill({
-        json: { sources: [], total_posts: posts.length },
-      });
-    if (url.pathname.endsWith("/post")) {
-      const found = posts.find(
-        (post) =>
-          post.domain === url.searchParams.get("domain") &&
-          post.id === url.searchParams.get("id"),
-      );
-      return route.fulfill(
-        found
-          ? { json: found }
-          : { status: 404, json: { error: "Article not found" } },
-      );
+    switch (path) {
+      case "/api/reader/youtube/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/youtube/sources"],
+            total: 1,
+            linked_count: 1,
+          },
+        });
+      case "/api/reader/youtube":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/youtube"],
+            items: [video],
+            total: 1,
+          },
+        });
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find(
+          (post) =>
+            post.domain === params.get("domain") &&
+            post.id === params.get("id"),
+        );
+        return route.fulfill(
+          found
+            ? { json: found }
+            : {
+                status: 404,
+                json: {
+                  error: "Article not found",
+                  code: "not_found",
+                  fields: [],
+                },
+              },
+        );
+      }
+      case "/api/reader/connections": {
+        const id = params.get("id");
+        const connections: PostConnectionsData =
+          id === connectionRoot.id
+            ? data
+            : {
+                ...emptyResponses["/api/reader/connections"],
+                root: referenceTo(id === neighbor.id ? neighbor : source),
+              };
+        return route.fulfill({
+          json: { ...connections, context: requestedContext(params) },
+        });
+      }
+      case "/api/reader/connection":
+        return route.fulfill({ json: incomingConnection });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/posts"], posts: [original] },
+        });
+      default:
+        return fulfillEmpty(route);
     }
-    if (url.pathname.endsWith("/connections")) {
-      const id = url.searchParams.get("id");
-      if (id === connectionRoot.id) return route.fulfill({ json: data });
-      const root = id === neighbor.id ? neighbor : source;
-      return route.fulfill({
-        json: {
-          root,
-          incoming: [],
-          outgoing: [],
-          incoming_count: 0,
-          outgoing_count: 0,
-          limit: 100,
-          coverage: "saved_evidence",
-        },
-      });
-    }
-    if (url.pathname.endsWith("/connection"))
-      return route.fulfill({ json: incomingConnection });
-    return route.fulfill({
-      json: { posts: [original], next_cursor: null, limited: false },
-    });
   });
   return { requests, original, source, neighbor };
 }
@@ -460,17 +506,13 @@ test("exploring a previously read article waits for its graph and opens Connecti
     if (new URL(route.request().url()).searchParams.get("id") !== neighbor.id)
       return route.fallback();
     await pendingConnections;
-    return route.fulfill({
-      json: {
-        root: neighbor,
-        incoming: [{ ...outgoingConnection, direction: "incoming" }],
-        outgoing: [],
-        incoming_count: 1,
-        outgoing_count: 0,
-        limit: 100,
-        coverage: "saved_evidence",
-      },
-    });
+    const connections: PostConnectionsData = {
+      ...emptyResponses["/api/reader/connections"],
+      root: referenceTo(neighbor),
+      incoming: [{ ...outgoingConnection, direction: "incoming" }],
+      incoming_count: 1,
+    };
+    return route.fulfill({ json: connections });
   });
   await page.goto(`${rootUrl}&connections=list`);
   const neighborCard = page

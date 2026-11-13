@@ -1,12 +1,12 @@
 import { hasArticleContent } from "./article";
 import { sourceKind } from "./collections";
-import type { Post, XMedia, XProfile } from "./types";
+import type { Post, XCardPost, XMedia, XProfile } from "./types";
 
 export function isXPost(post: Pick<Post, "domain" | "source">): boolean {
   return post.source === "x" || sourceKind(post.domain) === "x";
 }
 
-export function xProfile(post: Post): XProfile | undefined {
+export function xProfile(post: XCardPost): XProfile | undefined {
   if (post.x) return post.x.handle ? post.x : undefined;
 
   try {
@@ -27,7 +27,7 @@ export function xProfile(post: Post): XProfile | undefined {
   return undefined;
 }
 
-export function xMedia(post: Post): XMedia[] {
+export function xMedia(post: XCardPost): XMedia[] {
   if (post.x?.media) return post.x.media;
 
   return post.media.flatMap((asset): XMedia[] => {
@@ -51,7 +51,7 @@ export function xMedia(post: Post): XMedia[] {
   });
 }
 
-export function hasXContent(post: Post): boolean {
+export function hasXContent(post: XCardPost): boolean {
   return (
     !!post.x?.quote ||
     hasArticleContent(post.html) ||

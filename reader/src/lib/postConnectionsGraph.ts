@@ -122,7 +122,12 @@ export function postConnectionsGraph(
           ? 0
           : Math.min(layer, previous?.layer ?? layer),
     });
-    targetsByNode.set(id, { url: post.url, post, youtube_item_id: null });
+    targetsByNode.set(id, {
+      url: post.url,
+      title: post.title,
+      post,
+      youtube_item_id: null,
+    });
 
     return id;
   }

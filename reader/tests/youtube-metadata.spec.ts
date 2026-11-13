@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { youtubeItem } from "../src/lib/api.fixture";
 import type { YouTubeItem } from "../src/lib/youtubeCollection";
 
 const id = "NnV_cWeoo5Q";
@@ -8,7 +9,7 @@ const captured = "2026-10-17T20:00:00Z";
 const later = "2099-01-01T00:00:00Z";
 
 function item(): YouTubeItem {
-  return {
+  return youtubeItem({
     id: `video:${id}`,
     video_id: id,
     kind: "video",
@@ -33,7 +34,7 @@ function item(): YouTubeItem {
       retry_after: "",
       available: false,
     },
-  };
+  });
 }
 
 async function fixture(page: Page, initial = item()) {
@@ -46,7 +47,11 @@ async function fixture(page: Page, initial = item()) {
       if (state.fail) {
         await route.fulfill({
           status: 503,
-          json: { error: "Collection is temporarily unavailable." },
+          json: {
+            error: "Collection is temporarily unavailable.",
+            code: "unavailable",
+            fields: [],
+          },
         });
         return;
       }

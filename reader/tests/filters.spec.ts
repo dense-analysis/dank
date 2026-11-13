@@ -1,8 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, post } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
-const base: Post = {
+const base: Post = post({
   id: "one",
   domain: "example.com",
   author: "Ada Writer",
@@ -14,7 +16,7 @@ const base: Post = {
   source: "rss",
   thumbnail: null,
   media: [],
-};
+});
 const posts: Post[] = [
   base,
   {
@@ -36,44 +38,49 @@ async function mockReader(page: Page) {
   const requests: URL[] = [];
   await page.route("**/api/reader/**", (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              feedSource({
+                domain: base.domain,
+                name: "Example",
+                tags: ["technology"],
+                count: posts.length,
+              }),
+            ],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const found = posts.find(
+          (post) => post.id === url.searchParams.get("id"),
+        );
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts": {
+        requests.push(url);
+        const author = url.searchParams.get("author")?.toLowerCase();
+        const after = url.searchParams.get("after");
+        const before = url.searchParams.get("before");
+        const selected = posts.filter(
+          (post) =>
+            (!author ||
+              (url.searchParams.get("author_match") === "exact"
+                ? post.author.toLowerCase() === author
+                : post.author.toLowerCase().includes(author))) &&
+            (!after || post.created_at.slice(0, 10) >= after) &&
+            (!before || post.created_at.slice(0, 10) <= before),
+        );
+        return route.fulfill({
+          json: { posts: selected, next_cursor: null, limited: false },
+        });
+      }
+      default:
+        return fulfillEmpty(route);
     }
-
-    requests.push(url);
-    if (url.pathname.endsWith("/sources"))
-      return route.fulfill({
-        json: {
-          sources: [
-            {
-              domain: base.domain,
-              name: "Example",
-              tags: ["technology"],
-              count: posts.length,
-            },
-          ],
-          total_posts: posts.length,
-        },
-      });
-    if (url.pathname.endsWith("/post"))
-      return route.fulfill({
-        json: posts.find((post) => post.id === url.searchParams.get("id")),
-      });
-    const author = url.searchParams.get("author")?.toLowerCase();
-    const after = url.searchParams.get("after");
-    const before = url.searchParams.get("before");
-    const selected = posts.filter(
-      (post) =>
-        (!author ||
-          (url.searchParams.get("author_match") === "exact"
-            ? post.author.toLowerCase() === author
-            : post.author.toLowerCase().includes(author))) &&
-        (!after || post.created_at.slice(0, 10) >= after) &&
-        (!before || post.created_at.slice(0, 10) <= before),
-    );
-    return route.fulfill({
-      json: { posts: selected, next_cursor: null, limited: false },
-    });
   });
   return requests;
 }

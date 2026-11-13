@@ -2,8 +2,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReaderPreferencesProvider } from "../hooks/useReaderPreferences";
+import { post } from "../lib/api.fixture";
 import { defaultFilters } from "../lib/storage";
-import type { Post } from "../lib/types";
+import type { Post, YouTubePost } from "../lib/types";
 import { YouTubePostCard } from "./YouTubePostCard";
 
 vi.mock("./YouTubePlayer", () => ({
@@ -31,7 +32,20 @@ vi.mock("./YouTubeLocalVideo", () => ({
   ),
 }));
 
-const post = {
+const youtube: YouTubePost = {
+  kind: "video",
+  video_id: "dQw4w9WgXcQ",
+  channel: {
+    id: "city-films",
+    name: "City Films",
+    url: "https://www.youtube.com/@cityfilms",
+  },
+  duration_text: "12:34",
+  views_text: "12345 views",
+  thumbnail_url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  video_url: null,
+};
+const video: Post = post({
   id: "video:dQw4w9WgXcQ",
   domain: "youtube.com",
   source: "youtube",
@@ -43,20 +57,8 @@ const post = {
   created_at: "2026-10-21T10:00:00Z",
   thumbnail: null,
   media: [],
-  youtube: {
-    kind: "video",
-    video_id: "dQw4w9WgXcQ",
-    channel: {
-      id: "city-films",
-      name: "City Films",
-      url: "https://www.youtube.com/@cityfilms",
-    },
-    duration_text: "12:34",
-    views_text: "12345 views",
-    thumbnail_url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-    video_url: null,
-  },
-} satisfies Post;
+  youtube,
+});
 const href =
   "/?platform=youtube&platform=reddit&q=station&youtube_item=video%3AdQw4w9WgXcQ";
 let container: HTMLDivElement;
@@ -83,7 +85,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(value: Post = post) {
+async function render(value: Post = video) {
   await act(() =>
     root.render(
       <ReaderPreferencesProvider>
@@ -143,8 +145,8 @@ it("keeps inline play independent from details navigation and closes back to its
 
 it("prefers downloaded media on demand and uses the shared video position identity", async () => {
   await render({
-    ...post,
-    youtube: { ...post.youtube, video_url: "/assets/station.mp4" },
+    ...video,
+    youtube: { ...youtube, video_url: "/assets/station.mp4" },
   });
   expect(container.querySelector("video")).toBeNull();
   expect(container.textContent).not.toContain("Remote video");
@@ -161,15 +163,15 @@ it("prefers downloaded media on demand and uses the shared video position identi
 });
 
 it("gives Shorts their portrait layout and community posts no video controls", async () => {
-  await render({ ...post, youtube: { ...post.youtube, kind: "short" } });
+  await render({ ...video, youtube: { ...youtube, kind: "short" } });
   expect(container.querySelector(".youtube-feed-short")).not.toBeNull();
   expect(container.textContent).toContain("Short");
   await render({
-    ...post,
+    ...video,
     id: "post:community-1",
     url: "https://www.youtube.com/post/community-1",
     youtube: {
-      ...post.youtube,
+      ...youtube,
       kind: "post",
       video_id: null,
       duration_text: "",
@@ -185,7 +187,7 @@ it("gives Shorts their portrait layout and community posts no video controls", a
 });
 
 it("keeps older collected videos usable without optional preview metadata", async () => {
-  await render({ ...post, youtube: undefined });
+  await render({ ...video, youtube: undefined });
   expect(
     container.querySelector<HTMLButtonElement>("button.yt-play")?.disabled,
   ).toBe(false);
@@ -197,10 +199,10 @@ it("keeps older collected videos usable without optional preview metadata", asyn
 
 it("rejects external download URLs and untrusted thumbnail or player hosts", async () => {
   await render({
-    ...post,
+    ...video,
     url: "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ",
     youtube: {
-      ...post.youtube,
+      ...youtube,
       thumbnail_url: "https://evil.test/poster.jpg",
       video_url: "https://evil.test/video.mp4",
     },

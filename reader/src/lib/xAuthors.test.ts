@@ -44,25 +44,3 @@ it("requests Authors with shared post filters and its own paging cursor", async 
   expect(query.searchParams.has("x_tab")).toBe(false);
   expect(query.searchParams.has("view")).toBe(false);
 });
-
-it.each([
-  { handle: "../bad", name: "name", icon_url: null, count: 1, posts: [] },
-  { handle: "alice", name: "name", icon_url: null, count: -1, posts: [] },
-  { handle: "alice", name: "name", icon_url: null, count: 1, posts: [{}] },
-])("rejects invalid author data %j", async (author) => {
-  const fetch = vi.fn();
-  fetch.mockResolvedValue(
-    new Response(
-      JSON.stringify({
-        authors: [author],
-        total: 1,
-        unattributed_posts: 0,
-        next_cursor: null,
-      }),
-    ),
-  );
-  vi.stubGlobal("fetch", fetch);
-  await expect(
-    fetchXAuthors({ ...defaultFilters, kind: "x", xFeed: "for_you" }),
-  ).rejects.toThrow("unexpected author response");
-});

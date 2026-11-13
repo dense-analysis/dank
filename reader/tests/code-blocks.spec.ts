@@ -1,5 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { feedSource, post } from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 const sql = [
   "-- on the shop server",
@@ -22,7 +24,7 @@ function escapeHtml(text: string) {
 const sqlHtml = `<pre class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl">${escapeHtml(sql).replace("CREATE", '<span class="k">CREATE</span>')}</span></span></code></pre>`;
 
 async function openArticle(page: Page, html = sqlHtml) {
-  const post: Post = {
+  const article: Post = post({
     id: "code-example",
     domain: "example.com",
     title: "Reading code examples",
@@ -34,21 +36,32 @@ async function openArticle(page: Page, html = sqlHtml) {
     source: "rss",
     thumbnail: null,
     media: [],
-  };
+  });
   await page.route("**/api/reader/**", (route) => {
-    const path = new URL(route.request().url()).pathname;
-    return route.fulfill({
-      json: path.endsWith("/sources")
-        ? {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
             sources: [
-              { domain: post.domain, name: "Example News", tags: [], count: 1 },
+              feedSource({
+                domain: article.domain,
+                name: "Example News",
+                count: 1,
+              }),
             ],
             total_posts: 1,
-          }
-        : path.endsWith("/post")
-          ? post
-          : { posts: [post], next_cursor: null, limited: false },
-    });
+          },
+        });
+      case "/api/reader/post":
+        return route.fulfill({ json: article });
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { posts: [article], next_cursor: null, limited: false },
+        });
+      default:
+        return fulfillEmpty(route);
+    }
   });
   await page.goto("/?article=code-example&article_source=example.com");
   await expect(

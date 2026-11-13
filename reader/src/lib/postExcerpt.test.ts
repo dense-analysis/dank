@@ -1,9 +1,10 @@
 import { expect, it } from "vitest";
+import { post } from "./api.fixture";
 import { savedPublisherExcerpt } from "./postExcerpt";
 import type { Post } from "./types";
 
 const url = "https://publisher.test/article";
-const post: Post = {
+const submission: Post = post({
   id: "123",
   domain: "reddit.com",
   source: "reddit",
@@ -23,10 +24,10 @@ const post: Post = {
     title: "Publisher title",
     excerpt: "Saved publisher text.",
   },
-};
+});
 
 it("uses saved publisher text for a bare link with a thumbnail", () => {
-  expect(savedPublisherExcerpt(post, "https://publisher…")).toBe(
+  expect(savedPublisherExcerpt(submission, "https://publisher…")).toBe(
     "Saved publisher text.",
   );
 });
@@ -34,24 +35,24 @@ it("uses saved publisher text for a bare link with a thumbnail", () => {
 it("keeps meaningful post text and does not mistake a URL followed by text for a bare link", () => {
   for (const text of ["My explanation.", `${url} My explanation.`]) {
     expect(
-      savedPublisherExcerpt({ ...post, html: `<p>${text}</p>` }, text),
+      savedPublisherExcerpt({ ...submission, html: `<p>${text}</p>` }, text),
     ).toBe(text);
   }
 });
 
 it("keeps the current preview when no publisher text is available", () => {
-  expect(savedPublisherExcerpt({ ...post, linked_post: undefined }, url)).toBe(
-    url,
-  );
+  expect(
+    savedPublisherExcerpt({ ...submission, linked_post: undefined }, url),
+  ).toBe(url);
 });
 
 it("fills an empty aggregator preview without replacing legacy excerpt text", () => {
-  expect(savedPublisherExcerpt({ ...post, html: "", excerpt: "" }, "")).toBe(
-    "Saved publisher text.",
-  );
+  expect(
+    savedPublisherExcerpt({ ...submission, html: "", excerpt: "" }, ""),
+  ).toBe("Saved publisher text.");
   expect(
     savedPublisherExcerpt(
-      { ...post, html: "", excerpt: "Legacy text." },
+      { ...submission, html: "", excerpt: "Legacy text." },
       "Legacy text.",
     ),
   ).toBe("Legacy text.");

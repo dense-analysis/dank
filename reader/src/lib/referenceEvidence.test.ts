@@ -63,16 +63,6 @@ it.each([
   ).rejects.toThrow("could not be verified");
 });
 
-it("distinguishes missing archived evidence from an API error", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(new Response("null", { status: 200 })),
-  );
-  await expect(
-    fetchReferenceEvidence(evidence.domain, evidence.post_id, target),
-  ).resolves.toBeNull();
-});
-
 it("treats only a missing reference response as absent evidence", async () => {
   const fetch = vi
     .fn()

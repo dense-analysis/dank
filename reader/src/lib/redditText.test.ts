@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { redditVideo } from "./api.fixture";
 import {
   displayedRedditVideos,
   redditVideoKey,
@@ -8,12 +9,12 @@ import {
 import type { RedditVideo } from "./types";
 
 const url = "https://v.redd.it/portrait";
-const video: RedditVideo = {
+const video: RedditVideo = redditVideo({
   url: "/assets/saved.mp4",
   source_url: `${url}/HLSPlaylist.m3u8?a=old`,
   poster_url: null,
   remote: false,
-};
+});
 const displayed = displayedRedditVideos([video], new Set());
 
 describe("represented Reddit video links", () => {

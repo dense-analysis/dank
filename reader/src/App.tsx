@@ -223,8 +223,8 @@ export function App() {
     accountName.toLowerCase() !== accountHandle.toLowerCase();
   const accountContext = section === "x" && !!filters.account && !filters.xFeed;
   const forYouContext = section === "x" && filters.xFeed === "for_you";
-  const communities = redditSources.flatMap(
-    (source) => source.communities ?? [],
+  const communities = redditSources.flatMap((source) =>
+    source.kind === "reddit" ? source.communities : [],
   );
   const communityContext = section === "reddit" && !!filters.community;
   const activeCommunity = communities.find(
@@ -460,7 +460,8 @@ export function App() {
       accounts={accounts}
       account={forYouContext ? "feed:for_you" : filters.account}
       forYouCount={xSources.reduce(
-        (total, source) => total + (source.for_you_count ?? 0),
+        (total, source) =>
+          total + (source.kind === "x" ? source.for_you_count : 0),
         0,
       )}
       selectAccount={selectAccount}

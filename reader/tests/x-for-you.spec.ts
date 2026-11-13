@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
+import {
+  post as postFixture,
+  refreshJob,
+  xAccount,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
 
-const post: Post = {
+const post: Post = postFixture({
   id: "123",
   domain: "x.com",
   url: "https://x.com/reporter/status/123",
@@ -13,8 +20,8 @@ const post: Post = {
   source: "x",
   thumbnail: null,
   media: [],
-  x: { handle: "reporter", name: "Reporter", icon_url: null },
-};
+  x: xPost({ handle: "reporter", name: "Reporter", icon_url: null }),
+});
 
 for (const width of [390, 1280]) {
   test(`For You navigation, saved post and refresh scope at ${width}px`, async ({
@@ -37,7 +44,7 @@ for (const width of [390, 1280]) {
         await route.fulfill({
           json: {
             sources: [
-              {
+              xSource({
                 domain: "x.com",
                 name: "X",
                 kind: "x",
@@ -45,14 +52,14 @@ for (const width of [390, 1280]) {
                 tags: [],
                 for_you_count: 1,
                 accounts: [
-                  {
+                  xAccount({
                     handle: "for_you",
                     name: "An actual account",
                     count: 1,
                     icon_url: null,
-                  },
+                  }),
                 ],
-              },
+              }),
             ],
             total_posts: 2,
           },
@@ -64,7 +71,7 @@ for (const width of [390, 1280]) {
           await route.fulfill({
             status: 202,
             json: {
-              job: {
+              job: refreshJob({
                 id: "capture",
                 scope,
                 label: "X For You",
@@ -73,7 +80,7 @@ for (const width of [390, 1280]) {
                 created_at: "2026-10-25T12:00:00Z",
                 finished_at: null,
                 posts_saved: 0,
-              },
+              }),
             },
           });
         } else await route.fulfill({ json: { jobs: [] } });

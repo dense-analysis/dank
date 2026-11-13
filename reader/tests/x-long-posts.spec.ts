@@ -1,10 +1,20 @@
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { type BrowserContext, expect, test } from "@playwright/test";
+import {
+  capturedX,
+  conversationNode,
+  post,
+  xAccount,
+  xConversation,
+  xPost,
+  xSource,
+} from "../src/lib/api.fixture";
 import type { Post } from "../src/lib/types";
+import { apiPath, emptyResponses, fulfillEmpty } from "./apiMock";
 
 function makePost(id: string, html: string): Post {
-  return {
+  return post({
     id,
     domain: "x.com",
     source: "x",
@@ -16,15 +26,15 @@ function makePost(id: string, html: string): Post {
     created_at: "2026-10-16T12:00:00Z",
     thumbnail: null,
     media: [],
-    x: {
+    x: xPost({
       handle: "researcher",
       name: "A Researcher",
       icon_url: null,
       links: [],
       media: [],
       replies_status: "not_collected",
-    },
-  };
+    }),
+  });
 }
 
 const mediumParagraphs = Array.from(
@@ -53,48 +63,45 @@ const article = makePost(
 );
 
 async function mockPosts(context: BrowserContext, posts: Post[]) {
-  await context.route("**/api/reader/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/reader/categories") {
-      return route.fulfill({ json: { categories: [] } });
-    }
+  await context.route("**/api/reader/**", (route) => {
+    switch (apiPath(route)) {
+      case "/api/reader/sources":
+        return route.fulfill({
+          json: {
+            ...emptyResponses["/api/reader/sources"],
+            sources: [
+              xSource({
+                domain: "x.com",
+                name: "X",
+                kind: "x",
+                count: posts.length,
+                tags: [],
+                accounts: [
+                  xAccount({
+                    handle: "researcher",
+                    name: "A Researcher",
+                    icon_url: null,
+                    count: posts.length,
+                  }),
+                ],
+              }),
+            ],
+            total_posts: posts.length,
+          },
+        });
+      case "/api/reader/post": {
+        const id = new URL(route.request().url()).searchParams.get("id");
+        const found = posts.find((post) => post.id === id);
 
-    if (url.pathname.endsWith("/sources")) {
-      await route.fulfill({
-        json: {
-          sources: [
-            {
-              domain: "x.com",
-              name: "X",
-              kind: "x",
-              count: posts.length,
-              tags: [],
-              accounts: [
-                {
-                  handle: "researcher",
-                  name: "A Researcher",
-                  icon_url: null,
-                  count: posts.length,
-                },
-              ],
-            },
-          ],
-          total_posts: posts.length,
-        },
-      });
-      return;
+        return found ? route.fulfill({ json: found }) : fulfillEmpty(route);
+      }
+      case "/api/reader/posts":
+        return route.fulfill({
+          json: { ...emptyResponses["/api/reader/posts"], posts },
+        });
+      default:
+        return fulfillEmpty(route);
     }
-
-    if (url.pathname.endsWith("/post")) {
-      await route.fulfill({
-        json: posts.find((post) => post.id === url.searchParams.get("id")),
-      });
-      return;
-    }
-
-    await route.fulfill({
-      json: { posts, next_cursor: null, limited: false },
-    });
   });
 }
 
@@ -315,7 +322,7 @@ test("expanding preserves attachment state and suppresses raw URLs represented b
       videoUrl +
       "</a></p>" +
       medium.html,
-    x: {
+    x: xPost({
       ...medium.x,
       handle: "researcher",
       name: "A Researcher",
@@ -337,7 +344,7 @@ test("expanding preserves attachment state and suppresses raw URLs represented b
           source_url: videoUrl,
         },
       ],
-    },
+    }),
   };
   await mockPosts(context, [post]);
   await context.route("**/assets/long-post-video.mp4", (route) =>
@@ -399,13 +406,13 @@ test("long conversation replies fully expand when no internal reader destination
   );
   const post: Post = {
     ...focused,
-    x: {
+    x: xPost({
       ...focused.x,
       handle: "researcher",
       name: "A Researcher",
       replies_status: "captured",
       replies_captured_count: 1,
-      conversation: {
+      conversation: xConversation({
         status: "captured",
         captured_at: "2026-10-17T00:00:00Z",
         has_more: false,
@@ -414,16 +421,17 @@ test("long conversation replies fully expand when no internal reader destination
         limit: 50,
         context: [],
         replies: [
-          {
+          conversationNode({
             ...article,
+            x: capturedX({ handle: "researcher", name: "A Researcher" }),
             parent_id: focused.id,
             depth: 0,
             is_author: true,
             missing_parent: false,
-          },
+          }),
         ],
-      },
-    },
+      }),
+    }),
   };
   await mockPosts(context, [post]);
   await page.goto("/?view=x&article=conversation-parent&article_source=x.com");

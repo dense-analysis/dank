@@ -150,7 +150,7 @@ class DiscoveryOut(ApiModel):
 class VideoReferenceOut(ApiModel):
     domain: str
     post_id: str
-    kind: str
+    kind: Literal["post", "comment"]
     reference_id: str
     reference_url: str
     author: str

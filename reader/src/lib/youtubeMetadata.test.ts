@@ -1,10 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   collectYouTubeMetadata,
-  isYouTubeMetadataCapture,
+  type YouTubeMetadataResult,
 } from "./youtubeMetadata";
 
-const captured = {
+const captured: YouTubeMetadataResult = {
   video_id: "NnV_cWeoo5Q",
   status: "captured",
   provider: "youtube_oembed",
@@ -38,40 +38,13 @@ it("collects only a validated canonical video ID with explicit JSON intent", asy
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
-it("keeps a previous capture distinct from a failed refresh", () => {
-  expect(
-    isYouTubeMetadataCapture({
-      ...captured,
-      status: "failed",
-      available: true,
+it("reports collection errors", async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(
+    new Response(JSON.stringify({ error: "Collection is unavailable." }), {
+      status: 503,
     }),
-  ).toBe(true);
-  expect(isYouTubeMetadataCapture({ ...captured, available: "true" })).toBe(
-    false,
   );
-  expect(
-    isYouTubeMetadataCapture({ ...captured, retry_after: "tomorrow" }),
-  ).toBe(false);
-  expect(isYouTubeMetadataCapture({ ...captured, provider: "other" })).toBe(
-    false,
-  );
-});
-
-it("rejects another video's metadata and reports collection errors", async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValueOnce(
-      new Response(JSON.stringify({ ...captured, video_id: "abcdefghijk" })),
-    )
-    .mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: "Collection is unavailable." }), {
-        status: 503,
-      }),
-    );
   vi.stubGlobal("fetch", fetch);
-  await expect(collectYouTubeMetadata("NnV_cWeoo5Q")).rejects.toThrow(
-    "unexpected",
-  );
   await expect(collectYouTubeMetadata("NnV_cWeoo5Q")).rejects.toThrow(
     "Collection is unavailable.",
   );
