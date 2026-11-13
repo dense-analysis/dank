@@ -161,30 +161,44 @@ async function expectRaw(scope: Locator, url: string, hidden: boolean) {
   else await expect(link).toBeVisible();
 }
 
-for (const width of [1440, 390]) {
-  test(`raw image and video link preferences apply independently to Reddit and X at ${width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 900 });
-    const requests = await mockMedia(page);
-    await page.goto("/?view=settings");
-    const images = page.getByRole("checkbox", {
-      name: "Hide raw image links",
-      exact: true,
-    });
-    const videos = page.getByRole("checkbox", {
-      name: "Hide raw video links",
-      exact: true,
-    });
-    await expect(images).toBeChecked();
-    await expect(videos).toBeChecked();
+async function openSettings(page: Page, width: number) {
+  await page.setViewportSize({ width, height: 900 });
+  const requests = await mockMedia(page);
+  await page.goto("/?view=settings");
+  const images = page.getByRole("checkbox", {
+    name: "Hide raw image links",
+    exact: true,
+  });
+  const videos = page.getByRole("checkbox", {
+    name: "Hide raw video links",
+    exact: true,
+  });
+  await expect(images).toBeChecked();
+  await expect(videos).toBeChecked();
 
-    for (const [hideImages, hideVideos] of [
-      [false, true],
-      [true, false],
-      [false, false],
-      [true, true],
-    ]) {
+  return { images, videos, requests };
+}
+
+function shown(hidden: boolean) {
+  return hidden ? "hidden" : "shown";
+}
+
+// One test per combination, because each opens the feed and three articles,
+// and every full load of the dev server costs about a second on GitHub's
+// runners. As a single test the four combinations passed 30 seconds there.
+const combinations = [
+  [false, true],
+  [true, false],
+  [false, false],
+  [true, true],
+] as const;
+
+for (const width of [1440, 390]) {
+  for (const [hideImages, hideVideos] of combinations) {
+    test(`raw image links ${shown(hideImages)} and video links ${shown(hideVideos)} apply independently to Reddit and X at ${width}px`, async ({
+      page,
+    }) => {
+      const { images, videos, requests } = await openSettings(page, width);
       await images.setChecked(hideImages);
       await videos.setChecked(hideVideos);
       await page.reload();
@@ -242,9 +256,14 @@ for (const width of [1440, 390]) {
       ).toBeVisible();
       await page.goto("/?article=t3_abc&article_source=reddit.com");
       await expectRaw(reader, gallery, hideImages);
-      await page.goto("/?view=settings");
-    }
+      expect(requests()).toBe(0);
+    });
+  }
 
+  test(`raw image and video link preferences reset to hidden at ${width}px`, async ({
+    page,
+  }) => {
+    const { images, videos, requests } = await openSettings(page, width);
     await images.uncheck();
     await videos.uncheck();
     await page.getByRole("button", { name: "Reset to defaults" }).click();
