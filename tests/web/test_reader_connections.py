@@ -9,8 +9,9 @@ import pytest
 from clickhouse_connect.driver.binding import (
     bind_query,  # pyright: ignore[reportUnknownVariableType]
 )
-from multidict import MultiDict
 
+from dank.api.connections.model import connection_scope
+from dank.api.connections.schemas import ConnectionQuery
 from dank.model import Post, RawPost
 from dank.process.runner import (
     _insert_posts,  # pyright: ignore[reportPrivateUsage]
@@ -20,7 +21,6 @@ from dank.scrape.runner import (
 )
 from dank.storage.clickhouse import ClickHouseClient, QueryResult
 from dank.web.reader_connections import (
-    _parameters,  # pyright: ignore[reportPrivateUsage]
     connection_query,
 )
 from dank.web.reader_reference_index import ensure_reference_storage
@@ -48,11 +48,11 @@ def evidence(target: str = "https://target.test/article", **extra: Any,
     {"kind": "post"},
 ])
 def test_historical_lookup_validates_identity(replacement: dict[str, str]):
-    query = MultiDict({"domain": "origin.test", "id": "123",
-                       "target": "https://target.test", "kind": "comment",
-                       "reference_id": "c1", **replacement})
+    query = {"domain": "origin.test", "id": "123",
+             "target": "https://target.test", "kind": "comment",
+             "reference_id": "c1", **replacement}
     with pytest.raises(ValueError):
-        _parameters(query, single=True)
+        ConnectionQuery.model_validate(query).key()
 
 
 @pytest.mark.parametrize("incoming,single", [(True, False), (False, False),
@@ -184,7 +184,4 @@ async def test_backfill_reuses_identical_content_but_preserves_capture_dates(
     ("www.Reddit.com", "reddit"), ("hckrnews.com", "hacker_news"),
 ])
 def test_context_normalizes_platform_aliases(alias: str, source: str):
-    params = _parameters(
-        MultiDict(domain="a", id="b", source=alias), single=False,
-    )
-    assert params["source"] == source
+    assert connection_scope("a", "b", alias).source == source

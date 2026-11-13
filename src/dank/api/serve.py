@@ -1,4 +1,4 @@
-"""`web --server fastapi`: uvicorn, with watchfiles for reloading."""
+"""`web`: uvicorn, with watchfiles for reloading."""
 
 import pathlib
 from typing import NamedTuple

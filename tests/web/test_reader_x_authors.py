@@ -3,16 +3,18 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
+from dank.api.posts.model import author_cursor, parse_author_cursor
 from dank.web import (
     reader_x_authors as authors,
 )
-from dank.web.reader_query import build_query, parse_filters
+from dank.web.reader_query import build_query
+from tests.web.query import parse_filters
 
 
 def test_author_filter_stays_within_deduplicated_home_history():
-    filters = parse_filters(MultiDict(
+    filters = parse_filters(QueryParams(
         kind="x", x_feed="for_you", account="@Alice", q="space",
         after="2026-10-01", before="2026-10-25", limit="1",
     ))
@@ -30,17 +32,17 @@ def test_author_filter_stays_within_deduplicated_home_history():
 
 
 def test_author_cursor_keeps_cutoff_and_binds_search_and_handle():
-    filters = parse_filters(MultiDict(kind="x", x_feed="for_you"))
+    filters = parse_filters(QueryParams(kind="x", x_feed="for_you"))
     snapshot = dt.datetime.now(dt.UTC).isoformat()
-    cursor = authors.author_cursor(filters, snapshot, 5, "alice")
-    assert authors.parse_author_cursor(filters, cursor) == (
+    cursor = author_cursor(filters, snapshot, 5, "alice")
+    assert parse_author_cursor(filters, cursor) == (
         snapshot, 5, "alice",
     )
 
     for changed in (filters._replace(q="space"),
                     filters._replace(account="alice")):
         with pytest.raises(ValueError, match="cursor"):
-            authors.parse_author_cursor(changed, cursor)
+            parse_author_cursor(changed, cursor)
 
     sql, params = authors.author_query("saved_recommendations", (5, "alice"))
     assert "ORDER BY count DESC, handle ASC" in sql

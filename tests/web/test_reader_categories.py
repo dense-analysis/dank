@@ -1,25 +1,20 @@
-"""Saved topic labels and category filtering in both reader contracts."""
+"""Saved topic labels and category filtering in the reader contract."""
 
 import datetime as dt
-import json
 import pathlib
-from types import SimpleNamespace
 
 import pytest
-from aiohttp import web
-from aiohttp.test_utils import make_mocked_request
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
 from dank.api.posts.schemas import PostOut, PostsQuery
-from dank.category_config import Category, CategorySettings
-from dank.web.app import _parse_post_row  # pyright: ignore[reportPrivateUsage]
-from dank.web.reader_api import handle_categories
+from dank.web.post_rows import parse_post_row
 from dank.web.reader_posts import post_payload
-from dank.web.reader_query import build_query, encode_cursor, parse_filters
+from dank.web.reader_query import build_query, encode_cursor
+from tests.web.query import parse_filters
 
 
 def test_categories_are_exact_and_bound_to_cursors() -> None:
-    query = MultiDict(
+    query = QueryParams(
         [
             ("category", "Software"),
             ("category", "science' OR 1=1"),
@@ -45,13 +40,13 @@ def test_categories_are_exact_and_bound_to_cursors() -> None:
     )
 
     with pytest.raises(ValueError, match="cursor"):
-        parse_filters(MultiDict([("category", "other"), ("cursor", cursor)]))
+        parse_filters(QueryParams([("category", "other"), ("cursor", cursor)]))
 
 
 @pytest.mark.parametrize("name", ["", " ", "x" * 1001])
 def test_invalid_categories(name: str) -> None:
     with pytest.raises(ValueError, match="Category"):
-        parse_filters(MultiDict([("category", name)]))
+        parse_filters(QueryParams([("category", name)]))
 
 
 @pytest.mark.parametrize(
@@ -64,25 +59,10 @@ def test_invalid_categories(name: str) -> None:
 def test_assignment_payload(
     categories: list[object], tmp_path: pathlib.Path,
 ) -> None:
-    post = _parse_post_row({"categories": categories})
+    post = parse_post_row({"categories": categories})
     payload = post_payload(post, [], tmp_path)
     assert payload["categories"] == [
         {"name": "Software", "confidence": 0.9, "similarity": 0.95},
     ]
     assert PostOut.model_validate(payload).categories[0].name == "Software"
-    assert post_payload(_parse_post_row({}), [], tmp_path)["categories"] == []
-
-
-
-@pytest.mark.parametrize("names", [(), ("Software", "Science")])
-async def test_category_names_without_database(names: tuple[str, ...]) -> None:
-    app = web.Application()
-    app['state'] = SimpleNamespace(settings=SimpleNamespace(
-        categories=CategorySettings(definitions=tuple(
-            Category(name, 'Topic description') for name in names
-        )),
-    ))
-    request = make_mocked_request('GET', '/api/reader/categories', app=app)
-    response = await handle_categories(request)
-    assert response.text is not None
-    assert json.loads(response.text) == {'categories': list(names)}
+    assert post_payload(parse_post_row({}), [], tmp_path)["categories"] == []

@@ -17,7 +17,7 @@ from dank.api.posts.embeddings import CachedSearchEmbeddings
 from dank.api.posts.model import ReaderFilters, Recommendation
 from dank.config import Settings, SourceConfig
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import assets_path
+from dank.web.assets import assets_path
 from tests.api.clickhouse import COLLECTED_AT, insert, post, raw_post, x_url
 
 pytestmark = pytest.mark.clickhouse

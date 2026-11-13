@@ -16,7 +16,7 @@ from dank.api.youtube.collector import CollectionGate, collection_gate
 from dank.config import Settings
 from dank.db.engine import async_engine, async_sessions
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import assets_path
+from dank.web.assets import assets_path
 from dank.web.reader_source_icons import SourceIconCache
 from dank.web.startup import prepare_clickhouse, prepare_postgres
 
@@ -51,7 +51,7 @@ def lifespan(settings: Settings) -> Lifespan:
 
         try:
             async with ClickHouseClient(settings.clickhouse) as clickhouse:
-                # The same DDL and backfills as the aiohttp server, in order.
+                # Tables first, then backfills, in order.
                 await prepare_clickhouse(clickhouse)
 
                 # Shutdown waits here for refresh workers (about 95 s).

@@ -16,8 +16,8 @@ class ApiHeaders:
     * /api/* gets "Cache-Control: no-store" unless the route set its own,
       which is how source icons keep their day-long cache.
     * HTML gets no-cache headers.
-    * HEAD runs the GET route and drops the body. FastAPI, unlike aiohttp,
-      doesn't answer HEAD on its own, though the file mounts do.
+    * HEAD runs the GET route and drops the body. FastAPI doesn't answer
+      HEAD on its own, though the file mounts do.
     """
 
     def __init__(self, app: ASGIApp) -> None:

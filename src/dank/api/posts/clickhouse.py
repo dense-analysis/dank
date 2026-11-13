@@ -1,7 +1,6 @@
 """PostStore read from collected posts in ClickHouse.
 
-SQL and the post projection live in the reader helpers this reuses, so the
-queries and payloads are the ones the aiohttp server uses.
+SQL and the post projection live in the reader helpers in dank.web.
 """
 
 from __future__ import annotations
@@ -23,10 +22,7 @@ from dank.api.posts.model import (
 )
 from dank.config import SourceConfig
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import (
-    _fetch_post,  # pyright: ignore[reportPrivateUsage]
-    _parse_post_row,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.post_rows import fetch_post, parse_post_row
 from dank.web.reader_accounts import X_ACCOUNT_SQL
 from dank.web.reader_posts import post_payloads
 from dank.web.reader_query import build_query
@@ -58,12 +54,12 @@ class ClickHousePostStore:
         result = await self._client.fetch_json(query, params)
 
         return [
-            ListedPost(_parse_post_row(row), _recommendation(row))
+            ListedPost(parse_post_row(row), _recommendation(row))
             for row in result.rows
         ]
 
     async def post(self, domain: str, post_id: str) -> PostRow | None:
-        return await _fetch_post(self._client, domain=domain, post_id=post_id)
+        return await fetch_post(self._client, domain=domain, post_id=post_id)
 
     async def payloads(
         self,

@@ -30,7 +30,7 @@ from dank.errors import DankError, InvalidInput
 from tests.api.posts.fakes import NOW, row
 
 
-def test_invalid_input_is_a_value_error_for_the_aiohttp_handlers() -> None:
+def test_invalid_input_is_a_value_error() -> None:
     assert issubclass(InvalidInput, DankError)
     assert issubclass(InvalidInput, ValueError)
 

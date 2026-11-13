@@ -7,11 +7,9 @@ import json
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
-from dank.web.app import (
-    PostRow,
-    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.post_html import sanitize_html
 
 MAX_COMMENT_DEPTH = 32
 
@@ -267,7 +265,7 @@ def _comments(value: object, story_id: str) -> list[dict[str, Any]]:
         result.append({
             "id": identifier, "parent_id": str(item.get("parent") or story_id),
             "author": author if isinstance(author, str) else "",
-            "html": _sanitize_html(body),
+            "html": sanitize_html(body),
             "created_at": _timestamp(item.get("time")),
             "depth": depth,
         })

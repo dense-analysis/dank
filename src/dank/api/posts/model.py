@@ -1,8 +1,6 @@
 """Browsing rules: reader filters, cursors and the pages they select.
 
-Both servers share these functions, so a filter or cursor means the same
-thing on either. Rule violations raise InvalidInput with the wording the
-reader shows.
+Rule violations raise InvalidInput with the wording the reader shows.
 """
 
 # `count` is the API's name for an author's post count, as in sources/model.py.

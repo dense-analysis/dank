@@ -1,21 +1,17 @@
 # API
 
-DANK's web server is moving from aiohttp to FastAPI, one route group at a time.
-The FastAPI app lives in `src/dank/api/`. The aiohttp server in
-`src/dank/web/` stays the default until every route has moved.
+DANK's web server is a FastAPI app in `src/dank/api/`, which `web` runs with
+uvicorn:
 
 ```sh
-uv run web --server fastapi          # reloads on changes under src/dank
-uv run web --server fastapi --no-reload --port 8081
+uv run web                           # reloads on changes under src/dank
+uv run web --no-reload --port 8081
 ```
 
-`web` keeps its other flags (`--config`, `--host`, `--port`, `--no-reload`).
-Ported so far: `GET /api/reader/sources`, `/posts`, `/post`, `/x/authors`,
-`/connections`, `/connection` and `/source-icon`, `GET` and `POST
-/api/reader/refresh`, everything under `/api/reader/youtube`, plus the files:
-the reader at `/`, the old `/reader` address and `/assets/`. `/api/reader/source-settings`
-is new and only on FastAPI; see [sources](features/sources.md). OpenAPI is served
-at `/api/openapi.json`, with interactive docs at `/api/docs`.
+`web` takes `--config`, `--host`, `--port` and `--no-reload`. OpenAPI is served
+at `/api/openapi.json`, with interactive docs at `/api/docs`. The aiohttp server
+it replaced was removed in [DEN-51](https://linear.app/dense-analysis/issue/DEN-51);
+aiohttp is still DANK's HTTP client for collection.
 
 ## Shape
 
@@ -48,7 +44,7 @@ src/dank/
     guards.py            same-origin JSON rule for unsafe methods
     headers.py           Cache-Control defaults, HEAD for every GET
     schemas.py           ApiModel, ErrorBody, FieldError
-    serve.py             uvicorn and watchfiles behind web --server fastapi
+    serve.py             uvicorn and watchfiles behind web
     sources/
       router.py          GET /api/reader/sources
       schemas.py         SourcesResponse, one variant per source kind
@@ -174,8 +170,8 @@ inputs:
 | Unknown path or method | 404, 405 | `not_found`, `method_not_allowed` |
 | Anything else (ClickHouse is down) | 503 | `unavailable`, logged |
 
-Validation errors use 400 rather than FastAPI's 422, as the aiohttp server
-does. A route that needs resources but runs without the lifespan, such as a
+Validation errors use 400 rather than FastAPI's 422, as the reader expects.
+A route that needs resources but runs without the lifespan, such as a
 test missing a dependency override, answers 503.
 
 Everywhere else, the same errors answer with the same status and `error` as
@@ -201,7 +197,7 @@ parameter per field. The model extends `ApiModel`.
 - **Keep a field as text when Pydantic is looser than the rule.** Pydantic takes
   `5.0` as an integer and a timestamp as a date. Run a `BeforeValidator` on the
   rule, or validate the text in the domain. `InvalidInput` is a `ValueError`, so
-  validators and aiohttp's handlers can both call the same rule.
+  Pydantic reports a rule that a validator calls as a field error.
 - **Absent can differ from empty.** Use `| None = None` when sending a key empty
   must fail while leaving it out is fine.
 
@@ -235,10 +231,10 @@ Each body is declared as `CollectBody`, an empty object. The reader sends `{}`.
 
 Posts, connections and YouTube items are the exception to NamedTuples inside. The
 helpers in `dank/web/reader_*.py` build one deeply nested, JSON-shaped dict per
-post for both servers, with keys that are absent rather than null. A copy of that
-shape as NamedTuples would have to round-trip through those dicts until aiohttp
-goes, so `model.py` names the dict (`PostPayload`, `ItemPayload`) and `schemas.py`
-gives it its contract. Revisit this once DEN-51 removes aiohttp.
+post, with keys that are absent rather than null. `model.py` names the dict
+(`PostPayload`, `ItemPayload`) and `schemas.py` gives it its contract. The
+aiohttp server that also needed the dicts is gone, so they could now become
+NamedTuples.
 
 YouTube's keys are always present, even when null, so its routes need none of the
 following. To keep absent fields absent:
@@ -250,8 +246,8 @@ following. To keep absent fields absent:
 - Set `response_model_exclude_unset=True` on the route.
 
 The models forbid unknown keys, so a helper that gains a field answers 503 until
-its schema declares it. Compare both servers over real data when a schema
-changes, because fixtures miss what scrapes actually saved.
+its schema declares it. Check a schema change against real data, because
+fixtures miss what scrapes actually saved.
 
 ## Same-origin rule
 
@@ -274,7 +270,7 @@ answers 400 even from another origin. Nothing has run by then.
 - `/api/*` responses get `Cache-Control: no-store` unless the route sets its
   own. Starlette answers unexpected errors outside every middleware, so that
   handler sets the header itself.
-- HTML responses get the aiohttp server's no-cache headers.
+- HTML responses get no-cache headers.
 - `HEAD` runs the matching `GET` route and drops the body, except on the file
   mounts, which answer it themselves. Run as a `GET`, a `HEAD` on a video would
   read the whole file only to throw it away.
@@ -304,8 +300,7 @@ end, and `HEAD` without reading the file. No responder of our own was needed.
 
 `/reader` and `/reader/...` redirect to the same path and query at `/` with a
 relative `Location`, because behind the HTTPS proxy this server sees plain HTTP.
-For the same reason `redirect_slashes` is off, as it effectively was under
-aiohttp: `/assets` is a 404, not a redirect to an `http://` address.
+For the same reason `redirect_slashes` is off: `/assets` is a 404, not a redirect to an `http://` address.
 
 The Jinja viewer that `/` and `/post` used to serve was retired in
 [DEN-75](https://linear.app/dense-analysis/issue/DEN-75), and the reader moved
@@ -383,57 +378,13 @@ Rules: no `AsyncMock`, `patch` or `monkeypatch.setattr` on DANK modules; no
 assertions on SQL text, call counts or call order. A test that needs a patch
 points to a missing port.
 
-While both servers exist, each feature's `test_parity.py` uses
-`tests/api/parity.py` to start both over the same seeded database and compares
-the parsed JSON. It also checks that both accept and reject the same queries.
-Semantic search reads `web_embedding_cache`, so no test loads the model; date
-those rows from the clock, because the table's TTL drops old ones. For You
-cursors hold the moment each server was asked, so compare them without it.
-`both_servers_whole` gives whole responses instead, for what isn't JSON.
+Semantic search reads `web_embedding_cache`, so no adapter test loads the model;
+date those rows from the clock, because the table's TTL drops old ones.
 
-The intended differences:
+## Adding a route
 
-- Invalid queries answer with the error envelope. `error` keeps its wording when
-  a rule rejects the query, and is generic when Pydantic does.
-- `/api/reader/post` with a repeated `domain` or `id` uses the last value, not
-  the first.
-- `POST /api/reader/refresh` takes a scope's closed sets from Pydantic, so they
-  must match exactly. A `platforms` value in another case, or a `blog_feed` with
-  spaces around it, answers 400 where aiohttp normalized it and went on. The
-  reader sends neither.
-- Malformed JSON from another origin answers 400 rather than 403; see Same-origin
-  rule.
-- When `reddit.com` has posts but no configured communities, `/sources` still
-  returns empty `communities` and `flairs` lists.
-- Under `/assets/`, a directory answers 404 rather than 403. Neither server lists
-  it.
-- Several ranges in one request answer 206 with `multipart/byteranges` rather than
-  416, and a `Range` that makes no sense answers 400 rather than 416. Browsers
-  seek with single ranges, so neither affects playback.
-- ETags have a different format, a fractional modified time rounds down rather
-  than up, and a 304 carries fewer headers. Each server's own validators
-  revalidate against it, so only a switch between the servers forces one refetch.
-- Text files name their charset: `text/css; charset=utf-8`.
-- Missing files, and unknown paths with an extension, say `Not Found`.
-- A permission error on a file answers 401 rather than 403.
-- `/index.html` and the entry page get the full no-cache headers rather than
-  `no-store` alone.
-- `/api/reader/source-icon` uses the last value of a repeated key,
-  not the first.
-- A path parameter holding an encoded slash answers 404, not 400. See Path
-  parameters.
-- The metadata and transcript POSTs run the shared same-origin rule first, so the
-  local HTTPS proxy works, and a cross-origin request with a bad ID answers 403,
-  not 400. Their body must be `{}`, where aiohttp ignored it.
-- Busy and timed-out collections answer the error envelope, with `code: "busy"`
-  and aiohttp's wording in `error`.
-
-## Porting a route
-
-1. Copy the route's current assertions into a route test under
-   `tests/api/<feature>/` and watch it fail.
-2. Move pure logic into `model.py` as NamedTuples and functions. Move it rather
-   than rewrite it; the aiohttp module imports it back.
+1. Write a route test under `tests/api/<feature>/` and watch it fail.
+2. Put pure logic in `model.py` as NamedTuples and functions.
 3. Put SQL behind a read store in `clickhouse.py` whose methods return domain
    values.
 4. Write the use case in `service.py`, gathering independent reads.
@@ -441,9 +392,7 @@ The intended differences:
    `ApiModel`. See Query models and Projections.
 6. Write the route, wire adapters in `deps.py`, and mount the router in
    `app.py`. Add `single_values` if the route takes a query model.
-7. Add the route to the parity test, and delete the mock-based tests the new
-   ones replace.
-8. Cover any new SQL with adapter tests in the ClickHouse lane.
+7. Cover any new SQL with adapter tests in the ClickHouse lane.
 
 ## Not built on purpose
 

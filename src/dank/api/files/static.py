@@ -18,7 +18,7 @@ from starlette.types import Scope
 
 from dank.api.files.model import client_route, server_path
 from dank.config import Settings
-from dank.web.app import assets_path
+from dank.web.assets import assets_path
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 

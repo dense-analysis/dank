@@ -3,27 +3,25 @@ from __future__ import annotations
 import datetime as dt
 import json
 import pathlib
-from typing import Any
+from typing import Any, cast
 
 import pytest
-from aiohttp import web
-from aiohttp.test_utils import make_mocked_request
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
-from dank.config import SourceConfig, load_settings
+from dank.api.posts.model import AssetRow, PostRow
+from dank.config import SourceConfig
 from dank.model import RawPost
 from dank.process.rss import convert_raw_post
-from dank.storage.clickhouse import QueryResult
-from dank.web import reader_api
-from dank.web.app import AssetRow, PostRow, create_app
+from dank.storage.clickhouse import ClickHouseClient, QueryResult
+from dank.web.reader_communities import community_icons, community_totals
 from dank.web.reader_posts import post_payload
 from dank.web.reader_query import (
     ReaderFilters,
     build_query,
     decode_cursor,
     encode_cursor,
-    parse_filters,
 )
+from tests.web.query import parse_filters
 
 
 class FakeClickHouse:
@@ -52,30 +50,6 @@ class FakeClickHouse:
         return QueryResult(self.results.pop(0))
 
 
-@pytest.fixture
-def app(tmp_path: pathlib.Path) -> web.Application:
-    settings = load_settings("config.example.toml")._replace(
-        data_dir=tmp_path,
-        sources=(
-            SourceConfig("politics.example", (), tags=("politics",)),
-            SourceConfig("empty.example", (), tags=("culture",)),
-        ),
-    )
-
-    return create_app(settings)
-
-
-async def request(app: web.Application, path: str) -> web.Response:
-    req = make_mocked_request("GET", path, app=app)
-    match = await app.router.resolve(req)
-    match.add_app(app)
-    req._match_info = match  # pyright: ignore[reportPrivateUsage]
-    result = await reader_api.reader_errors(req, match.handler)
-    assert isinstance(result, web.Response)
-
-    return result
-
-
 def row(domain: str, post_id: str = "same") -> dict[str, Any]:
     return {
         "domain": domain, "post_id": post_id,
@@ -96,14 +70,14 @@ def row(domain: str, post_id: str = "same") -> dict[str, Any]:
 ])
 def test_invalid_filters_are_rejected(query: dict[str, str]) -> None:
     with pytest.raises(ValueError):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 @pytest.mark.parametrize("mode", ["words", "combined"])
 def test_filter_groups_are_intersected_and_all_words_are_literal(
     mode: str,
 ) -> None:
-    filters = parse_filters(MultiDict([
+    filters = parse_filters(QueryParams([
         ("domain", "news.example"), ("domain", "politics.example"),
         ("tag", "Politics"), ("author", "O'Reilly"),
         ("q", "50% x_y 'OR'"), ("mode", mode), ("after", "2026-10-01"),
@@ -132,7 +106,7 @@ def test_unknown_tag_does_not_fall_back_to_unfiltered_collection() -> None:
 
 
 def test_exact_author_name_is_parameterized() -> None:
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "author": " O'Reilly ", "author_match": "exact",
         "domain": "news.example", "after": "2026-10-01",
     }))
@@ -191,7 +165,7 @@ def test_meaning_filters_before_ranking_and_requires_embedding() -> None:
 
 
 def test_combined_search_prioritizes_literal_then_title_matches() -> None:
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "q": "domain driven design", "mode": "combined", "sort": "relevance",
     }))
     query, params = build_query(filters, (), (1.0, 0.0))
@@ -218,7 +192,7 @@ def test_combined_search_prioritizes_literal_then_title_matches() -> None:
 
 
 def test_reddit_filters_are_separate_parameterized_and_case_insensitive():
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "kind": "reddit", "community": "LocalLLaMA", "q": "model",
     }))
     query, params = build_query(filters, ())
@@ -238,7 +212,7 @@ def test_reddit_filters_are_separate_parameterized_and_case_insensitive():
 ])
 def test_invalid_reddit_filters(query: dict[str, str]):
     with pytest.raises(ValueError):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 def test_reddit_cursor_cannot_leak_across_communities():
@@ -388,133 +362,48 @@ def test_recovered_figure_reaches_reader_with_caption_and_local_image(
     ))
 
 
-async def test_built_reader_is_served_from_the_root(
-    app: web.Application, tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
+async def test_community_icons_link_the_downloaded_copy(
+    tmp_path: pathlib.Path,
 ) -> None:
-    (tmp_path / "index.html").write_text("reader")
-    (tmp_path / "app.js").write_text("// reader")
-    monkeypatch.setattr(reader_api, "READER_DIST", tmp_path)
-
-    for path, expected in (
-        ("/", tmp_path / "index.html"),
-        ("/saved/politics", tmp_path / "index.html"),
-        ("/app.js", tmp_path / "app.js"),
-    ):
-        req = make_mocked_request("GET", path, app=app)
-        req._match_info = await app.router.resolve(req)  # pyright: ignore[reportPrivateUsage]
-        response = await req.match_info.handler(req)
-        assert isinstance(response, web.FileResponse)
-        assert response._path == expected  # pyright: ignore[reportPrivateUsage]
-
-    assert response.headers.get("Cache-Control") is None
-    assert reader_api._reader_file("") == tmp_path / "index.html"  # pyright: ignore[reportPrivateUsage]
-    assert reader_api._reader_file("../outside") is None  # pyright: ignore[reportPrivateUsage]
-    assert reader_api._reader_file("missing.js") is None  # pyright: ignore[reportPrivateUsage]
-    assert reader_api._reader_file("api/nope") is None  # pyright: ignore[reportPrivateUsage]
-    assert reader_api._reader_file("assets/missing") is None  # pyright: ignore[reportPrivateUsage]
-
-
-@pytest.mark.parametrize(("path", "location"), [
-    ("/reader", "/"),
-    ("/reader/", "/"),
-    ("/reader/?view=x&q=a%20b", "/?view=x&q=a%20b"),
-])
-async def test_the_old_reader_address_redirects_to_the_root(
-    app: web.Application, path: str, location: str,
-) -> None:
-    req = make_mocked_request("GET", path, app=app)
-    req._match_info = await app.router.resolve(req)  # pyright: ignore[reportPrivateUsage]
-
-    with pytest.raises(web.HTTPFound) as redirect:
-        await req.match_info.handler(req)
-
-    assert redirect.value.location == location
-
-
-async def test_community_identity_and_flair_choices_are_shared_with_posts(
-    app: web.Application, tmp_path: pathlib.Path,
-) -> None:
-    assets = tmp_path / "assets"
-    assets.mkdir(exist_ok=True)
-    icon = assets / "community.png"
+    icon = tmp_path / "community.png"
     icon.write_bytes(b"\x89PNG\r\n\x1a\n")
-    state = app["state"]
-    app["state"] = state._replace(settings=state.settings._replace(sources=(
-        SourceConfig("reddit.com", (), feed_urls=(
-            "https://www.reddit.com/r/LocalLLaMA/",
-            "https://www.reddit.com/r/accelerate/",
-        )),
-    )))
-    icon_row = {
-        "community": "localllama", "icon_url": "https://styles.redditmedia.com/icon.png",
+    client = FakeClickHouse([{
+        "community": "localllama",
+        "icon_url": "https://styles.redditmedia.com/icon.png",
         "local_path": str(icon), "content_type": "image/png",
-    }
-    app["clickhouse"] = FakeClickHouse(
-        [{"domain": "reddit.com", "count": 9}],
-        [{"community": "localllama", "count": 7},
-         {"community": "accelerate", "count": 2}],
-        [icon_row], [],
-        [{"community": "localllama", "name": "Discussion", "count": 4},
-         {"community": "localllama", "name": "New Model", "count": 3},
-         {"community": "accelerate", "name": "Discussion", "count": 2}],
+    }])
+
+    icons = await community_icons(
+        cast(ClickHouseClient, client), ["LocalLLaMA", "accelerate"], tmp_path,
     )
-    response = await request(app, "/api/reader/sources")
-    assert response.status == 200
-    source = json.loads(response.text or "")["sources"][0]
-    assert source["flairs"] == [
-        {"name": "Discussion", "count": 6}, {"name": "New Model", "count": 3},
-    ]
-    assert source["communities"][0]["flairs"] == [
-        {"name": "Discussion", "count": 2},
-    ]
-    assert source["communities"][1]["icon_url"] == "/assets/community.png"
-    post = row("reddit.com", "t3_icon")
-    post.update(source="reddit", url="https://www.reddit.com/r/LocalLLaMA/comments/icon/title/")
-    app["clickhouse"] = FakeClickHouse([post], [], [{
-        "post_id": "t3_icon", "payload": '{"link_flair_text":"  New Model  "}',
-    }], [icon_row])
-    response = await request(
-        app, "/api/reader/post?domain=reddit.com&id=t3_icon",
-    )
-    assert response.status == 200
-    metadata = json.loads(response.text or "")["reddit"]
-    assert metadata["icon_url"] == "/assets/community.png"
-    assert metadata["flair"] == "New Model"
+
+    assert icons == {"localllama": "/assets/community.png"}
+    assert client.calls[0][1] == {"communities": ["accelerate", "localllama"]}
 
 
-@pytest.mark.parametrize('naive_dates', [False, True])
+@pytest.mark.parametrize("naive_dates", [False, True])
 async def test_community_totals_include_archive_provenance_and_both_dates(
-    app: web.Application, *, naive_dates: bool,
+    *, naive_dates: bool,
 ) -> None:
-    state = app['state']
-    app['state'] = state._replace(settings=state.settings._replace(sources=(
-        SourceConfig('reddit.com', (), feed_urls=(
-            'https://www.reddit.com/r/Conspiracy/',
-            'https://www.reddit.com/r/empty/',
-        )),
-    )))
-    app['clickhouse'] = FakeClickHouse(
-        [{'domain': 'reddit.com', 'count': 238}],
-        [{'community': 'conspiracy', 'count': 238}], [],
-        [{'community': 'conspiracy', 'total_posts': 1866004,
-          'source': 'arctic_shift',
-          'updated_at': (
-              dt.datetime(2026, 10, 11, 9, 26, 38) if naive_dates
-              else '2026-10-11T09:26:38+00:00'
-          ),
-          'scraped_at': (
-              dt.datetime(2026, 10, 17, 15) if naive_dates
-              else '2026-10-17T15:00:00+00:00'
-          )}], [],
+    client = FakeClickHouse([{
+        "community": "conspiracy", "total_posts": 1866004,
+        "source": "arctic_shift",
+        "updated_at": (
+            dt.datetime(2026, 10, 11, 9, 26, 38) if naive_dates
+            else "2026-10-11T09:26:38+00:00"
+        ),
+        "scraped_at": (
+            dt.datetime(2026, 10, 17, 15) if naive_dates
+            else "2026-10-17T15:00:00+00:00"
+        ),
+    }])
+
+    totals = await community_totals(
+        cast(ClickHouseClient, client), ["Conspiracy", "empty"],
     )
-    response = await request(app, '/api/reader/sources')
-    assert response.status == 200
-    communities = json.loads(response.text or '')['sources'][0]['communities']
-    assert communities[0]['count'] == 238
-    assert communities[0]['post_total'] == {
-        'count': 1866004, 'source': 'arctic_shift',
-        'updated_at': '2026-10-11T09:26:38+00:00',
-        'captured_at': '2026-10-17T15:00:00+00:00',
-    }
-    assert communities[1]['post_total'] is None
+
+    assert totals == {"conspiracy": {
+        "count": 1866004, "source": "arctic_shift",
+        "updated_at": "2026-10-11T09:26:38+00:00",
+        "captured_at": "2026-10-17T15:00:00+00:00",
+    }}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import uuid
 from typing import Any
 from urllib.parse import quote
 
@@ -11,12 +12,19 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
+from dank.api import deps
+from dank.api.posts.deps import post_store
 from dank.api.posts.model import (
     AuthorGroup,
     AuthorListing,
+    Embedding,
     ListedPost,
+    ReaderFilters,
     Recommendation,
 )
+from dank.api.sources.deps import saved_sources
+from dank.config import Settings, SourceConfig
+from dank.sources.model import Source
 from tests.api.client import http_client
 from tests.api.posts.fakes import (
     NOW,
@@ -25,6 +33,7 @@ from tests.api.posts.fakes import (
     payload,
     row,
 )
+from tests.sources.fakes import FakeSourceRepository
 
 SNAPSHOT = NOW.isoformat()
 
@@ -286,7 +295,7 @@ async def test_rule_violations_keep_the_wording_the_reader_shows(
     "kind=reddit&flair=News&flair=Help&community=Python",
     "domain=a.example&tag=politics", "limit=+5", "limit=100",
 ])
-async def test_queries_the_aiohttp_server_accepts_stay_accepted(
+async def test_queries_the_reader_sends_are_accepted(
     client: AsyncClient, query: str,
 ) -> None:
     assert (await client.get("/api/reader/posts?" + query)).status_code == 200
@@ -325,7 +334,7 @@ async def test_post_needs_a_domain_and_id(
     assert response.json()["code"] == "invalid_request"
 
 
-async def test_post_ignores_other_keys_as_the_aiohttp_server_does(
+async def test_post_ignores_other_keys(
     client: AsyncClient, store: FakePostStore,
 ) -> None:
     store.posts["a.example", "same"] = row("a.example")
@@ -465,3 +474,48 @@ async def test_openapi_describes_filters_and_each_post_shape(
     assert "conversation" not in schemas["XOut"]["properties"]
     assert "comments_items" not in schemas["HackerNewsOut"]["properties"]
     assert schemas["PostOut"]["additionalProperties"] is False
+
+
+class SourcesSeen(FakePostStore):
+    """Remembers which sources each listing was given."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seen: list[tuple[str, ...]] = []
+
+    async def listing(
+        self,
+        filters: ReaderFilters,
+        sources: tuple[SourceConfig, ...],
+        embedding: Embedding | None,
+        snapshot: str,
+    ) -> list[ListedPost]:
+        self.seen.append(tuple(source.domain for source in sources))
+
+        return await super().listing(filters, sources, embedding, snapshot)
+
+
+async def test_the_switch_lists_posts_against_every_saved_source(
+    app: FastAPI, client: AsyncClient, settings: Settings,
+) -> None:
+    # Tags resolve against these, so a disabled source's posts stay
+    # filterable, and config.toml's sources play no part.
+    store = SourcesSeen()
+    switched = settings._replace(sources_in_database=True)
+    app.dependency_overrides[post_store] = lambda: store
+    app.dependency_overrides[deps.settings] = lambda: switched
+    app.dependency_overrides[saved_sources] = lambda: FakeSourceRepository(
+        Source(
+            uuid.UUID(int=1), enabled=True, domain="saved.example",
+            tags=("saved",),
+        ),
+        Source(
+            uuid.UUID(int=2), enabled=False, domain="off.example",
+            tags=("saved",),
+        ),
+    )
+
+    response = await client.get("/api/reader/posts?tag=saved")
+
+    assert response.status_code == 200
+    assert store.seen == [("saved.example", "off.example")]

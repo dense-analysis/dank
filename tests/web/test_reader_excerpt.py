@@ -1,7 +1,7 @@
 import datetime as dt
 import pathlib
 
-from dank.web.app import PostRow
+from dank.api.posts.model import PostRow
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_posts import post_payload
 

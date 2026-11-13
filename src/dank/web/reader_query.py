@@ -5,14 +5,10 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from multidict import MultiMapping
-
 from dank.api.posts.model import (
-    FilterInput,
     ReaderFilters,
     decode_cursor as decode_cursor,
     encode_cursor as encode_cursor,
-    reader_filters,
 )
 from dank.api.sources.model import source_kind
 from dank.config import SourceConfig
@@ -30,46 +26,6 @@ POST_COLUMNS = (
     "domain, post_id, url, author, title, html, created_at, updated_at, "
     "source, categories"
 )
-
-
-def parse_filters(query: MultiMapping[str]) -> ReaderFilters:
-    unknown = set(query) - {
-        "q", "mode", "sort", "domain", "tag", "author", "after", "before",
-        "limit", "cursor", "author_match", "kind", "community", "flair",
-        "account", "hn_filter", "x_view", "platform", "blog_feed",
-        "x_feed", "category",
-    }
-
-    if unknown:
-        raise ValueError("Unknown reader filter")
-
-    for key in set(query) - {"domain", "tag", "flair", "platform", "category"}:
-        if len(query.getall(key)) != 1:
-            raise ValueError(f"{key} must appear only once")
-
-    return reader_filters(FilterInput(
-        q=query.get("q", ""),
-        mode=query.get("mode", "words"),
-        sort=query.get("sort", "newest"),
-        domains=query.getall("domain", []),
-        tags=query.getall("tag", []),
-        platforms=query.getall("platform", []),
-        categories=query.getall("category", []),
-        flairs=query.getall("flair", []),
-        author=query.get("author", ""),
-        author_match=query.get("author_match", "contains"),
-        after=query.get("after", ""),
-        before=query.get("before", ""),
-        limit=query.get("limit", "30"),
-        cursor=query.get("cursor", ""),
-        kind=query.get("kind", ""),
-        community=query.get("community", ""),
-        account=query.get("account", ""),
-        x_feed=query.get("x_feed", ""),
-        hn_filter=query.get("hn_filter"),
-        x_view=query.get("x_view"),
-        blog_feed=query.get("blog_feed"),
-    ))
 
 
 def build_query(

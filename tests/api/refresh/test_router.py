@@ -462,7 +462,7 @@ async def test_saved_history_is_answered_as_it_was_written(
      ["body.scope.rss.blog_feed"]),
     ({"scope": {"kind": "all", "platforms": ["stories"]}},
      ["body.scope.all.platforms.0"]),
-    # Closed sets match exactly, unlike aiohttp; see docs/api.md.
+    # Closed sets match exactly; see docs/api.md.
     ({"scope": {"kind": "all", "platforms": ["Reddit"]}},
      ["body.scope.all.platforms.0"]),
     ({"scope": {"kind": "rss", "blog_feed": " sources "}},

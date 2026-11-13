@@ -15,13 +15,10 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
 import aiohttp
-from aiohttp import web
 from aiohttp.abc import ResolveResult
 from PIL import Image, UnidentifiedImageError
 
-from dank.api.source_icons.model import domain_valid, source_icon_url
-from dank.web.app import AppState
-from dank.web.sources import current_sources
+from dank.api.source_icons.model import domain_valid
 
 # A sidebar must not start an unbounded crawl or download full-size artwork.
 MAX_ICON_BYTES = 1024 * 1024
@@ -246,41 +243,3 @@ class SourceIconCache:
                 return icon
 
             return previous
-
-
-SOURCE_ICON_CACHE = web.AppKey("source_icon_cache", SourceIconCache)
-
-
-def add_source_icon_routes(app: web.Application) -> None:
-    state: AppState = app["state"]
-    app[SOURCE_ICON_CACHE] = SourceIconCache(state.assets_dir)
-    app.router.add_get("/api/reader/source-icon", handle_source_icon)
-
-
-async def handle_source_icon(request: web.Request) -> web.Response:
-    domain = request.query.get("domain", "").strip().lower()
-
-    if source_icon_url(domain) is None:
-        raise web.HTTPNotFound()
-
-    sources = await current_sources(request)
-
-    if not any(source.domain == domain for source in sources):
-        client = request.app["clickhouse"]
-        result = await client.fetch_json(
-            "SELECT domain FROM posts FINAL WHERE domain = %(domain)s LIMIT 1",
-            {"domain": domain},
-        )
-
-        if not result.rows:
-            raise web.HTTPNotFound()
-
-    icon = await request.app[SOURCE_ICON_CACHE].get(domain)
-
-    if icon is None:
-        raise web.HTTPNotFound()
-
-    return web.Response(
-        body=icon, content_type="image/png",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )

@@ -14,10 +14,7 @@ from dank.links import (
     post_index_rows,
 )
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
-from dank.web.app import (
-    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
-    _summarize_html,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.post_html import sanitize_html, summarize_html
 from dank.web.reader_excerpt import search_excerpt
 
 # Suppress aggregator records only after an original source is collected.
@@ -200,8 +197,8 @@ async def add_post_links(
 def _publisher_excerpt(
     reference: dict[str, str], raw_html: object, query: str,
 ) -> None:
-    body = _sanitize_html(str(raw_html or ""))
-    excerpt = search_excerpt(body, query) or _summarize_html(body)
+    body = sanitize_html(str(raw_html or ""))
+    excerpt = search_excerpt(body, query) or summarize_html(body)
 
     if excerpt:
         reference["excerpt"] = excerpt

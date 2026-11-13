@@ -2,27 +2,12 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import pathlib
 from typing import Any
 
-from aiohttp import web
-from multidict import MultiDict
-
-from dank.api.posts.model import (
-    author_cursor,
-    parse_author_cursor,
-    require_author_feed,
-)
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import (
-    _parse_post_row,  # pyright: ignore[reportPrivateUsage]
-    _search_embedding,  # pyright: ignore[reportPrivateUsage]
-)
-from dank.web.reader_accounts import X_ACCOUNT_SQL
+from dank.web.post_rows import parse_post_row
 from dank.web.reader_posts import post_payloads
-from dank.web.reader_query import build_query, parse_filters
-from dank.web.sources import current_sources
 
 AUTHOR_EXAMPLES = 3
 KNOWN_AUTHOR = "handle != '' AND handle != 'i'"
@@ -53,67 +38,6 @@ def author_query(
     ), params
 
 
-async def handle_x_authors(request: web.Request) -> web.Response:
-    try:
-        query = MultiDict(request.query)
-
-        if len(query.getall("cursor", [])) > 1:
-            raise ValueError("Repeated author cursor")
-
-        cursor = query.pop("cursor", "")
-        query.setdefault("limit", "20")
-        filters = parse_filters(query)
-
-        require_author_feed(filters)
-        snapshot = dt.datetime.now(dt.UTC).isoformat()
-        after = None
-
-        if cursor:
-            snapshot, count, handle = parse_author_cursor(filters, cursor)
-            after = (count, handle)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    client: ClickHouseClient = request.app["clickhouse"]
-    state = request.app["state"]
-    embedding = None
-
-    if filters.q and filters.mode in {"meaning", "combined"}:
-        embedding = await _search_embedding(client, search_text=filters.q)
-
-    base, params = build_query(
-        filters, await current_sources(request), embedding,
-        paginate=False, snapshot_time=snapshot,
-    )
-    base = f"SELECT *, {X_ACCOUNT_SQL} AS handle FROM ({base})"
-    sql, boundary = author_query(base, after)
-    params.update(boundary)
-    result = await client.fetch_json(sql, params)
-    rows = result.rows[:filters.limit]
-    totals = await client.fetch_json(
-        f"SELECT uniqExactIf(handle, {KNOWN_AUTHOR}) AS total, "
-        f"countIf(NOT ({KNOWN_AUTHOR})) AS unattributed_posts FROM ({base})",
-        params,
-    )
-    examples = await author_examples(
-        client, state.assets_dir, rows, base, params, filters.q,
-    )
-    authors = [author_view(row, examples.get(str(row["handle"]), []))
-               for row in rows]
-    next_cursor = (
-        author_cursor(filters, snapshot, int(rows[-1]["count"]),
-                      str(rows[-1]["handle"]))
-        if len(result.rows) > filters.limit and rows else None
-    )
-    total = totals.rows[0] if totals.rows else {}
-
-    return web.json_response({
-        "authors": authors, "next_cursor": next_cursor,
-        "total": int(total.get("total", 0)),
-        "unattributed_posts": int(total.get("unattributed_posts", 0)),
-    })
-
-
 async def author_examples(
     client: ClickHouseClient, assets_dir: pathlib.Path,
     rows: list[dict[str, Any]], base: str, params: dict[str, Any], search: str,
@@ -130,7 +54,7 @@ async def author_examples(
     )
     # Use the normal saved-content adapter, including its HTML/media boundary.
     posts = await post_payloads(
-        client, [_parse_post_row(row) for row in result.rows],
+        client, [parse_post_row(row) for row in result.rows],
         assets_dir, search,
     )
     handles = {(str(row["domain"]), str(row["post_id"])): str(row["handle"])

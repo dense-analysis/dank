@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 from test_reader_x_conversation import (
     archive,
     project,
@@ -15,10 +15,10 @@ from dank.web.reader_query import (
     ReaderFilters,
     build_query,
     encode_cursor,
-    parse_filters,
 )
 from dank.web.reader_x_conversation import connect_saved_posts
 from dank.web.reader_x_saved import reply_metadata
+from tests.web.query import parse_filters
 
 
 def connect(
@@ -33,7 +33,7 @@ def connect(
 
 
 def test_posts_filter_before_pagination_by_displayed_version() -> None:
-    filters = parse_filters(MultiDict(kind="x", account="author"))
+    filters = parse_filters(QueryParams(kind="x", account="author"))
     assert filters.x_view == "posts" and filters.sort == "newest"
     query, _ = build_query(filters, ())
     assert "in_reply_to_status_id_str" in query
@@ -51,7 +51,7 @@ def test_posts_filter_before_pagination_by_displayed_version() -> None:
 ])
 def test_invalid_selection_is_rejected(query: dict[str, str]) -> None:
     with pytest.raises(ValueError):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 def test_cursor_cannot_cross_post_selections() -> None:
@@ -59,7 +59,7 @@ def test_cursor_cannot_cross_post_selections() -> None:
     cursor = encode_cursor(filters, selected().created_at, "x.com", "100")
 
     with pytest.raises(ValueError, match="cursor"):
-        parse_filters(MultiDict(kind="x", x_view="replies", cursor=cursor))
+        parse_filters(QueryParams(kind="x", x_view="replies", cursor=cursor))
 
 
 def test_self_reply_uses_stable_ids_and_unknown_is_not_false() -> None:

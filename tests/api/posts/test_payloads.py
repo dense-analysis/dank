@@ -20,7 +20,7 @@ from dank.api.posts.clickhouse import ClickHousePostStore
 from dank.api.posts.deps import post_store
 from dank.config import Settings
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import assets_path
+from dank.web.assets import assets_path
 from tests.api.clickhouse import COLLECTED_AT, asset, insert, post, raw_post
 
 pytestmark = pytest.mark.clickhouse

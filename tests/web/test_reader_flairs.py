@@ -4,7 +4,7 @@ import datetime as dt
 from unittest.mock import AsyncMock
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
 from dank.storage.clickhouse import QueryResult
 from dank.web.reader_flairs import (
@@ -18,18 +18,18 @@ from dank.web.reader_query import (
     build_query,
     decode_cursor,
     encode_cursor,
-    parse_filters,
 )
+from tests.web.query import parse_filters
 
 
 def test_flairs_keep_case_and_normalize_repeated_labels() -> None:
-    filters = parse_filters(MultiDict([
+    filters = parse_filters(QueryParams([
         ("kind", "reddit"), ("flair", "\u00a0\t New Model \u2003\n"),
         ("flair", "new model"), ("flair", "New Model"),
         ("flair", "🦙 Discussion"),
     ]))
     assert filters.flairs == ("New Model", "new model", "🦙 Discussion")
-    assert parse_filters(MultiDict()).flairs == ()
+    assert parse_filters(QueryParams()).flairs == ()
 
 
 @pytest.mark.parametrize("query", [
@@ -44,12 +44,12 @@ def test_invalid_flair_filters_are_rejected(
     query: list[tuple[str, str]],
 ) -> None:
     with pytest.raises(ValueError, match=r"[Ff]lair"):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 def test_flair_values_and_their_count_accept_the_boundaries() -> None:
     labels = [str(index) for index in range(99)] + ["x" * MAX_FLAIR_LENGTH]
-    filters = parse_filters(MultiDict([
+    filters = parse_filters(QueryParams([
         ("kind", "reddit"), *(("flair", label) for label in labels),
     ]))
     assert len(filters.flairs) == 100
@@ -59,7 +59,7 @@ def test_flair_values_and_their_count_accept_the_boundaries() -> None:
 def test_flair_group_intersects_community_search_dates_and_author(
     mode: str,
 ) -> None:
-    filters = parse_filters(MultiDict([
+    filters = parse_filters(QueryParams([
         ("kind", "reddit"), ("community", "LocalLLaMA"),
         ("flair", "New Model"), ("flair", "O'Reilly 50% _news"),
         ("q", "Bonsai"), ("mode", mode), ("author", "Ada"),
@@ -97,10 +97,10 @@ def test_reddit_without_flair_does_not_query_raw_snapshots() -> None:
 
 
 def test_flair_order_and_duplicates_do_not_change_cursor_identity() -> None:
-    first = parse_filters(MultiDict([
+    first = parse_filters(QueryParams([
         ("kind", "reddit"), ("flair", "New Model"), ("flair", "Discussion"),
     ]))
-    reordered = parse_filters(MultiDict([
+    reordered = parse_filters(QueryParams([
         ("kind", "reddit"), ("flair", "Discussion"), ("flair", "New Model"),
         ("flair", " Discussion "),
     ]))

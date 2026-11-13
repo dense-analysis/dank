@@ -1,7 +1,6 @@
 """YouTube rules: filters, cursors, playlist pages and what a capture says.
 
-Both servers share these functions, so a filter or cursor means the same
-thing on either. Rule violations raise InvalidInput with today's wording.
+Rule violations raise InvalidInput with the wording the reader shows.
 """
 
 # `count` is the API's name for a channel's item count, as in posts/model.py.
@@ -28,7 +27,7 @@ PLAYLIST_PAGE_LIMIT = 100
 MAX_FILTER_LENGTH = 2000
 PLAYLIST_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 
-# The reader helpers build these JSON-shaped projections for both servers.
+# The reader helpers build these JSON-shaped projections.
 # schemas.py gives them their contract. See "Projections" in docs/api.md.
 type ItemPayload = dict[str, Any]
 type ChannelPayload = dict[str, Any]

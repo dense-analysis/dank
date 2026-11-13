@@ -1,48 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import os
-import pathlib
 import re
-import sys
-import threading
-from typing import TYPE_CHECKING
 
-from aiohttp import web
+from dank.api.serve import ServeOptions, serve
 
-if TYPE_CHECKING:
-
-    class _InotifyEvent:
-        wd: int
-        mask: int
-        name: str
-
-    class _Flags:
-        MODIFY: int
-        CLOSE_WRITE: int
-        MOVED_TO: int
-        CREATE: int
-        DELETE: int
-        MOVE_SELF: int
-        DELETE_SELF: int
-        ISDIR: int
-
-        def from_mask(self, mask: int) -> list[int]: ...
-
-    class INotify:
-        def add_watch(self, path: str, mask: int) -> int: ...
-
-        def read(self) -> list[_InotifyEvent]: ...
-
-    flags: _Flags
-else:
-    from inotify_simple import (  # type: ignore[reportMissingTypeStubs]
-        INotify,
-        flags,
-    )
-
-from dank.config import load_settings
-from dank.web.app import DEFAULT_HOST, DEFAULT_PORT, create_app
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8080
 
 
 def main() -> None:
@@ -68,36 +32,7 @@ def main() -> None:
         action="store_true",
         help="Disable hot code reloading",
     )
-    parser.add_argument(
-        "--server",
-        choices=("aiohttp", "fastapi"),
-        default="aiohttp",
-        help="Server to run while routes move to FastAPI (default: aiohttp)",
-    )
     args = parser.parse_args()
-
-    if args.server == "fastapi":
-        _serve_fastapi(args)
-
-        return
-
-    settings = load_settings(args.config)
-
-    if not args.no_reload:
-        _start_reloader()
-
-    app = create_app(settings)
-    web.run_app(
-        app,
-        host=args.host,
-        port=args.port,
-        print=_terminal_print,
-    )
-
-
-def _serve_fastapi(args: argparse.Namespace) -> None:
-    # Imported here so the default aiohttp server doesn't load FastAPI.
-    from dank.api.serve import ServeOptions, serve
 
     _terminal_print(f"API docs: http://{args.host}:{args.port}/api/docs")
     serve(
@@ -122,106 +57,6 @@ def _terminal_print(message: str) -> None:
         message,
     )
     print(linked)
-
-
-def _start_reloader() -> None:
-    watch_paths = _watch_paths()
-    extensions = {".py"}
-    inotify = INotify()
-    watch_map: dict[int, pathlib.Path] = {}
-    watched: set[pathlib.Path] = set()
-    mask = _watch_mask()
-    timer: threading.Timer | None = None
-
-    for path in watch_paths:
-        _add_watch_tree(inotify, watch_map, watched, path, mask)
-
-    def _watch() -> None:
-        nonlocal timer
-
-        while True:
-            for event in inotify.read():
-                base = watch_map.get(event.wd)
-
-                if base is None:
-                    continue
-
-                event_flags = set(flags.from_mask(event.mask))
-                name = event.name
-                path = base / name if name else base
-
-                if flags.ISDIR in event_flags:
-                    if (
-                        flags.CREATE in event_flags
-                        or flags.MOVED_TO in event_flags
-                    ):
-                        _add_watch_tree(
-                            inotify,
-                            watch_map,
-                            watched,
-                            path,
-                            mask,
-                        )
-                    continue
-
-                if path.suffix in extensions:
-                    if timer is not None:
-                        timer.cancel()
-
-                    timer = threading.Timer(0.4, _restart_process)
-                    timer.daemon = True
-                    timer.start()
-
-    thread = threading.Thread(target=_watch, daemon=True)
-    thread.start()
-
-
-def _watch_paths() -> list[pathlib.Path]:
-    root = pathlib.Path(__file__).resolve().parents[3]
-
-    return [root / "src"]
-
-
-def _watch_mask() -> int:
-    return (
-        flags.MODIFY
-        | flags.CLOSE_WRITE
-        | flags.MOVED_TO
-        | flags.CREATE
-        | flags.DELETE
-        | flags.MOVE_SELF
-        | flags.DELETE_SELF
-    )
-
-
-def _add_watch_tree(
-    inotify: INotify,
-    watch_map: dict[int, pathlib.Path],
-    watched: set[pathlib.Path],
-    path: pathlib.Path,
-    mask: int,
-) -> None:
-    if not path.exists():
-        return
-
-    resolved = path.resolve()
-
-    if resolved in watched:
-        return
-
-    if resolved.is_dir():
-        wd = inotify.add_watch(str(resolved), mask)
-        watch_map[wd] = resolved
-        watched.add(resolved)
-
-        for entry in resolved.rglob("*"):
-            if entry.is_dir():
-                _add_watch_tree(inotify, watch_map, watched, entry, mask)
-
-
-def _restart_process() -> None:
-    args = ["-m", "dank.web", *sys.argv[1:]]
-    os.execv(sys.executable, [sys.executable, *args])
 
 
 if __name__ == "__main__":

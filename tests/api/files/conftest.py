@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from dank.api.app import create_app
 from dank.api.files.static import FileRoots
 from dank.config import Settings
-from dank.web.app import assets_path
+from dank.web.assets import assets_path
 
 INDEX = "<!doctype html><title>Reader</title>"
 BUNDLE = "console.log('reader');"

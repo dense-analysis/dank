@@ -1,7 +1,6 @@
 """ConnectionStore read from saved evidence in ClickHouse.
 
-SQL and the projection live in the reader helpers this reuses, so the queries
-and payloads are the ones the aiohttp server uses.
+SQL and the projection live in the reader helpers in dank.web.
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ from dank.html_utils import html_text
 from dank.model import RawPost
 from dank.process.page import extract_article_html, extract_page_metadata
 from dank.process.rss import convert_raw_post
-from dank.web.app import _sanitize_html  # pyright: ignore[reportPrivateUsage]
+from dank.web.post_html import sanitize_html
 
 PAGE = (Path(__file__).parents[1] / "fixtures"
         / "embedded-blog.html").read_text()
@@ -175,7 +175,7 @@ def test_rss_processing_resolves_urls_and_preserves_the_sanitizer_boundary(
             in post.html)
     assert '<script>' not in post.html
     assert raw.payload == payload
-    rendered = _sanitize_html(post.html)
+    rendered = sanitize_html(post.html)
     assert 'onclick' not in rendered and 'javascript:' not in rendered
     assert ('<figcaption>Deployment options in the portal.</figcaption>'
             in rendered)

@@ -1,8 +1,4 @@
-"""SearchEmbeddings: the saved vector for a search, or the model's.
-
-Separate from clickhouse.py because the aiohttp server's app module uses it
-too, and the reader helpers clickhouse.py reuses import that module.
-"""
+"""SearchEmbeddings: the saved vector for a search, or the model's."""
 
 from __future__ import annotations
 

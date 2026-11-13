@@ -6,11 +6,11 @@ import pathlib
 from typing import Any, cast
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
+from dank.api.posts.model import PostRow
 from dank.config import SourceConfig
 from dank.storage.clickhouse import QueryResult
-from dank.web.app import PostRow
 from dank.web.reader_links import HN_LINKED_POSTS_SQL, RESOLVED_HN_POSTS_SQL
 from dank.web.reader_posts import post_payloads
 from dank.web.reader_query import (
@@ -18,9 +18,9 @@ from dank.web.reader_query import (
     build_query,
     decode_cursor,
     encode_cursor,
-    parse_filters,
 )
 from dank.web.reader_youtube_feed import add_youtube_post_metadata
+from tests.web.query import parse_filters
 
 
 @pytest.mark.parametrize("kind,platforms", [
@@ -48,7 +48,7 @@ def test_blogs_include_collected_publishers_and_hacker_news(
 
 
 def test_platforms_are_unioned_then_intersected_with_other_filters() -> None:
-    filters = parse_filters(MultiDict([
+    filters = parse_filters(QueryParams([
         ("kind", "all"), ("platform", "youtube"), ("platform", "reddit"),
         ("platform", "Reddit"), ("domain", "reddit.com"),
         ("tag", "followed"), ("q", "search term"), ("after", "2026-10-01"),
@@ -107,14 +107,14 @@ def test_invalid_platform_combinations_are_rejected(
     query: list[tuple[str, str]],
 ) -> None:
     with pytest.raises(ValueError):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 def test_platform_cursor_identity_is_normalized_and_bound() -> None:
-    first = parse_filters(MultiDict([
+    first = parse_filters(QueryParams([
         ("platform", "reddit"), ("platform", "youtube"),
     ]))
-    reordered = parse_filters(MultiDict([
+    reordered = parse_filters(QueryParams([
         ("platform", "youtube"), ("platform", "reddit"),
         ("platform", "reddit"),
     ]))

@@ -1,7 +1,7 @@
 """Which domains may have a source icon, and where it is served.
 
-Both servers share these rules, and so does the capture, which checks every
-URL it fetches against them.
+The route and the capture share these rules; the capture checks every URL
+it fetches against them.
 """
 
 import ipaddress

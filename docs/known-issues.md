@@ -61,10 +61,9 @@ refresh the new source. Or [move the sources into Postgres](features/sources.md#
 with `sources_in_database` on, each request, refresh and command reads them
 as it starts, so saved edits apply without a restart. Refreshes already queued
 or running keep the sources they were submitted with, and an outage is an error
-rather than a fallback to `config.toml`. Reader tabs on the aiohttp server,
-which Docker runs until [DEN-51](https://linear.app/dense-analysis/issue/DEN-51),
-show edits only after a reload or a refresh. See
-[saved source tests](../tests/web/test_saved_sources.py) and
+rather than a fallback to `config.toml`. Other reader tabs pick up edits
+within five seconds. See
+[saved source tests](../tests/api/sources/test_router.py) and
 [refresh job tests](../tests/api/refresh/test_router.py).
 
 ## Blocked Reddit collection and cancellation

@@ -6,64 +6,11 @@ import hashlib
 import json
 from typing import Any
 
-from aiohttp import web
-from multidict import MultiMapping
-
-from dank.api.connections.model import connection_key, connection_scope
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.youtube import canonical_video_id
 
 MAX_CONNECTIONS = 100
 POST_FIELDS = "domain, post_id AS id, url, title, source"
-
-
-def _context(query: MultiMapping[str]) -> dict[str, str]:
-    scope = connection_scope(
-        "", "", query.get("source", ""), query.get("community", ""),
-    )
-
-    return {key: value for key, value in (("source", scope.source),
-                                         ("community", scope.community))
-            if value}
-
-
-def _parameters(query: MultiMapping[str], *, single: bool) -> dict[str, Any]:
-    allowed = {"domain", "id"}
-
-    if single:
-        allowed |= {"target", "kind", "reference_id", "observed_at"}
-    else:
-        allowed |= {"source", "community"}
-
-    if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
-        raise ValueError("Unknown or repeated connection parameter")
-
-    params: dict[str, Any] = {"domain": query.get("domain", "").strip(),
-                              "id": query.get("id", "").strip()}
-
-    if any(not params[key] or len(params[key]) > 2000 for key in params):
-        raise ValueError(
-            "domain and id are required and limited to 2000 characters",
-        )
-
-    if not single:
-        params.update(_context(query))
-
-        return params
-
-    key = connection_key(
-        params["domain"], params["id"], query.get("target", ""),
-        query.get("kind", ""), query.get("reference_id", ""),
-        query.get("observed_at", ""),
-    )
-    params.update(
-        target=key.target, kind=key.kind, reference_id=key.reference_id,
-    )
-
-    if key.observed_at:
-        params["observed_at"] = key.observed_at
-
-    return params
 
 
 def connection_query(*, incoming: bool = False, single: bool = False,
@@ -323,20 +270,6 @@ async def connections(client: ClickHouseClient,
     }
 
 
-async def handle_connections(request: web.Request) -> web.Response:
-    try:
-        params = _parameters(request.query, single=False)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    data = await connections(request.app["clickhouse"], params)
-
-    if data is None:
-        return web.json_response({"error": "Article not found"}, status=404)
-
-    return web.json_response(data)
-
-
 async def saved_connection(
     client: ClickHouseClient, params: dict[str, Any],
 ) -> dict[str, Any] | None:
@@ -357,19 +290,3 @@ async def saved_connection(
         result.rows[0], incoming=False, target=targets.get(params["target"]),
         videos=videos,
     )
-
-
-async def handle_connection(request: web.Request) -> web.Response:
-    try:
-        params = _parameters(request.query, single=True)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    data = await saved_connection(request.app["clickhouse"], params)
-
-    if data is None:
-        return web.json_response(
-            {"error": "Saved evidence not found"}, status=404,
-        )
-
-    return web.json_response(data)

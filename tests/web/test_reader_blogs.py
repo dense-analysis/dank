@@ -4,7 +4,7 @@ import datetime as dt
 from unittest.mock import AsyncMock
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
 from dank.config import SourceConfig
 from dank.storage.clickhouse import QueryResult
@@ -19,8 +19,8 @@ from dank.web.reader_query import (
     build_query,
     decode_cursor,
     encode_cursor,
-    parse_filters,
 )
+from tests.web.query import parse_filters
 
 
 @pytest.mark.parametrize("query", [
@@ -31,19 +31,19 @@ from dank.web.reader_query import (
 ])
 def test_blog_scope_requires_valid_blogs_context(query: dict[str, str]):
     with pytest.raises(ValueError, match="blog_feed"):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 def test_repeated_blog_scope_is_rejected():
     with pytest.raises(ValueError, match="only once"):
-        parse_filters(MultiDict([
+        parse_filters(QueryParams([
             ("kind", "stories"), ("blog_feed", "external"),
             ("blog_feed", "sources"),
         ]))
 
 
 def test_blog_source_scope_keeps_feed_entries_and_hacker_news():
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "kind": "stories", "blog_feed": "sources", "q": "interesting",
     }))
     query, params = build_query(filters, (
@@ -70,7 +70,7 @@ def test_selected_feed_preserves_aggregator_records_with_saved_destinations():
 
 
 def test_external_articles_require_saved_provenance_and_publisher_identity():
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "kind": "stories", "blog_feed": "external", "q": "specific",
         "after": "2026-10-01", "domain": "configured.test",
     }))

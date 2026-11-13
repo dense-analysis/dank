@@ -7,16 +7,12 @@ import pathlib
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
-from aiohttp import web
-
+from dank.api.posts.model import AssetRow
 from dank.config import Settings
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import ThumbnailSignature, similar_thumbnail_signatures
-from dank.web.app import (
-    AssetRow,
-    _asset_view,  # pyright: ignore[reportPrivateUsage]
-    _parse_asset_row,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.assets import asset_view
+from dank.web.post_rows import parse_asset_row
 from dank.web.reader_youtube_index import backfill_evidence
 from dank.web.reader_youtube_pairs import (
     merge_title_pairs,
@@ -25,13 +21,8 @@ from dank.web.reader_youtube_pairs import (
 from dank.web.reader_youtube_query import (
     RECOMMENDATIONS_FEED,
     YouTubeFilters,
-    build_youtube_query,
-    encode_youtube_cursor,
-    parse_youtube_filters,
-    youtube_cursor_snapshot,
 )
 from dank.web.reader_youtube_sources import configured_sources
-from dank.web.sources import current_settings
 from dank.youtube import VIDEO_ID, payload_object, playlist_listing_labels
 
 MAX_ITEM_DISCOVERIES = 100
@@ -71,79 +62,6 @@ async def ensure_youtube_storage(client: ClickHouseClient) -> None:
     await client.insert_rows("youtube_index_versions", [{
         "version": INDEX_VERSION, "completed_at": dt.datetime.now(dt.UTC),
     }])
-
-
-def add_youtube_routes(app: web.Application) -> None:
-    app.router.add_get("/api/reader/youtube", handle_youtube)
-    app.router.add_get("/api/reader/youtube/sources", handle_youtube_sources)
-    from dank.web.reader_youtube_channels import handle_youtube_channels
-    from dank.web.reader_youtube_metadata import add_metadata_routes
-    from dank.web.reader_youtube_playlists import (
-        handle_playlist,
-        handle_playlists,
-    )
-    from dank.web.reader_youtube_transcripts import add_transcript_routes
-
-    app.router.add_get("/api/reader/youtube/channels", handle_youtube_channels)
-    app.router.add_get("/api/reader/youtube/playlists", handle_playlists)
-    app.router.add_get(
-        "/api/reader/youtube/playlists/{playlist_id}", handle_playlist,
-    )
-    add_metadata_routes(app)
-    add_transcript_routes(app)
-
-
-async def handle_youtube(request: web.Request) -> web.Response:
-    try:
-        filters = parse_youtube_filters(request.query)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    client: ClickHouseClient = request.app["clickhouse"]
-    configured: tuple[str, ...] = ()
-
-    if filters.channel_scope:
-        from dank.web.reader_youtube_channels import load_configured_channels
-
-        configured = await load_configured_channels(
-            client, await current_settings(request),
-        )
-
-    snapshot_time = ""
-
-    if filters.feed == RECOMMENDATIONS_FEED:
-        snapshot_time = (
-            youtube_cursor_snapshot(filters) if filters.cursor
-            else await recommendation_snapshot_time(client)
-        )
-
-    query, params = build_youtube_query(
-        filters, configured_channels=configured, snapshot_time=snapshot_time,
-    )
-    result = await client.fetch_json(query, params)
-    rows = result.rows[:filters.limit]
-    query, params = build_youtube_query(
-        filters, count=True, configured_channels=configured,
-        snapshot_time=snapshot_time,
-    )
-    counted = await client.fetch_json(query, params)
-    total = int(counted.rows[0]["total"]) if counted.rows else 0
-    state = request.app["state"]
-    items = await youtube_items(client, rows, filters, state.assets_dir)
-    cursor = None
-
-    if len(result.rows) > filters.limit and items:
-        last = items[-1]
-        cursor = encode_youtube_cursor(
-            filters, last["observed_at"], last["id"],
-            int(rows[-1].get("position") or 0),
-            int(rows[-1].get("reference_count") or 0),
-            snapshot_time=snapshot_time,
-        )
-
-    return web.json_response({
-        "items": items, "next_cursor": cursor, "total": total,
-    })
 
 
 async def recommendation_snapshot_time(client: ClickHouseClient) -> str:
@@ -383,16 +301,6 @@ async def _references(
     return grouped, counts
 
 
-async def handle_youtube_sources(request: web.Request) -> web.Response:
-    state = request.app["state"]
-
-    return web.json_response(await youtube_sources(
-        request.app["clickhouse"],
-        await current_settings(request),
-        state.assets_dir,
-    ))
-
-
 async def youtube_sources(
     client: ClickHouseClient, settings: Settings, assets_dir: pathlib.Path,
 ) -> dict[str, Any]:
@@ -448,7 +356,7 @@ async def _channel_metadata(
             local_path=str(row["local_path"]),
             content_type=str(row["content_type"]), size_bytes=0,
         )
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
         row["avatar_url"] = (
             view["url"] if view and view["kind"] == "image" else None
         )
@@ -515,13 +423,13 @@ async def _local_media(
     media: dict[str, dict[str, str]] = {}
 
     for row in result.rows:
-        asset = _parse_asset_row({
+        asset = parse_asset_row({
             **row, "domain": "youtube.com", "source": "youtube",
             "content_type": "", "size_bytes": 0,
             "created_at": row.get("scraped_at"),
             "updated_at": row.get("scraped_at"),
         })
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
 
         if view is None:
             continue
@@ -577,7 +485,7 @@ async def _thumbnail_history(
             local_path=str(row["local_path"]),
             content_type="", size_bytes=0,
         )
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
 
         if view is None:
             continue

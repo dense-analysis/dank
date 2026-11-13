@@ -1,14 +1,20 @@
 """GET /api/reader/source-icon over HTTP, with fakes behind its ports."""
 
+import uuid
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
+from dank.api import deps
 from dank.api.source_icons.deps import collected_domains
+from dank.api.sources.deps import saved_sources
+from dank.config import Settings
+from dank.sources.model import Source
 from tests.api.client import http_client
 from tests.api.source_icons.fakes import FakeCollectedDomains, FakeIconCache
+from tests.sources.fakes import FakeSourceRepository
 
 PATH = "/api/reader/source-icon"
 PNG = b"\x89PNG icon"
@@ -123,3 +129,23 @@ async def test_a_database_failure_is_unavailable(app: FastAPI) -> None:
         503, "unavailable",
     )
     assert response.headers["cache-control"] == "no-store"
+
+
+async def test_saved_sources_get_icons_before_they_have_posts(
+    app: FastAPI, client: AsyncClient, settings: Settings,
+    icons: FakeIconCache,
+) -> None:
+    # With the switch on, a disabled saved source is still known, and a
+    # source only config.toml lists is not.
+    switched = settings._replace(sources_in_database=True)
+    app.dependency_overrides[deps.settings] = lambda: switched
+    app.dependency_overrides[saved_sources] = lambda: FakeSourceRepository(
+        Source(uuid.UUID(int=1), enabled=False, domain="saved.example"),
+    )
+    icons.icons["saved.example"] = PNG
+    icons.icons["politics.example"] = PNG
+
+    saved = await client.get(PATH, params={"domain": "saved.example"})
+    config = await client.get(PATH, params={"domain": "politics.example"})
+
+    assert (saved.status_code, config.status_code) == (200, 404)

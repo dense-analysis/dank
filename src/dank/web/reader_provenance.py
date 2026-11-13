@@ -7,9 +7,9 @@ from collections import defaultdict
 from typing import Any
 from urllib.parse import urlsplit
 
+from dank.api.posts.model import PostRow
 from dank.links import is_platform_url, normalized_url
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
-from dank.web.app import PostRow
 from dank.youtube import payload_object
 
 MAX_FIRST_SOURCES = 5

@@ -6,8 +6,8 @@ from typing import Any, cast
 
 import pytest
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import ClickHouseClient, QueryResult
-from dank.web.app import PostRow
 from dank.web.reader_provenance import add_collection_info
 
 T0 = dt.datetime(2026, 10, 17, 10, tzinfo=dt.UTC)

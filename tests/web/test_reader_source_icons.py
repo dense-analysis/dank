@@ -11,6 +11,7 @@ import aiohttp
 import pytest
 from PIL import Image
 
+from dank.api.source_icons.model import source_icon_url
 from dank.web.reader_source_icons import (
     ICON_CONCURRENCY,
     ICON_FRESH_SECONDS,
@@ -20,7 +21,6 @@ from dank.web.reader_source_icons import (
     _fetch_bytes,  # pyright: ignore[reportPrivateUsage]
     _icon_candidates,  # pyright: ignore[reportPrivateUsage]
     _PublicResolver,  # pyright: ignore[reportPrivateUsage]
-    source_icon_url,
 )
 
 

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from test_reader import row
 
-from dank.web.app import PostRow
+from dank.api.posts.model import PostRow
 from dank.web.reader_x_conversation import (
     MAX_CONVERSATION_DEPTH,
     MAX_CONVERSATION_POSTS,

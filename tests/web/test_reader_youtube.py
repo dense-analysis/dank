@@ -8,7 +8,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
 from dank.storage.clickhouse import ClickHouseClient, QueryResult
 from dank.web.reader_youtube import (
@@ -22,13 +22,13 @@ from dank.web.reader_youtube_query import (
     build_youtube_query,
     decode_youtube_cursor,
     encode_youtube_cursor,
-    parse_youtube_filters,
     youtube_cursor_snapshot,
 )
+from tests.web.query import parse_youtube_filters
 
 
 def test_queries_filter_before_deduplicating_feed_appearances() -> None:
-    filters = parse_youtube_filters(MultiDict({
+    filters = parse_youtube_filters(QueryParams({
         "feed": "https://www.youtube.com/feed/hype", "kind": "video",
         "q": "test's", "channel": "UCexample", "limit": "10",
     }))
@@ -71,12 +71,14 @@ def test_cursors_bind_filters_and_keep_stable_item_tie_breaker() -> None:
 ])
 def test_invalid_filters(query: dict[str, str]) -> None:
     with pytest.raises(ValueError):
-        parse_youtube_filters(MultiDict(query))
+        parse_youtube_filters(QueryParams(query))
 
 
 def test_duplicate_filters_rejected() -> None:
     with pytest.raises(ValueError):
-        parse_youtube_filters(MultiDict([("kind", "video"), ("kind", "post")]))
+        parse_youtube_filters(
+            QueryParams([("kind", "video"), ("kind", "post")]),
+        )
 
 
 async def test_item_keeps_provenance_and_multiple_source_references():
@@ -275,7 +277,7 @@ async def test_extensionless_cached_thumbnail_uses_type_and_keeps_containment(
 def test_recommendation_pages_and_total_keep_original_snapshot(
     feed: str, kind: str,
 ):
-    filters = parse_youtube_filters(MultiDict({
+    filters = parse_youtube_filters(QueryParams({
         "feed": feed, "kind": kind, "limit": "1",
     }))
     captured = "2026-10-17T10:00:00+00:00"
@@ -485,7 +487,7 @@ async def test_latest_successful_snapshot_overrides_remote_thumbnail(
      "reference_count DESC, observed_at DESC, item_id DESC", "<"),
 ])
 def test_linked_sort_pagination(sort: str, order: str, comparison: str):
-    filters = parse_youtube_filters(MultiDict({
+    filters = parse_youtube_filters(QueryParams({
         "feed": "linked", "sort": sort,
     }))
     cursor = encode_youtube_cursor(
@@ -514,8 +516,10 @@ def test_linked_sort_pagination(sort: str, order: str, comparison: str):
     {"sort": "most-linked"}, {"feed": "news", "sort": "oldest"},
 ])
 def test_invalid_youtube_sorts(query: dict[str, str]):
-    with pytest.raises(ValueError, match="Invalid sort"):
-        parse_youtube_filters(MultiDict(query))
+    # An unknown sort fails the query model, which names the field; a sort
+    # the feed can't use fails the domain rule.
+    with pytest.raises(ValueError, match="sort"):
+        parse_youtube_filters(QueryParams(query))
 
 
 def test_home_history_keeps_original_cutoff_when_cursor_moves_back_in_time():

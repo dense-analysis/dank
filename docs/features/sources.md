@@ -75,8 +75,8 @@ With the switch on:
 
 - **Edits apply without a restart.** Each reader request, refresh and command
   reads the table as it starts. That covers the sidebar and its counts, tags,
-  configured YouTube channels, which source icons the reader serves, the legacy
-  viewer, `scrape`, `process` and `train`.
+  configured YouTube channels, which source icons the reader serves, `scrape`,
+  `process` and `train`.
 - **Submitted work keeps its sources.** A queued or running refresh collects
   the sources it was submitted with. A refresh asked for after an edit uses the
   new ones; asking again for the same refresh joins the active job only while
@@ -86,11 +86,7 @@ With the switch on:
   or feed's.
 - **Other tabs catch up within five seconds.** A reader tab in the foreground
   checks the source list every five seconds, and again when you come back to
-  it, and reloads its sidebar when the list changed. This needs the FastAPI
-  server (`web --server fastapi`). The aiohttp server, which Docker runs until
-  [DEN-51](https://linear.app/dense-analysis/issue/DEN-51), reads the table for
-  every request but has no source list, so its tabs catch up when reloaded or
-  after a refresh.
+  it, and reloads its sidebar when the list changed.
 - **An empty table means no sources.** The reader shows its empty state, and
   `scrape`, `process` and `train` stop with
   `No sources in the database. Run make sources-import, or add one in the app.`
@@ -105,7 +101,7 @@ With the switch on:
   refuses the config:
   `sources_in_database needs Postgres, which is turned off ([postgres] enabled = false).`
 
-`GET /api/reader/sources`, the sidebar's request on both servers, has an
+`GET /api/reader/sources`, the sidebar's request, has an
 `in_database` flag that mirrors the switch, so the reader knows whether to watch
 for edits.
 
@@ -155,7 +151,7 @@ the last save wins.
 
 ## API
 
-FastAPI only, under `/api/reader/source-settings`. See
+Under `/api/reader/source-settings`. See
 [the API conventions](../api.md).
 
 | Method | Path | Does |

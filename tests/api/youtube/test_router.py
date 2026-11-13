@@ -840,7 +840,7 @@ async def test_simultaneous_transcript_requests_share_the_saved_result(
     assert collector.saved == [VIDEO]
 
 
-def test_the_waits_are_the_ones_the_aiohttp_server_uses() -> None:
+def test_collection_waits_stay_bounded() -> None:
     assert collection_limits() == CollectionLimits(
         metadata_wait=15,
         transcript_lock_wait=1,

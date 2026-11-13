@@ -4,37 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from multidict import MultiMapping
-
 from dank.api.youtube.model import (
     RECOMMENDATIONS_FEED as RECOMMENDATIONS_FEED,
     YouTubeFilters as YouTubeFilters,
     decode_youtube_cursor as decode_youtube_cursor,
     encode_youtube_cursor as encode_youtube_cursor,
     youtube_cursor_snapshot as youtube_cursor_snapshot,
-    youtube_filters,
 )
-
-
-def parse_youtube_filters(query: MultiMapping[str]) -> YouTubeFilters:
-    allowed = {"feed", "channel", "kind", "q", "id", "limit", "cursor",
-               "sort", "channel_scope"}
-
-    if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
-        raise ValueError("Unknown or repeated YouTube filter")
-
-    try:
-        limit = int(query.get("limit", "30"))
-    except ValueError:
-        raise ValueError("limit must be an integer from 1 to 500") from None
-
-    return youtube_filters(YouTubeFilters(
-        feed=query.get("feed", ""), channel=query.get("channel", ""),
-        kind=query.get("kind", ""), q=query.get("q", ""),
-        item_id=query.get("id", ""), limit=limit,
-        cursor=query.get("cursor", ""), sort=query.get("sort", "newest"),
-        channel_scope=query.get("channel_scope", ""),
-    ))
 
 
 def build_youtube_query(

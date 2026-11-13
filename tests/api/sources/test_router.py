@@ -120,8 +120,7 @@ async def test_reddit_sources_carry_communities_and_flairs(
 async def test_unconfigured_reddit_still_lists_its_empty_communities(
     client: AsyncClient, stats: FakeCollectionStats,
 ) -> None:
-    # The one intended difference from the aiohttp server, which leaves
-    # communities and flairs out here.
+    # Collected Reddit posts still bring empty community and flair lists.
     stats.counts = {"reddit.com": 3}
 
     response = await client.get("/api/reader/sources")

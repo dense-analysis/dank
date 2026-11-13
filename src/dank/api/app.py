@@ -32,8 +32,8 @@ def create_app(
         # No OAuth flows, so Swagger UI needs no redirect page.
         swagger_ui_oauth2_redirect_url=None,
         redoc_url=None,
-        # As under aiohttp. FastAPI's redirect would name this server's scheme,
-        # which behind the HTTPS proxy is plain HTTP.
+        # FastAPI's redirect would name this server's scheme, which behind
+        # the HTTPS proxy is plain HTTP.
         redirect_slashes=False,
     )
     app.add_middleware(ApiHeaders)

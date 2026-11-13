@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import PostRow
 from dank.web.reader_x_conversation import (
     MAX_CONVERSATION_POSTS,
     canonical_target,

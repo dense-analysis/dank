@@ -1,4 +1,4 @@
-"""The JSON-shaped projection of collected posts, for both servers."""
+"""The JSON-shaped projection of collected posts."""
 
 from __future__ import annotations
 
@@ -10,16 +10,12 @@ from html.parser import HTMLParser
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from dank.api.posts.model import AssetRow, PostRow
 from dank.html_utils import PAGE_CHALLENGE_PATTERN, remove_page_noise
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import (
-    AssetRow,
-    PostRow,
-    _asset_view,  # pyright: ignore[reportPrivateUsage]
-    _parse_asset_row,  # pyright: ignore[reportPrivateUsage]
-    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
-    _summarize_html,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.assets import asset_view
+from dank.web.post_html import sanitize_html, summarize_html
+from dank.web.post_rows import parse_asset_row
 from dank.web.reader_communities import community_icons
 from dank.web.reader_excerpt import search_excerpt
 from dank.web.reader_hacker_news import add_hacker_news_metadata
@@ -54,7 +50,7 @@ async def post_payloads(
 
     for row in result.rows:
         key = (str(row["domain"]), str(row["post_id"]))
-        assets.setdefault(key, []).append(_parse_asset_row(row))
+        assets.setdefault(key, []).append(parse_asset_row(row))
 
     incomplete = await _incomplete_page_keys(client, posts)
 
@@ -169,7 +165,7 @@ def _add_reddit_archive(
     local_urls: dict[str, str] = {}
 
     for asset in assets:
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
 
         if view and view["kind"] in {"image", "video"}:
             # A previously downloaded HLS manifest is not an offline video.
@@ -272,12 +268,12 @@ def post_payload(
     collection_incomplete: bool = False,
 ) -> dict[str, Any]:
     source_url = _http_url(post.url) or ""
-    body = _sanitize_html(remove_page_noise(post.html, base_url=source_url))
+    body = sanitize_html(remove_page_noise(post.html, base_url=source_url))
     media: list[dict[str, str]] = []
     local_urls: dict[str, str] = {}
 
     for asset in assets:
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
 
         if view and view["kind"] in {"image", "audio", "video"}:
             local_urls[asset.url] = view["url"]
@@ -303,7 +299,7 @@ def post_payload(
         ],
         "id": post.post_id, "domain": post.domain, "url": source_url,
         "author": post.author, "title": post.title,
-        "excerpt": search_excerpt(body, query) or _summarize_html(body),
+        "excerpt": search_excerpt(body, query) or summarize_html(body),
         "html": body,
         "collection_incomplete": collection_incomplete,
         "created_at": created_at.isoformat(), "source": post.source,

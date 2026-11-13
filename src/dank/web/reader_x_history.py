@@ -6,8 +6,8 @@ import datetime as dt
 import json
 from typing import Any
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
-from dank.web.app import PostRow
 from dank.web.reader_x_conversation import canonical_target, valid_capture
 from dank.x_content import object_value
 

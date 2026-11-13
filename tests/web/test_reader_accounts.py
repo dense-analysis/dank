@@ -7,7 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
 from dank.storage.clickhouse import QueryResult
 from dank.web.reader_accounts import X_ACCOUNT_SQL, source_accounts
@@ -16,15 +16,15 @@ from dank.web.reader_query import (
     build_query,
     decode_cursor,
     encode_cursor,
-    parse_filters,
 )
+from tests.web.query import parse_filters
 
 
 @pytest.mark.parametrize("kind", ["", "all"])
 def test_all_collections_keep_platforms_and_deduplicate_link_wrappers(
     kind: str,
 ) -> None:
-    query, params = build_query(parse_filters(MultiDict({"kind": kind})), ())
+    query, params = build_query(parse_filters(QueryParams({"kind": kind})), ())
     assert "(domain, post_id) NOT IN" in query
     assert "post_links" in query
     assert "x_domains" not in params
@@ -32,19 +32,19 @@ def test_all_collections_keep_platforms_and_deduplicate_link_wrappers(
 
 def test_stories_and_x_are_separate_collections() -> None:
     query, params = build_query(
-        parse_filters(MultiDict({"kind": "x"})), (),
+        parse_filters(QueryParams({"kind": "x"})), (),
     )
     assert "domain IN %(x_domains)s" in query
     assert params["x_domains"] == ["x.com", "twitter.com"]
     stories, _ = build_query(
-        parse_filters(MultiDict({"kind": "stories"})), (),
+        parse_filters(QueryParams({"kind": "stories"})), (),
     )
     assert "source IN ('rss', 'linked_article', 'hacker_news')" in stories
 
 
 @pytest.mark.parametrize("mode", ["words", "meaning", "combined"])
 def test_account_filter_intersects_search_author_and_dates(mode: str) -> None:
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "kind": "x", "account": " @WatcherGuru ", "author": "Reporter",
         "q": "model", "mode": mode, "after": "2026-10-01",
     }))
@@ -69,7 +69,7 @@ def test_account_filter_intersects_search_author_and_dates(mode: str) -> None:
 ])
 def test_invalid_account_filters_are_rejected(query: dict[str, str]) -> None:
     with pytest.raises(ValueError):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 @pytest.mark.parametrize("changed", [

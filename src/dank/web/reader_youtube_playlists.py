@@ -7,14 +7,9 @@ import json
 import pathlib
 from typing import Any
 
-from aiohttp import web
-from multidict import MultiMapping
-
 from dank.api.youtube.model import (
     PlaylistPage,
     parse_cursor as parse_cursor,
-    playlist_cursor,
-    playlist_page,
 )
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.web.reader_youtube import (  # pyright: ignore[reportPrivateUsage]
@@ -23,32 +18,6 @@ from dank.web.reader_youtube import (  # pyright: ignore[reportPrivateUsage]
 )
 from dank.web.reader_youtube_query import YouTubeFilters
 from dank.youtube import VIDEO_ID, payload_object, playlist_listing_labels
-
-
-def parse_page(
-    query: MultiMapping[str],
-    playlist_id: str = "",
-) -> PlaylistPage:
-    allowed = {"limit", "cursor", "q"}
-
-    if not playlist_id:
-        allowed.add("sort")
-
-    if set(query) - allowed or any(len(query.getall(k)) != 1 for k in query):
-        raise ValueError("Unknown or repeated playlist filter")
-
-    try:
-        limit = int(query.get("limit", "30"))
-    except ValueError:
-        raise ValueError("Playlist limit must be an integer") from None
-
-    return playlist_page(
-        limit=limit,
-        q=query.get("q", ""),
-        cursor=query.get("cursor", ""),
-        sort=query.get("sort", "recent"),
-        playlist_id=playlist_id,
-    )
 
 
 def latest_playlists_query(*, individual: bool = False) -> str:
@@ -173,44 +142,6 @@ async def playlist_snapshot_time(
     )
 
 
-async def handle_playlists(request: web.Request) -> web.Response:
-    try:
-        page = parse_page(request.query)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    client: ClickHouseClient = request.app["clickhouse"]
-
-    if not page.snapshot:
-        page = page._replace(snapshot=await playlist_snapshot_time(client))
-
-    result = await client.fetch_json(*library_query(page))
-    totals = await client.fetch_json(*library_query(page, count=True))
-    rows = result.rows[: page.limit]
-    cursor = None
-
-    if len(result.rows) > page.limit and rows:
-        last = rows[-1]
-        cursor = playlist_cursor(
-            "",
-            page.q,
-            page.snapshot,
-            (
-                str(last["sort_key"]),
-                str(last["playlist_id"]),
-            ),
-            page.sort,
-        )
-
-    return web.json_response(
-        {
-            "playlists": [playlist_metadata(row) for row in rows],
-            "total": int(totals.rows[0]["total"]) if totals.rows else 0,
-            "next_cursor": cursor,
-        },
-    )
-
-
 def playlist_entries_query(
     playlist_id: str, snapshot_hash: str, page: PlaylistPage,
     *, count: bool = False,
@@ -241,58 +172,6 @@ def playlist_entries_query(
         + " AND ".join(conditions) + order,
         params,
     )
-
-
-async def handle_playlist(request: web.Request) -> web.Response:
-    playlist_id = request.match_info["playlist_id"]
-
-    try:
-        page = parse_page(request.query, playlist_id)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    client: ClickHouseClient = request.app["clickhouse"]
-
-    if not page.snapshot:
-        page = page._replace(
-            snapshot=await playlist_snapshot_time(client, playlist_id),
-        )
-
-    result = await client.fetch_json(
-        latest_playlists_query(individual=True),
-        {"playlist_id": playlist_id, "snapshot": page.snapshot},
-    )
-
-    if not result.rows:
-        return web.json_response({"error": "Playlist not found"}, status=404)
-
-    row = result.rows[0]
-    metadata = playlist_metadata(row)
-    entries = await client.fetch_json(*playlist_entries_query(
-        playlist_id, metadata["snapshot_id"], page,
-    ))
-    total = metadata["collected_count"]
-
-    if page.q:
-        totals = await client.fetch_json(*playlist_entries_query(
-            playlist_id, metadata["snapshot_id"], page, count=True,
-        ))
-        total = int(totals.rows[0]["total"]) if totals.rows else 0
-    rows = entries.rows[:page.limit]
-    items = await playlist_items(
-        client, request.app["state"].assets_dir, rows, row,
-    )
-    cursor = None
-
-    if len(entries.rows) > page.limit and rows:
-        cursor = playlist_cursor(
-            playlist_id, page.q, page.snapshot, int(rows[-1]["position"]),
-        )
-
-    return web.json_response({
-        "playlist": metadata, "items": items, "next_cursor": cursor,
-        "total": total,
-    })
 
 
 async def playlist_items(

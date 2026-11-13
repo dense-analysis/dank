@@ -5,8 +5,8 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import PostRow
 from dank.web.reader_youtube import (
     _item,  # pyright: ignore[reportPrivateUsage]
 )

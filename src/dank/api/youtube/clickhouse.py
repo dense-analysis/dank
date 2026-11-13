@@ -1,7 +1,6 @@
 """YouTubeStore read from collected videos in ClickHouse.
 
-SQL and the projections live in the reader helpers this reuses, so the queries
-and payloads are the ones the aiohttp server uses.
+SQL and the projections live in the reader helpers in dank.web.
 """
 
 from __future__ import annotations

@@ -3,14 +3,15 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
-from dank.web.reader_query import build_query, parse_filters
+from dank.web.reader_query import build_query
 from dank.web.reader_x_home import decode_home_cursor, encode_home_cursor
+from tests.web.query import parse_filters
 
 
 def test_history_membership_preserves_captures_and_replies():
-    filters = parse_filters(MultiDict(kind="x", x_feed="for_you"))
+    filters = parse_filters(QueryParams(kind="x", x_feed="for_you"))
     query, params = build_query(filters, ())
     assert "dank_x_home" in query
     assert "GROUP BY domain, post_id" in query
@@ -21,7 +22,7 @@ def test_history_membership_preserves_captures_and_replies():
 
 
 def test_cursor_preserves_cutoff_and_position_and_cannot_cross_filters():
-    filters = parse_filters(MultiDict(kind="x", x_feed="for_you"))
+    filters = parse_filters(QueryParams(kind="x", x_feed="for_you"))
     snapshot = dt.datetime.now(dt.UTC).isoformat()
     cursor = encode_home_cursor(
         filters,
@@ -34,7 +35,7 @@ def test_cursor_preserves_cutoff_and_position_and_cannot_cross_filters():
         snapshot,
     )
     next_filters = parse_filters(
-        MultiDict(kind="x", x_feed="for_you", cursor=cursor),
+        QueryParams(kind="x", x_feed="for_you", cursor=cursor),
     )
     saved = decode_home_cursor(next_filters)
     assert saved.snapshot == snapshot and saved.position == 5
@@ -44,11 +45,11 @@ def test_cursor_preserves_cutoff_and_position_and_cannot_cross_filters():
     assert "-toInt64(recommendation_position)" in query
 
     with pytest.raises(ValueError, match="cursor"):
-        parse_filters(MultiDict(kind="x", cursor=cursor))
+        parse_filters(QueryParams(kind="x", cursor=cursor))
 
     with pytest.raises(ValueError, match="cursor"):
         parse_filters(
-            MultiDict(
+            QueryParams(
                 kind="x", x_feed="for_you", cursor=cursor, q="different",
             ),
         )
@@ -64,4 +65,4 @@ def test_cursor_preserves_cutoff_and_position_and_cannot_cross_filters():
 )
 def test_rejects_ambiguous_or_wrong_feed(query: dict[str, str]):
     with pytest.raises(ValueError):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))

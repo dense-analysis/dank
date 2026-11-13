@@ -6,8 +6,8 @@ from typing import Any, cast
 
 import pytest
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import QueryResult
-from dank.web.app import PostRow
 from dank.web.reader_links import (
     RESOLVED_HN_POSTS_SQL,
     add_post_links,

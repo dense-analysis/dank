@@ -7,10 +7,7 @@ import re
 from typing import Any
 
 from dank.storage.clickhouse import parse_datetime
-from dank.web.app import (
-    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
-    _summarize_html,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.post_html import sanitize_html, summarize_html
 from dank.web.reader_accounts import profile_identity
 from dank.x_content import object_value, post_html, post_links, post_media
 
@@ -36,7 +33,7 @@ def captured_post(
     handle = post_handle(node)
     profile = object_value(object_value(node.get("core")).get("user_results"))
     name, icon = profile_identity(profile.get("result"), handle)
-    body = _sanitize_html(post_html(node))
+    body = sanitize_html(post_html(node))
     legacy = object_value(node.get("legacy"))
     node_id = str(node["rest_id"])
     replies = legacy.get("reply_count")
@@ -45,7 +42,7 @@ def captured_post(
         "id": node_id, "domain": domain,
         "url": f"https://x.com/{handle}/status/{node_id}",
         "author": handle, "title": "", "html": body,
-        "excerpt": _summarize_html(body), "source": "x",
+        "excerpt": summarize_html(body), "source": "x",
         "created_at": post_created_at(legacy.get("created_at"), node_id),
         "thumbnail": None, "media": [],
         "x": {

@@ -22,7 +22,7 @@ from dank.api.youtube.collector import ScrapeVideoCollector, collection_gate
 from dank.api.youtube.deps import video_collector, youtube_store
 from dank.config import Settings, SourceConfig
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import assets_path
+from dank.web.assets import assets_path
 from tests.api.clickhouse import COLLECTED_AT, insert
 from tests.api.youtube.rows import (
     CHANNEL_URL,

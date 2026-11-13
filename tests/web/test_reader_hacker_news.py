@@ -4,20 +4,20 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from multidict import MultiDict
+from starlette.datastructures import QueryParams
 
+from dank.api.posts.model import PostRow
 from dank.api.sources.model import source_kind
 from dank.config import HackerNewsFilter, SourceConfig
 from dank.storage.clickhouse import QueryResult
-from dank.web.app import PostRow
 from dank.web.reader_hacker_news import add_hacker_news_metadata
 from dank.web.reader_query import (
     ReaderFilters,
     build_query,
     decode_cursor,
     encode_cursor,
-    parse_filters,
 )
+from tests.web.query import parse_filters
 
 NOW = dt.datetime(2026, 10, 17, 15, tzinfo=dt.UTC)
 POST = PostRow(
@@ -52,7 +52,7 @@ def stored(payload: object, when: dt.datetime = NOW) -> dict[str, Any]:
 def test_daily_filters_use_captured_eligibility_and_processed_version(
     ranking: HackerNewsFilter,
 ):
-    filters = parse_filters(MultiDict({
+    filters = parse_filters(QueryParams({
         "kind": "hacker_news", "hn_filter": ranking, "q": "narrow search",
     }))
     query, params = build_query(filters, ())
@@ -70,7 +70,7 @@ def test_daily_filters_use_captured_eligibility_and_processed_version(
 
 
 def test_default_ranking_and_cursor_are_bound():
-    filters = parse_filters(MultiDict({"kind": "hacker_news"}))
+    filters = parse_filters(QueryParams({"kind": "hacker_news"}))
     assert filters.hn_filter == "top50"
     token = encode_cursor(filters, NOW, POST.domain, POST.post_id)
     assert decode_cursor(filters._replace(cursor=token)) == (
@@ -89,7 +89,7 @@ def test_default_ranking_and_cursor_are_bound():
 ])
 def test_invalid_rankings_rejected(query: dict[str, str]):
     with pytest.raises(ValueError, match="hn_filter"):
-        parse_filters(MultiDict(query))
+        parse_filters(QueryParams(query))
 
 
 def test_hacker_news_is_a_separate_source_kind():

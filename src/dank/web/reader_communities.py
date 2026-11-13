@@ -5,11 +5,9 @@ from __future__ import annotations
 import pathlib
 from typing import TypedDict
 
+from dank.api.posts.model import AssetRow
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
-from dank.web.app import (
-    AssetRow,
-    _asset_view,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.assets import asset_view
 
 
 async def community_icons(
@@ -34,7 +32,7 @@ async def community_icons(
             local_path=str(row["local_path"]),
             content_type=str(row["content_type"]), size_bytes=0,
         )
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
 
         if view and view["kind"] == "image":
             icons[str(row["community"]).lower()] = view["url"]

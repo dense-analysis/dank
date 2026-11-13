@@ -2,29 +2,20 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import pathlib
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from aiohttp import web
-from multidict import MultiDict
-
 from dank.api.youtube.model import (
     channel_cursor as channel_cursor,
-    parse_channel_cursor,
-    require_channel_page,
 )
 from dank.config import Settings
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.reader_youtube_query import (
-    RECOMMENDATIONS_FEED,
     YouTubeFilters,
     build_youtube_query,
-    parse_youtube_filters,
 )
 from dank.web.reader_youtube_sources import configured_channel_keys
-from dank.web.sources import current_settings
 
 CHANNEL_KEY = (
     "if(notEmpty(JSONExtractString(payload, 'channel_id')), "
@@ -84,58 +75,6 @@ def channel_query(
     )
 
     return query, params, base
-
-
-async def handle_youtube_channels(request: web.Request) -> web.Response:
-    try:
-        query = MultiDict(request.query)
-
-        if len(query.getall("cursor", [])) > 1:
-            raise ValueError("Repeated channel cursor")
-
-        cursor = query.pop("cursor", "")
-        query.setdefault("limit", "20")
-        filters = parse_youtube_filters(query)
-        require_channel_page(filters)
-        snapshot = dt.datetime.now(dt.UTC).isoformat()
-        after = None
-
-        if cursor:
-            snapshot, count, key = parse_channel_cursor(filters, cursor)
-            after = (count, key)
-    except ValueError as error:
-        return web.json_response({"error": str(error)}, status=400)
-
-    client: ClickHouseClient = request.app["clickhouse"]
-    state = request.app["state"]
-
-    if filters.feed == RECOMMENDATIONS_FEED and not cursor:
-        from dank.web.reader_youtube import recommendation_snapshot_time
-
-        snapshot = await recommendation_snapshot_time(client)
-    configured = await load_configured_channels(
-        client, await current_settings(request),
-    )
-    sql, params, base = channel_query(filters, configured, snapshot, after)
-    result = await client.fetch_json(sql, params)
-    rows = result.rows[:filters.limit]
-    totals = await client.fetch_json(channel_totals_query(base), params)
-    previews = await channel_previews(
-        client, rows, base, params, filters, state.assets_dir,
-    )
-    channels = channel_views(rows, configured, previews)
-    next_cursor = (
-        channel_cursor(filters, snapshot, int(rows[-1]["count"]),
-                       str(rows[-1]["channel_key"]))
-        if len(result.rows) > filters.limit and rows else None
-    )
-    total = totals.rows[0] if totals.rows else {}
-
-    return web.json_response({
-        "channels": channels, "next_cursor": next_cursor,
-        "total": int(total.get("total", 0)),
-        "unattributed_items": int(total.get("unattributed_items", 0)),
-    })
 
 
 def channel_totals_query(base: str) -> str:

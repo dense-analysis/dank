@@ -42,17 +42,17 @@ Real-model checks are opt-in. Replace `uv run pytest` in either example with
 already be cached. In Docker, make that cache available inside the check
 container at `/root/.cache/huggingface`, for example through a read-only mount.
 
-## FastAPI server
+## Web server
 
-The JSON API is moving to FastAPI one route group at a time; see
-[API conventions](api.md). Run the new server beside the default one:
+`web` runs the FastAPI app in `src/dank/api/`; see [API conventions](api.md).
+Without `--no-reload` it reloads on changes under `src/dank` through
+watchfiles, which works on macOS and Linux:
 
 ```sh
-uv run web --server fastapi --port 8081
+uv run web --port 8081
 ```
 
-It reloads on changes under `src/dank` through watchfiles, which also works on
-macOS. Its ClickHouse adapter tests need a loopback ClickHouse and run with
+Its ClickHouse adapter tests need a loopback ClickHouse and run with
 `uv run pytest tests/api --clickhouse-url=http://default:@127.0.0.1:18123`;
 without the option they are skipped.
 

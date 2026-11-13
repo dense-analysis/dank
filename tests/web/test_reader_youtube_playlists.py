@@ -7,11 +7,26 @@ import pytest
 from clickhouse_connect.driver.binding import (
     bind_query,  # pyright: ignore[reportUnknownVariableType]
 )
-from multidict import MultiDict
 
+from dank.api.youtube.model import (
+    PlaylistPage,
+    parse_cursor,
+    playlist_cursor,
+)
+from dank.api.youtube.schemas import PlaylistQuery, PlaylistsQuery
 from dank.web import reader_youtube_playlists as playlists
 
 STAMP = "2026-10-25T18:00:00.123456+00:00"
+
+
+def playlist_library(query: dict[str, str]) -> PlaylistPage:
+    """The library page GET /api/reader/youtube/playlists reads."""
+    return PlaylistsQuery.model_validate(query).library()
+
+
+def playlist_detail(query: dict[str, str], playlist_id: str) -> PlaylistPage:
+    """The page GET /api/reader/youtube/playlists/{id} reads."""
+    return PlaylistQuery.model_validate(query).page(playlist_id)
 
 
 def saved_playlist(**changes: Any) -> dict[str, Any]:
@@ -67,15 +82,13 @@ def test_saved_shorts_playlist_entries_use_short_presentation():
 
 
 def test_playlist_cursor_binds_search_target_and_microsecond_snapshot():
-    cursor = playlists.playlist_cursor(
+    cursor = playlist_cursor(
         "",
         "music",
         STAMP,
         ("saved music", "PLexample"),
     )
-    page = playlists.parse_page(
-        MultiDict({"cursor": cursor, "q": "music", "limit": "1"}),
-    )
+    page = playlist_library({"cursor": cursor, "q": "music", "limit": "1"})
     assert page.snapshot == STAMP
     assert page.after == ("saved music", "PLexample")
     sql, params = playlists.library_query(page)
@@ -90,16 +103,16 @@ def test_playlist_cursor_binds_search_target_and_microsecond_snapshot():
     assert "after_key" not in count_sql
 
     with pytest.raises(ValueError):
-        playlists.parse_page(MultiDict({"cursor": cursor, "q": "changed"}))
+        playlist_library({"cursor": cursor, "q": "changed"})
 
-    detail = playlists.playlist_cursor("PLexample", "", STAMP, 3)
+    detail = playlist_cursor("PLexample", "", STAMP, 3)
     assert (
-        playlists.parse_page(MultiDict({"cursor": detail}), "PLexample").after
+        playlist_detail({"cursor": detail}, "PLexample").after
         == 3
     )
 
     with pytest.raises(ValueError):
-        playlists.parse_page(MultiDict({"cursor": detail}), "PLdifferent")
+        playlist_detail({"cursor": detail}, "PLdifferent")
 
 
 @pytest.mark.parametrize(
@@ -113,10 +126,10 @@ def test_playlist_cursor_binds_search_target_and_microsecond_snapshot():
     ],
 )
 def test_invalid_cursor_boundaries_are_rejected(identity: str, after: Any):
-    cursor = playlists.playlist_cursor(identity, "", STAMP, after)
+    cursor = playlist_cursor(identity, "", STAMP, after)
 
     with pytest.raises(ValueError):
-        playlists.parse_cursor(cursor, identity, "")
+        parse_cursor(cursor, identity, "")
 
 
 def test_playlist_metadata_never_exposes_non_http_artwork_or_owner_urls():
@@ -133,7 +146,7 @@ def test_playlist_metadata_never_exposes_non_http_artwork_or_owner_urls():
 
 
 def test_library_defaults_to_source_order_and_binds_cursor_to_sort():
-    recent = playlists.parse_page(MultiDict())
+    recent = playlist_library({})
     assert recent.sort == "recent"
     sql, params = playlists.library_query(recent._replace(snapshot=STAMP))
     assert "youtube_playlist_library" in sql
@@ -141,26 +154,26 @@ def test_library_defaults_to_source_order_and_binds_cursor_to_sort():
     assert "indexOf(" in sql
     bound, _ = bind_query(sql, params)
     assert "%(" not in bound
-    alphabetical = playlists.parse_page(MultiDict({"sort": "az"}))
+    alphabetical = playlist_library({"sort": "az"})
     sql, _ = playlists.library_query(alphabetical._replace(snapshot=STAMP))
     assert "lowerUTF8(title) AS sort_key" in sql
     assert "indexOf(" not in sql
-    cursor = playlists.playlist_cursor("", "", STAMP, ("music", "PLid"), "az")
+    cursor = playlist_cursor("", "", STAMP, ("music", "PLid"), "az")
     assert (
-        playlists.parse_page(MultiDict({"sort": "az", "cursor": cursor})).sort
+        playlist_library({"sort": "az", "cursor": cursor}).sort
         == "az"
     )
 
     with pytest.raises(ValueError):
-        playlists.parse_page(MultiDict({"cursor": cursor}))
+        playlist_library({"cursor": cursor})
 
     with pytest.raises(ValueError):
-        playlists.parse_page(MultiDict({"sort": "az"}), "PLid")
+        playlist_detail({"sort": "az"}, "PLid")
 
 
 def test_playlist_search_filters_saved_titles_and_channels_before_paging():
     query = "O'Reilly 100%"
-    page = playlists.parse_page(MultiDict({"q": query}), "PLexample")
+    page = playlist_detail({"q": query}, "PLexample")
     assert page.q == query
     sql, params = playlists.playlist_entries_query(
         "PLexample", "snapshot", page,
@@ -185,19 +198,15 @@ def test_playlist_search_filters_saved_titles_and_channels_before_paging():
     assert "positionCaseInsensitiveUTF8" in count_sql
     assert "position >" not in count_sql and "LIMIT" not in count_sql
     assert count_params["q"] == query
-    cursor = playlists.playlist_cursor("PLexample", query, STAMP, 77)
+    cursor = playlist_cursor("PLexample", query, STAMP, 77)
     assert (
-        playlists.parse_page(
-            MultiDict({"q": query, "cursor": cursor}), "PLexample",
-        ).after
+        playlist_detail({"q": query, "cursor": cursor}, "PLexample").after
         == 77
     )
 
     for changed in ("", "changed"):
         with pytest.raises(ValueError):
-            playlists.parse_page(
-                MultiDict({"q": changed, "cursor": cursor}), "PLexample",
-            )
+            playlist_detail({"q": changed, "cursor": cursor}, "PLexample")
 
 
 def test_existing_playlist_rows_expose_saved_views_and_publication_age():

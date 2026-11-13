@@ -9,13 +9,10 @@ import re
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from dank.api.posts.model import AssetRow, PostRow
 from dank.storage.clickhouse import ClickHouseClient
-from dank.web.app import (
-    AssetRow,
-    PostRow,
-    _asset_view,  # pyright: ignore[reportPrivateUsage]
-    _parse_asset_row,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.assets import asset_view
+from dank.web.post_rows import parse_asset_row
 from dank.web.reader_accounts import (
     X_ACCOUNT_PATTERN,
     X_DOMAINS,
@@ -143,7 +140,7 @@ def _content(
     local_urls: dict[str, str] = {}
 
     for asset in assets:
-        view = _asset_view(asset, assets_dir=assets_dir)
+        view = asset_view(asset, assets_dir=assets_dir)
 
         if (
             view
@@ -234,7 +231,7 @@ async def _conversation_assets(
         key = (str(row["domain"]), str(row["post_id"]))
 
         if key in keys:
-            assets.setdefault(key[0], []).append(_parse_asset_row(row))
+            assets.setdefault(key[0], []).append(parse_asset_row(row))
 
     return assets
 

@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from dank.api.posts.model import AssetRow, PostRow
 from dank.model import RawAsset
 from dank.process.assets import convert_raw_asset
-from dank.web.app import AssetRow, PostRow
 from dank.web.reader_posts import post_payload
 
 PNG = base64.b64decode(

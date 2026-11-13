@@ -3,10 +3,7 @@ import pathlib
 import pytest
 
 from dank.html_utils import html_base_url, html_text, remove_page_noise
-from dank.web.app import (
-    _sanitize_html,  # pyright: ignore[reportPrivateUsage]
-    _summarize_html,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.web.post_html import sanitize_html, summarize_html
 
 HTML = (
     '<html><head><title>Metadata title</title><style>.tracking{}</style>'
@@ -32,9 +29,9 @@ def test_plain_text_keeps_word_and_paragraph_boundaries() -> None:
 
 
 def test_preview_and_detail_do_not_display_styles_or_tracking_code() -> None:
-    summary = _summarize_html(HTML)
+    summary = summarize_html(HTML)
     assert summary == 'Real & readable content. <script>example()</script>'
-    cleaned = _sanitize_html(HTML)
+    cleaned = sanitize_html(HTML)
     assert 'Tracker' not in cleaned and 'tracking' not in cleaned
     assert '&lt;script&gt;' in cleaned
 
@@ -100,7 +97,7 @@ def test_code_language_metadata_survives_sanitizing(tag: str) -> None:
         f'</{tag}>'
     )
 
-    assert _sanitize_html(document) == (
+    assert sanitize_html(document) == (
         f'<{tag} class="language-sql" data-lang="sql" data-language="sql">'
         'SELECT &lt;example&gt; &amp; 1;'
         f'</{tag}>'
@@ -110,13 +107,13 @@ def test_code_language_metadata_survives_sanitizing(tag: str) -> None:
 def test_language_metadata_is_not_allowed_on_other_elements() -> None:
     document = '<p data-lang="sql" data-language="sql">Article body</p>'
 
-    assert _sanitize_html(document) == '<p>Article body</p>'
+    assert sanitize_html(document) == '<p>Article body</p>'
 
 
 def test_standard_table_structure_survives_sanitizing() -> None:
     document = (pathlib.Path(__file__).parent / "fixtures"
                 / "reader-table.html").read_text()
-    cleaned = _sanitize_html(document)
+    cleaned = sanitize_html(document)
     for markup in (
         '<caption>Benchmark comparison</caption>',
         '<colgroup span="2">', '<col span="4">', '<thead>', '<tbody>',
@@ -138,14 +135,14 @@ def test_table_cell_spans_are_preserved(tag: str, rowspan: str) -> None:
         f'<table><tbody><tr><{tag} colspan="2" rowspan="{rowspan}"'
         f' onclick="attack()">Cell</{tag}></tr></tbody></table>'
     )
-    result = _sanitize_html(document)
+    result = sanitize_html(document)
     assert f'<{tag} colspan="2" rowspan="{rowspan}">' in result
     assert "onclick" not in result
 
 
 def test_table_attributes_are_not_globally_allowed() -> None:
     document = '<p colspan="2" rowspan="2" scope="row">Text</p>'
-    assert _sanitize_html(document) == '<p>Text</p>'
+    assert sanitize_html(document) == '<p>Text</p>'
 
 
 @pytest.mark.parametrize("wrapper", ["div", "figure"])
@@ -215,7 +212,7 @@ def test_wordpress_captions_preserve_sanitizer_boundary() -> None:
         'Credit: <a href="javascript:attack()">unsafe</a> '
         '<em>A &amp; B</em><script>attack()</script></p></div>'
     )
-    assert _sanitize_html(document) == (
+    assert sanitize_html(document) == (
         '<figure><img src="/image.png"><figcaption>Credit: '
         '<a>unsafe</a> <em>A &amp; B</em></figcaption></figure>'
     )

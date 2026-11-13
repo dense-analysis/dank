@@ -11,7 +11,7 @@ from typing import Any, cast
 from urllib.parse import urljoin, urlsplit
 
 from dank.html_utils import remove_page_noise
-from dank.web.app import _sanitize_html  # pyright: ignore[reportPrivateUsage]
+from dank.web.post_html import sanitize_html
 
 COMMENT_SORTS = {"best", "top", "new", "controversial", "old", "qa"}
 # Match the collector's bounded snapshot, not arbitrary raw JSON.
@@ -124,7 +124,7 @@ def _comment(value: dict[str, Any], permalink: str) -> dict[str, Any] | None:
     if not body_html:
         body_html = f"<p>{html.escape(body).replace(chr(10), '<br>')}</p>"
 
-    body_html = _sanitize_html(remove_page_noise(
+    body_html = sanitize_html(remove_page_noise(
         body_html, base_url=permalink,
     ))
     created = value.get("created_utc")

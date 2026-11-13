@@ -7,8 +7,8 @@ import re
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from dank.api.posts.model import PostRow
 from dank.storage.clickhouse import parse_datetime
-from dank.web.app import PostRow
 from dank.web.reader_x_post import captured_post, post_handle
 from dank.x_content import object_value
 
