@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { fetchSourceSettings, ReaderRequestError } from "../lib/api";
+import { fetchSourceSettings } from "../lib/api";
 import type { SourceSettings } from "../lib/types";
 
 // How soon a source saved in another tab or browser reaches this one. The
@@ -15,16 +15,9 @@ const NAVIGATION_QUERIES = ["sources", "youtube-sources"];
 // A failed check before any list arrived, so the next one can't be compared.
 const MISSED = Symbol("missed");
 
-function watching(state: {
-  data?: SourceSettings;
-  error: Error | null;
-}): boolean {
-  // A server without the source list answers 404, so stop asking. Any
-  // other failure, such as a passing Postgres outage, is tried again at the
+function watching(state: { data?: SourceSettings }): boolean {
+  // A failure, such as a passing Postgres outage, is tried again at the
   // next check.
-  if (state.error instanceof ReaderRequestError && state.error.status === 404)
-    return false;
-
   return state.data?.in_database !== false;
 }
 

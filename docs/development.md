@@ -20,17 +20,25 @@ also exposes its exit status.
 
 ## Docker checks
 
-The runtime image omits test dependencies and test files. Build the current
-source, mount the tests read-only, then install the locked development tools
-inside a disposable container:
+The runtime image omits test dependencies, test files and the checkout files
+the tests read. Build the current source, mount those files read-only, then
+install `make`, ripgrep and the locked development tools inside a disposable
+container:
 
 ```sh
 docker build -t dank-checks .
-docker run --rm --entrypoint sh \
-  --mount "type=bind,source=$PWD/tests,target=/app/tests,readonly" \
-  --mount "type=bind,source=$PWD/run-linters.sh,target=/app/run-linters.sh,readonly" \
-  dank-checks -c 'uv sync --frozen && uv run pytest && ./run-linters.sh && uv run pyright'
+set --
+for file in tests run-linters.sh Makefile compose.yaml schema.sql .gitignore \
+  config.example.toml config.native.example.toml reader/openapi.json; do
+  set -- "$@" --mount "type=bind,source=$PWD/$file,target=/app/$file,readonly"
+done
+docker run --rm --entrypoint sh "$@" dank-checks -c \
+  'apt-get update -qq && apt-get install -y -qq make ripgrep > /dev/null &&
+   uv sync --frozen && uv run pytest && ./run-linters.sh && uv run pyright'
 ```
+
+The tests run `make`, and `run-linters.sh` needs ripgrep for its import
+boundary checks, which pass silently without it.
 
 These checks operate on the source copied into the image. Linter fixes stay in
 the disposable container; use the native command to apply fixes to the checkout.

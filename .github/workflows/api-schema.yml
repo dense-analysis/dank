@@ -1,0 +1,23 @@
+name: API schema
+
+# reader/openapi.json must match the app, or the reader's generated types
+# drift from the server. The Reader workflow checks the types against the file.
+on:
+  pull_request:
+    paths: ["src/**", "reader/openapi.json", "config.example.toml", "pyproject.toml", "uv.lock", "tests/api/test_openapi_file.py", ".github/workflows/api-schema.yml"]
+  push:
+    paths: ["src/**", "reader/openapi.json", "config.example.toml", "pyproject.toml", "uv.lock", "tests/api/test_openapi_file.py", ".github/workflows/api-schema.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest tests/api/test_openapi_file.py

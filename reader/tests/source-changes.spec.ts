@@ -32,15 +32,11 @@ function inSidebar(domain: string): Source {
 
 /**
  * A server whose saved sources another tab can edit. The first `failing`
- * requests for the source list answer `failStatus`.
+ * requests for the source list answer 503.
  */
 async function fixture(
   page: Page,
-  {
-    inDatabase,
-    failing = 0,
-    failStatus = 503,
-  }: { inDatabase: boolean; failing?: number; failStatus?: number },
+  { inDatabase, failing = 0 }: { inDatabase: boolean; failing?: number },
 ) {
   const state = { edited: false, settingsRequests: 0, sourcesRequests: 0 };
   await page.route("**/api/reader/**", (route) => {
@@ -59,12 +55,8 @@ async function fixture(
       return state.settingsRequests > failing
         ? route.fulfill({ json: { sources, in_database: inDatabase } })
         : route.fulfill({
-            status: failStatus,
-            json: {
-              error: "No",
-              code: failStatus === 404 ? "not_found" : "unavailable",
-              fields: [],
-            },
+            status: 503,
+            json: { error: "No", code: "unavailable", fields: [] },
           });
     }
 
@@ -150,20 +142,6 @@ test("config.toml's sources are not watched, since they change only on restart",
 
   await page.clock.runFor(3 * POLL_MS);
   expect(state.settingsRequests).toBe(0);
-});
-
-test("a server without saved sources is asked once", async ({ page }) => {
-  // An older server reads the sources table but has no source-settings
-  // route.
-  const state = await fixture(page, {
-    inDatabase: true,
-    failing: Number.POSITIVE_INFINITY,
-    failStatus: 404,
-  });
-
-  await page.clock.runFor(3 * POLL_MS);
-  expect(state.settingsRequests).toBe(1);
-  await expect(source(page, "first.example")).toBeVisible();
 });
 
 test("a passing outage on the first check doesn't stop later ones", async ({
