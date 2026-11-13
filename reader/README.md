@@ -56,13 +56,15 @@ the schema's paths. Failures arrive as `ReaderRequestError`, carrying the error
 envelope's `code` and `fields`, so a form can show `fieldMessage("body.domain")`
 beside its input. The server validates every answer against the schema, so the
 reader doesn't check response shapes again; guards in `src/lib/validation.ts`
-are for saved browser state, URL filters and proxy error pages.
+are for saved browser state, URL filters and proxy error pages. If rendering still
+meets data it can't use, such as in a page left open across a deploy,
+`ReaderErrorBoundary` offers a reload rather than a blank page.
 
 Two checks keep the files current: a Python test fails while `openapi.json`
 differs from the app, and `npm run check` fails while `api.gen.ts` differs from
 `openapi.json`. The generator lives in `tools/openapi-types` with its own
 TypeScript 5, because TypeScript 7 drops the compiler API it uses; npm installs
-it on first use.
+it from its lockfile before each run.
 
 `src/lib/api.fixture.ts` builds complete API objects for tests, so a fixture
 states only the fields it is about.
@@ -70,7 +72,7 @@ states only the fields it is about.
 ## Checks
 
 ```sh
-npm run check       # formatting, lint, unit tests, strict types, production build
+npm run check       # formatting, lint, current API types, unit tests, strict types, production build
 npm run test:e2e    # browser acceptance with isolated fixture data
 ```
 
@@ -506,7 +508,7 @@ Additional relationship views can supply their own adapters.
 
 `src/components` owns presentation; `src/lib` owns API contracts, validation,
 URL filters and persistence; `src/hooks` bridges browser state. The additive
-Python API is in `src/dank/web/reader_api.py` and `reader_query.py` in DANK.
+Python API is in `src/dank/api/`, over the reader helpers in `src/dank/web/`.
 
 The article adapter sanitizes imported HTML and creates hosts for React portals.
 Image toggles and code-copy controls own their state in React; image analysis is

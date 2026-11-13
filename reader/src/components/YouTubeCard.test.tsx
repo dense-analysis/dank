@@ -59,3 +59,20 @@ it("shows the captured ranking when viewing its Hype feed", () => {
 
   expect(card).toContain('class="yt-rank">#2');
 });
+
+it("builds a fallback thumbnail only from a well-formed video ID", () => {
+  const render = (videoId: string) =>
+    renderToStaticMarkup(
+      <YouTubeCard
+        item={{ ...item, video_id: videoId, thumbnail_url: null }}
+        feed=""
+        open={() => {}}
+        href="/"
+      />,
+    );
+
+  expect(render("dQw4w9WgXcQ")).toContain(
+    "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+  );
+  expect(render("../../redirect?to=evil")).not.toContain("i.ytimg.com");
+});

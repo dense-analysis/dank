@@ -14,7 +14,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "api:tools": "[ -x tools/openapi-types/node_modules/.bin/openapi-typescript ] || npm ci --prefix tools/openapi-types --no-audit --no-fund --silent",
+    "api:tools": "npm ci --prefix tools/openapi-types --prefer-offline --no-audit --no-fund --silent",
     "api:generate": "npm run api:tools && tools/openapi-types/node_modules/.bin/openapi-typescript openapi.json -o src/lib/api.gen.ts",
     "api:check": "npm run api:tools && tools/openapi-types/node_modules/.bin/openapi-typescript openapi.json -o src/lib/api.gen.ts --check",
     "check": "npm run lint && npm run api:check && npm run test && npm run build"

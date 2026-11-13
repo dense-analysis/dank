@@ -153,8 +153,8 @@ test("config.toml's sources are not watched, since they change only on restart",
 });
 
 test("a server without saved sources is asked once", async ({ page }) => {
-  // The aiohttp server reads the sources table but has no source-settings
-  // route until DEN-51.
+  // An older server reads the sources table but has no source-settings
+  // route.
   const state = await fixture(page, {
     inDatabase: true,
     failing: Number.POSITIVE_INFINITY,

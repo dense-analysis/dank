@@ -1,5 +1,10 @@
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
+/** Whether a collected value is safe to place in a YouTube URL. */
+export function isYouTubeVideoId(value: string | null): value is string {
+  return value !== null && VIDEO_ID.test(value);
+}
+
 /** Build a trusted player URL; never embed a collected URL directly. */
 export function youtubeEmbedUrl(
   value: string,

@@ -45,6 +45,7 @@ src/dank/
     headers.py           Cache-Control defaults, HEAD for every GET
     schemas.py           ApiModel, ErrorBody, FieldError
     serve.py             uvicorn and watchfiles behind web
+    openapi.py           dank-openapi: the schema file the reader's types come from
     sources/
       router.py          GET /api/reader/sources
       schemas.py         SourcesResponse, one variant per source kind

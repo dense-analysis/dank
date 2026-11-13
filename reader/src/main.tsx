@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { ReaderErrorBoundary } from "./components/ReaderErrorBoundary";
 import { ReaderPreferencesProvider } from "./hooks/useReaderPreferences";
 import "@fontsource-variable/dm-sans";
 import "@fontsource-variable/dm-sans/wght-italic.css";
@@ -22,7 +23,9 @@ if (root)
     <StrictMode>
       <QueryClientProvider client={client}>
         <ReaderPreferencesProvider>
-          <App />
+          <ReaderErrorBoundary>
+            <App />
+          </ReaderErrorBoundary>
         </ReaderPreferencesProvider>
       </QueryClientProvider>
     </StrictMode>,

@@ -943,7 +943,7 @@ failures have a placeholder. These are separate from the two quality pills.
 
 Implementation: [content check](../reader/src/lib/article.ts),
 [card precedence](../reader/src/components/PostCard.tsx),
-[capture lookup](../src/dank/web/reader_api.py).
+[capture lookup](../src/dank/web/reader_posts.py).
 Coverage: [reader journeys](../reader/tests/reader.spec.ts) and
 [API tests](../tests/web/test_reader.py).
 

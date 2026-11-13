@@ -2,7 +2,7 @@ import { ArrowUpRight, Check, Info, Link2, Play, X } from "lucide-react";
 import { useState } from "react";
 import { dateLabel } from "../lib/timestamps";
 import { safeUrl } from "../lib/urls";
-import { youtubeEmbedUrl } from "../lib/youtube";
+import { isYouTubeVideoId, youtubeEmbedUrl } from "../lib/youtube";
 import {
   formatYouTubeViews,
   itemDiscovery,
@@ -42,7 +42,7 @@ export function YouTubeCard({
   const [imageFailed, setImageFailed] = useState(false);
   const image = imageFailed ? undefined : youtubeImageUrl(item.thumbnail_url);
   const thumbnails = youtubeThumbnailSources(item);
-  const thumbnailFallback = item.video_id
+  const thumbnailFallback = isYouTubeVideoId(item.video_id)
     ? `https://i.ytimg.com/vi/${item.video_id}/hqdefault.jpg`
     : undefined;
   const embed = youtubeEmbedUrl(item.url, window.location.origin);
