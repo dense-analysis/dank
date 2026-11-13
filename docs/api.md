@@ -38,6 +38,7 @@ src/dank/
   db/sources.py          PostgresSourceRepository
   api/
     app.py               create_app(): routers, error handlers, guard, headers
+    body_limit.py        413 for bodies over 1 MiB, before they are read
     lifespan.py          Resources, opened at startup and closed at shutdown
     deps.py              ResourcesDep, SettingsDep, PostgresSessionDep, single_values
     errors.py            the error envelope
@@ -167,9 +168,14 @@ inputs:
 | `Busy` | 503 | `busy` |
 | `TooManyRequests` | 429 | `too_many_requests` |
 | Unsafe method from another origin | 403 | `forbidden` |
+| Unsafe method with a body over 1 MiB | 413 | `content_too_large` |
 | Unsafe method without a JSON body | 415 | `unsupported_media_type` |
 | Unknown path or method | 404, 405 | `not_found`, `method_not_allowed` |
 | Anything else (ClickHouse is down) | 503 | `unavailable`, logged |
+
+The 1 MiB limit matches aiohttp's default, which the API had before DEN-51.
+`BodyLimit` checks `Content-Length` before reading anything, then counts bytes
+as they arrive, so a chunked body or an understated length can't get past it.
 
 Validation errors use 400 rather than FastAPI's 422, as the reader expects.
 OpenAPI declares the envelope as every route's `default` response, in place of

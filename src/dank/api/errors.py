@@ -37,6 +37,7 @@ CODE_BY_STATUS: Mapping[int, str] = {
     403: "forbidden",
     404: "not_found",
     405: "method_not_allowed",
+    413: "content_too_large",
     415: "unsupported_media_type",
 }
 # Today's wording, which the reader shows as is.

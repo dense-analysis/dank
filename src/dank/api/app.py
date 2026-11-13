@@ -2,6 +2,7 @@
 
 from fastapi import Depends, FastAPI
 
+from dank.api.body_limit import BodyLimit
 from dank.api.connections.router import router as connections_router
 from dank.api.errors import EXCEPTION_HANDLERS
 from dank.api.files.router import router as files_router
@@ -40,6 +41,8 @@ def create_app(
         # the HTTPS proxy is plain HTTP.
         redirect_slashes=False,
     )
+    # The last added runs first, so a 413 still gets ApiHeaders' headers.
+    app.add_middleware(BodyLimit)
     app.add_middleware(ApiHeaders)
     app.include_router(sources_router)
     app.include_router(source_settings_router)

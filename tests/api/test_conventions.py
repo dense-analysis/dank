@@ -1,20 +1,34 @@
 """Rules every route inherits from the platform."""
 
+from collections.abc import AsyncIterator
+
 import pytest
 from fastapi import APIRouter, FastAPI
 from httpx import AsyncClient
 
 from dank.api.app import create_app
+from dank.api.body_limit import MAX_BODY_BYTES
 from dank.api.schemas import ApiModel
 from dank.config import Settings
 from dank.errors import Conflict, FieldProblem, InvalidInput, NotFound
 from tests.api.client import BASE_URL, http_client
 
 SAME_ORIGIN = {"origin": BASE_URL}
+JSON_WRITE = {**SAME_ORIGIN, "content-type": "application/json"}
+CHUNK_BYTES = 64 * 1024
+TOO_LARGE: dict[str, object] = {
+    "error": "The request is larger than 1 MiB.",
+    "code": "content_too_large",
+    "fields": [],
+}
 
 
 class Probe(ApiModel):
     n: int
+
+
+class Blob(ApiModel):
+    text: str
 
 
 # DEN-46 has no unsafe or failing route yet, so a test-only router
@@ -30,6 +44,11 @@ async def read_probe() -> Probe:
 @probe.post("")
 async def write_probe(body: Probe) -> Probe:
     return body
+
+
+@probe.post("/blob")
+async def write_blob(body: Blob) -> Probe:
+    return Probe(n=len(body.text))
 
 
 @probe.get("/missing")
@@ -208,6 +227,87 @@ async def test_same_origin_writes_pass_including_through_the_proxy(
     response = await client.post("/api/probe", json={"n": 1}, headers=headers)
 
     assert (response.status_code, response.json()) == (200, {"n": 1})
+
+
+def blob(size: int) -> bytes:
+    """A JSON body of exactly size bytes."""
+    padding = size - len(b'{"text":""}')
+
+    return b'{"text":"' + b"a" * padding + b'"}'
+
+
+async def chunked(body: bytes, sent: list[int]) -> AsyncIterator[bytes]:
+    """Send body in chunks, recording each one as it is read."""
+    for start in range(0, len(body), CHUNK_BYTES):
+        sent.append(start)
+        yield body[start:start + CHUNK_BYTES]
+
+
+async def test_a_body_at_the_limit_passes(client: AsyncClient) -> None:
+    sized = await client.post(
+        "/api/probe/blob", content=blob(MAX_BODY_BYTES), headers=JSON_WRITE,
+    )
+    streamed = await client.post(
+        "/api/probe/blob",
+        content=chunked(blob(MAX_BODY_BYTES), []),
+        headers=JSON_WRITE,
+    )
+
+    for response in (sized, streamed):
+        assert (response.status_code, response.json()) == (200, {
+            "n": MAX_BODY_BYTES - len(b'{"text":""}'),
+        })
+
+
+async def test_a_content_length_over_the_limit_answers_413_unread(
+    client: AsyncClient,
+) -> None:
+    sent: list[int] = []
+    response = await client.post(
+        "/api/probe/blob",
+        content=chunked(blob(MAX_BODY_BYTES + 1), sent),
+        headers={**JSON_WRITE, "content-length": str(MAX_BODY_BYTES + 1)},
+    )
+
+    assert (response.status_code, response.json()) == (413, TOO_LARGE)
+    assert response.headers["cache-control"] == "no-store"
+    assert sent == []
+
+
+@pytest.mark.parametrize("headers", [
+    # Chunked transfer encoding.
+    {},
+    # A Content-Length that undercounts can't hide the rest.
+    {"content-length": "10"},
+], ids=["chunked", "understated"])
+async def test_a_streamed_body_over_the_limit_answers_413(
+    client: AsyncClient, headers: dict[str, str],
+) -> None:
+    sent: list[int] = []
+    response = await client.post(
+        "/api/probe/blob",
+        content=chunked(blob(2 * MAX_BODY_BYTES), sent),
+        headers={**JSON_WRITE, **headers},
+    )
+
+    assert (response.status_code, response.json()) == (413, TOO_LARGE)
+    assert response.headers["cache-control"] == "no-store"
+    # Reading stopped at the first chunk over the limit.
+    assert len(sent) == MAX_BODY_BYTES // CHUNK_BYTES + 1
+
+
+async def test_safe_methods_and_pages_skip_the_body_limit(
+    client: AsyncClient,
+) -> None:
+    api = await client.request(
+        "GET", "/api/probe", content=blob(MAX_BODY_BYTES + 1),
+    )
+    page = await client.request(
+        "DELETE", "/", content=blob(MAX_BODY_BYTES + 1),
+    )
+
+    assert (api.status_code, api.json()) == (200, {"n": 1})
+    assert page.status_code == 405
 
 
 async def test_head_answers_like_get_without_a_body(

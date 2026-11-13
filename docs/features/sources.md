@@ -286,6 +286,5 @@ it no longer matches.
 
 Project heuristics far above a real source, in `dank/sources/model.py`: 1,000
 targets in a list, 32 tags, 16 adapters and 2,048 characters in a value,
-measured after normalizing. The API also
-needs a request size limit
-([DEN-58](https://linear.app/dense-analysis/issue/DEN-58)).
+measured after normalizing. The API also refuses request bodies over 1 MiB with
+`413`; see [API errors](../api.md#errors).
