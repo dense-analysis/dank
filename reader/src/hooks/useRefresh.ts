@@ -212,6 +212,8 @@ export function useRefresh(navigate: (params: URLSearchParams) => void) {
     jobs,
     visible,
     start: mutation.mutate,
+    /** Starts a refresh and rejects when it couldn't be queued. */
+    startAndWait: mutation.mutateAsync,
     starting: mutation.isPending,
     startingScope: mutation.variables,
     startError: mutation.error?.message,

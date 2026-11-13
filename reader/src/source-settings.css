@@ -1,0 +1,463 @@
+/* Saved sources: the list, the editor and the contextual save action. */
+
+.sources-tabs {
+  position: static;
+  margin: 0 0 18px;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.source-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 14px 0;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.source-notice > svg {
+  flex: none;
+}
+.source-notice > span {
+  flex: 1;
+  min-width: 12ch;
+}
+.source-notice code {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.source-notice.saved {
+  border-color: var(--green);
+  color: var(--green);
+}
+.source-notice.problem,
+.source-notice.unconfirmed {
+  border-color: #6a4a2c;
+  background: #302820;
+  color: #f0c397;
+}
+.field-error {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #f0c397;
+}
+
+.source-manager-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.source-manager-bar > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.source-manager-bar .primary-button {
+  flex: none;
+  min-height: 40px;
+}
+.source-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.source-platforms legend {
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.source-platforms .secondary-button {
+  min-height: 44px;
+  color: var(--text);
+  box-shadow: none;
+}
+.source-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.source-filters .platform-filters {
+  position: static;
+  margin: 0;
+  border: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.saved-sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.saved-sources > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.saved-sources .source-row {
+  border-bottom: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.saved-sources .off .source-row strong,
+.saved-sources .off .source-mark {
+  opacity: 0.55;
+}
+.saved-sources .field-error {
+  grid-column: 1 / -1;
+  margin: 0 0 12px;
+}
+.source-tags > .unsaved {
+  background: #302820;
+  color: #f0c397;
+}
+.source-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.source-switch input {
+  appearance: none;
+  position: relative;
+  width: 36px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.source-switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s;
+}
+.source-switch input:checked {
+  background: var(--selected);
+  border-color: var(--green);
+}
+.source-switch input:checked::after {
+  background: var(--green);
+  transform: translateX(14px);
+}
+.source-switch input:disabled {
+  opacity: 0.5;
+}
+.source-switch input:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.source-switch > span {
+  min-width: 2.2ch;
+}
+
+.source-editor {
+  display: grid;
+  gap: 22px;
+  max-width: 640px;
+}
+.source-editor h2 {
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.4px;
+  overflow-wrap: anywhere;
+}
+.source-editor .source-notice {
+  margin: 0;
+}
+.source-editor fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.source-editor legend,
+.source-field > label {
+  display: block;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.source-editor input[type="text"],
+.source-editor select,
+.source-editor textarea {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  /* 16px keeps iOS from zooming the page when a field takes focus. */
+  font: inherit;
+  font-size: 16px;
+}
+.source-editor textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.source-editor input[aria-invalid="true"] {
+  border-color: #b98250;
+}
+.source-editor :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
+}
+.source-targets ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.source-targets li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 2px 6px 2px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.source-targets li:last-child {
+  border-bottom: 0;
+}
+.source-targets li label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  min-width: 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.source-targets li label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-targets li input:not(:checked) + span {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.source-targets li .icon-button {
+  width: 40px;
+  height: 40px;
+}
+.source-targets li .field-error {
+  grid-column: 1 / -1;
+  margin: 0 0 9px;
+}
+.source-add {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.source-add input {
+  flex: 1;
+  min-width: 0;
+}
+.source-add .secondary-button {
+  flex: none;
+  min-height: 42px;
+  box-shadow: none;
+}
+.source-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.source-options legend {
+  margin-bottom: 4px;
+}
+.source-options label,
+.source-advanced label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.source-advanced {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0 13px;
+}
+.source-advanced summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.source-advanced[open] {
+  padding-bottom: 13px;
+}
+.source-advanced ol {
+  display: grid;
+  gap: 14px;
+  margin: 8px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.source-advanced li {
+  display: grid;
+  gap: 10px;
+}
+.source-advanced .secondary-button {
+  margin-top: 10px;
+  box-shadow: none;
+}
+.source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+}
+.source-actions :is(.primary-button, .secondary-button) {
+  min-height: 44px;
+  box-shadow: none;
+}
+.source-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.save-source-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.save-source-button:hover {
+  color: var(--text);
+  border-color: var(--green);
+}
+.save-source-button.saved {
+  color: var(--green);
+  border-color: transparent;
+}
+.save-source-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--canvas);
+  color: var(--text);
+}
+.save-source-dialog h2 {
+  font-size: 18px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.save-source-dialog .settings-help {
+  margin: 8px 0 16px;
+}
+.save-source-choice {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.save-source-choice legend {
+  padding: 0 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.save-source-choice label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.save-source-choice label:has(input:checked) {
+  border-color: var(--green);
+  background: var(--selected);
+}
+.save-source-choice strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.save-source-choice small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  /* The header has room for an icon, and the label stays for screen readers. */
+  .save-source-button {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 6px;
+    border-color: transparent;
+  }
+  .save-source-button > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .source-manager-bar {
+    flex-wrap: wrap;
+  }
+  .source-manager-bar > :first-child {
+    flex-basis: 100%;
+  }
+  .source-manager-bar .primary-button {
+    width: 100%;
+    min-height: 44px;
+  }
+  .saved-sources .source-total {
+    display: none;
+  }
+  .source-actions :is(.primary-button, .secondary-button) {
+    flex: 1 1 140px;
+  }
+}

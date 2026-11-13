@@ -4,6 +4,7 @@ import type {
   Filters,
   Post,
   PostPage,
+  SavedSource,
   SourceSettings,
   SourcesPage,
 } from "./types";
@@ -183,6 +184,23 @@ export function fetchSourceSettings(
   signal?: AbortSignal,
 ): Promise<SourceSettings> {
   return apiGet("/api/reader/source-settings", { signal });
+}
+
+/** Adds a source. The server gives it its ID. */
+export function addSource(
+  source: components["schemas"]["SourceBody"],
+): Promise<SavedSource> {
+  return apiPost("/api/reader/source-settings", source);
+}
+
+/** Replaces a whole source, including what is switched on. */
+export function saveSource(
+  id: string,
+  source: components["schemas"]["SourceBody"],
+): Promise<SavedSource> {
+  return apiPut("/api/reader/source-settings/{source_id}", source, {
+    params: { source_id: id },
+  });
 }
 
 export function postParams(filters: Filters, limit = "30"): URLSearchParams {

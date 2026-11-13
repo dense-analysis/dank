@@ -11,6 +11,7 @@ import "@fontsource-variable/newsreader/standard-italic.css";
 import "./styles.css";
 import "./youtube.css";
 import "./hacker-news.css";
+import "./source-settings.css";
 
 const client = new QueryClient({
   defaultOptions: {

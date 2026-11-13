@@ -2,9 +2,8 @@
 
 DANK is moving its sources from `config.toml` into Postgres, so they can be
 edited without a restart. This page covers the `sources` table, a one-time
-import, the `sources_in_database` switch that puts the table in use, and an
-API. Editing sources in the reader comes with
-[DEN-21](https://linear.app/dense-analysis/issue/DEN-21).
+import, the `sources_in_database` switch that puts the table in use, the
+reader's screens for editing sources, and the API behind them.
 
 `sources` in `config.toml` is deprecated. Import it once, turn the switch on,
 and keep your sources in Postgres from then on.
@@ -104,6 +103,58 @@ With the switch on:
 `GET /api/reader/sources`, the sidebar's request, has an
 `in_database` flag that mirrors the switch, so the reader knows whether to watch
 for edits.
+
+## Edit sources in the reader
+
+Open **Sources** and choose **Manage**. **Collected** is the list of sources
+with saved posts, as before; choosing one there filters your reading.
+
+- **Add source** asks what to collect: a blog or feed, X, Reddit, YouTube or
+  Hacker News. Each has its own form: a site and its feeds, X accounts,
+  Reddit communities and how to sort them, YouTube channels and links, or
+  which Hacker News stories.
+- **Each source has a switch**, in the list and in its form, and so does each
+  account, feed and community. Turning one off stops new collection and keeps
+  everything already saved. Sources can't be deleted.
+- **Search and filter** the list by platform and by whether a source is on.
+- **Save** sends the whole source. **Save and collect** saves, then starts a
+  refresh. When this save added one account or community, only that is
+  collected; otherwise the source's platform is. If the refresh can't start,
+  the source stays saved and the form says so.
+- **Problems appear beside their field**, with the server's own message, and
+  nothing you typed is lost.
+- **A duplicate** links to the source that already has those settings, and
+  says when that one is turned off.
+- **An unconfirmed save**, after an outage or a lost connection, offers
+  **Try again**. Sending it again is safe.
+- **Unsaved edits are kept** while you look elsewhere in the reader, and the
+  list marks that source **Unsaved changes**. They last until the page
+  reloads, and the browser asks before it does. When another tab saves the
+  same source meanwhile, the form says so and keeps your edits; saving
+  replaces the other version.
+- **Advanced: adapters** is for the few sources that combine them: a
+  publisher read through several RSS adapters with their own feeds, or
+  Hacker News with RSS feeds. Adding RSS feeds to Hacker News writes out the
+  adapters it needs.
+- Every source and form has its own link, such as
+  `/?view=sources&manage=1&source=<id>`.
+
+**Save what's on screen.** An X account's page, a Reddit community's, a
+YouTube channel's and a discovered site's each have a **Save** action beside
+Refresh. It adds what you're looking at to a source of that platform, or
+makes one. With several sources on that platform it asks which, since they
+differ in their options. Something saved but turned off is offered as **Turn
+on**, and something already collected shows **Saved**, which opens its
+source. These actions appear only while `sources_in_database` is on.
+
+While the switch is off, Manage still lists and edits the saved sources and
+says they aren't in use yet.
+
+Two limits to know about:
+
+- Reddit communities that differ only in letter case, such as `r/Rust` and
+  `r/rust`, count as different across sources, so both can be saved.
+- Two tabs editing the same source don't merge: the last save wins.
 
 ## What a source is
 

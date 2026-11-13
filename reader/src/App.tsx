@@ -38,7 +38,9 @@ import {
 import { PostLinks } from "./components/PostLinks";
 import { ReaderSettings } from "./components/ReaderSettings";
 import { RefreshStatus } from "./components/RefreshStatus";
+import { SaveSourceAction } from "./components/SaveSourceAction";
 import { Sidebar } from "./components/Sidebar";
+import { SourceManager } from "./components/SourceManager";
 import { SourcesView } from "./components/SourcesView";
 import { XAuthors } from "./components/XAuthors";
 import { XPostCard } from "./components/XPostCard";
@@ -77,6 +79,12 @@ import {
   type SourceReference,
 } from "./lib/referenceFocus";
 import { refreshActive, refreshContext, refreshScopeKey } from "./lib/refresh";
+import {
+  accountIdentity,
+  channelIdentity,
+  communityIdentity,
+  siteIdentity,
+} from "./lib/sourceSettings";
 import { defaultFilters, postKey } from "./lib/storage";
 import type { Filters, Post, Section } from "./lib/types";
 import { isXPost } from "./lib/x";
@@ -317,6 +325,28 @@ export function App() {
     ) : (
       title
     );
+  const managingSources =
+    section === "sources" &&
+    (params.get("manage") === "1" || !!params.get("source"));
+  // What is on screen that DANK could collect, when it's one saved thing.
+  const savable = readingArticle
+    ? null
+    : accountContext
+      ? accountIdentity(accountHandle)
+      : communityContext
+        ? communityIdentity(communityName)
+        : youtubeChannelId && activeYouTubeChannel && !youtubePlaylists
+          ? channelIdentity(activeYouTubeChannel)
+          : activeBlogSource?.kind === "rss"
+            ? siteIdentity(activeBlogSource.domain)
+            : null;
+
+  function manageSources(source?: string) {
+    const next = new URLSearchParams({ view: "sources", manage: "1" });
+    if (source) next.set("source", source);
+    navigate(next);
+  }
+
   const date = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
@@ -516,29 +546,39 @@ export function App() {
         <CollectionHeader
           title={title}
           actions={
-            refreshTarget && (
-              <button
-                type="button"
-                className="refresh-button"
-                aria-label={`Refresh ${refreshTarget.label}`}
-                title={
-                  refreshTarget.disabled ??
-                  `Collect fresh content for ${refreshTarget.label}. Search, dates and reading filters do not limit collection.`
-                }
-                disabled={
-                  !!refreshTarget.disabled ||
-                  !!refreshingHere ||
-                  refresh.starting
-                }
-                onClick={() => refresh.start(refreshTarget.scope)}
-              >
-                <RefreshCw
-                  size={17}
-                  className={refreshingHere ? "refresh-spinning" : undefined}
+            <>
+              {savable && sources.data?.in_database === true && (
+                <SaveSourceAction
+                  key={`${savable.platform}:${savable.value}`}
+                  identity={savable}
+                  collect={refresh.startAndWait}
+                  edit={manageSources}
                 />
-                <span>{refreshingHere ? "Refreshing…" : "Refresh"}</span>
-              </button>
-            )
+              )}
+              {refreshTarget && (
+                <button
+                  type="button"
+                  className="refresh-button"
+                  aria-label={`Refresh ${refreshTarget.label}`}
+                  title={
+                    refreshTarget.disabled ??
+                    `Collect fresh content for ${refreshTarget.label}. Search, dates and reading filters do not limit collection.`
+                  }
+                  disabled={
+                    !!refreshTarget.disabled ||
+                    !!refreshingHere ||
+                    refresh.starting
+                  }
+                  onClick={() => refresh.start(refreshTarget.scope)}
+                >
+                  <RefreshCw
+                    size={17}
+                    className={refreshingHere ? "refresh-spinning" : undefined}
+                  />
+                  <span>{refreshingHere ? "Refreshing…" : "Refresh"}</span>
+                </button>
+              )}
+            </>
           }
           titleContent={headerTitle}
           pageHeading={
@@ -754,19 +794,45 @@ export function App() {
               ) : section === "settings" ? (
                 <ReaderSettings />
               ) : section === "sources" ? (
-                sources.isError ? (
-                  <ErrorState
-                    message={sources.error.message}
-                    retry={() => void sources.refetch()}
-                  />
-                ) : sources.isPending ? (
-                  <Loading />
-                ) : (
-                  <SourcesView
-                    sources={sources.data.sources}
-                    select={(source) => selectSource(source.domain)}
-                  />
-                )
+                <>
+                  <fieldset className="platform-filters sources-tabs">
+                    <legend className="visually-hidden">Sources</legend>
+                    <button
+                      type="button"
+                      aria-pressed={!managingSources}
+                      onClick={() => select("sources")}
+                    >
+                      Collected
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={managingSources}
+                      onClick={() => manageSources()}
+                    >
+                      Manage
+                    </button>
+                  </fieldset>
+                  {managingSources ? (
+                    <SourceManager
+                      params={params}
+                      navigate={navigate}
+                      collect={refresh.startAndWait}
+                    />
+                  ) : sources.isError ? (
+                    <ErrorState
+                      message={sources.error.message}
+                      retry={() => void sources.refetch()}
+                    />
+                  ) : sources.isPending ? (
+                    <Loading />
+                  ) : (
+                    <SourcesView
+                      sources={sources.data.sources}
+                      select={(source) => selectSource(source.domain)}
+                      manage={() => manageSources()}
+                    />
+                  )}
+                </>
               ) : (
                 <>
                   {(section === "all" || section === "stories") && (

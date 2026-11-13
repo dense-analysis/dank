@@ -10,9 +10,12 @@ import { SearchField } from "./SearchField";
 export function SourcesView({
   sources,
   select,
+  manage,
 }: {
   sources: Source[];
   select: (source: Source) => void;
+  /** Opens the saved sources, to add or edit one. */
+  manage: () => void;
 }) {
   const [query, setQuery] = useState("");
   const matches = sources.filter((source) =>
@@ -20,6 +23,19 @@ export function SourcesView({
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
+
+  if (!sources.length) {
+    return (
+      <div className="empty-state">
+        <h2>Nothing collected yet</h2>
+        <p>Sources appear here once DANK has collected their posts.</p>
+        <button type="button" className="secondary-button" onClick={manage}>
+          Manage sources
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="sources-view">
       <SearchField
@@ -76,8 +92,12 @@ export function SourcesView({
         <p className="empty-state">No sources match this search.</p>
       )}
       <p className="field-help sources-footnote">
-        Collection is managed in DANK’s source configuration. Selecting a source
-        here filters your reading.
+        Selecting a source here filters your reading. To change what DANK
+        collects,{" "}
+        <button type="button" className="text-button" onClick={manage}>
+          manage sources
+        </button>
+        .
       </p>
     </div>
   );
