@@ -458,9 +458,12 @@ export function SourceEditor({
 export function NotInUse() {
   return (
     <p className="source-notice" role="note">
-      These sources aren’t in use yet. DANK still collects from{" "}
-      <code>config.toml</code> until <code>sources_in_database = true</code> is
-      set there and DANK restarts.
+      {/* One flex item, so the sentence wraps as text around its code. */}
+      <span>
+        DANK is set to collect the sources in <code>config.toml</code>, so the
+        ones here aren’t collected. To use these instead, set{" "}
+        <code>sources_in_database = true</code> there and restart DANK.
+      </span>
     </p>
   );
 }

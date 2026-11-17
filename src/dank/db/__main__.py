@@ -140,13 +140,13 @@ def _import_sources(args: argparse.Namespace) -> int:
         print("DANK uses these sources now.")
     else:
         # A top-level key after a [section] header would belong to that
-        # section instead, and the example configs already have the key
-        # set to false, which a second line would make invalid TOML.
+        # section instead, and a config that already has the key would be
+        # invalid TOML with a second line.
         print(
-            "DANK still uses config.toml's sources. To use these instead, "
-            "set this near the top of config.toml, before any [section], "
-            "replacing any sources_in_database line already there, and "
-            "restart DANK:\n\nsources_in_database = true",
+            "DANK is set to use the sources in config.toml. To use the ones "
+            "in Postgres instead, set this near the top of config.toml, "
+            "before any [section], replacing any sources_in_database line "
+            "already there, and restart DANK:\n\nsources_in_database = true",
         )
 
     return 0

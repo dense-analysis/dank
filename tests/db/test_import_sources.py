@@ -122,9 +122,10 @@ def test_sources_are_imported_once(
     assert first == (0, (
         f"Imported 2 sources into Postgres database {database.database}.\n"
         "Skipped 1 exact duplicate in config.toml.\n"
-        "DANK still uses config.toml's sources. To use these instead, set "
-        "this near the top of config.toml, before any [section], replacing "
-        "any sources_in_database line already there, and restart DANK:\n"
+        "DANK is set to use the sources in config.toml. To use the ones in "
+        "Postgres instead, set this near the top of config.toml, before any "
+        "[section], replacing any sources_in_database line already there, "
+        "and restart DANK:\n"
         "\n"
         "sources_in_database = true\n"
     ), "")

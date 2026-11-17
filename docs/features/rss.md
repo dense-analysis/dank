@@ -7,6 +7,12 @@ linked article pages. Hacker News RSS retains native story identities; see
 
 ## Configure
 
+The `sources` entries on this page are for
+[sources kept in `config.toml`](sources.md#keep-sources-in-configtoml), the
+default. With [sources in Postgres](sources.md#keep-sources-in-postgres), add
+them in the reader under **Sources**, then **Manage**. The other settings
+apply either way.
+
 Add domains and RSS options to `config.toml` in the checkout root. Use the
 [native or Docker setup](../setup.md) to create it. These RSS options apply
 to both modes and show their default values:

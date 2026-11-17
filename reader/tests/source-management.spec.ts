@@ -446,13 +446,15 @@ test("save and collect keeps the source when collection can't start", async ({
   await expect(page.getByRole("link", { name: /@alice, @bob/ })).toBeVisible();
 });
 
-test("says when the saved sources aren't the ones in use", async ({ page }) => {
+test("says when DANK collects from config.toml instead", async ({ page }) => {
   await serve(page, [saved(1, { domain: "blog.example" })], {
     inDatabase: false,
   });
   await page.goto("/?view=sources&manage=1");
 
-  await expect(page.getByRole("note")).toContainText("aren’t in use yet");
+  await expect(page.getByRole("note")).toContainText(
+    "DANK is set to collect the sources in config.toml",
+  );
   await page.getByRole("link", { name: /blog\.example/ }).click();
   await expect(
     page.getByRole("button", { name: "Save and collect" }),

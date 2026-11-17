@@ -81,7 +81,7 @@ Recreating the app and refreshing only that account saved 28 posts, including
 
 After source edits, recreate Docker's app with
 `make web ARGS='--force-recreate dank'`, or restart the native viewer, then
-refresh the new source. Or [move the sources into Postgres](features/sources.md#use-the-sources-in-postgres):
+refresh the new source. Or [keep the sources in Postgres](features/sources.md#keep-sources-in-postgres):
 with `sources_in_database` on, each request, refresh and command reads them
 as it starts, so saved edits apply without a restart. Refreshes already queued
 or running keep the sources they were submitted with, and an outage is an error
@@ -1177,7 +1177,7 @@ computed **From your feeds** view do not have a standalone collector.
 Up to three independent refreshes run in separate child processes, with at most
 five outstanding requests and duplicate-click reuse. A repeated request joins
 the active job only while the sources it selects are unchanged, so a refresh
-after a [saved source edit](features/sources.md#use-the-sources-in-postgres)
+after a [saved source edit](features/sources.md#keep-sources-in-postgres)
 queues a new job. Overlapping source domains
 and shared browser profiles wait; an unrestricted All refresh runs alone and
 keeps its place ahead of later requests. Command-line scrapes remain exclusive;

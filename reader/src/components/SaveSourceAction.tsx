@@ -43,7 +43,7 @@ export function SaveSourceAction({
   const settings = useSourceSettings();
   const [open, setOpen] = useState(false);
 
-  // Saving does nothing while DANK still collects from config.toml.
+  // Saving does nothing while DANK collects from config.toml.
   if (!settings.data?.in_database) return null;
 
   const matches = savedMatches(settings.data.sources, identity);

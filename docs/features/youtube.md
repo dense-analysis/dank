@@ -7,6 +7,12 @@ or browser. Signed-in Recommendations uses Chromium to verify the session.
 
 ## Configure
 
+The `sources` entries on this page are for
+[sources kept in `config.toml`](sources.md#keep-sources-in-configtoml), the
+default. With [sources in Postgres](sources.md#keep-sources-in-postgres), add
+them in the reader under **Sources**, then **Manage**. The other settings
+apply either way.
+
 Add a YouTube entry to the existing `sources` array in your private
 `config.toml`:
 

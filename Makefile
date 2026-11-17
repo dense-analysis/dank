@@ -56,7 +56,7 @@ help:
 		'  db-diff         On the host: generate a migration; pass NAME=<name>' \
 		'  db-atlas        On the host: run an Atlas command with telemetry off; pass ARGS' \
 		'  atlas           On the host: install the pinned Atlas binary; ARGS=--dir=DIR shares one' \
-		'  sources-import  Import the sources in config.toml into Postgres, once' \
+		'  sources-import  Copy the sources in config.toml into Postgres' \
 		'  openapi         On the host: regenerate the API schema and the reader'\''s types' \
 		'  test            On the host: use all CPUs for pytest; pass paths or options through ARGS' \
 		'  lint            On the host: run all linters, which can fix files' \

@@ -7,6 +7,12 @@ stories as you scroll. No browser or login is required.
 
 ## Configure
 
+The `sources` entries on this page are for
+[sources kept in `config.toml`](sources.md#keep-sources-in-configtoml), the
+default. With [sources in Postgres](sources.md#keep-sources-in-postgres), add
+them in the reader under **Sources**, then **Manage**. The other settings
+apply either way.
+
 Add this entry alongside your existing sources in private `config.toml`:
 
 ```toml

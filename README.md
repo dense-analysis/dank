@@ -24,7 +24,7 @@ perception and evolving narratives.
 - [DANK reader](reader/README.md) — read collected stories with search, source filters and reading preferences.
 - [Scrape history](docs/features/history.md) — compare run timings, outcomes and resource limits.
 - [Stored data and queries](docs/features/database.md) — see which data lives where and inspect it.
-- [Sources in Postgres](docs/features/sources.md) — import sources once, then add and edit them in the reader without restarting DANK.
+- [Sources](docs/features/sources.md) — keep sources in `config.toml`, or add and edit them in the reader without restarting DANK.
 
 See [known collection and processing issues](docs/known-issues.md) for reader
 status meanings, source-specific problems, current handling and recovery gaps.
@@ -108,8 +108,7 @@ DANK uses the `sources` list in `config.toml` by default. To manage sources in
 the reader, set `sources_in_database = true` before any `[section]` in
 `config.toml` and restart DANK. If you already have a TOML list, run
 `make sources-import` before switching. Later source edits in the reader take
-effect without a restart.
-[Sources in Postgres](docs/features/sources.md)
+effect without a restart. See [sources](docs/features/sources.md).
 
 **Native**
 
@@ -177,7 +176,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make db-upgrade`, `make db-current`, `make db-create` | Manage the Postgres schema; see [Postgres migrations](docs/development.md#postgres-migrations) |
 | `make db-diff NAME=<name>`, `make db-check` | Generate a migration from model changes, or check they match; on the host |
 | `make db-atlas ARGS='<command>'` | Run any other Atlas command with telemetry off; on the host |
-| `make sources-import` | Import the sources in `config.toml` into Postgres, once; see [sources](docs/features/sources.md) |
+| `make sources-import` | Copy the sources in `config.toml` into Postgres; see [sources](docs/features/sources.md) |
 | `make openapi` | Regenerate `reader/openapi.json` and the reader's API types after changing a route or model; on the host |
 | `make test` | Run pytest on all available CPUs. Pass paths or options through `ARGS`. |
 | `make lint` | Run all linters, which can fix files; on the host |

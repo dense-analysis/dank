@@ -1,71 +1,50 @@
-# Sources in Postgres
+# Sources
 
-DANK supports sources in `config.toml` and in Postgres. The TOML list is the
-default and is loaded at startup. Set `sources_in_database = true` to use the
-Postgres table and apply source edits from the reader without restarting DANK.
-If you already have a TOML list, import it before switching.
+DANK keeps its sources in one of two places, and you choose which:
 
-## Import config.toml once
+- **`config.toml`**, as the `sources` list, for running DANK from a file you
+  edit, copy or keep under your own version control. This is the default.
+- **Postgres**, where you add and edit them in the reader and changes apply
+  without a restart.
 
-```sh
-make sources-import              # Docker
-make sources-import MODE=native  # native
-```
+Both are supported for good. This page covers the `sources_in_database`
+switch that chooses between them, the command that copies a file's sources
+into Postgres, the reader's screens for editing sources, the `sources` table
+and the API behind it.
 
-The command saves every source in `config.toml` in Postgres, in the same order,
-and prints how many it imported:
-
-```text
-Imported 14 sources into Postgres database dank.
-DANK still uses config.toml's sources. To use these instead, set this near the top of config.toml, before any [section], replacing any sources_in_database line already there, and restart DANK:
-
-sources_in_database = true
-```
-
-With the switch already on, the last line says `DANK uses these sources now.`
-
-- **It runs once per database.** Once any source exists, it says
-  `Sources were already imported, so nothing changed.` and exits 1. Two runs
-  started together import once.
-- **It's all or nothing.** If one source can't be imported, nothing is, and the
-  command lists each problem with the source's domain and its place, counting
-  from 0, such as `sources.3.domain`. The count leaves out entries `config.toml`
-  itself ignores, such as one without a domain.
-- **It's stricter than `config.toml`.** A domain must be a host name, such as
-  `example.com` rather than `https://example.com`, and its feed URLs must be
-  ones that platform collects.
-- **Exact duplicates are saved once,** and the command says how many it skipped.
-  An account listed twice in one source is kept once, whitespace around it is
-  removed, and a blank one is left out.
-- **An empty list imports nothing,** so you can import later.
-- It needs the schema at head and never migrates. Start the web app, or run
-  `make db-upgrade`, first.
-- It never edits `config.toml`.
-
-To start again while the data doesn't matter, empty the table and import again.
-With Docker:
-
-```sh
-docker compose exec postgres psql --username=dank --dbname=dank -c 'TRUNCATE sources'
-make sources-import
-```
-
-Each worktree has its own database, and imports from its own `config.toml`.
-
-## Use the sources in Postgres
+## Choose where sources come from
 
 `sources_in_database` is a top-level key in `config.toml`, so it goes before
 any `[section]`. It decides where every source comes from:
 
 | `sources_in_database` | Sources come from |
 | --- | --- |
-| `false`, the default | `sources` in `config.toml`, read when DANK starts |
-| `true` | The `sources` table only, even when it's empty. DANK no longer uses `sources` in `config.toml`, though it still checks it at startup, so remove it or keep it valid |
+| `false`, as the example configs have it, or no such line | `sources` in `config.toml`, read when DANK starts |
+| `true` | The `sources` table only, even when it's empty. DANK doesn't use `sources` in `config.toml`, though it still checks it at startup, so remove it or keep it valid |
 
 Changing it needs a restart: `make web ARGS='--force-recreate dank'` with
 Docker, which copies `config.toml` in when the container starts. Switching
-off goes back to `config.toml` and keeps the table, so you can switch on again
-later.
+keeps both the table and the list, so you can switch back later.
+
+## Keep sources in config.toml
+
+Set the switch off and list your sources in the same file:
+
+```toml
+sources_in_database = false
+sources = ["blog.codinghorror.com"]
+```
+
+The [README](../../README.md#choose-sources-and-collect) and each platform's
+page show what an entry can hold. Edits to the list
+[need a restart](../known-issues.md#source-edits-in-configtoml-require-an-app-restart),
+and the list has no way to turn a source off without removing it.
+
+The reader's **Manage** screen edits the table, not the file. While the
+switch is off it says DANK is collecting from `config.toml`, and what you save
+there isn't collected.
+
+## Keep sources in Postgres
 
 With the switch on:
 
@@ -96,10 +75,61 @@ With the switch on:
 - **It needs Postgres turned on.** With `[postgres] enabled = false`, DANK
   refuses the config:
   `sources_in_database needs Postgres, which is turned off ([postgres] enabled = false).`
+  To run without Postgres, set `sources_in_database = false` too.
 
 `GET /api/reader/sources`, the sidebar's request, has an
 `in_database` flag that mirrors the switch, so the reader knows whether to watch
 for edits.
+
+## Copy config.toml's sources into Postgres
+
+To move from the file to the reader, copy the list across:
+
+```sh
+make sources-import              # Docker
+make sources-import MODE=native  # native
+```
+
+The command saves every source in `config.toml` in Postgres, in the same order,
+and prints how many it imported:
+
+```text
+Imported 14 sources into Postgres database dank.
+DANK is set to use the sources in config.toml. To use the ones in Postgres instead, set this near the top of config.toml, before any [section], replacing any sources_in_database line already there, and restart DANK:
+
+sources_in_database = true
+```
+
+With the switch already on, the last line says `DANK uses these sources now.`
+The list stays in `config.toml`, so you can go back to it by switching off.
+
+- **It runs once per database.** Once any source exists, it says
+  `Sources were already imported, so nothing changed.` and exits 1. Two runs
+  started together import once.
+- **It's all or nothing.** If one source can't be imported, nothing is, and the
+  command lists each problem with the source's domain and its place, counting
+  from 0, such as `sources.3.domain`. The count leaves out entries `config.toml`
+  itself ignores, such as one without a domain.
+- **It's stricter than `config.toml`.** A domain must be a host name, such as
+  `example.com` rather than `https://example.com`, and its feed URLs must be
+  ones that platform collects.
+- **Exact duplicates are saved once,** and the command says how many it skipped.
+  An account listed twice in one source is kept once, whitespace around it is
+  removed, and a blank one is left out.
+- **An empty list imports nothing,** so you can import later.
+- It needs the schema at head and never migrates. Start the web app, or run
+  `make db-upgrade`, first.
+- It never edits `config.toml`.
+
+To start again while the data doesn't matter, empty the table and import again.
+With Docker:
+
+```sh
+docker compose exec postgres psql --username=dank --dbname=dank -c 'TRUNCATE sources'
+make sources-import
+```
+
+Each worktree has its own database, and imports from its own `config.toml`.
 
 ## Edit sources in the reader
 
@@ -166,8 +196,8 @@ differ in their options. Something saved but turned off is offered as **Turn
 on**, and something already collected shows **Saved**, which opens its
 source. These actions appear only while `sources_in_database` is on.
 
-While the switch is off, Manage still lists and edits the saved sources and
-says they aren't in use yet.
+While the switch is off, Manage still lists and edits the sources in the
+table, and says DANK is collecting from `config.toml` instead.
 
 Two limits to know about:
 
