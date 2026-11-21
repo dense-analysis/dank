@@ -550,33 +550,28 @@ async def _run_scrape(
 
         try:
             scrubbed_assets.set(await _load_scrubbed_assets(clickhouse_client))
-            # Signed-out collection must never reuse an authenticated profile.
-            with tempfile.TemporaryDirectory(
-                prefix="dank-youtube-",
-            ) as temporary:
-                youtube_profile = (
-                    settings.youtube.profile_dir
-                    or data_dir / "youtube-browser-profile"
-                    if settings.youtube.authenticated
-                    else pathlib.Path(temporary)
-                )
-                youtube_config = browser_config._replace(
-                    profile_dir=youtube_profile,
-                    allow_browser_signin=False,
-                    session_file=(
-                        youtube_profile / "youtube-session.json"
-                        if settings.youtube.authenticated else None
-                    ),
-                )
-                await _run_source_sessions(
-                    settings, clickhouse_client, history, assets_dir,
-                    browser_config, reddit_config, youtube_config,
-                    retry_failed_pages=retry_failed_pages, x_posts=x_posts,
-                    reddit_details=reddit_details, x_details=x_details,
-                    reddit_linked_articles=reddit_linked_articles,
-                    hacker_news_details=hacker_news_details,
-                    target_post=target_post, scoped=scoped,
-                )
+            youtube_profile = (
+                settings.youtube.profile_dir
+                or data_dir / "youtube-browser-profile"
+                if settings.youtube.authenticated else None
+            )
+            youtube_config = browser_config._replace(
+                profile_dir=youtube_profile,
+                allow_browser_signin=False,
+                session_file=(
+                    youtube_profile / "youtube-session.json"
+                    if youtube_profile is not None else None
+                ),
+            )
+            await _run_source_sessions(
+                settings, clickhouse_client, history, assets_dir,
+                browser_config, reddit_config, youtube_config,
+                retry_failed_pages=retry_failed_pages, x_posts=x_posts,
+                reddit_details=reddit_details, x_details=x_details,
+                reddit_linked_articles=reddit_linked_articles,
+                hacker_news_details=hacker_news_details,
+                target_post=target_post, scoped=scoped,
+            )
         except BaseException as error:
             history.finish(error)
 
@@ -667,7 +662,7 @@ async def _run_source_sessions(
                 await _collect_with_history(
                     settings, client, http_client, x_session, reddit_session,
                     youtube_session, history, assets_dir,
-                    youtube_profile=youtube_config.profile_dir or assets_dir,
+                    youtube_profile=youtube_config.profile_dir,
                     retry_failed_pages=retry_failed_pages, x_posts=x_posts,
                     reddit_details=reddit_details, x_details=x_details,
                     reddit_linked_articles=reddit_linked_articles,
@@ -727,7 +722,7 @@ async def _collect_with_history(
     history: RunMetrics,
     assets_dir: pathlib.Path,
     *,
-    youtube_profile: pathlib.Path,
+    youtube_profile: pathlib.Path | None,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
     reddit_details: bool = False,
@@ -816,7 +811,7 @@ async def _collect_source(
     session: BrowserSession,
     history: RunMetrics,
     assets_dir: pathlib.Path,
-    profile_dir: pathlib.Path,
+    profile_dir: pathlib.Path | None,
     browser_lock: asyncio.Lock | None,
     *,
     retry_failed_pages: bool = False,
@@ -2028,7 +2023,7 @@ async def _process_batches(
     http_client: aiohttp.ClientSession,
     *,
     assets_dir: pathlib.Path,
-    browser_profile_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path | None,
     max_asset_bytes: int | None,
     batch_size: int,
     history: RunMetrics | None = None,
@@ -2066,7 +2061,7 @@ async def _fetch_asset_batches(
     http_client: aiohttp.ClientSession,
     *,
     assets_dir: pathlib.Path,
-    browser_profile_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path | None,
     max_asset_bytes: int | None,
     batch_size: int,
     history: RunMetrics | None = None,
@@ -2452,7 +2447,7 @@ async def _flush_assets(
     discoveries: list[AssetDiscovery],
     *,
     assets_dir: pathlib.Path,
-    browser_profile_dir: pathlib.Path,
+    browser_profile_dir: pathlib.Path | None,
     max_asset_bytes: int | None,
     owners: dict[AssetDiscovery, SourceMetrics] | None = None,
     download_types: tuple[str, ...] = MEDIA_DOWNLOAD_TYPES,

@@ -167,9 +167,8 @@ async def test_metadata_refresh_keeps_previous_icon_when_refresh_unavailable(
         assert not invalid.exists()
 
 
-@pytest.mark.parametrize("after_consent", [False, True])
 async def test_channel_header_is_emitted_before_video_batches(
-    monkeypatch: pytest.MonkeyPatch, *, after_consent: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from dank.config import YouTubeSettings
     from dank.scrape.youtube import (
@@ -178,27 +177,24 @@ async def test_channel_header_is_emitted_before_video_batches(
     from dank.scrape.youtube.payloads import YouTubeFeed
 
     data = initial()
-    data["contents"] = {"videoRenderer": {"videoId": "abcdefghijk"}}
-    state = {"initial": data, "at_bottom": True}
-    monkeypatch.setattr("dank.scrape.youtube._resolve_feed", AsyncMock(
-        return_value=(FEED, {} if after_consent else state),
-    ))
-    snapshots = AsyncMock(return_value=state)
-    monkeypatch.setattr("dank.scrape.youtube.snapshot", snapshots)
-    monkeypatch.setattr("dank.scrape.youtube.asyncio.sleep", AsyncMock())
-    capture = AsyncMock()
-    capture.drain.return_value = []
-    monkeypatch.setattr("dank.scrape.youtube.NetworkCapture",
-                        Mock(return_value=capture))
-    settings = YouTubeSettings()
-    settings = settings._replace(scrape=settings.scrape._replace(
-        max_scrolls=0,
-    ))
+
+    async def listing(
+        feed: YouTubeFeed, settings: YouTubeSettings,
+        consume: Any, **kwargs: Any,
+    ) -> str:
+        assert kwargs["cookies"] == []
+        consume({"event": "listing", "url": FEED, "raw": data, "title": ""})
+        consume({"event": "renderer", "key": "videoRenderer", "shelf": "",
+                 "raw": {"videoId": "abcdefghijk"}})
+        consume({"event": "page"})
+
+        return "listing exhausted"
+
+    monkeypatch.setattr("dank.scrape.youtube.collect_listing", listing)
     batches = [batch async for batch in _scrape_feed(
-        AsyncMock(), YouTubeFeed(FEED, "Example", "channel", "videos"),
-        settings, set(),
+        None, YouTubeFeed(FEED, "Example", "channel", "videos"),
+        YouTubeSettings(), set(), cookies=[],
     )]
     assert len(batches[0].youtube_channels) == 1
     assert not batches[0].posts
     assert json.loads(batches[1].posts[0].payload)["channel_id"] == CHANNEL
-    assert snapshots.await_count == int(after_consent)

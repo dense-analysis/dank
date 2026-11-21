@@ -174,13 +174,10 @@ async def test_profile_isolation_and_feed_appearances_survive_media_skip(
     }
     assert len({row["run_id"] for row in appearances}) == 1
     assert client.rows["raw_assets"][0]["local_path"] == ""
-    assert profiles[0] is not None
-
     if authenticated:
         assert profiles == [saved_profile]
     else:
-        assert profiles[0] != saved_profile
-        assert not profiles[0].exists()
+        assert profiles == [None]
 
 
 async def test_enabled_video_collection_reaches_yt_dlp_not_page_downloader(

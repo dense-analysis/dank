@@ -4,7 +4,7 @@ import datetime
 import json
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -12,15 +12,21 @@ from dank.config import YouTubeSettings
 from dank.model import YouTubePlaylistCapture
 from dank.scrape import runner
 from dank.scrape.types import ScrapeBatch
-from dank.scrape.youtube import playlist_browser
+from dank.scrape.youtube import playlist_library, ytdlp_playlists
 from dank.scrape.youtube.playlists import (
     continuation_playlist_page,
     discover_playlists,
     initial_playlist_page,
     playlist_capture,
+    playlist_id,
     playlist_metadata,
     playlist_posts,
     snapshot_hash,
+)
+from dank.scrape.youtube.ytdlp_listings import ListingFailure
+from dank.scrape.youtube.ytdlp_playlists import (
+    PlaylistResponseCapture,
+    collect_playlist,
 )
 from dank.storage.clickhouse import ClickHouseClient
 
@@ -237,32 +243,36 @@ def test_initial_and_continuation_preserve_page_sequence() -> None:
     ).recognized
 
 
-def install_browser(
+def install_worker(
     monkeypatch: pytest.MonkeyPatch,
     data: dict[str, Any],
     responses: list[dict[str, Any]] | None = None,
 ) -> AsyncMock:
-    monkeypatch.setattr(playlist_browser, "navigate", AsyncMock())
-    monkeypatch.setattr(
-        playlist_browser,
-        "snapshot",
-        AsyncMock(
-            return_value={
-                "initial": data,
-                "signed_in": True,
-            },
-        ),
-    )
-    network = AsyncMock()
-    network.drain.side_effect = [
-        [SimpleNamespace(status=200, body=json.dumps(response))]
-        for response in responses or []
-    ]
-    monkeypatch.setattr(
-        playlist_browser, "NetworkCapture", Mock(return_value=network),
-    )
+    async def collect(
+        module: str, request: dict[str, Any], budget: float, consume: Any,
+    ) -> int:
+        manifest = PlaylistResponseCapture(
+            playlist_id(request["url"]), consume, request["max_entries"],
+        )
 
-    return network
+        try:
+            manifest.initial(data)
+
+            for response in responses or []:
+                manifest.page(response)
+        except ValueError as error:
+            consume({"event": "error", "error_type": type(error).__name__})
+        else:
+            consume({"event": "done", "outcome": (
+                "completed" if not manifest.token else "incomplete"
+            )})
+
+        return 0
+
+    worker = AsyncMock(side_effect=collect)
+    monkeypatch.setattr(ytdlp_playlists, "run_worker", worker)
+
+    return worker
 
 
 async def test_complete_collection_follows_every_continuation(
@@ -281,13 +291,12 @@ async def test_complete_collection_follows_every_continuation(
             },
         ],
     }
-    network = install_browser(monkeypatch, data, [response])
-    result = await playlist_browser.collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(),
+    worker = install_worker(monkeypatch, data, [response])
+    result = await collect_playlist(
+        URL, YouTubeSettings(),
     )
     assert result.status == "complete" and len(result.entries) == 2
-    network.drain.assert_awaited_once()
-    network.stop.assert_awaited_once()
+    worker.assert_awaited_once()
 
 
 async def test_repeated_continuation_keeps_partial_not_false_complete(
@@ -313,12 +322,12 @@ async def test_repeated_continuation_keeps_partial_not_false_complete(
             },
         ],
     }
-    install_browser(monkeypatch, data, [response])
-    result = await playlist_browser.collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(),
+    install_worker(monkeypatch, data, [response])
+    result = await collect_playlist(
+        URL, YouTubeSettings(),
     )
     assert result.status == "partial"
-    assert "Repeated" in result.error_type
+    assert result.error_type == "ValueError"
     assert not result.exhausted
     assert len(result.entries) == 1
 
@@ -326,17 +335,17 @@ async def test_repeated_continuation_keeps_partial_not_false_complete(
 async def test_short_grid_and_hidden_entries_are_not_complete_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    install_browser(
+    install_worker(
         monkeypatch, {"playlistMetadataRenderer": {"title": "Shorts"}},
     )
-    result = await playlist_browser.collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(),
+    result = await collect_playlist(
+        URL, YouTubeSettings(),
     )
     assert result.status == "failed"
     assert not result.exhausted
-    install_browser(monkeypatch, initial([video()], reported=2))
-    result = await playlist_browser.collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(),
+    install_worker(monkeypatch, initial([video()], reported=2))
+    result = await collect_playlist(
+        URL, YouTubeSettings(),
     )
     assert result.status == "partial"
     assert result.exhausted
@@ -432,9 +441,9 @@ async def test_membership_write_failure_never_publishes_pointer() -> None:
 async def test_non_authenticated_library_uses_bounded_oldest_known_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 1)
+    monkeypatch.setattr(playlist_library, "LIBRARY_CHECK_LIMIT", 1)
     collect = AsyncMock(return_value=capture(video()))
-    monkeypatch.setattr(playlist_browser, "collect_ytdlp_playlist", collect)
+    monkeypatch.setattr(playlist_library, "collect_playlist", collect)
     cards = {
         "PLnew": {
             **playlist_metadata("PLnew", {}),
@@ -449,25 +458,24 @@ async def test_non_authenticated_library_uses_bounded_oldest_known_checks(
     }
     batches = [
         batch
-        async for batch in playlist_browser.collect_playlist_library(
-            AsyncMock(),
+        async for batch in playlist_library.collect_playlist_library(
             YouTubeSettings(),
             cards,
-            excluded=set(),
+            cookies=[], excluded=set(),
         )
     ]
     assert len(batches[0].youtube_playlists) == 2
     assert collect.await_args is not None
-    assert collect.await_args.args[1].endswith("list=PLold")
+    assert collect.await_args.args[0].endswith("list=PLold")
     assert collect.await_args.kwargs["timeout_seconds"] <= 120
 
 
 async def test_failed_checks_do_not_starve_complete_playlists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 1)
+    monkeypatch.setattr(playlist_library, "LIBRARY_CHECK_LIMIT", 1)
     collect = AsyncMock(return_value=capture(video()))
-    monkeypatch.setattr(playlist_browser, "collect_ytdlp_playlist", collect)
+    monkeypatch.setattr(playlist_library, "collect_playlist", collect)
     cards = {
         "PLfailed": {**playlist_metadata("PLfailed", {}),
                      "snapshot_hash": "", "checked_at": "2026-10-25"},
@@ -475,13 +483,13 @@ async def test_failed_checks_do_not_starve_complete_playlists(
                   "snapshot_hash": "old", "checked_at": "2026-10-20"},
     }
     batches = [
-        batch async for batch in playlist_browser.collect_playlist_library(
-            AsyncMock(), YouTubeSettings(), cards, excluded=set(),
+        batch async for batch in playlist_library.collect_playlist_library(
+            YouTubeSettings(), cards, cookies=[], excluded=set(),
         )
     ]
     assert batches
     assert collect.await_args is not None
-    assert collect.await_args.args[1].endswith("list=PLold")
+    assert collect.await_args.args[0].endswith("list=PLold")
 
 
 async def test_exhausted_visible_manifest_updates_despite_reported_gap(
@@ -489,18 +497,18 @@ async def test_exhausted_visible_manifest_updates_despite_reported_gap(
 ) -> None:
     client = Client()
     first_entries = [video(), video("zyxwvutsrqp", occurrence="two")]
-    install_browser(monkeypatch, initial(first_entries, reported=3))
-    first = await playlist_browser.collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(),
+    install_worker(monkeypatch, initial(first_entries, reported=3))
+    first = await collect_playlist(
+        URL, YouTubeSettings(),
     )
     assert first.status == "partial" and first.exhausted
     _, old_rows = await client.prepare(first)
     client.previous = old_rows
     reordered = [video("zyxwvutsrqp", occurrence="two"), video(),
                  video("01234567890", occurrence="three")]
-    install_browser(monkeypatch, initial(reordered, reported=4))
-    current = await playlist_browser.collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(),
+    install_worker(monkeypatch, initial(reordered, reported=4))
+    current = await collect_playlist(
+        URL, YouTubeSettings(),
     )
     assert current.status == "partial" and current.exhausted
     batch, changed = await client.prepare(current)
@@ -572,9 +580,9 @@ async def test_saved_shorts_keeps_array_order_and_original_cards(
     cards = [short_card("hEOFhU8fD58", "first"),
              short_card("vx8r0nubzsc", "second")]
     initial_data = shorts_initial(cards)
-    install_browser(monkeypatch, initial_data)
-    result = await playlist_browser.collect_playlist(
-        AsyncMock(), "https://www.youtube.com/playlist?list=YS",
+    install_worker(monkeypatch, initial_data)
+    result = await collect_playlist(
+        "https://www.youtube.com/playlist?list=YS",
         YouTubeSettings(),
     )
     assert result.status == "complete" and result.exhausted
@@ -622,23 +630,21 @@ def test_short_playlist_scope_and_continuations() -> None:
 async def test_partial_catalog_cards_are_persistable_before_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def discover(page: object, found: dict[str, dict[str, Any]]):
-        found["PLtest"] = playlist_metadata("PLtest", {})
-        raise playlist_browser.PlaylistIncomplete("catalog stalled")
+    async def discover(feed: object, settings: object, consume: Any,
+                       **kwargs: Any) -> str:
+        consume({"event": "playlist", "raw": playlist_metadata("PLtest", {})})
+        raise ListingFailure("catalog stalled")
 
-    monkeypatch.setattr(playlist_browser, "_library_cards", discover)
-    batches = playlist_browser.collect_playlist_library(
-        AsyncMock(),
-        YouTubeSettings(authenticated=True),
-        {},
-        excluded=set(),
+    monkeypatch.setattr(playlist_library, "collect_listing", discover)
+    batches = playlist_library.collect_playlist_library(
+        YouTubeSettings(authenticated=True), {}, cookies=[], excluded=set(),
     )
     first = await anext(batches)
     assert first.youtube_playlists[0].playlist_id == "PLtest"
     assert first.youtube_playlists[0].status == "not_collected"
     assert first.youtube_playlist_order is None
 
-    with pytest.raises(playlist_browser.PlaylistIncomplete):
+    with pytest.raises(ListingFailure):
         await anext(batches)
 
 
@@ -646,17 +652,21 @@ async def test_only_complete_authenticated_catalog_publishes_library_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cards = (playlist_metadata("PLz", {}), playlist_metadata("PLa", {}))
-    monkeypatch.setattr(
-        playlist_browser, "_library_cards", AsyncMock(return_value=cards),
-    )
-    monkeypatch.setattr(playlist_browser, "LIBRARY_CHECK_LIMIT", 0)
+    async def discover(feed: object, settings: object, consume: Any,
+                       **kwargs: Any) -> str:
+        for card in cards:
+            consume({"event": "playlist", "raw": card})
+
+        return "listing exhausted"
+
+    monkeypatch.setattr(playlist_library, "collect_listing", discover)
+    monkeypatch.setattr(playlist_library, "LIBRARY_CHECK_LIMIT", 0)
     batches = [
         batch
-        async for batch in playlist_browser.collect_playlist_library(
-            AsyncMock(),
+        async for batch in playlist_library.collect_playlist_library(
             YouTubeSettings(authenticated=True),
             {},
-            excluded=set(),
+            cookies=[], excluded=set(),
         )
     ]
     order = batches[0].youtube_playlist_order
@@ -673,22 +683,22 @@ async def test_only_complete_authenticated_catalog_publishes_library_order(
     assert isinstance(rows[0]["observed_at"], datetime.datetime)
     unsigned = [
         batch
-        async for batch in playlist_browser.collect_playlist_library(
-            AsyncMock(),
+        async for batch in playlist_library.collect_playlist_library(
             YouTubeSettings(),
             {c["playlist_id"]: c for c in cards},
-            excluded=set(),
+            cookies=[], excluded=set(),
         )
     ]
     assert unsigned[0].youtube_playlist_order is None
 
     monkeypatch.setattr(
-        playlist_browser, "_library_cards", AsyncMock(return_value=()),
+        playlist_library, "collect_listing",
+        AsyncMock(return_value="listing exhausted"),
     )
     empty = [
-        batch async for batch in playlist_browser.collect_playlist_library(
-            AsyncMock(), YouTubeSettings(authenticated=True), {},
-            excluded=set(),
+        batch async for batch in playlist_library.collect_playlist_library(
+            YouTubeSettings(authenticated=True), {},
+            cookies=[], excluded=set(),
         )
     ]
     assert empty[0].youtube_playlist_order == ()

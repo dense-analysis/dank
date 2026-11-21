@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from http.cookiejar import Cookie, CookieJar
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 import zendriver
 from zendriver import cdp
@@ -23,15 +24,22 @@ AUTH_COOKIE_NAMES = {
 }
 
 
-def has_youtube_session(cookies: list[dict[str, object]]) -> bool:
+def _cookie_domain(cookie: Mapping[str, object]) -> str:
+    domain = cookie.get("domain")
+
+    if isinstance(domain, str):
+        return domain.lower()
+
+    return urlsplit(str(cookie.get("url") or "")).hostname or ""
+
+
+def has_youtube_session(cookies: Sequence[Mapping[str, object]]) -> bool:
     return any(
         cookie.get("name") in AUTH_COOKIE_NAMES
         and cookie.get("value")
-        and str(cookie.get("domain", "")).lstrip(".")
-        in {
-            "youtube.com",
-            "www.youtube.com",
-        }
+        and not cookie.get("partitionKey")
+        and _cookie_domain(cookie).lstrip(".")
+        in {"youtube.com", "www.youtube.com"}
         for cookie in cookies
     )
 
@@ -62,7 +70,11 @@ def cookie_jar(records: list[dict[str, Any]]) -> CookieJar:
     jar = YoutubeDLCookieJar()
 
     for record in records:
-        domain = str(record["domain"])
+        # CookieJar cannot enforce the scope of a partitioned browser cookie.
+        if record.get("partitionKey"):
+            continue
+
+        domain = _cookie_domain(record)
 
         if not any(
             domain.lstrip(".") == host or domain.endswith("." + host)

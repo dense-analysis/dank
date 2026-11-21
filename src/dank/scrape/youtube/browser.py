@@ -66,24 +66,6 @@ SNAPSHOT_SCRIPT = """JSON.stringify((() => {
         initial: window.ytInitialData || {}, items,
         signed_in: window.ytcfg?.get?.('LOGGED_IN') === true};
 })())"""
-EXPAND_SCRIPT = """(() => {
-    let count = 0;
-    const selector = 'ytd-rich-shelf-renderer,ytd-shelf-renderer';
-    for (const shelf of document.querySelectorAll(selector)) {
-        const heading = shelf.querySelector('#title')?.textContent || '';
-        if (/^live (now|news)/i.test(heading)) continue;
-        const buttons = shelf.querySelectorAll('button,tp-yt-paper-button');
-        for (const button of buttons) {
-            if (count >= 20) return count;
-            if (/^show more$/i.test(button.textContent.trim()) &&
-                button.getClientRects().length &&
-                !button.disabled && !button.dataset.dankExpanded) {
-                button.dataset.dankExpanded = 'true'; button.click(); count++;
-            }
-        }
-    }
-    return count;
-})()"""
 CONSENT_SCRIPT = """(() => {
     for (const button of document.querySelectorAll('button')) {
         if (/^reject all$/i.test(button.textContent.trim())) {
@@ -92,10 +74,6 @@ CONSENT_SCRIPT = """(() => {
     }
     return false;
 })()"""
-SCROLL_SCRIPT = (
-    """window.scrollBy(0, Math.max(600, window.innerHeight * 1.5))"""
-)
-
 # Visit the bottom of each loaded batch to trigger the next continuation.
 # The separate pause adds pacing variation, not a change of identity.
 HOME_SCROLL_SCRIPT = """window.scrollTo(0,

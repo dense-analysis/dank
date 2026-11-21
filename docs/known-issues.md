@@ -243,14 +243,19 @@ Separate discovery records preserve repeated appearances across feeds and runs.
 Descriptions and comments are not collected; [video-detail collection](https://linear.app/dense-analysis/issue/DEN-41/scope-youtube-description-and-comment-collection) is a deferred idea. Feed snapshots
 are separate from caption captures. Live and upcoming broadcasts are excluded.
 
-The browser follows Hype's regional **Top 100 → View all** link, expands News
-sections and uses bounded scrolling. The UK playlist fallback is used only for
-the GB region. Source layouts, regional availability and recommendation order
-can change; a successful bounded run is not a complete archive of an infinite
-feed. Unrecognized/empty or failed feeds increment failure counters and allow
-later feeds to continue. Already persisted appearances remain available.
+yt-dlp reads the selected channel tab, News browse pages, and Hype's regional
+**Top 100 → View all** playlist. The UK playlist fallback applies to the GB
+region. News sections that require browser interaction can be absent. Page and
+item limits bound collection. Unrecognized, empty, and failed feeds increment
+failure counters, keep collected appearances, and allow later feeds to continue.
 Channel latest-video listings stop after consecutive known items; this heuristic
 does not apply to ranked or personalized feeds.
+
+On 2026-11-21 a signed-out check collected channel Videos, News and Hype with
+browser startup disabled. Both DANK and stock yt-dlp received HTTP 403 on the
+channel's live browse continuation. DANK kept the 30 first-page items. The
+[listing worker tests](../tests/scrape/test_youtube_ytdlp_listings.py) cover
+successful pagination, bounded and partial results, and routing.
 
 Signed-in homepage **Recommendations** uses yt-dlp only, with a 30-second
 listing budget and 2,000-renderer guard. Chromium verifies the existing session
@@ -1157,8 +1162,7 @@ unavailable original pages still apply. See [scope tests](
   per-video request is added. Rounded counts and relative ages describe the
   capture time shown on hover. These changing labels do not invalidate the
   membership hash or trigger repeated processing of unchanged playlists.
-- Playlist contents use an isolated yt-dlp worker; browser scrolling remains
-  responsible for saved-library discovery and its Recently added order.
+- Playlist contents and the saved library catalog use isolated yt-dlp workers.
   The pinned extractor owns HTTP and pagination; a selected-tab/continuation
   observer retains original occurrence IDs, duplicates, sort settings and raw
   payloads before flat extraction drops them. No watch pages are extracted.
@@ -1167,18 +1171,16 @@ unavailable original pages still apply. See [scope tests](
   a header/manifest count gap remains partial and can still update when every
   continuation finishes. Unknown, repeated or interrupted continuations cannot
   replace the previous saved snapshot. There is no browser contents fallback.
-- The signed-in browser session is verified before cookies are passed to either
-  yt-dlp collector through private pipes. Cookies are not written to worker
-  files, arguments or logs. A stale session fails explicitly.
+- Authenticated listings read the validated saved session snapshot. Workers
+  receive cookies through private pipes. A stale session fails explicitly.
 - Library ranking is published only after a complete authenticated catalog
   traversal. A partial catalog keeps the previous order; checking one playlist
   does not move it to the top. Recently added follows YouTube's captured library
   order, not collection timestamps. The ranking and sort choice are pinned
   during pagination; playlists absent from the captured catalog follow it A–Z.
-- Saved-library discovery uses the separate authenticated YouTube browser
-  session; public configured playlists do not need sign-in. It retains observed
-  cards if catalog traversal fails and never deletes a saved playlist merely
-  because it was absent from a later library listing.
+- Saved-library discovery uses the authenticated session snapshot. Public
+  configured playlists collect signed out. Catalog failures keep observed cards
+  and preserve previously saved playlists.
 - A full ordered flat manifest is required to establish an unchanged hash.
   Counts and first pages are insufficient. Sorting, duplicates, additions,
   removals and title changes are covered by collector tests.

@@ -2,7 +2,8 @@
 
 DANK saves the feeds YouTube presents: videos, Shorts and community posts,
 together with their discovery context. Video downloads are off by default.
-No account or API key is needed for Hype, News or public channel feeds.
+Public channels, News, Hype and public playlists use yt-dlp without a login
+or browser. Signed-in Recommendations uses Chromium to verify the session.
 
 ## Configure
 
@@ -69,9 +70,9 @@ Feed discoveries are readable immediately; normal processing also prepares
 them for the combined collection and semantic search.
 
 Hype follows the **Top 100 → View all** playlist and saves its regional context,
-playlist identity and captured rank. News expands available **Show more**
-sections. Each appearance retains its feed, tab, shelf heading, position,
-region, observation time and original source renderer. The same video can
+playlist identity and captured rank. News follows the continuations available
+in its listing responses. Each appearance retains its feed, tab, shelf heading,
+position, region, observation time and original source renderer. The same video can
 therefore have several discoveries without becoming several video identities.
 
 Signed-in **Recommendations** uses metadata-only yt-dlp with a 30-second listing
@@ -197,11 +198,13 @@ still apply: older videos gain new versions only when encountered again.
 
 ## Limits and downloads
 
-Channel, News and Hype limits apply per feed. Collection stops at the configured
-item/scroll budget, after repeated scrolls without new content, or when a
-channel's latest-video listing reaches a consecutive overlap with already saved items. The overlap
-rule applies only to channels, because known videos can still reveal a new
-recommendation order elsewhere. Set `known_overlap` to adjust that threshold.
+Channel, News and Hype limits apply per feed. `max_scrolls` limits continuation
+requests after the first page, `scroll_pause_seconds` paces HTTP requests, and
+`stall_scrolls` limits consecutive pages without new items. A channel's latest
+Videos tab also stops at `known_overlap` consecutive saved items. Explicitly
+sorted channel listings keep their own order and use the page and item limits.
+Each listing has a 90-second deadline. DANK saves pages as they arrive and keeps
+the available items if a later page fails.
 
 Livestreams and scheduled/upcoming broadcasts are excluded. Shorts and
 community-post switches apply globally. Individual watch pages and comment
@@ -304,8 +307,9 @@ restoration nor vault access. DANK refreshes the cache after verified collection
 with page scripts stopped. Keep the profile and cookie cache private; Google
 passwords and authenticator seeds remain in 1Password.
 
-Authenticated collection requires a valid saved session; it never silently
-collects a signed-out homepage. Public feeds remain signed out by default.
+Authenticated collection requires a valid saved session. Recommendations opens
+Chromium and refreshes the session snapshot. Channel tabs and playlists use
+that private snapshot directly. Run `make youtube-login` when it expires.
 
 ## Playlists
 
@@ -328,10 +332,9 @@ Cards also show the listing's saved views and publication-age labels when
 available. These can be read from existing snapshots without visiting video
 pages; the labels describe the capture, not live counts or exact timestamps.
 
-Playlist contents are collected through yt-dlp HTTP requests and pagination,
-using the verified session for private lists. Browser scrolling is used only
-for the library catalog. Contents collection reads listing metadata and every
-available continuation; it never visits individual watch pages. The
+The library catalog and playlist contents use yt-dlp HTTP requests and
+pagination. Private lists use the saved session snapshot. Contents collection
+reads listing metadata and every available continuation. The
 snapshot hash includes playlist metadata, the selected sort label and ordered
 video occurrences, so reorderings and same-count replacements are detected.
 An unchanged hash updates the check time without saving more video discoveries

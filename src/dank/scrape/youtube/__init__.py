@@ -4,11 +4,19 @@ import asyncio
 import datetime
 import json
 import logging
+import pathlib
 import random
 from collections import Counter
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Iterable,
+    Mapping,
+    Sequence,
+)
+from contextlib import aclosing
 from typing import Any, cast
-from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import zendriver
 
@@ -21,12 +29,13 @@ from dank.scrape.zendriver import (
     NetworkCapture,
     NetworkResponse,
 )
-from dank.youtube_session import save_youtube_session_from_page
+from dank.youtube_session import (
+    load_youtube_session_cookies,
+    save_youtube_session_from_page,
+)
 
 from .browser import (
-    EXPAND_SCRIPT,
     HOME_SCROLL_SCRIPT,
-    SCROLL_SCRIPT,
     navigate,
     snapshot,
 )
@@ -35,27 +44,26 @@ from .feeds import configured_feeds
 from .home_merge import merge_home_posts
 from .payloads import (
     ORIGIN,
-    UK_HYPE_PLAYLIST,
     YouTubeFeed,
     as_dict,
     discover_assets,
     excluded_home_section,
     excluded_home_shelf,
-    hype_playlist,
     normalize_renderer,
-    playlist_title,
     renderers,
 )
-from .playlist_browser import collect_playlist_library
+from .playlist_library import collect_playlist_library
 from .playlists import playlist_id
 from .ytdlp_home import YtDlpHomeResult, collect_ytdlp_home
+from .ytdlp_listings import (
+    ListingStopped,
+    collect_listing,
+    localized as _localized,
+)
 from .ytdlp_playlists import collect_playlist
 from .ytdlp_worker import session_cookies
 
 logger = logging.getLogger(__name__)
-# Consent can trigger a second navigation before the channel header arrives.
-CHANNEL_INITIAL_ATTEMPTS = 10
-CHANNEL_INITIAL_PAUSE_SECONDS = 0.5
 # Home discovery has its own short wall-clock budget, including navigation.
 # Generous item/scroll guards prevent runaway work without inheriting the
 # smaller limits intended for channel and news listings.
@@ -73,14 +81,6 @@ class YouTubeFeedError(RuntimeError):
 
 class YouTubeFeedIncomplete(YouTubeFeedError):
     """A usable snapshot stopped before the end of its recommendation feed."""
-
-
-def _localized(url: str, region: str) -> str:
-    parsed = urlsplit(url)
-    query = parse_qs(parsed.query)
-    query.update({"gl": [region], "hl": ["en-GB"]})
-
-    return urlunsplit(parsed._replace(query=urlencode(query, doseq=True)))
 
 
 class FeedCapture:
@@ -214,8 +214,7 @@ def _candidates(
 async def _resolve_feed(
     page: zendriver.Tab, feed: YouTubeFeed, settings: YouTubeSettings,
 ) -> tuple[str, dict[str, object]]:
-    region = feed.region or settings.region
-    await navigate(page, _localized(feed.url, region))
+    await navigate(page, _localized(feed.url, feed.region or settings.region))
     state = await snapshot(page)
 
     if settings.authenticated and not state.get("signed_in"):
@@ -223,46 +222,7 @@ async def _resolve_feed(
             "Saved YouTube session is not signed in; run youtube-login",
         )
 
-    if feed.kind != "hype" or urlsplit(feed.url).path == "/playlist":
-        return str(state.get("url") or feed.url), state
-
-    playlist = hype_playlist(state.get("initial"))
-
-    for _ in range(4):
-        if playlist is not None:
-            break
-
-        await asyncio.sleep(0.5)
-        state = await snapshot(page)
-        playlist = hype_playlist(state.get("initial"))
-
-    if playlist is None and region == "GB":
-        playlist = f"{ORIGIN}/playlist?list={UK_HYPE_PLAYLIST}"
-        logger.warning(
-            "Hype View all unavailable; trying the UK Top 100 fallback",
-        )
-
-    if playlist is None:
-        raise YouTubeFeedError("No regional Hype Top 100 playlist found")
-
-    # Follow View all; its playlist carries authoritative rank.
-    await navigate(page, _localized(playlist, region))
-
-    return playlist, await snapshot(page)
-
-
-async def _channel_state(
-    page: zendriver.Tab, feed: YouTubeFeed, state: dict[str, object],
-) -> dict[str, object]:
-    if feed.kind == "channel":
-        for _ in range(CHANNEL_INITIAL_ATTEMPTS):
-            if state.get("initial"):
-                break
-
-            await asyncio.sleep(CHANNEL_INITIAL_PAUSE_SECONDS)
-            state = await snapshot(page)
-
-    return state
+    return str(state.get("url") or feed.url), state
 
 
 def _home_response_values(
@@ -508,17 +468,19 @@ async def _collect_ytdlp_home(
 
 
 async def _scrape_feed(
-    page: zendriver.Tab,
-    feed: YouTubeFeed,
-    settings: YouTubeSettings,
-    known_ids: set[str],
-) -> AsyncIterator[ScrapeBatch]:
+    page: zendriver.Tab | None, feed: YouTubeFeed,
+    settings: YouTubeSettings, known_ids: set[str], *,
+    cookies: Sequence[Mapping[str, object]] = (),
+) -> AsyncGenerator[ScrapeBatch]:
     if feed.kind == "playlist":
-        result = await collect_playlist(page, feed.url, settings)
+        result = await collect_playlist(feed.url, settings, cookies=cookies)
         yield ScrapeBatch([], [], youtube_playlists=(result,))
         return
 
     if feed.kind == "home":
+        if page is None:
+            raise YouTubeFeedError("Recommendations require Chromium")
+
         batches: list[ScrapeBatch] = []
         failure: Exception | None = None
 
@@ -535,116 +497,120 @@ async def _scrape_feed(
 
         return
 
-    async for batch in _scrape_listing_feed(page, feed, settings, known_ids):
-        yield batch
+    async with aclosing(_scrape_listing_feed(
+        feed, settings, known_ids, cookies=cookies,
+    )) as listing:
+        async for batch in listing:
+            yield batch
+
+
+class _ListingCapture(FeedCapture):
+    """Normalize incoming worker events and retain completed feed batches."""
+
+    def __init__(
+        self, feed: YouTubeFeed, settings: YouTubeSettings,
+        known_ids: set[str],
+    ) -> None:
+        super().__init__(feed, settings, known_ids)
+        self.batches: asyncio.Queue[ScrapeBatch | None] = asyncio.Queue()
+        self.pending = ScrapeBatch([], [])
+        self.request_url = feed.url
+        self.idle = 0
+
+    def receive(self, event: dict[str, Any]) -> None:
+        match event.get("event"):
+            case "listing":
+                self._begin_listing(event)
+            case "renderer":
+                self._add_renderer(event)
+            case "page":
+                self.idle = 0 if self.pending.posts else self.idle + 1
+                self.flush()
+
+                if len(self.item_ids) >= self.item_limit:
+                    raise ListingStopped("item limit")
+
+                if self.idle >= self.settings.stall_scrolls:
+                    raise ListingStopped("repeated stall")
+            case "hype_fallback":
+                logger.warning(
+                    "Hype View all unavailable; trying UK Top 100 fallback",
+                )
+            case _:
+                raise ValueError("Unexpected YouTube listing event")
+
+    def _begin_listing(self, event: dict[str, Any]) -> None:
+        self.request_url = str(event["url"])
+        self.playlist_name = str(event["title"])
+
+        if self.feed.kind != "channel":
+            return
+
+        channel = discover_channel(
+            event["raw"], feed_url=self.feed.url, request_url=self.request_url,
+            observed_at=self.observed_at,
+        )
+
+        if channel is not None:
+            self.channel = (
+                channel.channel_id, channel.channel_name, channel.channel_url,
+            )
+            self.batches.put_nowait(ScrapeBatch(
+                [], [], youtube_channels=(channel,),
+            ))
+
+    def _add_renderer(self, event: dict[str, Any]) -> None:
+        batch = self.extract(
+            [(event["key"], event["raw"], event["shelf"])],
+            self.request_url,
+        )
+        self.pending.posts.extend(batch.posts)
+        self.pending.assets.extend(batch.assets)
+
+        if self.reached_overlap:
+            raise ListingStopped("known channel overlap")
+
+    def flush(self) -> None:
+        if self.pending.posts:
+            self.batches.put_nowait(self.pending)
+            self.pending = ScrapeBatch([], [])
 
 
 async def _scrape_listing_feed(
-    page: zendriver.Tab,
-    feed: YouTubeFeed,
-    settings: YouTubeSettings,
-    known_ids: set[str],
-) -> AsyncIterator[ScrapeBatch]:
-    capture = NetworkCapture(page, [r"youtube\.com/youtubei/v1/browse"])
-    collected = FeedCapture(feed, settings, known_ids)
-    idle = 0
-    stop = "scroll limit"
-    await capture.start()
+    feed: YouTubeFeed, settings: YouTubeSettings, known_ids: set[str], *,
+    cookies: Sequence[Mapping[str, object]],
+) -> AsyncGenerator[ScrapeBatch]:
+    capture = _ListingCapture(feed, settings, known_ids)
+
+    async def collect() -> str:
+        try:
+            return await collect_listing(
+                feed, settings, capture.receive, cookies=cookies,
+            )
+        finally:
+            capture.flush()
+            capture.batches.put_nowait(None)
+
+    worker = asyncio.create_task(collect())
 
     try:
-        request_url, state = await _resolve_feed(page, feed, settings)
+        while (batch := await capture.batches.get()) is not None:
+            yield batch
 
-        state = await _channel_state(page, feed, state)
-        collected.playlist_name = playlist_title(state.get("initial"))
-
-        if feed.kind == "channel":
-            channel = discover_channel(
-                state.get("initial"), feed_url=feed.url,
-                request_url=request_url, observed_at=collected.observed_at,
-            )
-
-            if channel is not None:
-                collected.channel = (
-                    channel.channel_id, channel.channel_name,
-                    channel.channel_url,
-                )
-                yield ScrapeBatch([], [], youtube_channels=(channel,))
-
-        # Discard Hype landing responses before reading its playlist.
-        await capture.drain(timeout_seconds=0.05)
-
-        for step in range(settings.scrape.max_scrolls + 1):
-            values: list[object] = []
-
-            for response in await capture.drain(timeout_seconds=0.05):
-                if response.status >= 400:
-                    raise YouTubeFeedError(
-                        f"YouTube listing returned HTTP {response.status}",
-                    )
-
-                try:
-                    values.append(json.loads(response.body))
-                except json.JSONDecodeError:
-                    count("parse_failures")
-                    logger.warning(
-                        "YouTube browse response was not JSON for %s",
-                        feed.url,
-                    )
-
-            batch = collected.extract(_candidates(state, values), request_url)
-
-            if batch.posts:
-                yield batch
-
-            idle = (
-                0 if batch.posts or not state.get("at_bottom", True)
-                else idle + 1
-            )
-            logger.info(
-                "YouTube %s scroll=%d items=%d discoveries=%d",
-                feed.name,
-                step,
-                len(collected.item_ids),
-                len(collected.seen),
-            )
-            stop = _stop_reason(collected, idle) or "scroll limit"
-
-            if stop != "scroll limit" or step == settings.scrape.max_scrolls:
-                break
-
-            async with asyncio.timeout(15):
-                await page.evaluate(EXPAND_SCRIPT)
-                await page.evaluate(SCROLL_SCRIPT)
-                await asyncio.sleep(settings.scrape.scroll_pause_seconds)
-
-            state = await snapshot(page)
-
-        if not collected.item_ids:
-            raise YouTubeFeedError(
-                "No usable feed items found; check access or renderer changes",
-            )
-
-        logger.info(
-            "Finished YouTube %s items=%d reason=%s",
-            feed.name,
-            len(collected.item_ids),
-            stop,
-        )
+        reason = await worker
     finally:
-        await capture.stop()
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
 
+    logger.info(
+        "YouTube %s via yt-dlp: items=%d reason=%s",
+        feed.name, len(capture.item_ids), reason,
+    )
 
-def _stop_reason(capture: FeedCapture, idle: int) -> str | None:
-    if capture.reached_overlap:
-        return "known channel overlap"
-
-    if len(capture.item_ids) >= capture.item_limit:
-        return "item limit"
-
-    if idle >= capture.settings.stall_scrolls:
-        return "repeated stall"
-
-    return None
+    if not capture.item_ids:
+        raise YouTubeFeedError(
+            "No usable feed items found; check access or renderer changes",
+        )
 
 
 async def _verify_saved_session(
@@ -689,74 +655,103 @@ async def scrape_youtube_feeds(
     if stats is not None:
         stats.feed_urls = tuple(feed.url for feed in feeds)
 
+    profile = (settings.youtube.profile_dir
+               or settings.data_dir / "youtube-browser-profile")
+    session_path = profile / "youtube-session.json"
+
+    for feed in feeds:
+        if feed.kind != "home":
+            continue
+
+        try:
+            async with aclosing(_recommendation_batches(
+                settings, feed, session, session_path,
+            )) as recommendations:
+                async for batch in recommendations:
+                    yield batch
+        except Exception as error:
+            _collection_failure(feed.name, error)
+
+    listings = tuple(feed for feed in feeds if feed.kind != "home")
     library = settings.youtube.playlists and (
         settings.youtube.authenticated or bool(known_playlists)
     )
 
-    if not feeds and not library:
+    if listings or library:
+        async with aclosing(_browserless_batches(
+            settings.youtube, listings, session_path,
+            known_ids or {}, known_playlists or {}, library=library,
+        )) as batches:
+            async for batch in batches:
+                yield batch
+
+
+async def _browserless_batches(
+    settings: YouTubeSettings, feeds: tuple[YouTubeFeed, ...],
+    session_path: pathlib.Path, known_ids: Mapping[str, set[str]],
+    known_playlists: Mapping[str, dict[str, Any]], *, library: bool,
+) -> AsyncGenerator[ScrapeBatch]:
+    try:
+        cookies = (
+            await load_youtube_session_cookies(session_path)
+            if settings.authenticated else []
+        )
+    except (OSError, ValueError):
+        _collection_failure(
+            "saved session", YouTubeFeedError(
+                "Saved YouTube session unavailable; run youtube-login",
+            ),
+        )
         return
 
+    try:
+        for feed in feeds:
+            try:
+                async with aclosing(_scrape_feed(
+                    None, feed, settings, known_ids.get(feed.url, set()),
+                    cookies=cookies,
+                )) as batches:
+                    async for batch in batches:
+                        yield batch
+            except Exception as error:
+                _collection_failure(feed.name, error)
+
+        if library:
+            try:
+                async for batch in collect_playlist_library(
+                    settings, known_playlists, cookies=cookies,
+                    excluded={playlist_id(feed.url) for feed in feeds
+                              if feed.kind == "playlist"},
+                ):
+                    yield batch
+            except Exception as error:
+                _collection_failure("Playlists", error)
+    finally:
+        cookies.clear()
+
+
+async def _recommendation_batches(
+    settings: Settings, feed: YouTubeFeed, session: BrowserSession,
+    session_path: pathlib.Path,
+) -> AsyncGenerator[ScrapeBatch]:
     async with asyncio.timeout(30):
         browser = await session.get_browser()
         page = await browser.get("about:blank", new_tab=True)
 
     try:
-        try:
-            await _verify_saved_session(settings, session, page)
-        except Exception as error:
-            _collection_failure("session verification", error)
-            return
+        await _verify_saved_session(settings, session, page)
 
-        for feed in feeds:
-            try:
-                async for batch in _scrape_feed(
-                    page,
-                    feed,
-                    settings.youtube,
-                    (known_ids or {}).get(feed.url, set()),
-                ):
-                    yield batch
-            except Exception as error:
-                _collection_failure(feed.name, error)
-
-        async for batch in _saved_library_batches(
-            page, settings.youtube, feeds, known_playlists or {},
-            enabled=library,
-        ):
+        async for batch in _scrape_feed(page, feed, settings.youtube, set()):
             yield batch
     finally:
         try:
-            if settings.youtube.authenticated:
-                profile = (
-                    settings.youtube.profile_dir
-                    or settings.data_dir / "youtube-browser-profile"
-                )
+            try:
                 await save_youtube_session_from_page(
-                    browser, page, profile / "youtube-session.json",
+                    browser, page, session_path,
                 )
-
-            async with asyncio.timeout(5):
-                await page.close()
+            finally:
+                async with asyncio.timeout(5):
+                    await page.close()
         except Exception as error:
-            logger.warning(
-                "Could not close YouTube tab (%s)", type(error).__name__,
-            )
-
-
-async def _saved_library_batches(
-    page: zendriver.Tab, settings: YouTubeSettings,
-    feeds: tuple[YouTubeFeed, ...], known: Mapping[str, dict[str, Any]],
-    *, enabled: bool,
-) -> AsyncIterator[ScrapeBatch]:
-    if not enabled:
-        return
-
-    try:
-        async for batch in collect_playlist_library(
-            page, settings, known,
-            excluded={playlist_id(feed.url) for feed in feeds
-                      if feed.kind == "playlist"},
-        ):
-            yield batch
-    except Exception as error:
-        _collection_failure("Playlists", error)
+            logger.warning("Could not close YouTube tab (%s)",
+                           type(error).__name__)

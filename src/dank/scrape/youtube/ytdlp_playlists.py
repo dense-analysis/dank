@@ -6,10 +6,8 @@ import asyncio
 import json
 import logging
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
-
-import zendriver
 
 from dank.config import YouTubeSettings
 from dank.model import YouTubePlaylistCapture
@@ -29,7 +27,6 @@ from .ytdlp_worker import (
     emit,
     has_youtube_session,
     run_worker,
-    session_cookies,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,7 +91,7 @@ class PlaylistResponseCapture:
             self.count += 1
 
 
-def _selected_playlist_tab(
+def select_playlist_tab(
     data: object,
     tabs: list[dict[str, Any]],
     identifier: str,
@@ -178,7 +175,7 @@ def install_playlist_capture(
             if item_id != capture.identifier:
                 raise ValueError("Unexpected playlist identity")
 
-            scoped = _selected_playlist_tab(data, tabs, capture.identifier)
+            scoped = select_playlist_tab(data, tabs, capture.identifier)
             listing = {
                 **as_dict(data),
                 "contents": {"twoColumnBrowseResultsRenderer": {"tabs": [
@@ -303,10 +300,10 @@ class _PlaylistCapture:
 
 
 async def collect_playlist(
-    page: zendriver.Tab,
     url: str,
     settings: YouTubeSettings,
     *,
+    cookies: Sequence[Mapping[str, object]] = (),
     fallback: dict[str, Any] | None = None,
     timeout_seconds: float = PLAYLIST_TIMEOUT_SECONDS,
 ) -> YouTubePlaylistCapture:
@@ -316,25 +313,19 @@ async def collect_playlist(
         raise ValueError("Playlist timeout must be within 120 seconds")
 
     capture = _PlaylistCapture(identifier, fallback)
-    cookies: list[dict[str, Any]] = []
     loop = asyncio.get_running_loop()
     started = loop.time()
 
     try:
-        if settings.authenticated:
-            cookies = await session_cookies(page)
-
-            if not has_youtube_session(cookies):
-                raise ValueError(
-                    "Verified YouTube session cookies unavailable",
-                )
+        if settings.authenticated and not has_youtube_session(cookies):
+            raise ValueError("Verified YouTube session cookies unavailable")
 
         remaining = max(0.001, timeout_seconds - (loop.time() - started))
         returncode = await run_worker(
             __name__,
             {
                 "url": url,
-                "cookies": cookies,
+                "cookies": list(cookies) if settings.authenticated else [],
                 "max_entries": PLAYLIST_ENTRY_LIMIT,
                 "region": settings.region,
             },
@@ -346,8 +337,6 @@ async def collect_playlist(
             capture.outcome, capture.error_type = "failed", "WorkerExit"
     except Exception as error:
         capture.outcome, capture.error_type = "failed", type(error).__name__
-    finally:
-        cookies.clear()
 
     result = capture.result()
     logger.info(

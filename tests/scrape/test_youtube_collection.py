@@ -9,10 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from dank.config import BrowserScrapeSettings, YouTubeSettings
-from dank.scrape.youtube import (
-    FeedCapture,
-    _resolve_feed,  # pyright: ignore[reportPrivateUsage]
-)
+from dank.scrape.youtube import FeedCapture, ytdlp_listings
 from dank.scrape.youtube.payloads import (
     YouTubeFeed,
     discover_assets,
@@ -192,19 +189,21 @@ def test_shelf_heading_is_retained_through_nested_rich_items() -> None:
     ]
 
 
-async def test_hype_follows_actual_view_all_playlist(
+def test_hype_follows_actual_view_all_playlist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data = json.loads(FIXTURE.read_text())
-    navigation = AsyncMock()
-    states = AsyncMock(side_effect=[{"initial": data}, {"initial": {}}])
-    monkeypatch.setattr("dank.scrape.youtube.navigate", navigation)
-    monkeypatch.setattr("dank.scrape.youtube.snapshot", states)
+    extractor = Mock()
+    extractor._extract_data.side_effect = [(data, {}), ({}, {})]
+    output = Mock()
+    monkeypatch.setattr(ytdlp_listings, "emit", output)
     feed = YouTubeFeed("https://www.youtube.com/feed/hype", "Hype", "hype")
-    url, _ = await _resolve_feed(AsyncMock(), feed, YouTubeSettings())
+    url, _, _ = ytdlp_listings._open_listing(  # pyright: ignore[reportPrivateUsage]
+        extractor, feed, "GB",
+    )
     assert "list=OLJbGgOZgwZ9k_XXE2tcr-JsD4tag1iKjng" in url
-    assert navigation.await_count == 2
-    assert "/playlist?list=" in navigation.await_args_list[-1].args[1]
+    assert extractor._extract_data.call_count == 2
+    output.assert_not_called()
 
 
 def test_listing_limit_counts_items_without_losing_multiple_discoveries() -> (
@@ -285,7 +284,7 @@ async def test_one_failed_feed_keeps_other_feeds_and_reports_partial_failure(
     session = AsyncMock()
     session.get_browser.return_value = browser
 
-    async def collect(*args: Any):
+    async def collect(*args: Any, **kwargs: Any):
         feed = args[1]
 
         if feed.tab == "top_stories":
@@ -309,7 +308,7 @@ async def test_one_failed_feed_keeps_other_feeds_and_reports_partial_failure(
     assert statistics.counts["fetch_failures"] == 1
     assert statistics.error_type == "YouTubeFeedError"
     assert len(statistics.feed_urls) == 2
-    page.close.assert_awaited_once()
+    session.get_browser.assert_not_awaited()
 
 
 def test_sorted_channel_feeds_do_not_use_chronological_overlap() -> None:
@@ -334,38 +333,34 @@ async def test_hype_stops_after_top_100_without_extra_scrolls(
     )
 
     feed = YouTubeFeed("https://www.youtube.com/feed/hype", "Hype", "hype")
-    data = [{"videoRenderer": {"videoId": f"{index:011d}"}}
-            for index in range(100)]
-    monkeypatch.setattr("dank.scrape.youtube._resolve_feed", AsyncMock(
-        return_value=("https://www.youtube.com/playlist?list=test", {
-            "initial": data, "at_bottom": False,
-        }),
-    ))
-    capture = AsyncMock()
-    capture.drain.return_value = []
-    monkeypatch.setattr("dank.scrape.youtube.NetworkCapture",
-                        Mock(return_value=capture))
-    page = AsyncMock()
+    async def worker(
+        module: str, request: dict[str, Any], budget: float, receive: Any,
+    ) -> int:
+        for index in range(101):
+            receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
+                     "raw": {"videoId": f"{index:011d}"}})
+
+        receive({"event": "page"})
+        pytest.fail("The Top 100 must stop before another page")
+
+    monkeypatch.setattr(ytdlp_listings, "run_worker", worker)
     batches = [batch async for batch in _scrape_feed(
-        page, feed, YouTubeSettings(), set(),
+        None, feed, YouTubeSettings(), set(),
     )]
     assert sum(len(batch.posts) for batch in batches) == 100
-    page.evaluate.assert_not_awaited()
-    capture.stop.assert_awaited_once()
 
 
-async def test_explicit_regional_hype_skips_local_discovery_and_saves_region(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_explicit_regional_hype_keeps_region_without_local_discovery() -> None:
     url = "https://www.youtube.com/playlist?list=US_LEADERBOARD"
     feed = YouTubeFeed(url, "Hype · US", "hype", region="US")
-    navigation = AsyncMock()
-    states = AsyncMock(return_value={"initial": {}, "url": url})
-    monkeypatch.setattr("dank.scrape.youtube.navigate", navigation)
-    monkeypatch.setattr("dank.scrape.youtube.snapshot", states)
-    page = AsyncMock()
-    resolved, _ = await _resolve_feed(page, feed, YouTubeSettings(region="GB"))
-    navigation.assert_awaited_once_with(page, url + "&gl=US&hl=en-GB")
+    extractor = Mock()
+    extractor._extract_data.return_value = ({}, {})
+    resolved, _, _ = ytdlp_listings._open_listing(  # pyright: ignore[reportPrivateUsage]
+        extractor, feed, feed.region,
+    )
+    extractor._extract_data.assert_called_once_with(
+        url + "&gl=US&hl=en-GB", feed.name,
+    )
     assert resolved == url
 
     captured = FeedCapture(feed, YouTubeSettings(region="GB"), set())
@@ -387,7 +382,12 @@ async def test_session_preflight_failure_is_local_and_closes_the_tab(
     from dank.scrape.metrics import SourceMetrics, current_source
     from dank.scrape.youtube import YouTubeFeedError, scrape_youtube_feeds
 
-    settings = load_settings("config.native.example.toml")
+    settings = load_settings("config.native.example.toml")._replace(
+        youtube=YouTubeSettings(
+            authenticated=True, homepage=True, hype=False, news_tabs=(),
+            playlists=False,
+        ),
+    )
     source = SourceConfig("youtube.com", ())
     stats = SourceMetrics(0, source)
     owner = AsyncMock()
@@ -395,6 +395,9 @@ async def test_session_preflight_failure_is_local_and_closes_the_tab(
     monkeypatch.setattr("dank.scrape.youtube._verify_saved_session", AsyncMock(
         side_effect=YouTubeFeedError("session unavailable"),
     ))
+    monkeypatch.setattr(
+        "dank.scrape.youtube.save_youtube_session_from_page", AsyncMock(),
+    )
     collect = AsyncMock()
     monkeypatch.setattr("dank.scrape.youtube._scrape_feed", collect)
     token = current_source.set(stats)

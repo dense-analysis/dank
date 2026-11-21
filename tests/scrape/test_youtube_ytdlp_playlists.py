@@ -212,8 +212,6 @@ def test_pinned_ytdlp_extractor_drives_selected_playlist_without_video_visits(
 async def test_public_playlist_uses_no_browser_navigation_or_cookie_read(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    page = AsyncMock()
-
     async def worker(
         module: str,
         request: dict[str, Any],
@@ -230,8 +228,8 @@ async def test_public_playlist_uses_no_browser_navigation_or_cookie_read(
         return 0
 
     monkeypatch.setattr(ytdlp_playlists, "run_worker", worker)
-    first = await collect_playlist(page, URL, YouTubeSettings())
-    second = await collect_playlist(page, URL, YouTubeSettings())
+    first = await collect_playlist(URL, YouTubeSettings())
+    second = await collect_playlist(URL, YouTubeSettings())
     assert first.status == "complete" and first.exhausted
     assert [entry["position"] for entry in first.entries] == [1, 2]
     assert [entry["entry_id"] for entry in first.entries] == ["one", "two"]
@@ -239,8 +237,6 @@ async def test_public_playlist_uses_no_browser_navigation_or_cookie_read(
         second.metadata,
         second.entries,
     )
-    page.send.assert_not_awaited()
-    page.evaluate.assert_not_awaited()
 
 
 @pytest.mark.parametrize("failure", ["timeout", "incomplete", "warning"])
@@ -268,7 +264,7 @@ async def test_interrupted_manifest_retains_data_but_is_not_exhausted(
         return 0
 
     monkeypatch.setattr(ytdlp_playlists, "run_worker", worker)
-    result = await collect_playlist(AsyncMock(), URL, YouTubeSettings())
+    result = await collect_playlist(URL, YouTubeSettings())
     assert result.status == "partial" and not result.exhausted
     assert len(result.entries) == 1
 
@@ -290,7 +286,7 @@ async def test_cancelled_manifest_propagates_cancellation(
 
     monkeypatch.setattr(ytdlp_playlists, "run_worker", worker)
     task = asyncio.create_task(
-        collect_playlist(AsyncMock(), URL, YouTubeSettings()),
+        collect_playlist(URL, YouTubeSettings()),
     )
     await asyncio.wait_for(started.wait(), 1)
     task.cancel()
@@ -342,13 +338,10 @@ def test_worker_requests_flat_metadata_only_and_redacts_failures(
 async def test_authenticated_playlist_never_degrades_to_empty_cookie_capture(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setattr(
-        ytdlp_playlists, "session_cookies", AsyncMock(return_value=[]),
-    )
     worker = AsyncMock()
     monkeypatch.setattr(ytdlp_playlists, "run_worker", worker)
     result = await collect_playlist(
-        AsyncMock(), URL, YouTubeSettings(authenticated=True),
+        URL, YouTubeSettings(authenticated=True),
     )
     assert result.status == "failed" and not result.exhausted
     worker.assert_not_awaited()
@@ -371,7 +364,7 @@ async def test_only_recognized_empty_playlist_can_publish_empty_snapshot(
         return 0
 
     monkeypatch.setattr(ytdlp_playlists, "run_worker", worker)
-    result = await collect_playlist(AsyncMock(), URL, YouTubeSettings())
+    result = await collect_playlist(URL, YouTubeSettings())
     assert result.entries == ()
     assert result.exhausted is with_metadata
     assert result.status == ("complete" if with_metadata else "failed")

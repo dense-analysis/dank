@@ -223,6 +223,13 @@ def _read_cache(path: pathlib.Path) -> list[dict[str, Any]]:
     return cookies
 
 
+async def load_youtube_session_cookies(
+    path: pathlib.Path,
+) -> list[dict[str, Any]]:
+    """Read the validated session snapshot for a browser-free request."""
+    return await asyncio.to_thread(_read_cache, path)
+
+
 async def save_youtube_session(
     browser: zendriver.Browser, path: pathlib.Path,
 ) -> bool:
