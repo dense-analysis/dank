@@ -257,6 +257,15 @@ channel's live browse continuation. DANK kept the 30 first-page items. The
 [listing worker tests](../tests/scrape/test_youtube_ytdlp_listings.py) cover
 successful pagination, bounded and partial results, and routing.
 
+A native Debian scrape reported a missing JavaScript runtime while Node was
+installed at `/usr/bin/node`. DANK now searches `PATH` first and then common
+system directories for Deno and Node. Downloads and caption discovery pass
+each runtime in its own yt-dlp argument, and the listing workers pass runtime
+paths through the Python API. The pinned yt-dlp parsed the previous combined
+argument as one executable path. The [download regression test](../tests/scrape/test_scrape_assets.py)
+checks the parsed options when Node is found through `PATH` and when
+`/usr/bin/node` is needed as a fallback. yt-dlp still requires Node 22+.
+
 Signed-in homepage **Recommendations** uses yt-dlp only, with a 30-second
 listing budget and 2,000-renderer guard. Chromium verifies the existing session
 and supplies cookies in memory; no browser recommendation scrolling or fallback

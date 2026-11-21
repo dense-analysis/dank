@@ -11,6 +11,8 @@ from http.cookiejar import CookieJar
 from typing import Any, Literal, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
+from dank.scrape.ytdlp_runtime import js_runtime_options
+
 from .payloads import POST_RENDERERS, VIDEO_RENDERERS
 from .ytdlp_renderers import HomeRenderer, RendererLimitReached
 from .ytdlp_worker import (
@@ -225,6 +227,7 @@ def _run_worker() -> None:
         "cachedir": False, "quiet": True, "no_warnings": False,
         "logger": _WorkerLogger(), "socket_timeout": 15,
         "retries": 0, "extractor_retries": 0,
+        "js_runtimes": js_runtime_options(),
         "extractor_args": {"youtube": {"lang": ["en-GB"]}},
         # Regional query parameters defeat yt-dlp's exact recommended-URL
         # exception. This worker intentionally follows only that home route.

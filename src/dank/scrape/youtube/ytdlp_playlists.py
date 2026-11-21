@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from dank.config import YouTubeSettings
 from dank.model import YouTubePlaylistCapture
+from dank.scrape.ytdlp_runtime import js_runtime_options
 
 from .payloads import as_dict, objects
 from .playlists import (
@@ -371,6 +372,7 @@ def _worker() -> None:
             "socket_timeout": 15,
             "retries": 0,
             "extractor_retries": 0,
+            "js_runtimes": js_runtime_options(),
             "extractor_args": {"youtube": {"lang": ["en-GB"]}},
             # Observe the user's selected playlist order. An additional reload
             # to show unavailable videos is a different manifest request.

@@ -8,7 +8,6 @@ import html
 import json
 import math
 import os
-import shutil
 import signal
 import sys
 from contextlib import nullcontext
@@ -19,6 +18,7 @@ import aiohttp
 from yarl import URL
 
 from dank.scrape.http import HostCooldownError, current_limiter
+from dank.scrape.ytdlp_runtime import js_runtime_arguments
 from dank.youtube import VIDEO_ID, payload_object
 
 TRANSCRIPT_TIMEOUT_SECONDS = 40
@@ -213,9 +213,7 @@ async def extract_caption_metadata(video_id: str) -> dict[str, Any]:
         "%(.{id,subtitles,automatic_captions,language,live_status})j",
     ]
 
-    if shutil.which("node"):
-        arguments.extend(["--js-runtimes", "node"])
-
+    arguments.extend(js_runtime_arguments())
     arguments.append(f"https://www.youtube.com/watch?v={video_id}")
     process = await asyncio.create_subprocess_exec(
         *arguments,

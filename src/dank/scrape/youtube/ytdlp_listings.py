@@ -10,6 +10,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from dank.config import YouTubeSettings, youtube_feed_url
+from dank.scrape.ytdlp_runtime import js_runtime_options
 
 from .payloads import (
     ORIGIN,
@@ -304,6 +305,7 @@ def _worker() -> None:
             "quiet": True, "logger": WorkerLogger(), "socket_timeout": 15,
             "sleep_interval_requests": request["pause"], "retries": 0,
             "extractor_retries": 0,
+            "js_runtimes": js_runtime_options(),
             "extractor_args": {"youtube": {"lang": ["en-GB"]}},
         }
 

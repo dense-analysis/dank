@@ -7,7 +7,6 @@ import hashlib
 import logging
 import optparse
 import pathlib
-import shutil
 import tempfile
 from typing import TYPE_CHECKING, NamedTuple, Self, cast
 from urllib.parse import urlsplit
@@ -15,6 +14,7 @@ from urllib.parse import urlsplit
 from yt_dlp import ParsedOptions, YoutubeDL, parse_options  # type: ignore
 
 from dank.model import AssetDiscovery, RawAsset
+from dank.scrape.ytdlp_runtime import js_runtime_arguments
 
 from .limits import AssetSizeExceeded, VideoSizeLimit
 from .video_formats import youtube_format
@@ -212,10 +212,7 @@ def _build_yt_dlp_arguments(
     if max_asset_bytes is not None and max_asset_bytes > 0:
         arguments.extend(["--max-filesize", str(max_asset_bytes)])
 
-    js_runtimes = _build_js_runtime_argument()
-
-    if js_runtimes is not None:
-        arguments.extend(["--js-runtimes", js_runtimes])
+    arguments.extend(js_runtime_arguments())
 
     if cookies_from_browser is not None:
         arguments.extend(["--cookies-from-browser", cookies_from_browser])
@@ -223,21 +220,6 @@ def _build_yt_dlp_arguments(
     arguments.append(url)
 
     return arguments
-
-
-def _build_js_runtime_argument() -> str | None:
-    runtimes: list[str] = []
-
-    for runtime_name in ("deno", "node"):
-        runtime_path = shutil.which(runtime_name)
-
-        if runtime_path:
-            runtimes.append(f"{runtime_name}:{runtime_path}")
-
-    if not runtimes:
-        return None
-
-    return ",".join(runtimes)
 
 
 def _cookies_from_browser_argument(

@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import pathlib
+from os import pathsep
 from typing import Any, NamedTuple, cast
 
 import pytest
+from yt_dlp import parse_options  # type: ignore[import-untyped]
 
 from dank.config import MEDIA_DOWNLOAD_TYPES, SourceConfig
 from dank.model import AssetDiscovery
@@ -245,9 +247,11 @@ async def test_download_assets_skips_loader_gif_by_filename(
     assert assets[0].local_path == ""
 
 
+@pytest.mark.parametrize("node_on_path", [True, False], ids=["path", "system"])
 async def test_download_assets_passes_js_runtimes_to_yt_dlp(
     monkeypatch: Any,
     tmp_path: Any,
+    *, node_on_path: bool,
 ) -> None:
     assets_dir = tmp_path / "assets"
     created_path = assets_dir / "example.com" / "post-1" / "video-id.mp4"
@@ -298,16 +302,18 @@ async def test_download_assets_passes_js_runtimes_to_yt_dlp(
         _DummyYoutubeDL,
     )
 
-    def _which(runtime: str) -> str | None:
-        return {
-            "deno": "/usr/bin/deno",
-            "node": "/usr/local/bin/node",
-        }.get(runtime)
+    def _which(runtime: str, *, path: str | None = None) -> str | None:
+        if runtime == "deno":
+            return "/usr/bin/deno"
 
-    monkeypatch.setattr(
-        "dank.scrape.assets.audio_video.shutil.which",
-        _which,
-    )
+        if path is None:
+            return "/opt/dank/bin/node" if node_on_path else None
+
+        assert "/usr/bin" in path.split(pathsep)
+
+        return "/usr/bin/node"
+
+    monkeypatch.setattr("dank.scrape.ytdlp_runtime.which", _which)
 
     discovery = AssetDiscovery(
         source="rss",
@@ -324,12 +330,12 @@ async def test_download_assets_passes_js_runtimes_to_yt_dlp(
     )
 
     assert assets
-    assert "--js-runtimes" in parsed_arguments
-
-    js_runtime_index = parsed_arguments.index("--js-runtimes")
-    assert parsed_arguments[js_runtime_index + 1] == (
-        "deno:/usr/bin/deno,node:/usr/local/bin/node"
-    )
+    options = parse_options(["--ignore-config", *parsed_arguments]).ydl_opts
+    node = "/opt/dank/bin/node" if node_on_path else "/usr/bin/node"
+    assert options.get("js_runtimes") == {
+        "deno": {"path": "/usr/bin/deno"},
+        "node": {"path": node},
+    }
 
 
 async def test_download_assets_logs_yt_dlp_messages_with_prefix(

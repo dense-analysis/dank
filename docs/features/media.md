@@ -27,7 +27,8 @@ skips. Failed requests are not repeated automatically with browser cookies remov
 
 The matching `yt-dlp-ejs` solver package is pinned alongside yt-dlp. Docker
 includes Node and FFmpeg. Native downloads need FFmpeg and Node 22+ or a supported
-Deno runtime on `PATH`; see the [official runtime guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
+Deno runtime. DANK checks `PATH` first, then `/usr/local/bin`, `/usr/bin`, `/bin`
+and `/opt/homebrew/bin`. See the [official runtime guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
 When available, downloads use the saved Chromium profile's cookies. Metadata JSON
 and, when `image` is enabled, a thumbnail are retained beside successful media.
 

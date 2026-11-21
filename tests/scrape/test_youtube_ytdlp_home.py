@@ -90,6 +90,11 @@ def test_worker_streams_flat_entries_without_resolving_video_urls(
 ) -> None:
     raw = {"url": "https://www.youtube.com/watch?v=abcdefghijk",
            "id": "abcdefghijk", "title": "News", "duration": 11}
+    runtimes = {"deno": {}, "node": {"path": "/usr/bin/node"}}
+    monkeypatch.setattr(
+        "dank.scrape.youtube.ytdlp_home.js_runtime_options",
+        lambda: runtimes,
+    )
     constructor = _worker_provider(monkeypatch, iter([raw, raw]))
     _worker()
     output = capsys.readouterr().out
@@ -108,6 +113,7 @@ def test_worker_streams_flat_entries_without_resolving_video_urls(
     assert options["lazy_playlist"] is True
     assert options["skip_download"] is True
     assert options["cachedir"] is False
+    assert options["js_runtimes"] == runtimes
     assert not options.get("cookiefile")
     assert not options.get("cookiesfrombrowser")
 
