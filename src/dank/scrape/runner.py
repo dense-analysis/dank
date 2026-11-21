@@ -1298,7 +1298,7 @@ async def _x_listing_batches(
     scrape_started_at: datetime.datetime | None = None,
     account_plan: _AccountSchedule | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
-    browser = XBrowser(session)
+    browser = XBrowser(session, settings)
     cutoff = scrape_started_at or datetime.datetime.now(datetime.UTC)
 
     if settings.homepage:

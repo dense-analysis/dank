@@ -35,9 +35,11 @@ def _page(states: tuple[object, ...] = ()) -> MagicMock:
 
 
 async def test_sign_in_waits_through_challenge_and_navigation() -> None:
-    page = _page((False, ProtocolException("context destroyed"), True))
+    page = _page((ProtocolException("context destroyed"), True))
     await wait_for_x_session(page, timeout_seconds=6)
-    assert page.evaluate.await_count == 3
+    assert page.evaluate.await_count == 2
+    calls = page.evaluate.await_args_list
+    assert all(call.kwargs["await_promise"] for call in calls)
 
 
 async def test_temporary_limit_stops_immediately_without_retrying() -> None:
@@ -55,11 +57,8 @@ async def test_page_or_cookie_presence_is_not_sign_in(state: object) -> None:
     assert not await is_signed_in(_page((state,)))
 
 
-async def test_initial_check_waits_for_a_page_still_loading(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("dank.scrape.x.session.SESSION_POLL_SECONDS", 0.001)
-    page = _page((False, ProtocolException("navigation"), True))
+async def test_initial_check_waits_for_a_page_still_loading() -> None:
+    page = _page((ProtocolException("Inspected target navigated"), True))
     assert await check_x_session(page, timeout_seconds=1)
 
 
@@ -71,7 +70,7 @@ async def test_initial_check_distinguishes_login_from_loading() -> None:
 
 async def test_uncertain_session_check_does_not_request_sign_in() -> None:
     page = _page()
-    page.evaluate = AsyncMock(return_value=False)
+    page.evaluate = AsyncMock(return_value=None)
 
     with pytest.raises(LoginRequiredError, match="Could not confirm"):
         await check_x_session(page, timeout_seconds=0.01)
@@ -93,7 +92,7 @@ async def test_closed_browser_does_not_report_saved_session() -> None:
 async def test_timeout_also_bounds_a_stalled_browser_command() -> None:
     page = _page()
 
-    async def stalled(*args: Any) -> None:
+    async def stalled(*args: Any, **kwargs: Any) -> None:
         await asyncio.Event().wait()
 
     page.evaluate.side_effect = stalled
@@ -168,7 +167,7 @@ async def test_login_reports_success_only_after_flushing_shared_profile(
         load.assert_not_awaited()
     else:
         assert "6080" in output
-        assert "1Password will fill" in output
+        assert "DANK will fill" in output
         load.assert_awaited_once()
         wait.assert_awaited_once_with(
             page, timeout_seconds=10, credentials=credentials,
@@ -245,14 +244,19 @@ async def test_saved_session_collects_without_password_or_email(
     assert not hasattr(settings.x, "password")
 
 
-def test_legacy_credentials_are_not_loaded(tmp_path: pathlib.Path) -> None:
+def test_legacy_x_and_imap_credentials_load_without_showing_passwords(
+    tmp_path: pathlib.Path,
+) -> None:
     path = tmp_path / "settings.fixture.toml"
     path.write_text(
         '[x]\npassword="old-x-secret"\nusername="reader"\n'
+        'email="reader@example.test"\n'
         '[email]\nhost="imap.test"\nusername="reader"\n'
         'password="old-mail-secret"\n',
     )
     settings = load_settings(path)
+    assert settings.x.email == "reader@example.test"
+    assert settings.x.imap == ("imap.test", "reader", "old-mail-secret", 993)
     assert "old-x-secret" not in repr(settings)
     assert "old-mail-secret" not in repr(settings)
 

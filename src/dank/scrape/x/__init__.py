@@ -22,12 +22,14 @@ from dank.scrape.zendriver import (
     NetworkResponse,
 )
 
+from .auto_login import sign_in_automatically
 from .conversations import ConversationCapture, capture_conversation
 from .navigation import (
     check_login_required as _check_login_required,
     navigate_to_account as _navigate_to_account,
     scroll as _scroll,
 )
+from .onepassword import load_credentials
 from .payloads import (
     XAsset,
     XExtractedPost,
@@ -35,9 +37,11 @@ from .payloads import (
     extract_posts_from_payload,
 )
 from .session import (
+    LOGIN_NO_IMAP_MESSAGE,
     SESSION_CHECK_TIMEOUT_SECONDS,
     X_HOME_URL,
     LoginRequiredError,
+    SignInPromptError,
     wait_for_x_session,
 )
 
@@ -128,22 +132,64 @@ class _TimelineOverlap:
 
 
 class XBrowser:
-    def __init__(self, session: BrowserSession) -> None:
+    def __init__(self, session: BrowserSession, settings: XSettings) -> None:
         self.session = session
+        self.settings = settings
         self.page: zendriver.Tab | None = None
+        self.sign_in_attempted = False
 
     async def get_page(self) -> zendriver.Tab:
-        if self.page is None:
-            async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
-                browser = await self.session.get_browser()
-                page = await browser.get(X_HOME_URL)
+        if self.page is not None:
+            return self.page
 
-            await wait_for_x_session(
-                page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
-            )
-            self.page = page
+        async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+            browser = await self.session.get_browser()
+            page = await browser.get(X_HOME_URL)
 
-        return self.page
+        await self.check_session(page)
+
+        return page
+
+    async def check_session(self, page: zendriver.Tab) -> None:
+        self.page = page
+        await wait_for_x_session(
+            page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
+            stop_on_prompt=True,
+        )
+
+    async def recover_session(
+        self, error: LoginRequiredError | BrowserProfileBusyError,
+    ) -> None:
+        page = self.page
+
+        if not isinstance(error, SignInPromptError):
+            raise error
+
+        if error.stage == "email_code" and self.settings.imap is None:
+            raise LoginRequiredError(LOGIN_NO_IMAP_MESSAGE) from None
+
+        if (
+            page is None or self.sign_in_attempted
+            or (self.settings.credentials is None
+                and self.settings.onepassword is None)
+        ):
+            raise error
+
+        self.sign_in_attempted = True
+        logger.info("X requested sign-in; checking configured credentials")
+        credentials = self.settings.credentials
+
+        if credentials is None:
+            credentials = await load_credentials(self.settings.onepassword)
+
+        if credentials is None:
+            raise error
+
+        await sign_in_automatically(
+            page, credentials,
+            email=self.settings.email, imap=self.settings.imap,
+        )
+        logger.info("X confirmed automatic sign-in; resuming collection")
 
     async def reset(self) -> None:
         self.page = None
@@ -185,7 +231,7 @@ async def scrape_x_accounts(
 
         return
 
-    browser = browser or XBrowser(session)
+    browser = browser or XBrowser(session, settings)
     logger.info(
         "Collecting X timelines first; discussions are deferred. "
         "Use --x-details to refresh saved posts separately.",
@@ -230,7 +276,11 @@ async def _collect_account(
     seen_references: set[str] = set()
     seen_assets: set[str] = set()
 
-    for attempt in range(2):
+    browser_failure = False
+    attempt = 0
+
+    while True:
+        attempt += 1
         overlap = _TimelineOverlap(account, known_ids, settings.known_overlap)
 
         try:
@@ -253,17 +303,19 @@ async def _collect_account(
 
                 if posts or assets:
                     yield batch._replace(posts=posts, assets=assets)
-        except (LoginRequiredError, BrowserProfileBusyError):
-            raise
+        except (LoginRequiredError, BrowserProfileBusyError) as error:
+            await browser.recover_session(error)
+            count("retries")
         except (ConnectionError, ProtocolException) as error:
             logger.warning(
                 "X timeline account=%s attempt=%d browser failure=%s; "
-                "retained posts=%d", account, attempt + 1,
+                "retained posts=%d", account, attempt,
                 type(error).__name__, len(seen_posts),
             )
             await browser.reset()
 
-            if not attempt:
+            if not browser_failure:
+                browser_failure = True
                 count("retries")
                 continue
 
@@ -292,7 +344,7 @@ async def _collect_account(
                     "X timeline account=%s outcome=completed "
                     "posts=%d references=%d attempts=%d reason=%s",
                     account, len(seen_posts), len(seen_references),
-                    attempt + 1, reason,
+                    attempt, reason,
                 )
 
                 overlap.record_check(on_checked)
@@ -317,7 +369,7 @@ def _account_failed(
 async def scrape_x_posts(
     settings: XSettings, posts: list[RawPost], session: BrowserSession,
 ) -> AsyncIterator[ScrapeBatch]:
-    browser = XBrowser(session)
+    browser = XBrowser(session, settings)
 
     for index, post in enumerate(posts, 1):
         logger.info(
@@ -331,7 +383,6 @@ async def scrape_x_posts(
             reason = archive["reason"]
 
             if reason == "login_required":
-                logger.warning("X discussions stopped: sign-in required")
                 break
 
         except (BrowserProfileBusyError, XBrowserRecoveryError) as error:
@@ -347,8 +398,20 @@ async def _capture_saved_post(
 
     if settings.conversation.enabled:
         try:
-            page = await browser.get_page()
-        except LoginRequiredError:
+            try:
+                page = await browser.get_page()
+                return await capture_conversation(
+                    page, post, settings.conversation, raise_on_sign_in=True,
+                )
+            except SignInPromptError as error:
+                await browser.recover_session(error)
+                count("retries")
+                page = await browser.get_page()
+                return await capture_conversation(
+                    page, post, settings.conversation,
+                )
+        except LoginRequiredError as error:
+            logger.warning("X discussion sign-in stopped: %s", error)
             reason = "login_required"
         except RECOVERABLE_BROWSER_ERRORS:
             reason = "timeout"
@@ -357,11 +420,6 @@ async def _capture_saved_post(
         except Exception:
             logger.warning("X discussion browser unavailable", exc_info=True)
             reason = "unavailable"
-        else:
-            return await capture_conversation(
-                page, post, settings.conversation,
-            )
-
         count("fetch_failures")
 
     return ConversationCapture(
@@ -390,8 +448,7 @@ async def _scrape_account(
     try:
         async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
             await capture.start()
-            await _navigate_to_account(page, handle)
-            await _check_login_required(page)
+            await _open_timeline(page, handle)
 
         seen_posts: set[str] = set()
         seen_references: set[str] = set()
@@ -513,6 +570,16 @@ async def _drain_posts_and_assets(
         seen_references,
         overlap=overlap,
     )
+
+
+async def _open_timeline(page: zendriver.Tab, handle: str) -> None:
+    try:
+        await _navigate_to_account(page, handle)
+    except TimeoutError:
+        await _check_login_required(page)
+        raise
+
+    await _check_login_required(page)
 
 
 def _scroll_pause_seconds(configured_pause: float, idle_scrolls: int) -> float:

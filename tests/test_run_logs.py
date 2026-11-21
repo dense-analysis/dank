@@ -31,7 +31,9 @@ def workspace(tmp_path: pathlib.Path) -> pathlib.Path:
     (path / "launcher.py").write_text(
         'import json, sys\n'
         'if "--check-session" in sys.argv: sys.exit(3)\n'
-        'print(json.dumps(sys.argv[1:]), flush=True)\n'
+        'args = [arg for arg in sys.argv[1:]\n'
+        '        if arg != "--x-credentials-stdio"]\n'
+        'print(json.dumps(args), flush=True)\n'
         'print("regular progress", flush=True)\n'
         'print("WARNING source unavailable", file=sys.stderr, flush=True)\n'
         'if "--burst" in sys.argv:\n'

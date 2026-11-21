@@ -6,6 +6,7 @@ import re
 from dank.db.sources import SourcesError
 from dank.scrape.runner import run_scrape_from_config
 from dank.scrape.x.conversations import canonical_post_url
+from dank.scrape.x.onepassword import credentials_stdio
 
 
 def main() -> None:
@@ -19,6 +20,9 @@ def main() -> None:
         "--headless",
         action="store_true",
         help="Run the browser in headless mode",
+    )
+    parser.add_argument(
+        "--x-credentials-stdio", action="store_true", help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--domains",
@@ -111,6 +115,8 @@ def main() -> None:
         except re.error as error:
             parser.error(f"Invalid --domains value: {error}")
 
+    token = credentials_stdio.set(args.x_credentials_stdio)
+
     try:
         run_scrape_from_config(
             args.config,
@@ -131,6 +137,8 @@ def main() -> None:
         )
     except SourcesError as error:
         parser.exit(1, f"scrape: {error}\n")
+    finally:
+        credentials_stdio.reset(token)
 
 
 def _validate_metadata_options(

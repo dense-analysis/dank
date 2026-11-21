@@ -65,6 +65,24 @@ class XOnePasswordSettings(NamedTuple):
     password: str
 
 
+class XLoginCredentials(NamedTuple):
+    username: str
+    password: str
+
+    def __repr__(self) -> str:
+        return "XLoginCredentials(<redacted>)"
+
+
+class EmailSettings(NamedTuple):
+    host: str
+    username: str
+    password: str
+    port: int = 993
+
+    def __repr__(self) -> str:
+        return "EmailSettings(<redacted>)"
+
+
 class XConversationSettings(NamedTuple):
     enabled: bool = True
     max_posts_per_account: int = 5
@@ -90,6 +108,9 @@ class XSettings(NamedTuple):
     homepage: bool = True
     known_overlap: int = 5
     schedule: AccountScheduleSettings | None = None
+    credentials: XLoginCredentials | None = None
+    email: str = ""
+    imap: EmailSettings | None = None
 
 
 class YouTubeOnePasswordSettings(NamedTuple):
@@ -1062,6 +1083,55 @@ def _parse_x_conversation(value: object) -> XConversationSettings:
     )
 
 
+def _parse_x_credentials(
+    data: dict[str, object],
+) -> XLoginCredentials | None:
+    if "username" not in data and "password" not in data:
+        return None
+
+    username, password = data.get("username"), data.get("password")
+
+    if (
+        not isinstance(username, str) or not isinstance(password, str)
+        or not username or not password
+        or any(ord(char) < 32 or ord(char) == 127
+               for char in username + password)
+    ):
+        raise ConfigError("x.username and x.password must be single-line text")
+
+    return XLoginCredentials(username, password)
+
+
+def _parse_email(value: object) -> EmailSettings | None:
+    data = _as_dict(value)
+
+    if not data:
+        return None
+
+    fields: list[str] = []
+
+    for name in ("host", "username", "password"):
+        field = data.get(name)
+
+        if not isinstance(field, str) or not field.strip():
+            return None
+
+        if any(ord(char) < 32 or ord(char) == 127 for char in field):
+            raise ConfigError(f"email.{name} must be single-line text")
+
+        fields.append(field if name == "password" else field.strip())
+
+    port = data.get("port", 993)
+
+    if (
+        not isinstance(port, int) or isinstance(port, bool)
+        or not 1 <= port <= 65535
+    ):
+        raise ConfigError("email.port must be an integer from 1 to 65535")
+
+    return EmailSettings(*fields, port=port)
+
+
 def _parse_x_onepassword(value: object) -> XOnePasswordSettings | None:
     if value is None:
         return None
@@ -1134,12 +1204,18 @@ def _parse_account_schedule(
 
 def _parse_x_settings(
     value: object, account_schedule: AccountScheduleSettings,
+    imap: EmailSettings | None,
 ) -> XSettings:
     x_data = _as_dict(value) or {}
     x_defaults = XSettings().scrape
 
     if not isinstance(x_data.get("homepage", True), bool):
         raise ConfigError("x.homepage must be a boolean")
+
+    email = x_data.get("email", "")
+
+    if not isinstance(email, str) or any(ord(char) < 32 for char in email):
+        raise ConfigError("x.email must be single-line text")
 
     known_overlap = x_data.get("known_overlap", XSettings().known_overlap)
 
@@ -1165,6 +1241,9 @@ def _parse_x_settings(
             )
             if "schedule" in x_data else None
         ),
+        credentials=_parse_x_credentials(x_data),
+        email=email.strip(),
+        imap=imap,
     )
 
 
@@ -1181,7 +1260,9 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     scrape_settings, account_schedule = _parse_scrape_settings(
         data.get("scrape", {}),
     )
-    x_settings = _parse_x_settings(data.get("x"), account_schedule)
+    x_settings = _parse_x_settings(
+        data.get("x"), account_schedule, _parse_email(data.get("email")),
+    )
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}
     use_http = bool(clickhouse.get("use_http", True))

@@ -1,18 +1,31 @@
 import asyncio
 import datetime as dt
 import json
+import pathlib
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from dank.config import SourceConfig, XSettings
+from dank.config import (
+    EmailSettings,
+    Settings,
+    SourceConfig,
+    XOnePasswordSettings,
+    XSettings,
+)
 from dank.model import AssetDiscovery, RawPost
+from dank.scrape.__main__ import main as scrape_main
 from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.x import scrape_x_accounts, scrape_x_posts
-from dank.scrape.x.session import LoginRequiredError
+from dank.scrape.x.onepassword import LoginCredentials
+from dank.scrape.x.session import (
+    AppVerificationRequiredError,
+    LoginRequiredError,
+    SignInPromptError,
+)
 
 
 def post(identifier: str) -> RawPost:
@@ -157,6 +170,96 @@ async def test_login_failure_stops_without_browser_or_sign_in_retries(
     session.close.assert_not_awaited()
 
 
+async def test_discussion_logs_app_verification_instructions(
+    session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(
+        "dank.scrape.x.wait_for_x_session",
+        AsyncMock(side_effect=AppVerificationRequiredError()),
+    )
+    batches = [
+        item async for item in scrape_x_posts(
+            XSettings(), [post("1"), post("2")], session,
+        )
+    ]
+
+    assert len(batches) == 1
+    assert "Open the X app on your phone" in caplog.text
+
+
+async def test_email_prompt_without_imap_logs_why_collection_stopped(
+    session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(
+        "dank.scrape.x.wait_for_x_session",
+        AsyncMock(side_effect=SignInPromptError(stage="email_code")),
+    )
+
+    batches = [
+        item async for item in scrape_x_accounts(
+            XSettings(), ("writer",), session,
+        )
+    ]
+
+    assert batches == []
+    assert "X requires email verification. IMAP credentials are missing" in (
+        caplog.text
+    )
+
+
+@pytest.mark.parametrize("direct", [True, False])
+@pytest.mark.parametrize("headless", [False, True])
+async def test_login_retries_same_account_with_saved_batches(
+    session: Any, monkeypatch: pytest.MonkeyPatch,
+    *, direct: bool, headless: bool,
+) -> None:
+    visited: list[str] = []
+    pages: list[object] = []
+    credentials = LoginCredentials("fixture-user", "fixture-password")
+    references = XOnePasswordSettings("op://test/X/user", "op://test/X/pass")
+    load = AsyncMock(return_value=credentials)
+    login = AsyncMock()
+    session.headless = headless
+
+    async def collect(page: Any, account: str, settings: Any, **kw: Any):
+        visited.append(account)
+        pages.append(page)
+        yield batch("3" if account == "locked" else "1")
+
+        if len(visited) == 1 or account == "locked":
+            raise SignInPromptError()
+
+        yield batch("2")
+
+    monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
+    monkeypatch.setattr("dank.scrape.x.load_credentials", load)
+    monkeypatch.setattr("dank.scrape.x.sign_in_automatically", login)
+    settings = XSettings(
+        onepassword=references, credentials=credentials if direct else None,
+    )
+    saved = [
+        item async for item in scrape_x_accounts(
+            settings, ("one", "locked", "later"), session,
+        )
+    ]
+
+    assert [p.post_id for item in saved for p in item.posts] == ["1", "2", "3"]
+    assert visited == ["one", "one", "locked"]
+    if direct:
+        load.assert_not_awaited()
+    else:
+        load.assert_awaited_once_with(references)
+
+    login.assert_awaited_once_with(pages[0], credentials, email="", imap=None)
+    assert all(page is pages[0] for page in pages)
+    assert session.get_browser.return_value.get.await_count == 1
+    session.close.assert_not_awaited()
+
+
 async def test_cancellation_is_not_retried_or_swallowed(
     session: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -172,6 +275,56 @@ async def test_cancellation_is_not_retried_or_swallowed(
             saved.extend(b.posts)
     assert [p.post_id for p in saved] == ["1"]
     session.close.assert_not_awaited()
+
+
+def test_default_scrape_command_uses_configured_sign_in(
+    session: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+) -> None:
+    page = MagicMock()
+    session.get_browser.return_value.get = AsyncMock(return_value=page)
+    (tmp_path / "config.toml").write_text(
+        'sources=[{domain="x.com",accounts=["writer"]}]\n'
+        '[x]\nusername="fixture-user"\npassword="fixture-password"\n'
+        'email="reader@example.test"\n'
+        '[email]\nhost="imap.test"\nusername="inbox"\n'
+        'password="mail-secret"\n',
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["scrape"])
+    monkeypatch.setattr("dank.scrape.runner.configure_logging", MagicMock())
+
+    async def sources(settings: Settings) -> Any:
+        return MagicMock(collectable=settings.sources)
+
+    async def collect(*args: Any, **kwargs: Any) -> AsyncIterator[ScrapeBatch]:
+        yield batch("1")
+
+    async def run(settings: Settings, **options: Any) -> None:
+        session.headless = options["headless"]
+        assert session.headless is False
+        saved = [item async for item in scrape_x_accounts(
+            settings.x, settings.sources[0].accounts, session,
+        )]
+        assert [post.post_id for item in saved for post in item.posts] == ["1"]
+
+    login = AsyncMock()
+    monkeypatch.setattr("dank.scrape.runner.sources_in_use", sources)
+    monkeypatch.setattr("dank.scrape.runner.run_scrape", run)
+    monkeypatch.setattr("dank.scrape.x.sign_in_automatically", login)
+    monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
+    monkeypatch.setattr(
+        "dank.scrape.x.wait_for_x_session",
+        AsyncMock(side_effect=SignInPromptError()),
+    )
+
+    scrape_main()
+
+    login.assert_awaited_once_with(
+        page,
+        LoginCredentials("fixture-user", "fixture-password"),
+        email="reader@example.test",
+        imap=EmailSettings("imap.test", "inbox", "mail-secret"),
+    )
 
 
 async def test_stalled_cleanup_is_bounded_and_does_not_reopen_owned_profile(
@@ -207,7 +360,7 @@ async def test_discussion_timeout_keeps_browser_for_next_post(
 ):
     pages: list[Any] = []
 
-    async def capture(page: Any, seed: RawPost, settings: Any):
+    async def capture(page: Any, seed: RawPost, settings: Any, **kw: Any):
         pages.append(page)
         reason = "timeout" if seed.post_id == "1" else None
         return seed._replace(

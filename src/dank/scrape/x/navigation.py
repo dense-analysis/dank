@@ -10,7 +10,7 @@ import zendriver
 from zendriver import cdp
 from zendriver.core.keys import KeyEvents, SpecialKeys
 
-from .session import LOGIN_REQUIRED_MESSAGE, LoginRequiredError
+from .session import raise_for_login_state, read_session_state
 
 logger = logging.getLogger(__name__)
 
@@ -239,22 +239,7 @@ async def navigate_to_account(page: zendriver.Tab, handle: str) -> None:
 
 
 async def check_login_required(page: zendriver.Tab) -> None:
-    if await is_login_page(page):
-        raise LoginRequiredError(LOGIN_REQUIRED_MESSAGE)
-
-
-async def is_login_page(page: zendriver.Tab) -> bool:
-    location = await get_location(page)
-
-    if not location:
-        return await has_login_prompt(page)
-
-    if any(path in location for path in (
-        "/i/flow/", "/login", "/i/jf/onboarding/", "/account/access",
-    )):
-        return True
-
-    return await has_login_prompt(page)
+    raise_for_login_state(state=await read_session_state(page))
 
 
 async def ensure_navigation(page: zendriver.Tab, url: str) -> None:
@@ -291,11 +276,6 @@ async def get_location(page: zendriver.Tab) -> str | None:
         return None
 
     return location
-
-
-async def has_login_prompt(page: zendriver.Tab) -> bool:
-    # Check absent login UI without adding a polling wait to every scroll.
-    return await page.query_selector('a[href="/i/flow/signup"]') is not None
 
 
 async def scroll(page: zendriver.Tab) -> None:

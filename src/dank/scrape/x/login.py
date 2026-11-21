@@ -135,11 +135,14 @@ async def complete_sign_in(
         )
 
     if credentials is None and not manual:
-        credentials = await load_credentials(settings.x.onepassword)
+        credentials = (
+            settings.x.credentials
+            or await load_credentials(settings.x.onepassword)
+        )
 
     if credentials is not None:
         print(
-            "1Password will fill visible, empty X login fields. "
+            "DANK will fill visible, empty X login fields. "
             "Click Continue yourself and complete any verification.",
             flush=True,
         )
@@ -157,7 +160,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.toml")
     parser.add_argument(
         "--manual", action="store_true",
-        help="Skip optional 1Password autofill",
+        help="Skip optional credential autofill",
     )
     parser.add_argument(
         "--onepassword-references", action="store_true",
@@ -185,7 +188,8 @@ def main() -> None:
         settings = load_settings(args.config)
 
         if args.onepassword_references:
-            if settings.x.onepassword is not None and not args.manual:
+            if (settings.x.onepassword is not None and not args.manual
+                    and settings.x.credentials is None):
                 print(settings.x.onepassword.username)
                 print(settings.x.onepassword.password)
 

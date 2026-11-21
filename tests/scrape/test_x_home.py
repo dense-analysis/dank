@@ -13,6 +13,7 @@ from dank.config import (
     BrowserScrapeSettings,
     ConfigError,
     SourceConfig,
+    XOnePasswordSettings,
     XSettings,
     load_settings,
 )
@@ -23,6 +24,7 @@ from dank.scrape.runner import (
 )
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.x.home import HOME_PATTERNS, HomeCapture, scrape_x_for_you
+from dank.scrape.x.onepassword import LoginCredentials
 from dank.scrape.x.session import LoginRequiredError
 from dank.scrape.zendriver import BrowserProfileBusyError, NetworkResponse
 
@@ -224,7 +226,7 @@ async def test_capture_is_attached_before_navigation_and_partial_posts_survive(
     monkeypatch.setattr(
         "dank.scrape.x.home.NetworkCapture", MagicMock(return_value=capture),
     )
-    monkeypatch.setattr("dank.scrape.x.home.wait_for_x_session", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.home.select_for_you", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.home.check_login_required", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.home.scroll", AsyncMock())
@@ -310,7 +312,7 @@ async def test_accounts_reuse_the_scrolled_homepage_tab(
     monkeypatch.setattr(
         "dank.scrape.x.home.NetworkCapture", MagicMock(return_value=capture),
     )
-    monkeypatch.setattr("dank.scrape.x.home.wait_for_x_session", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.home.select_for_you", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.home.check_login_required", AsyncMock())
     visited: list[str] = []
@@ -332,3 +334,48 @@ async def test_accounts_reuse_the_scrolled_homepage_tab(
     assert visited == ["one", "two"]
     driver.get.assert_awaited_once_with("about:blank")
     page.get.assert_awaited_once_with("https://x.com/home")
+
+
+async def test_homepage_restarts_capture_after_automatic_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = MagicMock(get=AsyncMock())
+    driver = MagicMock(get=AsyncMock(return_value=page))
+    session = MagicMock(
+        headless=True, get_browser=AsyncMock(return_value=driver),
+    )
+    captures = [MagicMock(
+        start=AsyncMock(), stop=AsyncMock(),
+        drain=AsyncMock(return_value=[reply]),
+    ) for reply in (response(status=401), response(item(tweet("10"))))]
+    monkeypatch.setattr(
+        "dank.scrape.x.home.NetworkCapture", MagicMock(side_effect=captures),
+    )
+    monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x.home.select_for_you", AsyncMock())
+    monkeypatch.setattr("dank.scrape.x.home.check_login_required", AsyncMock())
+    credentials = LoginCredentials("fixture-user", "fixture-password")
+    monkeypatch.setattr(
+        "dank.scrape.x.load_credentials", AsyncMock(return_value=credentials),
+    )
+
+    async def login(
+        tab: object, provided: LoginCredentials, **kwargs: Any,
+    ) -> None:
+        assert tab is page and provided == credentials
+        captures[0].stop.assert_awaited_once()
+        captures[1].start.assert_not_awaited()
+
+    sign_in = AsyncMock(side_effect=login)
+    monkeypatch.setattr("dank.scrape.x.sign_in_automatically", sign_in)
+    settings = XSettings(
+        scrape=BrowserScrapeSettings(max_posts=1),
+        onepassword=XOnePasswordSettings("op://test/X/user", "op://test/X/pass"),
+    )
+    batches = [batch async for batch in scrape_x_for_you(settings, session)]
+
+    assert [recommended(batch) for batch in batches] == [["10"]]
+    sign_in.assert_awaited_once()
+    driver.get.assert_awaited_once_with("about:blank")
+    assert page.get.await_count == 2
+    captures[1].stop.assert_awaited_once()

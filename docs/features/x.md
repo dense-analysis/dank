@@ -137,7 +137,8 @@ failure records a failed/partial account and continues with the next one.
 Account progress and outcomes are logged explicitly; a zero-post response is
 reported as unavailable, not silently treated as a successful empty timeline.
 
-Sign-in requirements and a busy profile stop X without automatic login retries.
+Collection can recover from a sign-in prompt with configured credentials.
+Unresolved verification and a busy profile stop X.
 Browser cleanup has a 20-second budget; if it cannot close safely, X stops
 rather than opening another browser on the same profile. Saved posts remain
 available in every case; other sources can continue.
@@ -240,7 +241,7 @@ install a Chromium-based browser and use its host path if setting
 `browser.connection_timeout` and `browser.connection_max_tries` can help with
 slow browser startup.
 
-## Optional 1Password autofill
+## Optional 1Password sign-in
 
 If you have [1Password CLI](https://developer.1password.com/docs/cli/), enable
 its [desktop app integration](https://developer.1password.com/docs/cli/app-integration/)
@@ -252,28 +253,23 @@ username = "op://Personal/X/username"
 password = "op://Personal/X/password"
 ```
 
-Use your actual vault, item and field references. Run `make x-login` as usual,
-or add `MODE=native`. 1Password is requested only when sign-in is needed.
-Authorize it when prompted. It fills each visible,
-empty X username/password field once; you click Continue or Sign in yourself.
-Existing input is preserved, and verification codes remain manual.
+Use your actual vault, item and field references. DANK requests 1Password only
+when X asks for sign-in. In `make x-login`, DANK fills each visible, empty field
+once when credentials are configured. Submit the forms and complete any
+verification in the browser. Use `ARGS='--manual'` to skip autofill.
 
-Docker uses `op` on the host and sends the values through standard input to the
-one-off container. No 1Password installation or vault access is needed inside
-Docker. Use the Make command for this integration; direct Compose commands
-continue to support manual sign-in.
+Docker's `make x-login` and `make scrape` use `op` on the host and send values
+through a private standard-input pipe to the one-off container. Native mode
+runs `op` directly. Resolved values from 1Password stay out of config,
+command-line arguments and logs.
 
-Without references, without `op`, or when access is denied, sign-in remains
-manual. Use `ARGS='--manual'` to skip 1Password for a run. Resolved credentials
-are kept in memory and are not written to config, environment variables,
-command-line arguments or logs. This does not clear an X login restriction.
+Without references, an available `op`, and vault access, use `make x-login` to
+sign in manually. Authorize 1Password access if its desktop app prompts you.
 
 ## Temporary login limits
 
 If X reports that it has temporarily limited login, DANK stops sign-in and
 closes the browser. Wait for X's restriction to clear before trying again.
-Changing browser settings or restarting DANK does not clear that restriction.
-DANK does not submit credentials or retry login for you.
 
 Docker still needs Chromium's `--no-sandbox` launcher under the supplied
 container permissions. Native Chrome uses its normal sandbox. The dedicated
@@ -281,10 +277,22 @@ profile and its existing cookie storage are preserved across upgrades.
 
 ## Expired sessions
 
-Collection checks the saved sign-in before visiting accounts. If X requires
-sign-in or verification again, collection records a login-required failure and
-asks you to run `make x-login` (or `make x-login MODE=native`). Complete that
-step, then rerun collection. Signing in does not automatically start a scrape.
+Collection checks the saved sign-in before visiting accounts. When X asks for
+sign-in, `uv run scrape` and `make scrape` use the configured credentials in
+either browser mode. Set `username` and `password` under `[x]` in the private
+`config.toml`, or configure `[x.onepassword]`. The direct pair takes precedence.
+If X asks you to confirm the account email address, DANK uses `x.email` or an
+email address used as the login username.
+
+For codes X emails during sign-in, set `host`, `username`, `password` and an
+optional `port` in `[email]`. The default port is 993. DANK checks the inbox
+over TLS in read-only mode for a code sent since the current attempt. Collection
+resumes in the same browser once X confirms sign-in.
+
+If X shows “Performing security verification” or directs you to its app, DANK
+stops automatic sign-in and logs the reason. Complete human verification in
+the X app on your phone. For browser verification, use `make x-login` or
+`make x-login MODE=native`.
 
 ## Collected data
 
@@ -346,8 +354,9 @@ The reader shows saved context before the selected post and replies below it.
 Conversation posts retain their identity, text, links and media references;
 reply media uses remote URLs rather than starting extra downloads. A discussion
 timeout saves its failure/partial snapshot and continues to the next post in
-the same browser. A sign-in requirement stops further refreshes. Earlier useful
-archives remain available after failed attempts and normal timeline scrapes.
+the same browser. A sign-in requirement stops further refreshes if recovery
+fails. Earlier archives remain available after failed attempts and normal
+timeline scrapes.
 
 Each conversation has a `timeout_seconds` budget and at most `max_scrolls`
 scrolls. `max_replies` bounds the total archived replies **and parent context**.

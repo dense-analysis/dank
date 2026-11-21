@@ -96,6 +96,9 @@ level = "INFO"
 # Sign in with make x-login MODE=native before collecting X accounts.
 # See docs/features/x.md for account and collection settings.
 # [x]
+# username = "your-handle" # Optional direct credentials in private config.toml.
+# password = "your-password"
+# email = "you@example.com"
 # homepage = true # Include signed-in For You in normal scrapes.
 # known_overlap = 5 # Use 0 for a bounded backfill.
 
@@ -107,10 +110,17 @@ level = "INFO"
 # max_scrolls = 3
 # timeout_seconds = 30
 
-# Optional autofill via 1Password CLI; values are fetched only during sign-in.
+# Optional sign-in via 1Password CLI for headless X scrapes.
 # [x.onepassword]
 # username = "op://Personal/X/username"
 # password = "op://Personal/X/password"
+
+# Optional IMAP settings for X sign-in codes.
+# [email]
+# host = "imap.example.com"
+# username = "you@example.com"
+# password = "your-imap-password"
+# port = 993
 
 
 # YouTube starts with public Hype and News feeds when selected as a source.

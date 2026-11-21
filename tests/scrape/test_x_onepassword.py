@@ -187,11 +187,10 @@ async def test_navigation_does_not_consume_an_autofill_attempt() -> None:
 async def test_login_fills_each_field_once_without_submitting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    page = MagicMock(evaluate=AsyncMock(side_effect=[False, False, True]))
+    page = MagicMock(evaluate=AsyncMock(side_effect=["login", True]))
     page.browser.stopped = False
     fill = AsyncMock(return_value=True)
     monkeypatch.setattr("dank.scrape.x.session.fill_field", fill)
-    monkeypatch.setattr("dank.scrape.x.session.SESSION_POLL_SECONDS", 0.001)
     await wait_for_x_session(
         page, timeout_seconds=1,
         credentials=LoginCredentials("user", "secret"),

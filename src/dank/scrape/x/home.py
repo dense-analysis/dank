@@ -6,7 +6,8 @@ import asyncio
 import datetime as dt
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import zendriver
@@ -27,10 +28,9 @@ from dank.scrape.x.navigation import (
 )
 from dank.scrape.x.payloads import extract_posts_from_payload
 from dank.scrape.x.session import (
-    SESSION_CHECK_TIMEOUT_SECONDS,
     X_HOME_URL,
     LoginRequiredError,
-    wait_for_x_session,
+    SignInPromptError,
 )
 from dank.scrape.zendriver import (
     BrowserProfileBusyError,
@@ -181,25 +181,31 @@ async def scrape_x_for_you(
     *,
     browser: XBrowser | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
-    browser = browser or XBrowser(session)
+    browser = browser or XBrowser(session, settings)
     collected = HomeCapture(settings.scrape.max_posts)
-    capture: NetworkCapture | None = None
-    started = asyncio.get_running_loop().time()
 
     try:
-        async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
-            driver = await session.get_browser()
-            page = await driver.get("about:blank")
-            capture = NetworkCapture(page, HOME_PATTERNS)
-            await capture.start()
-            await page.get(X_HOME_URL)
-            await wait_for_x_session(
-                page, timeout_seconds=SESSION_CHECK_TIMEOUT_SECONDS,
-            )
-            browser.page = page
+        while True:
+            try:
+                async for batch in _collect_for_you(
+                    settings, browser, collected,
+                ):
+                    yield batch
 
-            await select_for_you(page)
+                return
+            except SignInPromptError as error:
+                await browser.recover_session(error)
+                count("retries")
+    except Exception as error:
+        _handle_failure(error, len(collected.recommended))
 
+
+async def _collect_for_you(
+    settings: XSettings, browser: XBrowser, collected: HomeCapture,
+) -> AsyncIterator[ScrapeBatch]:
+    started = asyncio.get_running_loop().time()
+
+    async with _for_you_capture(browser) as (page, capture):
         idle = 0
 
         for step in range(max(0, settings.scrape.max_scrolls) + 1):
@@ -250,14 +256,45 @@ async def scrape_x_for_you(
         logger.info(
             "X For You saved %d recommendations", len(collected.recommended),
         )
-    except Exception as error:
-        _handle_failure(error, len(collected.recommended))
+
+
+@asynccontextmanager
+async def _for_you_capture(
+    browser: XBrowser,
+) -> AsyncGenerator[tuple[zendriver.Tab, NetworkCapture]]:
+    capture: NetworkCapture | None = None
+    page = browser.page
+
+    try:
+        async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
+            if page is None:
+                driver = await browser.session.get_browser()
+                page = await driver.get("about:blank")
+
+            capture = NetworkCapture(page, HOME_PATTERNS)
+            await capture.start()
+            await page.get(X_HOME_URL)
+            await browser.check_session(page)
+            await select_for_you(page)
+
+        yield page, capture
+    except LoginRequiredError:
+        raise
+    except (TimeoutError, ValueError, RuntimeError):
+        if page is not None:
+            async with asyncio.timeout(ACTION_TIMEOUT_SECONDS):
+                await check_login_required(page)
+
+        raise
     finally:
         if capture is not None:
             await capture.stop()
 
 
 def _response_items(response: NetworkResponse) -> list[dict[str, Any]]:
+    if response.status == 401:
+        raise SignInPromptError()
+
     if response.status != 200:
         raise RuntimeError(f"X For You returned HTTP {response.status}")
 

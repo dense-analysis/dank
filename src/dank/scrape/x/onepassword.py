@@ -3,43 +3,49 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-from typing import BinaryIO, NamedTuple
+import sys
+from contextvars import ContextVar
+from typing import BinaryIO
 
 import zendriver
 from zendriver.core.connection import ProtocolException
 
-from dank.config import XOnePasswordSettings
+from dank.config import (
+    XLoginCredentials as LoginCredentials,
+    XOnePasswordSettings,
+)
 
 logger = logging.getLogger(__name__)
 OP_TIMEOUT_SECONDS = 120
+X_CREDENTIAL_REQUEST = b"DANK_REQUEST_X_CREDENTIALS\n"
 MAX_CREDENTIAL_BYTES = 8192
+credentials_stdio: ContextVar[bool] = ContextVar(
+    "x_credentials_stdio", default=False,
+)
 USERNAME_SELECTOR = (
     'input[name="username_or_email"], input[autocomplete~="username"]'
 )
 PASSWORD_SELECTOR = 'input[type="password"]'
-FIELD_STATE = """element => {
+VISIBLE_ELEMENT = """element => {
     const rect = element.getBoundingClientRect();
-    if (location.origin !== 'https://x.com' || element.disabled ||
-        element.readOnly || !rect.width || !rect.height) return null;
+    if (!element.isConnected || !rect.width || !rect.height) return false;
     for (let node = element; node; node = node.parentElement) {
         const style = getComputedStyle(node);
-        if (style.visibility !== 'visible' || Number(style.opacity) === 0)
-            return null;
+        if (node.inert || style.visibility !== 'visible' ||
+            Number(style.opacity) === 0) return false;
     }
+    return true;
+}"""
+FIELD_STATE = """element => {
+    const visible = (""" + VISIBLE_ELEMENT + """);
+    if (location.origin !== 'https://x.com' || element.disabled ||
+        element.readOnly || !visible(element)) return null;
     return element.value === '' ? 'empty' : 'occupied';
 }"""
 
 
 class OnePasswordError(RuntimeError):
     pass
-
-
-class LoginCredentials(NamedTuple):
-    username: str
-    password: str
-
-    def __repr__(self) -> str:
-        return "LoginCredentials(<redacted>)"
 
 
 def credentials_from_bytes(
@@ -108,6 +114,9 @@ async def load_credentials(
     if settings is None:
         return None
 
+    if credentials_stdio.get():
+        return await _load_from_host()
+
     executable = shutil.which("op")
 
     if executable is None:
@@ -121,6 +130,32 @@ async def load_credentials(
     except (OnePasswordError, OSError):
         logger.warning("Could not read 1Password fields; continue manually.")
         return None
+
+
+async def _load_from_host() -> LoginCredentials | None:
+    reader = asyncio.StreamReader()
+    transport: asyncio.ReadTransport | None = None
+
+    try:
+        transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(reader), sys.stdin.buffer,
+        )
+        sys.stdout.buffer.write(X_CREDENTIAL_REQUEST)
+        sys.stdout.buffer.flush()
+
+        async with asyncio.timeout(2 * OP_TIMEOUT_SECONDS + 35):
+            username = (await reader.readuntil(b"\0"))[:-1]
+            password = (await reader.readuntil(b"\0"))[:-1]
+
+        return credentials_from_bytes(username, password)
+    except (OSError, ValueError, TimeoutError, OnePasswordError,
+            asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+        logger.warning("Could not read 1Password fields from the Docker host.")
+
+        return None
+    finally:
+        if transport is not None:
+            transport.close()
 
 
 async def fill_field(page: zendriver.Tab, selector: str, value: str) -> bool:

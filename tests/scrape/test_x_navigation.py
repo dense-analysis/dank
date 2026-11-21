@@ -127,7 +127,7 @@ async def test_missing_exact_result_times_out_without_clicking(
 
 async def test_search_stops_when_login_is_required() -> None:
     page = MagicMock(
-        evaluate=AsyncMock(return_value="https://x.com/i/flow/login"),
+        evaluate=AsyncMock(return_value="login"),
     )
 
     with pytest.raises(LoginRequiredError):

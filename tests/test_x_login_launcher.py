@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import shlex
+import shutil
 import sys
 from subprocess import PIPE, Popen
 
@@ -114,3 +115,75 @@ def test_optional_host_cli_passes_secrets_only_through_stdin(
 
     assert "127.0.0.1:6080:6080" in calls[-1]
     assert not (workspace / "logs").exists()
+
+
+@pytest.mark.parametrize(
+    "scenario", ["missing", "saved", "configured", "denied"],
+)
+def test_scrape_requests_host_credentials_only_when_needed(
+    tmp_path: pathlib.Path, scenario: str,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    for name in ("mkfifo", "mktemp", "rm", "rmdir"):
+        executable = shutil.which(name)
+        assert executable is not None
+        (bin_dir / name).symlink_to(executable)
+
+    if scenario != "missing":
+        op = bin_dir / "op"
+        op_script = tmp_path / "op.py"
+        op_script.write_text(
+            "import sys\n"
+            f"if {scenario!r} == 'denied': sys.exit(1)\n"
+            f"sys.stdout.write({USERNAME!r} if sys.argv[-1].endswith('/user')"
+            f" else {PASSWORD!r})\n",
+        )
+        op.write_text(
+            "#!/bin/sh\nexec "
+            + shlex.join([sys.executable, str(op_script)]) + ' "$@"\n',
+        )
+        op.chmod(0o700)
+
+    compose = tmp_path / "compose.py"
+    expected_credentials = (
+        f"{USERNAME}\0{PASSWORD}\0".encode()
+        if scenario == "configured" else b""
+    )
+    compose.write_text(
+        "import pathlib, sys\n"
+        "args = sys.argv[1:]\n"
+        "if 'x-login' in args:\n"
+        "    assert args[-2:] == ['--config', 'custom config.toml']\n"
+        "    pathlib.Path('requested').touch()\n"
+        "    print('op://Vault/X/user', 'op://Vault/X/password', sep='\\n')\n"
+        "    sys.exit(0)\n"
+        "assert args[:6] == ['run', '--rm', '-T', 'dank', 'scrape', "
+        "'--headless']\n"
+        "assert ('--x-credentials-stdio' in args) is "
+        f"{scenario != 'missing'!r}\n"
+        "print('collecting', flush=True)\n"
+        f"if {scenario!r} in ('configured', 'denied'):\n"
+        "    print('DANK_REQUEST_X_CREDENTIALS', flush=True)\n"
+        f"    assert sys.stdin.buffer.read() == {expected_credentials!r}\n"
+        "    print('resumed', flush=True)\n"
+        f"sys.exit(7 if {scenario!r} == 'denied' else 0)\n",
+    )
+    command = [
+        "/bin/bash", str(ROOT / "src/dank/run_x_login.sh"), "--scrape",
+        sys.executable, str(compose), "--", "--config=custom config.toml",
+    ]
+    process = Popen(
+        command, cwd=tmp_path, stdout=PIPE, stderr=PIPE, text=True,
+        env={**os.environ, "PATH": str(bin_dir), "TMPDIR": str(tmp_path)},
+    )
+    stdout, stderr = process.communicate(timeout=10)
+    requested = scenario in {"configured", "denied"}
+
+    assert process.returncode == (7 if scenario == "denied" else 0), stderr
+    assert stdout == ("collecting\nresumed\n" if requested else "collecting\n")
+    assert (tmp_path / "requested").exists() == requested
+    assert PASSWORD not in stderr and USERNAME not in stderr
+    assert not (tmp_path / "should-not-exist").exists()
+    assert not list(tmp_path.glob("dank-x-credentials.*"))

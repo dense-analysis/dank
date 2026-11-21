@@ -12,7 +12,7 @@ POSTGRES_IMAGE := postgres:18
 ifeq ($(MODE),docker)
 CONFIG_TEMPLATE := config.example.toml
 RUN := $(COMPOSE) run --rm -T dank
-SCRAPE := $(RUN) scrape --headless
+SCRAPE := bash src/dank/run_x_login.sh --scrape $(COMPOSE) --
 WEB := $(COMPOSE) up --build --wait
 X_LOGIN := bash src/dank/run_x_login.sh $(COMPOSE) --
 YOUTUBE_LOGIN := python3 src/dank/run_youtube_login.py $(COMPOSE) --

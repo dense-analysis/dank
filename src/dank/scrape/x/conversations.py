@@ -21,7 +21,7 @@ from .navigation import (
     ensure_navigation,
     scroll_conversation,
 )
-from .session import LoginRequiredError
+from .session import LoginRequiredError, SignInPromptError
 
 logger = logging.getLogger(__name__)
 DETAIL_PATTERNS = (
@@ -386,6 +386,7 @@ async def capture_conversation(
     page: zendriver.Tab,
     seed: RawPost,
     settings: XConversationSettings,
+    *, raise_on_sign_in: bool = False,
 ) -> RawPost:
     state = ConversationCapture(seed, settings.max_replies)
 
@@ -405,7 +406,11 @@ async def capture_conversation(
             await _collect_detail_responses(page, capture, state, settings)
     except TimeoutError:
         reason = "timeout"
-    except LoginRequiredError:
+    except LoginRequiredError as error:
+        if raise_on_sign_in and isinstance(error, SignInPromptError):
+            raise
+
+        logger.warning("X discussion sign-in stopped: %s", error)
         reason = "login_required"
     except Exception:
         logger.warning(
