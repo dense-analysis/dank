@@ -919,8 +919,8 @@ produced 91 warnings for 85 distinct URLs and are included in failure counts.
   10 MiB cap. DomainDrivenDesign and ExperiencedDevs were explicitly empty for
   Top/day. A separate retry of the exact six earlier failures saved the 4,167-byte
   preview JPEG and retained five size-skipped GIF references, with zero failures.
-- [x] **P1: Restore YouTube format discovery and downloads.** The pinned
-  yt-dlp `2026.8.19` now includes its matching `yt-dlp-ejs 0.8.0` solver package.
+- [x] **P1: Restore YouTube format discovery and downloads.** DANK pins yt-dlp
+  alongside its matching `yt-dlp-ejs` solver package.
   Fresh public-video probes returned separate streams but no combined MP4,
   explaining the old selector's failure even after solver installation.
   The collector now chooses complete H.264/AAC formats within the combined size
