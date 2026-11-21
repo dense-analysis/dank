@@ -8,10 +8,18 @@ import sys
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AsyncExitStack, aclosing
+from functools import partial
 from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from dank.config import YouTubeSettings, youtube_feed_url
+from dank.scrape.http import (
+    HostCooldownError,
+    RequestLimiter,
+    current_limiter,
+    retry_after_seconds,
+)
+from dank.scrape.metrics import count, request_metrics
 from dank.scrape.ytdlp_runtime import js_runtime_options
 
 from .payloads import (
@@ -55,6 +63,20 @@ async def _send(stream: asyncio.StreamWriter, value: object) -> None:
     await stream.drain()
 
 
+async def _request_decision(
+    slot: AsyncExitStack, limiter: RequestLimiter | None, url: str,
+) -> str | None:
+    try:
+        if limiter is not None:
+            await slot.enter_async_context(limiter.slot(url))
+    except HostCooldownError as error:
+        return str(error)
+
+    slot.enter_context(request_metrics())
+
+    return None
+
+
 class ListingWorker:
     """Serve one listing at a time in a reusable subprocess."""
 
@@ -96,22 +118,44 @@ class ListingWorker:
         assert process.stdin is not None and process.stdout is not None
         await _send(process.stdin, request)
         stop: str | None = None
+        limiter = current_limiter.get()
+        url = ORIGIN
 
-        while line := await process.stdout.readline():
-            event = cast(dict[str, Any], json.loads(line))
+        async with AsyncExitStack() as slot:
+            while line := await process.stdout.readline():
+                event = cast(dict[str, Any], json.loads(line))
 
-            if event["event"] in {"done", "error"}:
-                return event
+                match event["event"]:
+                    case "http_request":
+                        # The previous response has been consumed by yt-dlp.
+                        await slot.aclose()
+                        url = f"https://{event['host']}"
+                        decision = await _request_decision(slot, limiter, url)
+                        await _send(process.stdin, decision)
+                        continue
+                    case "rate_limited":
+                        count("http_429")
 
-            if stop is None:
-                try:
-                    consume(event)
-                except ListingStopped as reached:
-                    # Drain this page, then stop the listing at its boundary.
-                    stop = str(reached)
+                        if limiter is not None:
+                            limiter.cool_down(url, max(2.0, event["delay"]))
 
-            if event["event"] == "page":
-                await _send(process.stdin, stop)
+                        continue
+                    case "done" | "error":
+                        return event
+                    case "page":
+                        await slot.aclose()
+                    case _:
+                        pass
+
+                if stop is None:
+                    try:
+                        consume(event)
+                    except ListingStopped as reached:
+                        # Drain this page before stopping the listing.
+                        stop = str(reached)
+
+                if event["event"] == "page":
+                    await _send(process.stdin, stop)
 
         raise ListingFailure("Listing worker exited before completing")
 
@@ -366,6 +410,31 @@ def _read_page_decision() -> str | None:
     return cast(str | None, json.loads(sys.stdin.readline()))
 
 
+def _open_request(urlopen: Callable[[Any], Any], request: Any) -> Any:
+    from yt_dlp.networking.exceptions import (
+        HTTPError,  # type: ignore[import-untyped]
+    )
+
+    url = (request if isinstance(request, str) else
+           getattr(request, "url", None) or request.full_url)
+    emit({"event": "http_request", "host": urlsplit(url).hostname})
+    decision = _read_page_decision()
+
+    if decision is not None:
+        raise ListingFailure(decision)
+
+    try:
+        return urlopen(request)
+    except HTTPError as error:
+        if error.status != 429:
+            raise
+
+        delay = retry_after_seconds(error.response.get_header("Retry-After"))
+        emit({"event": "rate_limited", "delay": delay})
+        error.close()
+        raise ListingFailure("YouTube listing request rate limited") from error
+
+
 def _collect_request(request: dict[str, Any]) -> str:
     from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
 
@@ -382,6 +451,7 @@ def _collect_request(request: dict[str, Any]) -> str:
     # https://github.com/yt-dlp/yt-dlp/blob/2026.10.26/yt_dlp/extractor/common.py#L871
     with YoutubeDL(cast(Any, options)) as provider:
         downloader: Any = provider
+        downloader.urlopen = partial(_open_request, downloader.urlopen)
         downloader.cookiejar = cookie_jar(request["cookies"])
         extractor = downloader.get_info_extractor("YoutubeTab")
         extractor.initialize()

@@ -19,6 +19,7 @@ def test_youtube_public_defaults_and_channels(tmp_path: Path) -> None:
     )
     settings = load_settings(path)
     assert settings.youtube == YouTubeSettings()
+    assert settings.youtube.listing_workers == 3
     assert not settings.youtube.scrape_videos
     assert settings.youtube.include_shorts
     assert not settings.youtube.authenticated
@@ -42,6 +43,9 @@ def test_youtube_public_defaults_and_channels(tmp_path: Path) -> None:
         "scroll_pause_seconds = inf",
         "scroll_pause_seconds = true",
         "known_overlap = 0",
+        "listing_workers = 0",
+        "listing_workers = false",
+        "listing_workers = 1.5",
         "stall_scrolls = 0",
         'scrape_videos = "false"',
         "include_shorts = 1",

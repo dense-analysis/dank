@@ -4,7 +4,8 @@ import asyncio
 import json
 import subprocess
 import sys
-from contextlib import aclosing
+from collections.abc import AsyncGenerator
+from contextlib import aclosing, asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
@@ -12,7 +13,13 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
 
-from dank.config import SourceConfig, YouTubeSettings, load_settings
+from dank.config import (
+    ScrapeSettings,
+    SourceConfig,
+    YouTubeSettings,
+    load_settings,
+)
+from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.youtube import scrape_youtube_feeds, ytdlp_listings
 from dank.scrape.youtube.feeds import describe_feed
@@ -278,8 +285,11 @@ def listing_children(
 ) -> list[asyncio.subprocess.Process]:
     children: list[asyncio.subprocess.Process] = []
     code = f'''
+import io
 import time
 from dank.scrape.youtube import ytdlp_listings as listing
+from yt_dlp.networking import Request, Response
+from yt_dlp.networking.exceptions import HTTPError
 
 def page(*video_ids):
     for video_id in video_ids:
@@ -291,6 +301,11 @@ def page(*video_ids):
     return listing._read_page_decision()
 
 def collect(request):
+    def fetch(req):
+        if request["feed"]["name"] == "@limited":
+            raise HTTPError(Response(io.BytesIO(), req.url,
+                                     {{"Retry-After": "90"}}, status=429))
+    listing._open_request(fetch, Request(request["feed"]["url"]))
     if stop := page({VIDEO!r}, "aaaaaaaaaaa"):
         return stop
     if request["feed"]["name"] == "@hang":
@@ -328,10 +343,11 @@ async def test_scrape_reuses_listing_process_after_overlap(
     tmp_path: Path, listing_children: list[asyncio.subprocess.Process],
 ) -> None:
     fixture = tmp_path / "settings.toml"
-    fixture.touch()
-    settings = load_settings(fixture)._replace(youtube=YouTubeSettings(
-        hype=False, news_tabs=(), playlists=False, known_overlap=1,
-    ))
+    fixture.write_text(
+        "[youtube]\nhype = false\nnews_tabs = []\nplaylists = false\n"
+        "known_overlap = 1\nlisting_workers = 1\n",
+    )
+    settings = load_settings(fixture)
     source = SourceConfig("youtube.com", accounts=("@example", "@next"))
 
     async with asyncio.timeout(5):
@@ -344,6 +360,95 @@ async def test_scrape_reuses_listing_process_after_overlap(
         [f"video:{VIDEO}"], [f"video:{VIDEO}", "video:aaaaaaaaaaa"],
         ["video:bbbbbbbbbbb"],
     ]
+    assert len(listing_children) == 1
+    assert listing_children[0].returncode is not None
+
+
+async def test_concurrent_channels_share_http_slots_and_reuse_processes(
+    tmp_path: Path, listing_children: list[asyncio.subprocess.Process],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = tmp_path / "settings.toml"
+    fixture.write_text("[youtube]\nhype = false\nnews_tabs = []\n")
+    settings = load_settings(fixture)
+    accounts = tuple(f"@channel{index}" for index in range(5))
+    limiter = RequestLimiter(ScrapeSettings())
+    slot = limiter.slot
+    simultaneous = asyncio.Event()
+    active = peak = 0
+
+    @asynccontextmanager
+    async def track_slot(url: str) -> AsyncGenerator[None]:
+        nonlocal active, peak
+
+        async with slot(url):
+            active += 1
+            peak = max(peak, active)
+
+            if active == 2:
+                simultaneous.set()
+
+            try:
+                await simultaneous.wait()
+                yield
+            finally:
+                active -= 1
+
+    monkeypatch.setattr(limiter, "slot", track_slot)
+    token = current_limiter.set(limiter)
+
+    try:
+        async with asyncio.timeout(8):
+            batches = [batch async for batch in scrape_youtube_feeds(
+                settings, SourceConfig("youtube.com", accounts=accounts),
+                AsyncMock(),
+            )]
+    finally:
+        current_limiter.reset(token)
+
+    assert len(listing_children) == 3
+    assert all(child.returncode is not None for child in listing_children)
+    assert peak == 2
+    assert active == 0
+    assert sum(len(batch.posts) for batch in batches) == 3 * len(accounts)
+    feeds = {
+        json.loads(post.payload)["discovery"]["feed_url"]
+        for batch in batches for post in batch.posts
+    }
+    assert feeds == {
+        f"https://www.youtube.com/{account}/videos" for account in accounts
+    }
+
+
+async def test_listing_429_uses_shared_cooldown(
+    listing_children: list[asyncio.subprocess.Process],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limiter = RequestLimiter(ScrapeSettings())
+    cooldown = Mock(wraps=limiter.cool_down)
+    monkeypatch.setattr(limiter, "cool_down", cooldown)
+    token = current_limiter.set(limiter)
+    settings = YouTubeSettings()
+
+    try:
+        async with asyncio.timeout(5), aclosing(ListingWorker()) as worker:
+            with pytest.raises(ListingFailure, match="rate limited"):
+                await collect_listing(
+                    describe_feed(CHANNEL.replace("example", "limited")),
+                    settings, Mock(), worker=worker,
+                )
+
+            cooldown.assert_called_once_with("https://www.youtube.com", 90.0)
+
+            with pytest.raises(ListingFailure, match="cooldown"):
+                await collect_listing(
+                    describe_feed(CHANNEL), settings, Mock(), worker=worker,
+                )
+
+            assert listing_children[0].returncode is None
+    finally:
+        current_limiter.reset(token)
+
     assert len(listing_children) == 1
     assert listing_children[0].returncode is not None
 

@@ -119,6 +119,7 @@ scroll_pause_seconds = 1.5
 stall_scrolls = 3
 # Stop chronological channel feeds after this many consecutive known videos.
 known_overlap = 5
+listing_workers = 3
 # Saved browser sessions are opt-in; homepage also requires a signed-in session.
 authenticated = false
 homepage = false

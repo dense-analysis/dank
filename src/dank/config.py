@@ -103,6 +103,7 @@ class YouTubeSettings(NamedTuple):
     known_overlap: int = 5
     profile_dir: pathlib.Path | None = None
     onepassword: YouTubeOnePasswordSettings | None = None
+    listing_workers: int = 3
 
 
 class RedditCommentSort(StrEnum):
@@ -1260,7 +1261,10 @@ def _parse_youtube_settings(value: object) -> YouTubeSettings:
 
     limits: dict[str, int] = {}
 
-    for key in ("max_posts", "max_scrolls", "stall_scrolls", "known_overlap"):
+    for key in (
+        "max_posts", "max_scrolls", "stall_scrolls", "known_overlap",
+        "listing_workers",
+    ):
         fallback = getattr(defaults.scrape, key, getattr(defaults, key, None))
         setting = data.get(key, fallback)
         minimum = 0 if key == "max_scrolls" else 1
@@ -1301,6 +1305,7 @@ def _parse_youtube_settings(value: object) -> YouTubeSettings:
         onepassword=_parse_youtube_onepassword(data.get("onepassword")),
         stall_scrolls=limits["stall_scrolls"],
         known_overlap=limits["known_overlap"],
+        listing_workers=limits["listing_workers"],
         scrape=BrowserScrapeSettings(
             max_posts=limits["max_posts"], max_scrolls=limits["max_scrolls"],
             scroll_pause_seconds=float(pause),

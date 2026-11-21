@@ -57,11 +57,10 @@ the behaviour before this option existed.
   intentionally retained references, disabled media types and ignored assets.
   Intentional skips do not make a run partial or failed.
 - `http_requests`, `http_429`, `retries`, `fetch_failures` and
-  `parse_failures` explain incomplete results. HTTP counters cover RSS and
-  direct media requests made through aiohttp. Reddit additionally records
-  observed browser 429s in `http_429`, but Chromium's other request/timing counts
-  and yt-dlp's internal requests are not included. Redirect hops count as
-  separate HTTP requests.
+  `parse_failures` explain incomplete results. HTTP counters cover aiohttp
+  requests and yt-dlp requests for YouTube channel, News, Hype and playlist
+  library listings. Each aiohttp redirect hop counts separately. Reddit also
+  records observed browser 429s in `http_429`.
 - `request_ms` and `retry_wait_ms` sum individual request/wait durations.
   They can overlap and must not be added to derive elapsed time.
 
@@ -157,16 +156,17 @@ while other sources run. A source slot is reused after its downloads and writes
 finish. Set
 `source_concurrency = 1` for sequential sources.
 
-The HTTP limits are shared across homepage, feed, article and direct media
-requests, including redirect destinations. Hosts are grouped by hostname,
+The HTTP limits are shared across aiohttp requests and yt-dlp requests for
+YouTube channel, News, Hype and playlist library listings. Each aiohttp
+redirect hop uses its destination's limit. Hosts are grouped by hostname,
 including across configured sources. Four RSS fetch jobs per source and four
 media jobs across the run provide additional bounds. X and Reddit use separate
 browsers, profiles and locks, so either can collect while the other waits.
 Sources on the same site share a browser and serialize browser discovery.
 Both still count toward `source_concurrency`; RSS-only runs do not launch
 either browser.
-Chromium and yt-dlp's internal HTTP requests are outside the direct HTTP
-limiter; processing remains a separate command.
+YouTube channel listings use up to three reusable yt-dlp processes per source
+by default. Set `listing_workers` under `[youtube]` to tune that pool.
 
 All values must be positive integers. CPU/memory capacity is reported for
 tuning; limits do not automatically grow with core count. `scrape_runs` records

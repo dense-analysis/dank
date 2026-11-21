@@ -14,7 +14,8 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import aclosing
+from contextlib import AsyncExitStack, aclosing
+from itertools import groupby
 from typing import Any, cast
 from urllib.parse import urlsplit
 
@@ -689,6 +690,64 @@ async def scrape_youtube_feeds(
                 yield batch
 
 
+async def _listing_batches(
+    settings: YouTubeSettings, feeds: Iterable[YouTubeFeed],
+    cookies: Sequence[Mapping[str, object]], known_ids: Mapping[str, set[str]],
+    worker: ListingWorker,
+) -> AsyncGenerator[ScrapeBatch]:
+    for feed in feeds:
+        try:
+            async with aclosing(_scrape_feed(
+                None, feed, settings, known_ids.get(feed.url, set()),
+                cookies=cookies, worker=worker,
+            )) as batches:
+                async for batch in batches:
+                    yield batch
+        except Exception as error:
+            _collection_failure(feed.name, error)
+
+
+async def _channel_batches(
+    settings: YouTubeSettings, feeds: Sequence[YouTubeFeed],
+    cookies: Sequence[Mapping[str, object]], known_ids: Mapping[str, set[str]],
+    workers: Sequence[ListingWorker],
+) -> AsyncGenerator[ScrapeBatch]:
+    ready: asyncio.Queue[ScrapeBatch] = asyncio.Queue(maxsize=len(workers))
+    remaining = iter(feeds)
+
+    async def produce(worker: ListingWorker) -> None:
+        # Claim the next feed from the shared iterator before awaiting I/O.
+        async with aclosing(_listing_batches(
+            settings, remaining, cookies, known_ids, worker,
+        )) as batches:
+            async for batch in batches:
+                await ready.put(batch)
+
+    async def collect() -> None:
+        try:
+            async with asyncio.TaskGroup() as group:
+                for worker in workers:
+                    group.create_task(produce(worker))
+        finally:
+            ready.shutdown()
+
+    collection = asyncio.create_task(collect())
+
+    try:
+        while True:
+            try:
+                batch = await ready.get()
+            except asyncio.QueueShutDown:
+                break
+
+            yield batch
+
+        await collection
+    finally:
+        collection.cancel()
+        await asyncio.gather(collection, return_exceptions=True)
+
+
 async def _browserless_batches(
     settings: YouTubeSettings, feeds: tuple[YouTubeFeed, ...],
     session_path: pathlib.Path, known_ids: Mapping[str, set[str]],
@@ -708,17 +767,34 @@ async def _browserless_batches(
         return
 
     try:
-        async with aclosing(ListingWorker()) as worker:
-            for feed in feeds:
-                try:
-                    async with aclosing(_scrape_feed(
-                        None, feed, settings, known_ids.get(feed.url, set()),
-                        cookies=cookies, worker=worker,
-                    )) as batches:
-                        async for batch in batches:
-                            yield batch
-                except Exception as error:
-                    _collection_failure(feed.name, error)
+        async with AsyncExitStack() as stack:
+            channels = sum(feed.kind == "channel" for feed in feeds)
+            primary = await stack.enter_async_context(
+                aclosing(ListingWorker()),
+            )
+            workers = [primary, *[
+                await stack.enter_async_context(aclosing(ListingWorker()))
+                for _ in range(1, min(settings.listing_workers, channels))
+            ]]
+
+            for is_channel, group in groupby(
+                feeds, key=lambda feed: feed.kind == "channel",
+            ):
+                feed_group = tuple(group)
+
+                if is_channel and len(workers) > 1:
+                    listing = _channel_batches(
+                        settings, feed_group, cookies, known_ids,
+                        workers[:len(feed_group)],
+                    )
+                else:
+                    listing = _listing_batches(
+                        settings, feed_group, cookies, known_ids, primary,
+                    )
+
+                async with aclosing(listing) as batches:
+                    async for batch in batches:
+                        yield batch
 
         if library:
             try:

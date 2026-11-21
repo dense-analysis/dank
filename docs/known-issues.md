@@ -259,6 +259,11 @@ successful pagination, stopping before a continuation request, and reuse across
 channels. A listing timeout reaps the worker and keeps streamed results. The
 next listing starts a replacement process.
 
+Up to three channel workers share DANK's HTTP limits by default. An HTTP 429
+ends the affected listing and delays new requests to that host. The cooldown
+uses YouTube's `Retry-After` value with a two-second minimum. Listings that
+already have a request in flight keep their results.
+
 A native Debian scrape reported a missing JavaScript runtime while Node was
 installed at `/usr/bin/node`. DANK now searches `PATH` first and then common
 system directories for Deno and Node. Downloads and caption discovery pass
