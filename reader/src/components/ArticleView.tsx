@@ -17,7 +17,6 @@ import {
 } from "react";
 import { useReaderPreferences } from "../hooks/useReaderPreferences";
 import { useRedditContent } from "../hooks/useRedditContent";
-import { useVideoPlayback } from "../hooks/useVideoPlayback";
 import { fetchPost } from "../lib/api";
 import { hasArticleContent } from "../lib/article";
 import { sourceLabel } from "../lib/collections";
@@ -30,6 +29,7 @@ import type { FeedKind, Filters, Post } from "../lib/types";
 import { videoPositionKey } from "../lib/videoPositions";
 import { hasXContent, isXPost } from "../lib/x";
 import { ArticleBody } from "./ArticleBody";
+import { AttachedVideo } from "./AttachedVideo";
 import { AuthorLink } from "./AuthorLink";
 import { CollectionBadge } from "./CollectionBadge";
 import { CollectionInfoDetails } from "./CollectionInfo";
@@ -478,27 +478,5 @@ export function ArticleView({
         </div>
       )}
     </main>
-  );
-}
-
-function AttachedVideo({
-  url,
-  positionKey,
-}: {
-  url: string;
-  positionKey: string;
-}) {
-  const videoRef = useVideoPlayback(positionKey);
-
-  return (
-    <video
-      ref={videoRef}
-      controls
-      preload="none"
-      src={safeUrl(url)}
-      aria-label="Article video"
-    >
-      <track kind="captions" />
-    </video>
   );
 }

@@ -17,6 +17,7 @@ perception and evolving narratives.
 - [Hacker News](docs/features/hacker-news.md) — browse daily front-page stories and optional discussions.
 - [YouTube feeds](docs/features/youtube.md) — save recommendations and their context.
 - [Media downloads](docs/features/media.md) — download and store discovered assets.
+- [Scrubbing old captures](docs/features/retention.md) — retire raw captures and downloaded media while keeping processed posts.
 - [Processing and embeddings](docs/features/processing.md) — prepare searchable posts.
 - [Collection provenance](docs/features/collection-provenance.md) — trace saved articles, discovery order and contextual connections.
 - [Browsing and search](docs/features/search.md) — start the reader, filter stories and search by meaning.
@@ -162,6 +163,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make youtube-login` | Save an optional, separate YouTube session |
 | `make youtube-compare` | Compare browser and yt-dlp recommendations |
 | `make scrape` | Collect configured sources; Docker adds `--headless` |
+| `make scrub` | Remove old raw captures and downloaded media; pass `ARGS='--age 30d --dry-run'` to preview |
 | `make process` | Process collected posts and assets |
 | `make train` | Label category training examples with Decisions; see [categories](docs/features/categories.md) |
 | `make query` | Run `clickhouse-query` with arguments from `ARGS` |

@@ -9,6 +9,30 @@ Open-work consolidation: **2026-10-27**. Observations below retain their origina
 Publisher examples describe observed captures, not a claim that a site always fails. “Mitigated”
 means a fallback exists; “handled” means the specific case has a tested fix.
 
+## Scrubbed raw captures and media
+
+`make scrub ARGS='--age 30d'` removes raw rows by capture time and media by its
+first recorded capture, preserving processed posts and other saved tables.
+Use `--dry-run` to preview. Persistent retirement markers prevent unchanged
+pinned-post media being downloaded again; new media URLs remain eligible.
+The collection lock excludes active collectors, and retirement records precede
+file/raw deletion so an interrupted scrub can be retried. Source icons and
+saved YouTube thumbnail-history files are protected. See
+[retention behavior](features/retention.md) and
+[scrub tests](../tests/scrub/test_runner.py).
+
+Old raw-only metadata, archived discussions and X For You appearances disappear
+when their raw rows are deleted; processed post text survives in All and source
+listings. Reprocessing a discarded capture is no longer possible. Missing local
+YouTube videos use remote embeds on Play, including YouTube attachments in
+articles. An already-open YouTube collection player can offer **Play from
+YouTube** after its file disappears. Provider restrictions can still prevent
+playback. A [ClickHouse integration test](../tests/api/posts/test_clickhouse.py)
+checks the millisecond cutoff and the reader's response after a scrub.
+Raw-table mutations wait locally. ClickHouse's obsolete parts and open file
+handles can delay physical space reclamation. Total storage still depends on
+how much media arrives within the retention window.
+
 ## Browser protocol compatibility
 
 The 2026-11-04 log contains 741 `localNetworkAccessRequestPolicy` parsing

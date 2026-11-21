@@ -6,6 +6,7 @@ import logging
 import pathlib
 from collections.abc import Iterable
 from contextlib import nullcontext
+from contextvars import ContextVar
 from urllib.parse import urlparse
 
 import aiohttp
@@ -26,6 +27,9 @@ from .http import download_file_http, http_asset_path, youtube_thumbnail_urls
 from .limits import AssetSizeExceeded
 
 logger = logging.getLogger(__name__)
+scrubbed_assets: ContextVar[frozenset[tuple[str, str, str]]] = ContextVar(
+    "scrubbed_assets", default=frozenset(),
+)
 
 SKIP_ASSET_TYPES = {"iframe", "link"}
 ASSET_FILENAMES_TO_NEVER_DOWNLOAD = {
@@ -47,15 +51,20 @@ async def download_assets(
     size_limits: MediaSizeLimits = NO_SIZE_LIMITS,
 ) -> list[RawAsset]:
     timestamp = scraped_at or datetime.datetime.now(datetime.UTC)
+    retired = scrubbed_assets.get()
     unique: dict[
-        tuple[str, YouTubeThumbnailCapture | None], AssetDiscovery,
+        tuple[str, YouTubeThumbnailCapture | None, bool], AssetDiscovery,
     ] = {}
 
     for discovery in discoveries:
         if discovery.url:
             # Different listing captures can use the same mutable image URL.
+            # A retired post's copy also has to be handled independently.
+            identity = (discovery.domain, discovery.post_id, discovery.url)
+            was_retired = identity in retired
             unique.setdefault(
-                (discovery.url, discovery.youtube_capture), discovery,
+                (discovery.url, discovery.youtube_capture, was_retired),
+                discovery,
             )
 
     limiter = current_limiter.get()
@@ -78,7 +87,11 @@ async def download_assets(
         limit = asset_size_limit(discovery, max_asset_bytes, size_limits)
 
         try:
-            if _skip_download(discovery, download_types):
+            if (
+                (discovery.domain, discovery.post_id, discovery.url)
+                in retired
+                or _skip_download(discovery, download_types)
+            ):
                 count("media_skipped")
 
                 return RawAsset(

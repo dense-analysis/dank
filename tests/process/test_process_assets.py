@@ -81,3 +81,51 @@ def test_filename_content_type_stays_authoritative(tmp_path: Path) -> None:
 
     assert asset is not None
     assert asset.content_type == "text/plain"
+
+
+def test_file_scrubbed_between_existence_check_and_stat_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "media.png"
+    path.write_bytes(PNG)
+    now = datetime.datetime(2026, 11, 21, tzinfo=datetime.UTC)
+    raw = RawAsset("site.test", "post", "https://media/a", "image", now,
+                   "rss", str(path))
+    original = Path.is_file
+
+    def exists(candidate: Path) -> bool:
+        if candidate == path:
+            candidate.unlink()
+
+            return True
+
+        return original(candidate)
+
+    monkeypatch.setattr(Path, "is_file", exists)
+
+    assert convert_raw_asset(raw) is None
+
+
+def test_file_scrubbed_while_reading_its_image_signature_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "opaque-media"
+    path.write_bytes(PNG)
+    now = datetime.datetime(2026, 11, 21, tzinfo=datetime.UTC)
+    raw = RawAsset("site.test", "post", "https://media/a", "image", now,
+                   "rss", str(path))
+    original = Path.is_file
+
+    def exists(candidate: Path) -> bool:
+        if candidate == path:
+            # stat still succeeds, but opening the file must tolerate expiry.
+            monkeypatch.setattr(Path, "open", missing)
+
+        return original(candidate)
+
+    def missing(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError("File was scrubbed")
+
+    monkeypatch.setattr(Path, "is_file", exists)
+
+    assert convert_raw_asset(raw) is None

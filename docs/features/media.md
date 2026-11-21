@@ -170,4 +170,9 @@ The [reader](search.md) shows processed images, audio and video alongside
 posts. Back up the asset directory together with the database if you want to
 preserve the downloaded files and their associations.
 
+Use [scrub](retention.md) to retire old downloads and raw captures while keeping
+processed posts. Unchanged media from repeatedly scraped pinned posts is not
+downloaded again after intentional retirement. Removed YouTube videos can use
+the reader's YouTube embed instead.
+
 See the [README](../../README.md) for setup and shared settings.

@@ -27,7 +27,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas sources-import openapi test lint test-postgres
+.PHONY: help config up web down logs scrape scrub process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas sources-import openapi test lint test-postgres
 
 help:
 	@printf '%s\n' \
@@ -36,6 +36,7 @@ help:
 		'' \
 		'  up, web         Start the viewer (Docker stack or native foreground)' \
 		'  scrape          Collect sources; save output under logs/scrape/' \
+		'  scrub           Remove old raw captures/media; pass ARGS="--age 30d"' \
 		'  x-login         Sign in to X and save the session for collection' \
 		'  youtube-login   Sign in to Google using 1Password' \
 		'  youtube-compare Compare browser and yt-dlp recommendations' \
@@ -80,6 +81,9 @@ up web: config
 
 scrape: config
 	@bash src/dank/run_logged.sh scrape $(MODE) $(SCRAPE) $(value ARGS)
+
+scrub: config
+	$(RUN) scrub $(value ARGS)
 
 x-login: config
 	$(X_LOGIN) $(value ARGS)

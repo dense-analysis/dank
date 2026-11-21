@@ -14,20 +14,27 @@ def convert_raw_asset(raw: RawAsset) -> Asset | None:
     if not path.is_file():
         return None
 
-    size_bytes = path.stat().st_size
+    try:
+        size_bytes = path.stat().st_size
+    except FileNotFoundError:
+        return None
+
     content_type = mimetypes.guess_type(path.name)[0] or ""
 
     if not content_type and raw.asset_type == "image":
         # Some publisher image URLs have no extension. PNG signature:
         # https://www.w3.org/TR/png-3/#5PNG-file-signature
-        with path.open("rb") as file:
-            header = file.read(12)
+        try:
+            with path.open("rb") as file:
+                header = file.read(12)
+        except FileNotFoundError:
+            return None
 
-            if header[:8] == b"\x89PNG\r\n\x1a\n":
-                content_type = "image/png"
-            # https://developers.google.com/speed/webp/docs/riff_container
-            elif header[:4] == b"RIFF" and header[8:12] == b"WEBP":
-                content_type = "image/webp"
+        if header[:8] == b"\x89PNG\r\n\x1a\n":
+            content_type = "image/png"
+        # https://developers.google.com/speed/webp/docs/riff_container
+        elif header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+            content_type = "image/webp"
 
     return Asset(
         domain=raw.domain,

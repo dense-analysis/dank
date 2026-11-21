@@ -61,6 +61,19 @@ ORDER BY (domain, scraped_at, post_id, url);
 --- PROCESSING MODELS ---
 -------------------------
 
+-- Media lifetimes survive deletion of the original raw captures.
+CREATE TABLE IF NOT EXISTS dank.asset_retention (
+    domain LowCardinality(String),
+    post_id String,
+    url String,
+    local_path String,
+    first_scraped_at DateTime64(3, 'UTC'),
+    scrubbed_at Nullable(DateTime64(3, 'UTC')),
+    updated_at DateTime64(6, 'UTC')
+)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (domain, post_id, url, local_path);
+
 -- Processed posts with lots of information.
 CREATE TABLE IF NOT EXISTS dank.posts (
     domain LowCardinality(String),

@@ -178,6 +178,40 @@ async function mockYouTube(
 }
 
 for (const width of [1440, 390, 320]) {
+  test(`scrubbed YouTube article attachments offer an embed at ${width}px`, async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const article = postFixture({
+      id: "scrubbed-video",
+      domain: "example.test",
+      source: "rss",
+      title: "Article with a retired YouTube download",
+      html: "<p>The saved article remains readable.</p>",
+      media: [{ url: videoUrl, content_type: "video/youtube" }],
+    });
+    await mockYouTube(context, { posts: [article] });
+    await page.goto("/?article=scrubbed-video&article_source=example.test");
+    await expect(
+      page.getByText("The saved article remains readable."),
+    ).toBeVisible();
+    await expect(page.locator("iframe, video")).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Play from YouTube", exact: true })
+      .click();
+    await expect(page.locator("iframe")).toHaveAttribute(
+      "src",
+      /https:\/\/www.youtube-nocookie.com\/embed\/LKrwhjOI8Nc\?/,
+    );
+    await expect(page.locator("video")).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+
   test(`YouTube previews play inline in All, X and the reader at ${width}px`, async ({
     page,
     context,

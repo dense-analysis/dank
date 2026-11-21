@@ -127,7 +127,7 @@ def test_parse_age_window_hours() -> None:
     assert parse_age_window("1hour") == datetime.timedelta(hours=1)
 
 
-@pytest.mark.parametrize("value", ["", "0", "-5m", "3d", "abc"])
+@pytest.mark.parametrize("value", ["", "0", "-5m", "3w", "abc"])
 def test_parse_age_window_invalid(value: str) -> None:
     with pytest.raises(ValueError):
         parse_age_window(value)

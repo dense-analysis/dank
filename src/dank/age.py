@@ -8,7 +8,7 @@ def parse_age_window(value: str) -> datetime.timedelta:
     match = re.fullmatch(r"(\d+)\s*([a-z]*)", value.strip().lower())
 
     if not match:
-        raise ValueError("Age must look like 30s, 10m, or 2h")
+        raise ValueError("Age must look like 30s, 10m, 2h, or 30d")
 
     amount = int(match.group(1))
 
@@ -23,5 +23,7 @@ def parse_age_window(value: str) -> datetime.timedelta:
             return datetime.timedelta(minutes=amount)
         case "h" | "hr" | "hrs" | "hour" | "hours":
             return datetime.timedelta(hours=amount)
+        case "d" | "day" | "days":
+            return datetime.timedelta(days=amount)
         case _:
-            raise ValueError("Age must be in seconds, minutes, or hours")
+            raise ValueError("Age must be in seconds, minutes, hours, or days")

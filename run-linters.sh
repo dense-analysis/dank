@@ -2,9 +2,9 @@
 
 set -eu
 
-# Collection, processing and training own separate execution pipelines.
-for module in scrape process training; do
-    for dependency in scrape process training; do
+# Each pipeline owns its execution and database operations.
+for module in scrape process scrub training; do
+    for dependency in scrape process scrub training; do
         if [ "$module" = "$dependency" ]; then
             continue
         fi

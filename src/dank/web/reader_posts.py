@@ -30,6 +30,7 @@ from dank.web.reader_reddit import (
 from dank.web.reader_reddit_history import preserve_reddit_archives
 from dank.web.reader_x import post_x_content
 from dank.web.reader_youtube_feed import add_youtube_post_metadata
+from dank.youtube import canonical_youtube_url
 
 
 async def post_payloads(
@@ -280,6 +281,13 @@ def post_payload(
             media.append({
                 "url": view["url"], "content_type": view["content_type"],
             })
+        elif view is None and post.domain != "youtube.com":
+            youtube_url = canonical_youtube_url(asset.url)
+
+            if youtube_url:
+                media.append({
+                    "url": youtube_url, "content_type": "video/youtube",
+                })
 
     images = _ArticleImages(local_urls)
     images.feed(body)

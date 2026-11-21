@@ -20,6 +20,10 @@ from urllib.parse import urlsplit
 
 import aiohttp
 
+from dank.collection_lock import (
+    CollectionBusyError as CollectionBusyError,
+    collection_lock,
+)
 from dank.config import (
     MEDIA_DOWNLOAD_TYPES,
     NO_SIZE_LIMITS,
@@ -48,7 +52,7 @@ from dank.model import (
 from dank.progress import Progress
 from dank.references import reference_rows as post_reference_rows
 from dank.runtime import runtime_info
-from dank.scrape.assets import download_assets
+from dank.scrape.assets import download_assets, scrubbed_assets
 from dank.scrape.assets.http import (
     thumbnail_observation,
     youtube_thumbnail_urls,
@@ -112,10 +116,6 @@ MAX_LINKED_METADATA_PER_RUN = 100
 MAX_TRANSCRIPTS_PER_RUN = 25
 
 
-class CollectionBusyError(RuntimeError):
-    """Another collector owns an overlapping source or browser profile."""
-
-
 async def run_scrape(
     settings: Settings,
     *,
@@ -143,18 +143,17 @@ async def run_scrape(
         settings = settings._replace(sources=selected[:1])
         scoped = True
 
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    shared = scoped and not exclusive
+    busy_message = "Another collection is already using this source or browser"
 
-    with ExitStack() as locks:
-        lock = locks.enter_context(
-            (settings.data_dir / "collection.lock").open("a"),
-        )
-        operation = fcntl.LOCK_EX if exclusive or not scoped else fcntl.LOCK_SH
-
-        try:
-            fcntl.flock(lock, operation | fcntl.LOCK_NB)
-
-            if operation == fcntl.LOCK_SH:
+    with (
+        collection_lock(
+            settings.data_dir, shared=shared, busy_message=busy_message,
+        ),
+        ExitStack() as locks,
+    ):
+        if shared:
+            try:
                 directory = settings.data_dir / "collection-locks"
                 directory.mkdir(exist_ok=True)
 
@@ -166,10 +165,8 @@ async def run_scrape(
                         (directory / name).open("a"),
                     )
                     fcntl.flock(resource_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise CollectionBusyError(
-                "Another collection is already using this source or browser",
-            ) from error
+            except BlockingIOError as error:
+                raise CollectionBusyError(busy_message) from error
 
         return await _run_scrape(
             settings, headless=headless, batch_size=batch_size,
@@ -444,16 +441,9 @@ async def store_youtube_comparison(
     )
 
     if capture.posts:
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        busy_message = "Another collection is running; retry this import later"
 
-        with (settings.data_dir / "collection.lock").open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise CollectionBusyError(
-                    "Another collection is running; retry this import later",
-                ) from None
-
+        with collection_lock(settings.data_dir, busy_message=busy_message):
             async with ClickHouseClient(settings.clickhouse) as client:
                 status, count_saved, reused = await _store_comparison(
                     client, settings, capture,
@@ -556,8 +546,10 @@ async def _run_scrape(
             if statement.strip():
                 await clickhouse_client.execute(statement)
         await clickhouse_client.insert_rows("scrape_runs", [history.row(1)])
+        scrub_token = scrubbed_assets.set(frozenset())
 
         try:
+            scrubbed_assets.set(await _load_scrubbed_assets(clickhouse_client))
             # Signed-out collection must never reuse an authenticated profile.
             with tempfile.TemporaryDirectory(
                 prefix="dank-youtube-",
@@ -597,6 +589,8 @@ async def _run_scrape(
         else:
             history.finish()
             await _save_history(clickhouse_client, history)
+        finally:
+            scrubbed_assets.reset(scrub_token)
 
     counts = history.counts()
     logger.info(
@@ -685,6 +679,7 @@ async def _run_source_sessions(
 
 
 async def _ensure_history_tables(client: ClickHouseClient) -> None:
+    await _ensure_retention_table(client)
     links_schema = pathlib.Path(__file__).parents[1] / "storage/links.sql"
 
     for statement in links_schema.read_text().split(";"):
@@ -2820,6 +2815,25 @@ def filter_settings_sources(
     )
 
     return settings._replace(sources=filtered_sources)
+
+
+async def _ensure_retention_table(client: ClickHouseClient) -> None:
+    schema = pathlib.Path(__file__).parents[1] / "storage/retention.sql"
+    await client.execute(schema.read_text())
+
+
+async def _load_scrubbed_assets(
+    client: ClickHouseClient,
+) -> frozenset[tuple[str, str, str]]:
+    result = await client.fetch_json(
+        "SELECT DISTINCT domain, post_id, url FROM asset_retention FINAL "
+        "WHERE scrubbed_at IS NOT NULL",
+    )
+
+    return frozenset(
+        (str(row["domain"]), str(row["post_id"]), str(row["url"]))
+        for row in result.rows
+    )
 
 
 async def collect_youtube_video_metadata(

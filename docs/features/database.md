@@ -31,12 +31,16 @@ change its schema.
 | `raw_assets` | Discovered asset references and download paths |
 | `posts` | Processed content, author, timestamps and text embeddings |
 | `assets` | Processed local-file references, types and sizes |
+| `asset_retention` | First known media capture times and intentional retirement markers |
 | `web_embedding_cache` | Cached search-query embeddings |
 
 Raw tables retain repeated captures. Processed tables use replacement engines
 to keep the latest version per identity: `(domain, post_id)` for posts and
 `(domain, post_id, url)` for assets. Use `FINAL` when querying processed tables
 to resolve replacement versions at read time.
+
+[Scrubbing](retention.md) can remove older raw captures and media files while
+retaining processed posts and all other saved tables.
 
 See [scrape history](history.md) for run comparisons. History tables also require
 `FINAL` to resolve their running and final versions.

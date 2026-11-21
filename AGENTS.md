@@ -34,23 +34,26 @@ the pages.
   discovering posts and assets that need persisting.
 * Code in the `process` module should only be concerned with loading data from
   the database, processing it, and storing it back again in a processed form.
+* The `scrub` module owns retention planning and cleanup. Only
+  `dank/scrub/runner.py` may access ClickHouse or remove asset files within
+  this module. Keep command-line setup in `dank/scrub/__main__.py`.
 * Code in the `training` module owns loading training posts, calling Decisions,
   and persisting category training examples. Only `dank/training/runner.py`
   may access ClickHouse within this module.
 * For categories, the `process` module only loads and assigns saved data. It
   must never import from `training` or make training API requests.
-* Never import `scrape`, `process`, or `training` code into one another.
-  Shared data types and pure calculations belong outside these modules and
-  must not import any of them.
+* Never import `scrape`, `process`, `scrub`, or `training` code into one
+  another. Keep shared data types, calculations and infrastructure independent
+  of these modules.
 * Only `dank/scrape/runner.py`, `dank/process/runner.py`,
-  `dank/training/runner.py`, and the web app may access ClickHouse.
+  `dank/scrub/runner.py`, `dank/training/runner.py`, and the web app may
+  access ClickHouse.
 * Only `dank/db/atlas.py` may run Atlas, so that it stays replaceable. Change the
   Postgres schema through migrations; see `docs/development.md`.
 
 IMPORTANT: Do not bypass the import boundaries between `scrape`, `process`,
-and `training` by creating another module which imports their code. Shared
-modules must own independent data types or pure calculations, not redirect
-imports or calls into a forbidden module.
+`scrub` and `training` by routing their imports or calls through another
+module.
 
 ## Basic Principles
 
