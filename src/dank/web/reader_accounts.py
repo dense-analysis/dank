@@ -8,14 +8,11 @@ from typing import Any, TypedDict, cast
 from urllib.parse import urlsplit
 
 from dank.storage.clickhouse import ClickHouseClient
+from dank.x_content import X_ACCOUNT_PATTERN as X_ACCOUNT_PATTERN
 
 X_DOMAINS = ("x.com", "twitter.com")
 # Keep counts and account filtering tied to the same post owner, independent
 # of the editable author search or the timeline a post was discovered on.
-X_ACCOUNT_PATTERN = (
-    "^https?://(?:www[.])?(?:x[.]com|twitter[.]com)/"
-    "([a-z0-9_]{1,15})/status/"
-)
 X_ACCOUNT_SQL = f"extract(lowerUTF8(url), '{X_ACCOUNT_PATTERN}')"
 
 

@@ -90,6 +90,7 @@ level = "INFO"
 # max_posts = 200
 # max_scrolls = 20
 # scroll_pause_seconds = 1.5
+# known_overlap = 5 # Use 0 for a bounded backfill.
 
 # Bounded conversation snapshots for each account's newest owned posts.
 # [x.conversation]

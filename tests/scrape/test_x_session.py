@@ -231,7 +231,7 @@ async def test_saved_session_collects_without_password_or_email(
     session = MagicMock(get_browser=AsyncMock(return_value=browser))
     visited: list[str] = []
 
-    async def collect(*args: Any):
+    async def collect(*args: Any, **kw: Any):
         visited.append(args[1])
 
         for batch in ():

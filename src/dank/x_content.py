@@ -9,6 +9,11 @@ from collections.abc import Mapping
 from typing import Any, Literal, NotRequired, TypedDict, cast
 from urllib.parse import quote, urlsplit
 
+X_ACCOUNT_PATTERN = (
+    "^https?://(?:www[.])?(?:x[.]com|twitter[.]com)/"
+    "([a-z0-9_]{1,15})/status/"
+)
+
 
 class XLink(TypedDict):
     url: str

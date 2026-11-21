@@ -120,7 +120,21 @@ async def test_references_do_not_use_post_limit(
     replies: list[tuple[list[RawPost], list[AssetDiscovery]]] = [
         ([raw(reference=True)], []), ([raw(reference=False)], []),
     ]
-    drain = AsyncMock(side_effect=replies + ([([], [])] if scrolls else []))
+    remaining = iter(replies + ([([], [])] if scrolls else []))
+
+    async def next_drain(
+        capture: object, seen_posts: set[str], seen_assets: set[str],
+        seen_references: set[str], **options: Any,
+    ) -> tuple[list[RawPost], list[AssetDiscovery]]:
+        posts, assets = next(remaining)
+
+        for post in posts:
+            target = seen_references if post.is_reference else seen_posts
+            target.add(post.post_id)
+
+        return posts, assets
+
+    drain = AsyncMock(side_effect=next_drain)
     monkeypatch.setattr(
         "dank.scrape.x.NetworkCapture", MagicMock(return_value=capture),
     )
@@ -150,7 +164,7 @@ async def test_retry_keeps_reference_and_later_content_once(
 ):
     attempts = 0
 
-    async def collect(*args: Any):
+    async def collect(*args: Any, **kw: Any):
         nonlocal attempts
         attempts += 1
         yield ScrapeBatch([raw(reference=True)], [])

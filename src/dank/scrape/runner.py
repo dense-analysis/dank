@@ -104,6 +104,7 @@ from dank.scrape.zendriver import (
 )
 from dank.storage.clickhouse import ClickHouseClient, parse_datetime
 from dank.thumbnails import thumbnail_suffix
+from dank.x_content import X_ACCOUNT_PATTERN
 from dank.youtube import VIDEO_ID, discovery_from_post, payload_object
 from dank.youtube_references import reference_rows
 
@@ -114,6 +115,7 @@ MAX_COMMUNITY_ICON_BYTES = 1024 * 1024
 MAX_LINKED_METADATA_PER_RUN = 100
 # Limit extra watch-page requests; older items are checked when opened.
 MAX_TRANSCRIPTS_PER_RUN = 25
+X_KNOWN_IDS_PER_ACCOUNT = 1000
 
 
 async def run_scrape(
@@ -857,6 +859,7 @@ async def _collect_source(
                     hacker_news_details=hacker_news_details,
                     totals_seen=totals_seen, seen_articles=seen_articles,
                     target_post=target_post,
+                    scrape_started_at=history.started_at,
                 ):
                     playlist_rows: list[dict[str, Any]] = []
 
@@ -967,6 +970,7 @@ async def _discover_source_batches(
     target_post: tuple[str, str] | None = None,
     totals_seen: set[str] | None = None,
     seen_articles: set[str] | None = None,
+    scrape_started_at: datetime.datetime | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     if target_post is not None:
         async for batch in _refresh_target_post(
@@ -1005,6 +1009,7 @@ async def _discover_source_batches(
                 session, feed_staleness=feed_staleness,
                 batch_size=batch_size, totals_seen=totals_seen,
                 seen_articles=seen_articles,
+                scrape_started_at=scrape_started_at,
             ):
                 logger.info(
                     "Discovered batch domain=%s adapter=%s posts=%d "
@@ -1186,6 +1191,7 @@ async def _discover_adapter_batches(
     client: ClickHouseClient, http_client: aiohttp.ClientSession,
     session: BrowserSession, *, feed_staleness: datetime.timedelta,
     batch_size: int, totals_seen: set[str] | None, seen_articles: set[str],
+    scrape_started_at: datetime.datetime | None,
 ) -> AsyncIterator[ScrapeBatch]:
     match adapter.kind:
         case SourceAdapter.HACKER_NEWS:
@@ -1213,7 +1219,8 @@ async def _discover_adapter_batches(
             )
         case SourceAdapter.X:
             batches_iter = _x_listing_batches(
-                settings.x, source.accounts, session,
+                settings.x, source.accounts, session, client,
+                scrape_started_at=scrape_started_at,
             )
         case SourceAdapter.RSS:
             batches_iter = _rss_adapter_batches(
@@ -1228,8 +1235,11 @@ async def _discover_adapter_batches(
 
 async def _x_listing_batches(
     settings: XSettings, accounts: tuple[str, ...], session: BrowserSession,
+    client: ClickHouseClient, *,
+    scrape_started_at: datetime.datetime | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     browser = XBrowser(session)
+    cutoff = scrape_started_at or datetime.datetime.now(datetime.UTC)
 
     if settings.homepage:
         try:
@@ -1243,10 +1253,49 @@ async def _x_listing_batches(
     if not accounts and settings.homepage:
         return
 
+    known_ids = await _known_x_account_ids(client, accounts, settings, cutoff)
+
     async for batch in scrape_x_accounts(
-        settings, accounts, session, browser=browser,
+        settings, accounts, session, browser=browser, known_ids=known_ids,
     ):
         yield batch
+
+
+async def _known_x_account_ids(
+    client: ClickHouseClient, accounts: tuple[str, ...], settings: XSettings,
+    cutoff: datetime.datetime,
+) -> dict[str, set[str]]:
+    if not accounts or not settings.known_overlap:
+        return {}
+
+    # Processed posts retain their identities after the raw captures expire.
+    result = await client.fetch_json(
+        f"SELECT extract(lowerUTF8(url), '{X_ACCOUNT_PATTERN}') AS handle, "
+        "post_id FROM ("
+        "SELECT url, post_id, coalesce(post_created_at, scraped_at) AS stamp "
+        "FROM raw_posts WHERE domain IN ('x.com', 'twitter.com') "
+        "AND source = 'x' AND NOT is_reference AND scraped_at < %(cutoff)s "
+        "UNION ALL "
+        "SELECT url, post_id, created_at AS stamp FROM posts "
+        "WHERE domain IN ('x.com', 'twitter.com') AND source = 'x' "
+        "AND updated_at < %(cutoff)s"
+        ") WHERE handle IN %(accounts)s AND handle != '' "
+        "GROUP BY handle, post_id ORDER BY max(stamp) DESC, post_id DESC "
+        "LIMIT %(limit)s BY handle",
+        {
+            "accounts": sorted({
+                account.strip().lstrip("@").casefold() for account in accounts
+            }),
+            "limit": max(X_KNOWN_IDS_PER_ACCOUNT, settings.known_overlap),
+            "cutoff": cutoff,
+        },
+    )
+    known: dict[str, set[str]] = {}
+
+    for row in result.rows:
+        known.setdefault(str(row["handle"]), set()).add(str(row["post_id"]))
+
+    return known
 
 
 async def _rss_adapter_batches(

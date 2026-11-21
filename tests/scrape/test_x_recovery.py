@@ -63,7 +63,7 @@ async def test_retry_keeps_saved_records_once_then_visits_next_account(
 ):
     attempts: list[str] = []
 
-    async def collect(page: Any, account: str, settings: XSettings):
+    async def collect(page: Any, account: str, settings: XSettings, **kw: Any):
         attempts.append(account)
         if account == "one":
             yield batch("1")
@@ -108,7 +108,7 @@ async def test_persistent_account_failure_still_reaches_healthy_account(
     visited: list[str] = []
     pages: list[Any] = []
 
-    async def collect(page: Any, account: str, settings: XSettings):
+    async def collect(page: Any, account: str, settings: XSettings, **kw: Any):
         visited.append(account)
         pages.append(page)
         if account == "bad":
@@ -139,7 +139,7 @@ async def test_login_failure_stops_without_browser_or_sign_in_retries(
 ):
     visited: list[str] = []
 
-    async def collect(page: Any, account: str, settings: XSettings):
+    async def collect(page: Any, account: str, settings: XSettings, **kw: Any):
         visited.append(account)
         if account == "locked":
             raise LoginRequiredError("sign-in required")
@@ -161,7 +161,7 @@ async def test_cancellation_is_not_retried_or_swallowed(
     session: Any,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    async def collect(*args: Any) -> AsyncIterator[ScrapeBatch]:
+    async def collect(*args: Any, **kw: Any) -> AsyncIterator[ScrapeBatch]:
         yield batch("1")
         raise asyncio.CancelledError()
 
@@ -179,7 +179,7 @@ async def test_stalled_cleanup_is_bounded_and_does_not_reopen_owned_profile(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ):
-    async def collect(*args: Any) -> AsyncIterator[ScrapeBatch]:
+    async def collect(*args: Any, **kw: Any) -> AsyncIterator[ScrapeBatch]:
         raise ConnectionError()
         yield batch("1")
 

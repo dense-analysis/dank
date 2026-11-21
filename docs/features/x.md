@@ -18,6 +18,7 @@ homepage = true
 max_posts = 200
 max_scrolls = 20
 scroll_pause_seconds = 1.5
+known_overlap = 5
 
 [x.conversation]
 enabled = true
@@ -98,6 +99,16 @@ waits up to 0.1 seconds while progressing (or a shorter configured pause), then
 uses `scroll_pause_seconds` after two idle scrolls to allow slower responses to
 arrive. The homepage allows up to 1.5 seconds for its first response. Login
 prompt checks do not add polling delays to each scroll.
+
+Account timelines stop after `known_overlap` consecutive distinct posts already
+saved for the account, defaulting to five. DANK checks the complete batch of
+responses it has received before stopping. Only top-level posts authored by the
+account count toward overlap. Pinned posts, promoted posts, embedded quotes and
+ID-only references are excluded from the check. DANK looks up prior IDs in
+`raw_posts` and `posts`, so processed posts can serve as checkpoints after raw
+retention expires. Captures already saved serve as checkpoints and their media
+can still be retried. Set `known_overlap = 0` for a full bounded recapture. The
+For You feed and individual post refreshes use their own collection limits.
 
 X uses the same discovery and asset-fetching pipeline as other sources. Each
 post batch is saved before discovery advances, while a separate media worker

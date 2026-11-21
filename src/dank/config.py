@@ -76,6 +76,7 @@ class XSettings(NamedTuple):
     onepassword: XOnePasswordSettings | None = None
     conversation: XConversationSettings = XConversationSettings()
     homepage: bool = True
+    known_overlap: int = 5
 
 
 class YouTubeOnePasswordSettings(NamedTuple):
@@ -1071,24 +1072,20 @@ def _parse_x_onepassword(value: object) -> XOnePasswordSettings | None:
     return XOnePasswordSettings(*references)
 
 
-def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
-    config_path = pathlib.Path(path)
-
-    try:
-        with config_path.open("rb") as file:
-            data = tomllib.load(file)
-    except tomllib.TOMLDecodeError as error:
-        raise ConfigError(f"Broken {path}: {error}") from None
-
-    x_data: dict[str, Any] = _as_dict(data.get("x")) or {}
-
-    sources = _parse_sources(data.get("sources"))
+def _parse_x_settings(value: object) -> XSettings:
+    x_data = _as_dict(value) or {}
     x_defaults = XSettings().scrape
 
     if not isinstance(x_data.get("homepage", True), bool):
         raise ConfigError("x.homepage must be a boolean")
 
-    x_settings = XSettings(
+    known_overlap = x_data.get("known_overlap", XSettings().known_overlap)
+
+    if (not isinstance(known_overlap, int) or isinstance(known_overlap, bool)
+            or known_overlap < 0):
+        raise ConfigError("x.known_overlap must be a non-negative integer")
+
+    return XSettings(
         scrape=BrowserScrapeSettings(
             max_posts=int(x_data.get("max_posts", x_defaults.max_posts)),
             max_scrolls=int(x_data.get("max_scrolls", x_defaults.max_scrolls)),
@@ -1099,7 +1096,21 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         onepassword=_parse_x_onepassword(x_data.get("onepassword")),
         conversation=_parse_x_conversation(x_data.get("conversation", {})),
         homepage=x_data.get("homepage", True),
+        known_overlap=known_overlap,
     )
+
+
+def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
+    config_path = pathlib.Path(path)
+
+    try:
+        with config_path.open("rb") as file:
+            data = tomllib.load(file)
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"Broken {path}: {error}") from None
+
+    sources = _parse_sources(data.get("sources"))
+    x_settings = _parse_x_settings(data.get("x"))
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}
     use_http = bool(clickhouse.get("use_http", True))

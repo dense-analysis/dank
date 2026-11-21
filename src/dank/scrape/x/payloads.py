@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import NamedTuple, cast
 
 from dank.x_content import is_x_reference
@@ -127,18 +127,71 @@ def _timeline_instructions(
 ) -> list[object]:
     current = _as_dict(payload.get("data"))
 
-    for key in ("user", "result", "timeline", "timeline"):
+    for key in ("user", "result"):
         if current is None:
             return []
 
         current = _as_dict(current.get(key))
 
-    if current is None:
-        return []
+    user = current or {}
+    envelope = _as_dict(user.get("timeline")) or _as_dict(
+        user.get("timeline_v2"),
+    ) or {}
+    timeline = _as_dict(envelope.get("timeline")) or {}
 
-    instructions = _as_list(current.get("instructions"))
+    instructions = _as_list(timeline.get("instructions"))
 
     return instructions or []
+
+
+def account_timeline_post_ids(
+    payload: Mapping[str, object], handle: str,
+    *, pinned: set[str],
+) -> Iterator[str]:
+    """Yield authored timeline entries in order, excluding contextual posts."""
+    instructions = [
+        node for item in _timeline_instructions(payload)
+        if (node := _as_dict(item)) is not None
+    ]
+    pinned.update(
+        post_id for item in instructions
+        if item.get("type") == "TimelinePinEntry"
+        if (entry := _as_dict(item.get("entry"))) is not None
+        for tweet in _extract_tweet_results_from_entry(entry)
+        if (post_id := _get_post_id(tweet)) is not None
+    )
+
+    for instruction in instructions:
+        if instruction.get("type") != "TimelineAddEntries":
+            continue
+
+        for item in _as_list(instruction.get("entries")) or ():
+            entry = _as_dict(item) or {}
+            content = _as_dict(entry.get("content")) or {}
+
+            if content.get("entryType") != "TimelineTimelineItem":
+                continue
+
+            card = _as_dict(content.get("itemContent")) or {}
+            social_context = _as_dict(card.get("socialContext")) or {}
+
+            if (card.get("promotedMetadata") is not None
+                    or social_context.get("contextType") == "Pin"):
+                if (entry_id := entry.get("entryId")) and isinstance(
+                    entry_id, str,
+                ):
+                    pinned.add(entry_id.removeprefix("tweet-"))
+
+                continue
+
+            for tweet in _extract_tweet_results_from_item_content(card):
+                post_id = _get_post_id(tweet)
+
+                if (post_id and post_id not in pinned
+                        and entry.get("entryId") == f"tweet-{post_id}"
+                        and not is_x_reference(tweet)
+                        and _get_author_handle(tweet).casefold() == handle):
+                    yield post_id
 
 
 def _extract_timeline_add_entries(

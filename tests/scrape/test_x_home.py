@@ -315,7 +315,9 @@ async def test_accounts_reuse_the_scrolled_homepage_tab(
     monkeypatch.setattr("dank.scrape.x.home.check_login_required", AsyncMock())
     visited: list[str] = []
 
-    async def collect(tab: object, account: str, settings: XSettings):
+    async def collect(
+        tab: object, account: str, settings: XSettings, **kw: Any,
+    ):
         assert tab is page
         visited.append(account)
         yield ScrapeBatch([], [])
@@ -323,7 +325,7 @@ async def test_accounts_reuse_the_scrolled_homepage_tab(
     monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
     batches = [batch async for batch in _x_listing_batches(
         XSettings(scrape=BrowserScrapeSettings(max_posts=1)),
-        ("one", "two"), session,
+        ("one", "two"), session, MagicMock(fetch_json=AsyncMock()),
     )]
 
     assert recommended(batches[0]) == ["10"]

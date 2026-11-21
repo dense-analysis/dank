@@ -471,7 +471,7 @@ async def test_normal_collection_saves_timelines_without_visiting_discussions(
 ) -> None:
     events: list[str] = []
 
-    async def account(*args: Any) -> AsyncIterator[ScrapeBatch]:
+    async def account(*args: Any, **kw: Any) -> AsyncIterator[ScrapeBatch]:
         yield ScrapeBatch([seed("100"), seed("300", author="other")], [])
         yield ScrapeBatch([seed("200")], [])
 

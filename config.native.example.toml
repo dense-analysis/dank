@@ -90,6 +90,7 @@ level = "INFO"
 # See docs/features/x.md for account and collection settings.
 # [x]
 # homepage = true # Include signed-in For You in normal scrapes.
+# known_overlap = 5 # Use 0 for a bounded backfill.
 
 # Bounded conversation snapshots for each account's newest owned posts.
 # [x.conversation]
