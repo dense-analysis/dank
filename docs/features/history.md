@@ -223,6 +223,13 @@ check every account each run. Existing `[x.schedule]` fields override the shared
 settings for X. See [X timelines](x.md#account-check-schedule) and
 [YouTube collection limits](youtube.md#limits-and-downloads).
 
+Use `make scrape ARGS='--account HANDLE'` to check matching enabled X accounts
+and YouTube channels immediately. Handles match case-insensitively and accept
+an optional `@`. YouTube channel IDs match exactly, and configured channel
+URLs match by their handle or ID. Each matching source is collected, including
+when a handle is configured on both platforms. Repeat `--account` for several
+handles. Account checks run outside the regular schedule.
+
 ## Query history
 
 **Native**

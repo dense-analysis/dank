@@ -39,6 +39,33 @@ def test_targeted_cli_canonicalizes_and_passes_repeated_urls(
     assert run.call_args.kwargs["headless"] is True
 
 
+def test_account_cli_accepts_names_and_rejects_other_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = MagicMock()
+    monkeypatch.setattr("dank.scrape.__main__.run_scrape_from_config", run)
+    argv = ["scrape", "--account", "@WatcherGuru", "--account", "Channel.Name"]
+    monkeypatch.setattr("sys.argv", argv)
+    main()
+
+    assert run.call_args.kwargs["accounts"] == ("WatcherGuru", "Channel.Name")
+
+    for invalid in (
+        [*argv, "--x-details"],
+        [*argv, "--domains", "x.com"],
+        ["scrape", "--account", "@"],
+        ["scrape", "--acount", "WatcherGuru"],
+    ):
+        monkeypatch.setattr("sys.argv", invalid)
+        run.reset_mock()
+
+        with pytest.raises(SystemExit) as error:
+            main()
+
+        assert error.value.code == 2
+        run.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "extra",
     [

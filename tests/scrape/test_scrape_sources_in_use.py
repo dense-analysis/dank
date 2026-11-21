@@ -12,6 +12,7 @@ from dank.scrape import (
     __main__ as cli,
     runner,
 )
+from dank.sources.model import CompiledSources
 from tests.sources.fakes import (
     OFF,
     ON,
@@ -27,6 +28,7 @@ class Runs:
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.started: list[tuple[str, Settings]] = []
+        self.options: dict[str, object] = {}
 
         for name in (
             "run_scrape", "run_youtube_metadata", "retry_youtube_thumbnails",
@@ -36,6 +38,7 @@ class Runs:
     def _recorder(self, name: str) -> Any:
         async def run(settings: Settings, **options: object) -> None:
             self.started.append((name, settings))
+            self.options = options
 
         return run
 
@@ -62,6 +65,63 @@ def test_scrape_collects_the_enabled_sources_in_use(
     [(name, settings)] = runs.started
 
     assert (name, settings.sources) == ("run_scrape", (ON,))
+
+
+def test_account_backfill_only_selects_requested_handles(
+    tmp_path: pathlib.Path, runs: Runs, in_use: FakeSourcesInUse,
+) -> None:
+    channel_id = "UCBa659QWEk1AI4Tg--mrJ2A"
+    x = SourceConfig("x.com", ("@WatcherGuru", "Barchart"), tags=("news",))
+    youtube = SourceConfig(
+        "youtube.com", ("WatcherGuru", channel_id, "another"),
+        ("https://www.youtube.com/@watcherguru/shorts",
+         "https://www.youtube.com/playlist?list=selected_playlist",
+         "https://www.youtube.com/@other/videos"),
+    )
+    in_use.answer = CompiledSources((x, youtube, ON), (x, youtube, ON))
+
+    runner.run_scrape_from_config(
+        write_config(tmp_path),
+        accounts=("@WatcherGuru", "watcherguru", channel_id),
+    )
+    [(name, settings)] = runs.started
+
+    assert name == "run_scrape"
+    assert settings.sources == (
+        x._replace(accounts=("@WatcherGuru",)),
+        youtube._replace(
+            accounts=(), feed_urls=(
+                "https://www.youtube.com/@watcherguru/shorts",
+                "https://www.youtube.com/@WatcherGuru/videos",
+                f"https://www.youtube.com/channel/{channel_id}/videos",
+            ),
+        ),
+    )
+    assert not settings.x.homepage
+    assert settings.x.known_overlap == 0
+    assert not settings.youtube.homepage
+    assert not settings.youtube.hype
+    assert not settings.youtube.news_tabs
+    assert not settings.youtube.playlists
+    assert runs.options["scoped"] is True
+
+
+def test_account_selection_reports_disabled_and_missing_names(
+    tmp_path: pathlib.Path, runs: Runs, in_use: FakeSourcesInUse,
+) -> None:
+    disabled = SourceConfig("x.com", ("disabled",))
+    enabled = SourceConfig("x.com", ("enabled",))
+    in_use.answer = CompiledSources((enabled, disabled), (enabled,))
+
+    with pytest.raises(
+        SourcesError, match="No enabled account matches: disabled, missing",
+    ):
+        runner.run_scrape_from_config(
+            write_config(tmp_path),
+            accounts=("enabled", "disabled", "missing"),
+        )
+
+    assert runs.started == []
 
 
 def test_domains_select_among_the_sources_in_use(

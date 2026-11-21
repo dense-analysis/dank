@@ -12,6 +12,7 @@ class AccountCheck(NamedTuple):
     first_checked_at: datetime.datetime
     last_checked_at: datetime.datetime
     retry_due: bool = False
+    timeline_ids: tuple[str, ...] = ()
 
 
 class PostingActivity(NamedTuple):

@@ -12,11 +12,11 @@ import re
 import shutil
 import tempfile
 import uuid
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import ExitStack, nullcontext, suppress
 from itertools import batched
-from typing import Any, NamedTuple, cast
-from urllib.parse import urlsplit
+from typing import Any, NamedTuple, Protocol, cast
+from urllib.parse import unquote, urlsplit
 
 import aiohttp
 from clickhouse_connect.driver.exceptions import ClickHouseError
@@ -40,7 +40,7 @@ from dank.config import (
     XSettings,
     load_settings,
 )
-from dank.db.sources import sources_in_use
+from dank.db.sources import SourcesError, sources_in_use
 from dank.html_utils import PAGE_CHALLENGE_PATTERN
 from dank.links import is_original_source, is_platform_url, normalized_url
 from dank.logging_setup import configure_logging
@@ -96,7 +96,12 @@ from dank.scrape.rss import (
 )
 from dank.scrape.tasks import gather_tasks
 from dank.scrape.types import ScrapeBatch, ScrapeTotals
-from dank.scrape.x import XBrowser, scrape_x_accounts, scrape_x_posts
+from dank.scrape.x import (
+    TimelineCoverage,
+    XBrowser,
+    scrape_x_accounts,
+    scrape_x_posts,
+)
 from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.x.home import scrape_x_for_you
 from dank.scrape.x.session import LoginRequiredError
@@ -158,9 +163,16 @@ _ACCOUNT_ACTIVITY_SOURCES = {
 }
 
 
+class _AccountChecked(Protocol):
+    def __call__(
+        self, account: str, timeline_ids: tuple[str, ...] = (),
+    ) -> None: ...
+
+
 class _AccountSchedule(NamedTuple):
     due: set[str]
-    checked: Callable[[str], None]
+    checked: _AccountChecked
+    coverage: Mapping[str, TimelineCoverage] | None = None
 
 
 class _AccountInventory(NamedTuple):
@@ -1332,6 +1344,7 @@ async def _x_listing_batches(
 
     async for batch in scrape_x_accounts(
         settings, accounts, session, browser=browser, known_ids=known_ids,
+        coverage=account_plan.coverage if account_plan is not None else None,
         on_checked=account_plan.checked if account_plan is not None else None,
     ):
         yield batch
@@ -1489,15 +1502,33 @@ def _schedule_accounts(
         checks.update(pending)
         _save_account_checks(path, checks)
 
-    def checked(account: str) -> None:
+    def checked(account: str, timeline_ids: tuple[str, ...] = ()) -> None:
         previous = checks.get(account)
         first = min(previous.first_checked_at if previous else cutoff, cutoff)
         # Use the run start to keep the hourly cadence for busy accounts.
-        checks[account] = AccountCheck(first, cutoff)
+        checks[account] = AccountCheck(
+            first, cutoff, timeline_ids=timeline_ids,
+        )
         due.discard(account)
         _save_account_checks(path, checks)
 
-    return _AccountSchedule(due, checked)
+    coverage = None
+
+    if kind == SourceAdapter.X:
+        coverage = {}
+        bootstrap = cutoff - settings.max_interval
+
+        for account in due:
+            check = checks.get(account)
+            checkpoint = check.timeline_ids if check else ()
+            since = (
+                min(check.last_checked_at, bootstrap) if check else bootstrap
+            )
+            coverage[account] = TimelineCoverage(
+                checkpoint, None if checkpoint else since,
+            )
+
+    return _AccountSchedule(due, checked, coverage)
 
 
 def _load_account_checks(path: pathlib.Path) -> dict[str, AccountCheck]:
@@ -1535,10 +1566,14 @@ def _load_account_checks(path: pathlib.Path) -> dict[str, AccountCheck]:
         entry = cast(dict[str, object], value)
         first = parse_datetime(entry.get("first_checked_at"))
         last = parse_datetime(entry.get("last_checked_at"))
+        timeline = entry.get("timeline_ids")
 
         if first is not None and last is not None and first <= last:
             checks[account] = AccountCheck(
                 first, last, entry.get("retry_due") is True,
+                tuple(item for item in cast(list[object], timeline)
+                      if isinstance(item, str)) if isinstance(timeline, list)
+                else (),
             )
 
     return checks
@@ -1560,6 +1595,8 @@ def _save_account_checks(
                     "first_checked_at": check.first_checked_at.isoformat(),
                     "last_checked_at": check.last_checked_at.isoformat(),
                     "retry_due": check.retry_due,
+                    **({"timeline_ids": check.timeline_ids}
+                       if check.timeline_ids else {}),
                 }
                 for account, check in checks.items()
             }}, output)
@@ -3175,6 +3212,7 @@ def run_scrape_from_config(
     domain_regex: re.Pattern[str] | None = None,
     retry_failed_pages: bool = False,
     x_posts: tuple[str, ...] = (),
+    accounts: tuple[str, ...] = (),
     reddit_details: bool = False,
     reddit_linked_articles: bool = False,
     x_details: bool = False,
@@ -3214,12 +3252,80 @@ def run_scrape_from_config(
         if domain_regex:
             settings = filter_settings_sources(settings, domain_regex)
 
+    if accounts:
+        settings = _select_account_sources(settings, accounts)
+
     asyncio.run(run_scrape(
         settings, headless=headless, retry_failed_pages=retry_failed_pages,
         x_posts=x_posts, reddit_details=reddit_details, x_details=x_details,
         reddit_linked_articles=reddit_linked_articles,
         hacker_news_details=hacker_news_details,
+        scoped=bool(accounts),
     ))
+
+
+def _select_account_sources(
+    settings: Settings, accounts: tuple[str, ...],
+) -> Settings:
+    requested = {name.strip().removeprefix("@") for name in accounts}
+    matched: set[str] = set()
+    sources: list[SourceConfig] = []
+    youtube = settings.youtube._replace(
+        homepage=False, hype=False, news_tabs=(), playlists=False,
+    )
+
+    for source in settings.sources:
+        if source.domain == "x.com":
+            handles = _x_handles(source.accounts)
+            names = {name for name in requested if name.casefold() in handles}
+            selected = {name.casefold() for name in names}
+
+            if selected:
+                matched.update(names)
+                sources.append(source._replace(accounts=tuple(
+                    account for key, account in handles.items()
+                    if key in selected
+                )))
+        elif source.domain == "youtube.com":
+            urls: list[str] = []
+
+            for feed in configured_feeds(settings.youtube, source):
+                if feed.kind != "channel":
+                    continue
+
+                names = _matching_youtube_accounts(
+                    requested, feed.url, feed.name,
+                )
+
+                if names:
+                    matched.update(names)
+                    urls.append(feed.url)
+
+            if urls:
+                sources.append(source._replace(
+                    accounts=(), feed_urls=tuple(urls),
+                ))
+
+    if missing := requested - matched:
+        names = ", ".join(sorted(missing))
+        raise SourcesError(f"No enabled account matches: {names}")
+
+    return settings._replace(
+        sources=tuple(sources),
+        x=settings.x._replace(homepage=False, known_overlap=0),
+        youtube=youtube,
+    )
+
+
+def _matching_youtube_accounts(
+    requested: set[str], url: str, name: str,
+) -> set[str]:
+    name = unquote(name).removeprefix("@")
+
+    if urlsplit(url).path.startswith("/channel/"):
+        return requested & {name}
+
+    return {item for item in requested if item.casefold() == name.casefold()}
 
 
 def filter_settings_sources(

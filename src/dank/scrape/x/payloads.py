@@ -125,23 +125,65 @@ def _iter_timeline_tweet_results(
 def _timeline_instructions(
     payload: Mapping[str, object],
 ) -> list[object]:
-    current = _as_dict(payload.get("data"))
-
-    for key in ("user", "result"):
-        if current is None:
-            return []
-
-        current = _as_dict(current.get(key))
-
-    user = current or {}
+    user = _timeline_user(payload)
     envelope = _as_dict(user.get("timeline")) or _as_dict(
         user.get("timeline_v2"),
     ) or {}
     timeline = _as_dict(envelope.get("timeline")) or {}
 
-    instructions = _as_list(timeline.get("instructions"))
+    return _as_list(timeline.get("instructions")) or []
 
-    return instructions or []
+
+def _timeline_user(payload: Mapping[str, object]) -> dict[str, object]:
+    current = _as_dict(payload.get("data"))
+
+    for key in ("user", "result"):
+        if current is None:
+            return {}
+
+        current = _as_dict(current.get(key))
+
+    return current or {}
+
+
+def matches_account_timeline(
+    payload: Mapping[str, object], handle: str,
+) -> bool:
+    user = _timeline_user(payload)
+
+    for key in ("core", "legacy"):
+        screen_name = (_as_dict(user.get(key)) or {}).get("screen_name")
+
+        if isinstance(screen_name, str):
+            return screen_name.casefold() == handle
+
+    # Some timeline responses omit profile fields. Check the outer cards,
+    # because a quote inside another account's response can mention this user.
+    return any(
+        _get_author_handle(tweet).casefold() == handle
+        for tweet in _iter_timeline_tweet_results(payload)
+    )
+
+
+def account_profile_id(
+    payload: Mapping[str, object], handle: str,
+) -> str | None:
+    user = _timeline_user(payload)
+    user_id = user.get("rest_id")
+
+    if isinstance(user_id, str) and matches_account_timeline(payload, handle):
+        return user_id
+
+    return None
+
+
+def account_timeline_ended(payload: Mapping[str, object]) -> bool:
+    return any(
+        node.get("type") == "TimelineTerminateTimeline"
+        and node.get("direction") == "Bottom"
+        for item in _timeline_instructions(payload)
+        if (node := _as_dict(item)) is not None
+    )
 
 
 def account_timeline_post_ids(

@@ -34,11 +34,12 @@ async def test_account_capture_starts_before_search_navigation(
     capture = MagicMock(
         start=AsyncMock(), stop=AsyncMock(),
         drain=AsyncMock(return_value=[response]),
+        has_pending=MagicMock(return_value=False), has_ready=False,
     )
 
     async def navigate(tab: object, handle: str) -> None:
         assert tab is page
-        assert handle == "writer"
+        assert handle == "WatcherGuru"
         capture.start.assert_awaited_once()
 
     monkeypatch.setattr(
@@ -47,7 +48,7 @@ async def test_account_capture_starts_before_search_navigation(
     monkeypatch.setattr("dank.scrape.x._navigate_to_account", navigate)
     monkeypatch.setattr("dank.scrape.x._check_login_required", AsyncMock())
     batches = [batch async for batch in _scrape_account(
-        page, " @writer ", XSettings(BrowserScrapeSettings(max_posts=1)),
+        page, " @WatcherGuru ", XSettings(BrowserScrapeSettings(max_posts=1)),
     )]
 
     assert batches[0].posts[0].post_id == "2019987790369296512"
@@ -141,6 +142,59 @@ async def test_ready_x_responses_do_not_wait_for_network_idle(
     assert responses[0].body == timeline_body
 
 
+async def test_body_read_keeps_request_pending_until_it_is_queued(
+    timeline_body: str,
+) -> None:
+    fetching_body = asyncio.Event()
+    release_body = asyncio.Event()
+
+    async def send(command: Any) -> tuple[str, bool]:
+        if next(command)["method"] == "Network.getResponseBody":
+            fetching_body.set()
+            await release_body.wait()
+
+        return timeline_body, False
+
+    page = MagicMock(send=AsyncMock(side_effect=send))
+    capture = NetworkCapture(page, X_GRAPHQL_PATTERNS, track_requests=True)
+    await capture.start()
+    handlers = {
+        call.args[0]: call.args[1] for call in page.add_handler.call_args_list
+    }
+    resource_type = cdp.network.ResourceType.XHR
+    request_id = cdp.network.RequestId("pending-body")
+
+    def matches(url: str) -> bool:
+        return url == TIMELINE_URL
+
+    try:
+        await handlers[cdp.network.RequestWillBeSent](SimpleNamespace(
+            request_id=request_id, type_=resource_type,
+            request=SimpleNamespace(url=TIMELINE_URL),
+        ))
+        assert capture.has_pending(matches)
+        await handlers[cdp.network.ResponseReceived](SimpleNamespace(
+            request_id=request_id, type_=resource_type,
+            response=SimpleNamespace(
+                url=TIMELINE_URL, status=200, mime_type="application/json",
+                headers={},
+            ),
+        ))
+
+        async with asyncio.timeout(1), asyncio.TaskGroup() as group:
+            group.create_task(handlers[cdp.network.LoadingFinished](
+                SimpleNamespace(request_id=request_id),
+            ))
+            await fetching_body.wait()
+            assert capture.has_pending(matches)
+            assert not capture.has_ready
+            release_body.set()
+            assert await capture.wait_for_pending(matches, timeout_seconds=1)
+            assert capture.has_ready
+    finally:
+        await capture.stop()
+
+
 @pytest.mark.parametrize("stage", [
     "startup", "home", "capture", "account", "inspection", "scroll", "drain",
 ])
@@ -163,14 +217,22 @@ async def test_stalled_account_is_skipped_without_restarting_browser(
     )
     capture = MagicMock(
         start=AsyncMock(), stop=AsyncMock(),
-        drain=AsyncMock(return_value=[response] if stage == "scroll" else []),
+        drain=AsyncMock(return_value=[response]
+                        if stage in {"scroll", "inspection"} else []),
+        has_pending=MagicMock(return_value=False), has_ready=False,
     )
     monkeypatch.setattr(
         "dank.scrape.x.NetworkCapture", MagicMock(return_value=capture),
     )
     monkeypatch.setattr("dank.scrape.x.wait_for_x_session", AsyncMock())
     monkeypatch.setattr("dank.scrape.x.BROWSER_ACTION_TIMEOUT_SECONDS", 0.01)
-    navigate = AsyncMock()
+    async def set_handle(tab: object, account: str) -> None:
+        if stage in {"scroll", "inspection"}:
+            capture.drain.return_value = [response._replace(
+                body=timeline_body.replace('"WatcherGuru"', f'"{account}"'),
+            )]
+
+    navigate = AsyncMock(side_effect=set_handle)
     monkeypatch.setattr("dank.scrape.x._navigate_to_account", navigate)
     inspect_page = AsyncMock()
     scroll = AsyncMock()
@@ -198,7 +260,7 @@ async def test_stalled_account_is_skipped_without_restarting_browser(
     finally:
         current_source.reset(token)
 
-    assert bool(batches) == (stage == "scroll")
+    assert bool(batches) == (stage in {"scroll", "inspection"})
     assert stats.counts["fetch_failures"] == 2
     assert stats.counts["retries"] == 0
     assert stats.error_type == "TimeoutError"

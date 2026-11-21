@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 from pathlib import Path
@@ -26,6 +27,10 @@ from dank.scrape.runner import (
     _x_listing_batches,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.types import ScrapeBatch
+from dank.scrape.x import (
+    TimelineCoverage,
+    _scrape_account,  # pyright: ignore[reportPrivateUsage]
+)
 from dank.scrape.x.payloads import account_timeline_post_ids
 from dank.scrape.zendriver import NetworkResponse
 
@@ -74,7 +79,10 @@ def page(*posts: dict[str, Any], pinned: str = "") -> NetworkResponse:
 @pytest.fixture
 def collect_x(monkeypatch: pytest.MonkeyPatch):
     scroll = AsyncMock()
-    capture = MagicMock(start=AsyncMock(), stop=AsyncMock(), drain=AsyncMock())
+    capture = MagicMock(
+        start=AsyncMock(), stop=AsyncMock(), drain=AsyncMock(),
+        has_pending=MagicMock(return_value=False), has_ready=False,
+    )
     session = MagicMock(get_browser=AsyncMock(return_value=MagicMock(
         get=AsyncMock(return_value=MagicMock()),
     )))
@@ -128,13 +136,17 @@ async def test_x_overlap_saves_new_posts_before_stopping(
     async for batch in _x_listing_batches(
         XSettings(homepage=False, known_overlap=2), (" @Writer ",),
         session, client, scrape_started_at=START,
-        account_plan=account_schedule,
+        account_plan=account_schedule._replace(coverage={
+            "writer": TimelineCoverage(tuple(map(str, range(4, 9)))),
+        }),
     ):
         assert not state.exists()
         batches.append(batch)
 
     assert _load_account_checks(state) == {
-        "writer": AccountCheck(START, START),
+        "writer": AccountCheck(START, START, timeline_ids=(
+            "10", "8", "7", "9", "6", "5",
+        )),
     }
     assert [post.post_id for batch in batches for post in batch.posts
             if not post.is_reference] == ["10", "9"]
@@ -172,7 +184,9 @@ async def test_all_known_timeline_completes_without_scrolling(
         batches = [batch async for batch in _x_listing_batches(
             XSettings(homepage=False, known_overlap=2), source.accounts,
             session, client, scrape_started_at=START,
-            account_plan=account_schedule,
+            account_plan=account_schedule._replace(coverage={
+                "writer": TimelineCoverage(("12", "11")),
+            }),
         )]
     finally:
         current_source.reset(token)
@@ -183,7 +197,7 @@ async def test_all_known_timeline_completes_without_scrolling(
     assert "reason=known account overlap" in caplog.text
     scroll.assert_not_awaited()
     assert _load_account_checks(state) == {
-        "writer": AccountCheck(START, START),
+        "writer": AccountCheck(START, START, timeline_ids=("12", "11")),
     }
 
 
@@ -215,6 +229,131 @@ async def test_partial_timeline_does_not_record_success(
     posts = [post.post_id for batch in batches for post in batch.posts]
     assert posts == ["12"]
     assert not state.exists()
+
+
+async def test_rejects_previous_accounts_page_and_drains_last_scroll(
+    collect_x: tuple[MagicMock, AsyncMock, MagicMock],
+) -> None:
+    capture, scroll, _ = collect_x
+    initial_started = asyncio.Event()
+    initial_ready = asyncio.Event()
+    captured: list[str] = []
+    other = page(tweet("99"))
+    other = other._replace(body=other.body.replace('"writer"', '"previous"'))
+
+    async def wait_for_first() -> list[NetworkResponse]:
+        initial_started.set()
+        await initial_ready.wait()
+
+        return [page(tweet("12"))]
+
+    replies: list[list[NetworkResponse] | None] = [
+        [other], None, [], [page(tweet("11"))],
+    ]
+    drains = iter(replies)
+
+    async def drain(**kwargs: object) -> list[NetworkResponse]:
+        drained = next(drains)
+
+        return await wait_for_first() if drained is None else drained
+
+    async def settle(*args: object, **kwargs: object) -> bool:
+        capture.has_pending.return_value = False
+        capture.has_ready = True
+
+        return True
+
+    async def advance(*args: object) -> None:
+        capture.has_pending.return_value = True
+
+    async def collect() -> None:
+        async for batch in _scrape_account(
+            MagicMock(), "writer",
+            XSettings(BrowserScrapeSettings(max_scrolls=1)),
+        ):
+            captured.extend(post.post_id for post in batch.posts)
+            capture.has_ready = False
+
+    capture.drain.side_effect = drain
+    capture.wait_for_pending = AsyncMock(side_effect=settle)
+    scroll.side_effect = advance
+
+    async with asyncio.timeout(1), asyncio.TaskGroup() as group:
+        group.create_task(collect())
+        await initial_started.wait()
+        scroll.assert_not_awaited()
+        assert captured == []
+        initial_ready.set()
+
+    assert captured == ["12", "11"]
+    scroll.assert_awaited_once()
+    capture.wait_for_pending.assert_awaited_once()
+
+
+async def test_overlap_ignores_posts_saved_by_an_incomplete_check(
+    collect_x: tuple[MagicMock, AsyncMock, MagicMock],
+    account_schedule: _AccountSchedule, tmp_path: Path,
+) -> None:
+    capture, scroll, session = collect_x
+    capture.drain.side_effect = [
+        [page(tweet("14"), tweet("13"))],
+        [page(tweet("12"), tweet("11"), tweet("10"))],
+    ]
+    client = MagicMock(fetch_json=AsyncMock(return_value=SimpleNamespace(
+        rows=[{"handle": "writer", "post_id": post_id}
+              for post_id in ("14", "13", "11", "10")],
+    )))
+    plan = account_schedule._replace(coverage={
+        "writer": TimelineCoverage(("11", "10")),
+    })
+    batches = [batch async for batch in _x_listing_batches(
+        XSettings(homepage=False, known_overlap=2), ("writer",),
+        session, client, account_plan=plan,
+    )]
+
+    ids = [post.post_id for batch in batches for post in batch.posts]
+    assert ids == ["12"]
+    assert _load_account_checks(tmp_path / "x-account-checks.json")[
+        "writer"
+    ].timeline_ids == ("14", "13", "12", "11", "10")
+    scroll.assert_awaited_once()
+
+
+@pytest.mark.parametrize("has_cursor", [False, True])
+async def test_bootstrap_window_requires_the_first_page(
+    collect_x: tuple[MagicMock, AsyncMock, MagicMock],
+    tmp_path: Path, account_schedule: _AccountSchedule, *, has_cursor: bool,
+) -> None:
+    capture, _, session = collect_x
+    post = tweet("10", legacy={
+        "full_text": "Older post",
+        "created_at": "Thu Nov 19 12:00:00 +0000 2026",
+    })
+    received = page(post)
+
+    if has_cursor:
+        received = received._replace(
+            url=received.url + '?variables={"cursor":"next"}',
+        )
+
+    capture.drain.return_value = [received]
+    client = MagicMock(fetch_json=AsyncMock(
+        return_value=SimpleNamespace(rows=[]),
+    ))
+    settings = XSettings(
+        scrape=BrowserScrapeSettings(max_scrolls=0), homepage=False,
+    )
+    batches = [batch async for batch in _x_listing_batches(
+        settings, ("writer",), session, client, account_plan=account_schedule,
+    )]
+    ids = [post.post_id for batch in batches for post in batch.posts]
+    assert ids == ["10"]
+    state = tmp_path / "x-account-checks.json"
+
+    if has_cursor:
+        assert not state.exists()
+    else:
+        assert _load_account_checks(state)["writer"].timeline_ids == ("10",)
 
 
 def test_only_authored_timeline_entries_qualify_for_overlap() -> None:

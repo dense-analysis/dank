@@ -5,13 +5,14 @@ import datetime
 import json
 import logging
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping
-from typing import cast
-from urllib.parse import urlsplit
+from itertools import islice
+from typing import NamedTuple, cast
+from urllib.parse import parse_qs, urlsplit
 
 import zendriver
 from zendriver.core.connection import ProtocolException
 
-from dank.config import XSettings
+from dank.config import BrowserScrapeSettings, XSettings
 from dank.model import AssetDiscovery, RawPost
 from dank.scrape.metrics import count, current_source
 from dank.scrape.types import ScrapeBatch
@@ -33,8 +34,11 @@ from .onepassword import load_credentials
 from .payloads import (
     XAsset,
     XExtractedPost,
+    account_profile_id,
+    account_timeline_ended,
     account_timeline_post_ids,
     extract_posts_from_payload,
+    matches_account_timeline,
 )
 from .session import (
     LOGIN_NO_IMAP_MESSAGE,
@@ -54,12 +58,19 @@ X_GRAPHQL_PATTERNS = (
     r"TweetDetail|UserMedia)(?:\?|$)",
 )
 ACCOUNT_TIMELINE_OPERATIONS = {"UserTweets", "UserOriginalsTimeline"}
+ACCOUNT_CAPTURE_PATTERNS = (
+    *X_GRAPHQL_PATTERNS,
+    r"^https://x\.com/i/api/graphql/[^/?]+/UserByScreenName(?:\?|$)",
+)
 # Bound browser steps without charging time spent saving yielded batches.
 BROWSER_ACTION_TIMEOUT_SECONDS = 30
 # Project heuristic: drain briefly while progressing, back off on idle scrolls.
 FAST_SCROLL_PAUSE_SECONDS = 0.1
-INITIAL_DRAIN_TIMEOUT_SECONDS = 0.05
+FIRST_REQUEST_GRACE_SECONDS = 2.0
 MAX_IDLE_SCROLLS = 4
+COMPLETE_TIMELINE_REASONS = {
+    "known account overlap", "timeline end", "initial coverage window",
+}
 
 
 # Restart only the owned browser, with its existing profile and sign-in state.
@@ -71,54 +82,107 @@ class XBrowserRecoveryError(RuntimeError):
     pass
 
 
+class TimelineCoverage(NamedTuple):
+    checkpoint: tuple[str, ...] = ()
+    since: datetime.datetime | None = None
+
+
 class _TimelineOverlap:
     def __init__(
         self, account: str, known_ids: set[str], threshold: int,
+        coverage: TimelineCoverage | None = None,
     ) -> None:
         self.handle = account.strip().lstrip("@").casefold()
         self.known_ids: set[str] = known_ids if threshold > 0 else set()
         self.threshold = threshold
-        self.seen: set[str] = set()
+        self.checkpoint = set(coverage.checkpoint) if coverage else known_ids
+        self.since = coverage.since if coverage else None
+        self.seen: dict[str, None] = {}
+        self.captured_posts: set[str] = set()
+        self.captured_assets: set[str] = set()
+        self.captured_references: set[str] = set()
         self.pinned: set[str] = set()
         self.consecutive = 0
         self.found_saved = False
         self.observed_timeline = False
         self.failed_timeline = False
+        self.ended = False
+        self.covered_window = False
+        self.user_id: str | None = None
+        self.started_at_head = False
+        self.pages = 0
+        self.initial_scrolls = 0
+        self.reason = "unverified timeline"
 
     @property
     def reached(self) -> bool:
-        return bool(self.known_ids) and self.consecutive >= self.threshold
+        return bool(self.checkpoint) and 0 < self.threshold <= self.consecutive
+
+    def matches_request(self, url: str) -> bool:
+        operation = urlsplit(url).path.rsplit("/", 1)[-1]
+
+        return operation in ACCOUNT_TIMELINE_OPERATIONS and (
+            self.user_id is None or _timeline_user_id(url) == self.user_id
+        )
 
     def observe(
         self, response: NetworkResponse, payload: Mapping[str, object] | None,
-    ) -> None:
+    ) -> bool:
         operation = urlsplit(response.url).path.rsplit("/", 1)[-1]
 
-        if operation not in ACCOUNT_TIMELINE_OPERATIONS:
-            return
+        if (operation == "UserByScreenName" and not self.user_id
+                and response.status == 200 and payload
+                and not payload.get("errors")):
+            self.user_id = account_profile_id(payload, self.handle)
 
-        if response.status != 200 or payload is None or payload.get("errors"):
-            self.failed_timeline = True
+        if not self.matches_request(response.url):
+            return False
 
-            return
+        if response.status != 200 or payload is None:
+            if self.user_id is not None or self.observed_timeline:
+                self.failed_timeline = True
 
-        for post_id in account_timeline_post_ids(
+            return False
+
+        if self.user_id is None:
+            if not matches_account_timeline(payload, self.handle):
+                return False
+
+            self.user_id = _timeline_user_id(response.url)
+
+        self.failed_timeline |= bool(payload.get("errors"))
+        self.pages += 1
+        ended = account_timeline_ended(payload)
+        post_ids = tuple(account_timeline_post_ids(
             payload, self.handle, pinned=self.pinned,
-        ):
-            self.observed_timeline = True
+        ))
+        self.ended |= ended
+        self.observed_timeline |= ended or bool(post_ids)
+        self.started_at_head |= (
+            (ended or bool(post_ids))
+            and not _timeline_variables(response.url).get("cursor")
+        )
 
-            if not self.known_ids:
-                break
-
+        for post_id in post_ids:
             if post_id in self.seen:
                 continue
 
-            self.seen.add(post_id)
+            self.seen[post_id] = None
             self.consecutive = (
-                self.consecutive + 1 if post_id in self.known_ids else 0
+                self.consecutive + 1 if post_id in self.checkpoint else 0
             )
 
+        return True
+
     def already_saved(self, post: XExtractedPost) -> bool:
+        if not post.is_reference and post.author.casefold() == self.handle:
+            self.observed_timeline = True
+
+        if (self.since is not None and post.post_id in self.seen
+                and post.created_at is not None
+                and post.created_at <= self.since):
+            self.covered_window = True
+
         if post.is_reference or post.post_id not in self.known_ids:
             return False
 
@@ -126,9 +190,48 @@ class _TimelineOverlap:
 
         return True
 
-    def record_check(self, on_checked: Callable[[str], None] | None) -> None:
-        if on_checked and self.observed_timeline and not self.failed_timeline:
-            on_checked(self.handle)
+    def record_check(
+        self, on_checked: Callable[[str, tuple[str, ...]], None] | None,
+    ) -> None:
+        if on_checked and self.reason in COMPLETE_TIMELINE_REASONS:
+            head = tuple(islice(self.seen, max(20, self.threshold)))
+            on_checked(self.handle, head)
+
+    def coverage_reason(self) -> str | None:
+        if self.failed_timeline:
+            return "timeline response error"
+
+        if not self.started_at_head:
+            return None
+
+        if self.ended:
+            return "timeline end"
+
+        if self.reached:
+            return "known account overlap"
+
+        if self.covered_window:
+            return "initial coverage window"
+
+        return None
+
+
+def _timeline_variables(url: str) -> Mapping[str, object]:
+    query = parse_qs(urlsplit(url).query)
+
+    try:
+        variables = json.loads(query["variables"][0])
+    except (KeyError, json.JSONDecodeError):
+        return {}
+
+    return (cast(dict[str, object], variables)
+            if isinstance(variables, dict) else {})
+
+
+def _timeline_user_id(url: str) -> str | None:
+    user_id = _timeline_variables(url).get("userId")
+
+    return user_id if isinstance(user_id, str) else None
 
 
 class XBrowser:
@@ -219,7 +322,8 @@ async def scrape_x_accounts(
     *,
     browser: XBrowser | None = None,
     known_ids: Mapping[str, set[str]] | None = None,
-    on_checked: Callable[[str], None] | None = None,
+    coverage: Mapping[str, TimelineCoverage] | None = None,
+    on_checked: Callable[[str, tuple[str, ...]], None] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     if not accounts:
         stats = current_source.get()
@@ -250,6 +354,7 @@ async def scrape_x_accounts(
 
             async for batch in _collect_account(
                 browser, account, settings, history.get(handle, set()),
+                coverage=coverage.get(handle) if coverage else None,
                 on_checked=on_checked,
             ):
                 yield batch
@@ -270,7 +375,8 @@ async def scrape_x_accounts(
 
 async def _collect_account(
     browser: XBrowser, account: str, settings: XSettings,
-    known_ids: set[str], *, on_checked: Callable[[str], None] | None,
+    known_ids: set[str], *, coverage: TimelineCoverage | None,
+    on_checked: Callable[[str, tuple[str, ...]], None] | None,
 ) -> AsyncIterator[ScrapeBatch]:
     seen_posts: set[str] = set()
     seen_references: set[str] = set()
@@ -281,7 +387,9 @@ async def _collect_account(
 
     while True:
         attempt += 1
-        overlap = _TimelineOverlap(account, known_ids, settings.known_overlap)
+        overlap = _TimelineOverlap(
+            account, known_ids, settings.known_overlap, coverage,
+        )
 
         try:
             page = await browser.get_page()
@@ -329,27 +437,40 @@ async def _collect_account(
 
             return
         else:
-            if not seen_posts and not overlap.found_saved:
-                _account_failed(
-                    account, seen_posts,
-                    ValueError("No usable timeline posts returned"),
-                    len(seen_references),
-                )
-            else:
-                reason = (
-                    "known account overlap" if overlap.reached
-                    else "listing ended"
-                )
-                logger.info(
-                    "X timeline account=%s outcome=completed "
-                    "posts=%d references=%d attempts=%d reason=%s",
-                    account, len(seen_posts), len(seen_references),
-                    attempt, reason,
-                )
-
-                overlap.record_check(on_checked)
-
+            _finish_account(
+                account, overlap, seen_posts, len(seen_references),
+                attempt, on_checked,
+            )
             return
+
+
+def _finish_account(
+    account: str, overlap: _TimelineOverlap, seen_posts: set[str],
+    references: int, attempt: int,
+    on_checked: Callable[[str, tuple[str, ...]], None] | None,
+) -> None:
+    complete = overlap.reason in COMPLETE_TIMELINE_REASONS
+
+    if not complete and not seen_posts and not overlap.found_saved:
+        _account_failed(
+            account, seen_posts,
+            ValueError(f"No usable timeline posts: {overlap.reason}"),
+            references,
+        )
+
+        return
+
+    if not complete:
+        count("fetch_failures")
+
+    logger.info(
+        "X timeline account=%s outcome=%s posts=%d references=%d "
+        "attempts=%d reason=%s pages=%d captured_head=%s",
+        account, "completed" if complete else "partial",
+        len(seen_posts), references, attempt, overlap.reason,
+        overlap.pages, overlap.started_at_head,
+    )
+    overlap.record_check(on_checked)
 
 
 def _account_failed(
@@ -440,7 +561,9 @@ async def _scrape_account(
 
     logger.info("Starting X scrape for account=%s", handle)
 
-    capture = NetworkCapture(page, X_GRAPHQL_PATTERNS)
+    capture = NetworkCapture(
+        page, ACCOUNT_CAPTURE_PATTERNS, track_requests=True,
+    )
     overlap = overlap or _TimelineOverlap(
         handle, set(), settings.known_overlap,
     )
@@ -450,126 +573,166 @@ async def _scrape_account(
             await capture.start()
             await _open_timeline(page, handle)
 
-        seen_posts: set[str] = set()
-        seen_references: set[str] = set()
-        seen_assets: set[str] = set()
-        idle_scrolls = 0
-
-        posts, assets = await _drain_posts_and_assets(
-            capture,
-            seen_posts,
-            seen_assets,
-            seen_references,
-            timeout_seconds=INITIAL_DRAIN_TIMEOUT_SECONDS,
-            overlap=overlap,
-        )
+        batch = await _first_timeline_batch(page, capture, overlap, limits)
         logger.info(
             "Initial drain for %s produced posts=%d references=%d assets=%d",
-            handle,
-            sum(not post.is_reference for post in posts),
-            sum(post.is_reference for post in posts),
-            len(assets),
+            handle, batch.post_count, batch.reference_count, len(batch.assets),
         )
 
-        if posts or assets:
-            yield ScrapeBatch(posts=posts, assets=assets)
+        if batch.posts or batch.assets:
+            yield batch
 
-        if overlap.reached or len(seen_posts) >= limits.max_posts:
-            return
-
-        for _ in range(limits.max_scrolls):
-            previous = len(seen_posts)
-
-            async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
-                await _scroll(page)
-                await _check_login_required(page)
-
-            posts, assets = await _drain_posts_and_assets(
-                capture,
-                seen_posts,
-                seen_assets,
-                seen_references,
-                timeout_seconds=_scroll_pause_seconds(
-                    limits.scroll_pause_seconds,
-                    idle_scrolls,
-                ),
-                overlap=overlap,
-            )
-            logger.info(
-                "Scroll drain for %s produced posts=%d references=%d "
-                "assets=%d idle=%d",
-                handle,
-                sum(not post.is_reference for post in posts),
-                sum(post.is_reference for post in posts),
-                len(assets),
-                idle_scrolls,
-            )
-
-            if posts or assets:
-                yield ScrapeBatch(posts=posts, assets=assets)
-
-            if overlap.reached:
-                return
-
-            if len(seen_posts) > previous:
-                idle_scrolls = 0
-            else:
-                idle_scrolls += 1
-
-            if (len(seen_posts) >= limits.max_posts
-                    or (idle_scrolls >= MAX_IDLE_SCROLLS and seen_posts)):
-                break
-
-        posts, assets = await _drain_posts_and_assets(
-            capture,
-            seen_posts,
-            seen_assets,
-            seen_references,
-            timeout_seconds=min(
-                limits.scroll_pause_seconds,
-                FAST_SCROLL_PAUSE_SECONDS,
-            ),
-            overlap=overlap,
-        )
-        logger.info(
-            "Trailing drain for %s produced posts=%d references=%d "
-            "assets=%d total_posts=%d",
-            handle,
-            sum(not post.is_reference for post in posts),
-            sum(post.is_reference for post in posts),
-            len(assets),
-            len(seen_posts),
-        )
-
-        if posts or assets:
-            yield ScrapeBatch(posts=posts, assets=assets)
+        async for batch in _scroll_account(page, capture, overlap, limits):
+            yield batch
     finally:
         await capture.stop()
 
 
+async def _first_timeline_batch(
+    page: zendriver.Tab, capture: NetworkCapture, overlap: _TimelineOverlap,
+    limits: BrowserScrapeSettings,
+) -> ScrapeBatch:
+    loop = asyncio.get_running_loop()
+    grace_deadline = loop.time() + FIRST_REQUEST_GRACE_SECONDS
+    can_scroll = limits.max_scrolls > 0
+
+    try:
+        async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+            while True:
+                wait = (max(0, grace_deadline - loop.time()) if can_scroll
+                        else BROWSER_ACTION_TIMEOUT_SECONDS)
+                batch = await _drain_posts_and_assets(
+                    capture, timeout_seconds=wait,
+                    overlap=overlap,
+                )
+
+                if batch.posts or batch.assets or overlap.observed_timeline:
+                    return batch
+
+                if overlap.failed_timeline:
+                    raise ValueError("X returned an initial timeline error")
+
+                if can_scroll and loop.time() >= grace_deadline:
+                    can_scroll = False
+
+                    if not capture.has_pending(overlap.matches_request):
+                        # A profile revisit can show cached posts without a
+                        # request. Ask the page for pagination once.
+                        await _scroll(page)
+                        overlap.initial_scrolls = 1
+
+                await _check_login_required(page)
+                await asyncio.sleep(0)
+    except TimeoutError as error:
+        await _check_login_required(page)
+        raise TimeoutError(
+            f"Waiting for the first X timeline response for @{overlap.handle}",
+        ) from error
+
+
+async def _scroll_account(
+    page: zendriver.Tab, capture: NetworkCapture, overlap: _TimelineOverlap,
+    limits: BrowserScrapeSettings,
+) -> AsyncIterator[ScrapeBatch]:
+    idle_scrolls = 0
+
+    for step in range(overlap.initial_scrolls, limits.max_scrolls + 1):
+        settled = True
+        previous = len(overlap.captured_posts)
+
+        while capture.has_ready or capture.has_pending(
+            overlap.matches_request,
+        ):
+            settled = await capture.wait_for_pending(
+                overlap.matches_request,
+                timeout_seconds=BROWSER_ACTION_TIMEOUT_SECONDS,
+            )
+            batch = await _drain_posts_and_assets(
+                capture, timeout_seconds=0, overlap=overlap,
+            )
+
+            if batch.posts or batch.assets:
+                yield batch
+
+            if not settled:
+                break
+
+        if len(overlap.captured_posts) > previous:
+            idle_scrolls = 0
+
+        reason = _timeline_stop_reason(overlap, limits, step, idle_scrolls)
+
+        if not settled or reason:
+            overlap.reason = reason if settled else "timeline response timeout"
+
+            return
+
+        previous = len(overlap.captured_posts)
+
+        async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
+            await _scroll(page)
+            await _check_login_required(page)
+
+        batch = await _drain_posts_and_assets(
+            capture, timeout_seconds=_scroll_pause_seconds(
+                limits.scroll_pause_seconds, idle_scrolls,
+            ), overlap=overlap,
+        )
+        logger.info(
+            "Scroll drain for %s produced posts=%d references=%d "
+            "assets=%d idle=%d",
+            overlap.handle, batch.post_count, batch.reference_count,
+            len(batch.assets), idle_scrolls,
+        )
+
+        if batch.posts or batch.assets:
+            yield batch
+
+        idle_scrolls = (
+            0 if len(overlap.captured_posts) > previous else idle_scrolls + 1
+        )
+
+
+def _timeline_stop_reason(
+    overlap: _TimelineOverlap, limits: BrowserScrapeSettings,
+    step: int, idle_scrolls: int,
+) -> str:
+    reason = overlap.coverage_reason()
+
+    if reason:
+        return reason
+
+    if len(overlap.captured_posts) >= limits.max_posts:
+        return "post limit"
+
+    if idle_scrolls >= MAX_IDLE_SCROLLS:
+        return "idle scroll limit"
+
+    if step >= limits.max_scrolls:
+        return "scroll limit"
+
+    return ""
+
+
 async def _drain_posts_and_assets(
     capture: NetworkCapture,
-    seen_posts: set[str],
-    seen_assets: set[str],
-    seen_references: set[str],
     *,
     timeout_seconds: float,
     overlap: _TimelineOverlap,
-) -> tuple[list[RawPost], list[AssetDiscovery]]:
+) -> ScrapeBatch:
     async with asyncio.timeout(BROWSER_ACTION_TIMEOUT_SECONDS):
         responses = await capture.drain(
-            timeout_seconds=max(0.05, timeout_seconds),
+            timeout_seconds=timeout_seconds,
             wait_for_idle=False,
         )
-    logger.info("Drained %d X network responses", len(responses))
 
-    return extract_posts_and_assets(
-        responses,
-        seen_posts,
-        seen_assets,
-        seen_references,
-        overlap=overlap,
+    logger.info("Drained %d X network responses", len(responses))
+    posts, assets = extract_posts_and_assets(
+        responses, overlap.captured_posts, overlap.captured_assets,
+        overlap.captured_references, overlap=overlap,
     )
+
+    return ScrapeBatch(posts=posts, assets=assets)
 
 
 async def _open_timeline(page: zendriver.Tab, handle: str) -> None:
@@ -578,8 +741,6 @@ async def _open_timeline(page: zendriver.Tab, handle: str) -> None:
     except TimeoutError:
         await _check_login_required(page)
         raise
-
-    await _check_login_required(page)
 
 
 def _scroll_pause_seconds(configured_pause: float, idle_scrolls: int) -> float:
@@ -640,8 +801,8 @@ def extract_posts_and_assets(
 
         payload = _response_payload(response)
 
-        if overlap is not None:
-            overlap.observe(response, payload)
+        if overlap is not None and not overlap.observe(response, payload):
+            continue
 
         if payload is None:
             continue

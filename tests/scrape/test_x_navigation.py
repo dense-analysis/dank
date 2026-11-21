@@ -13,7 +13,6 @@ from dank.scrape.x import (
     _scroll_pause_seconds,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.x.navigation import (
-    PROFILE_HEADER_SELECTOR,
     SEARCH_KEY_PAUSE_SECONDS,
     navigate_to_account,
     press_search_key,
@@ -47,12 +46,7 @@ async def navigation_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("navigation_clock")
-@pytest.mark.parametrize("header_states", [
-    [["@writer"]], [["@previous"], [], ["@writer"]],
-])
-async def test_search_selects_exact_handle_and_waits_for_profile(
-    header_states: list[list[str]],
-) -> None:
+async def test_search_selects_exact_handle_and_waits_for_route() -> None:
     key_times: list[float] = []
 
     async def record_key(value: object) -> None:
@@ -67,7 +61,6 @@ async def test_search_selects_exact_handle_and_waits_for_profile(
             None, None, "@query:0", "@query:0", "WrItEr", None, "WrItEr",
         ]),
     )
-    header = MagicMock(apply=AsyncMock(side_effect=header_states))
     page = MagicMock(
         select=AsyncMock(return_value=search),
         query_selector=AsyncMock(return_value=None),
@@ -82,15 +75,6 @@ async def test_search_selects_exact_handle_and_waits_for_profile(
         ] + ["https://x.com/writer/"] * 10),
     )
 
-    async def select(
-        selector: str, **kwargs: object,
-    ) -> MagicMock:
-        if selector == PROFILE_HEADER_SELECTOR:
-            return header
-
-        return search
-
-    page.select.side_effect = select
     await navigate_to_account(page, "writer")
     search.click.assert_not_awaited()
     events = KeyEvents.from_mixed_input(["/"])
@@ -118,9 +102,8 @@ async def test_search_selects_exact_handle_and_waits_for_profile(
         '[role="listbox"][id="popup"] '
         '[data-testid="UserAvatar-Container-writer" i]'
     )
-    assert 'aria-selected="true"' in selectors[3]
     assert all('progressbar' not in selector for selector in selectors)
-    assert selectors.count(PROFILE_HEADER_SELECTOR) == len(header_states)
+    assert len(selectors) == 3
     page.query_selector_all.assert_not_awaited()
     page.get.assert_not_awaited()
 
@@ -133,11 +116,11 @@ async def test_missing_exact_result_times_out_without_clicking(
     )
     search = MagicMock(
         click=AsyncMock(), clear_input=AsyncMock(), send_keys=AsyncMock(),
-        apply=AsyncMock(side_effect=["", "popup"]),
+        apply=AsyncMock(side_effect=["", "popup", "", "popup"]),
     )
     page = MagicMock(
         evaluate=AsyncMock(return_value="https://x.com/previous"),
-        select=AsyncMock(side_effect=[search, search, TimeoutError()]),
+        select=AsyncMock(side_effect=[search, search, TimeoutError()] * 2),
         query_selector=AsyncMock(return_value=None),
         activate=AsyncMock(),
         get=AsyncMock(),
@@ -147,7 +130,31 @@ async def test_missing_exact_result_times_out_without_clicking(
     with pytest.raises(TimeoutError):
         await navigate_to_account(page, "writer")
 
-    assert search.send_keys.await_count == 1
+    assert search.send_keys.await_count == 2
+    search.click.assert_awaited_once()
+    page.get.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("navigation_clock")
+async def test_missing_shortcut_input_retries_through_search() -> None:
+    search = MagicMock(
+        click=AsyncMock(), clear_input=AsyncMock(), send_keys=AsyncMock(),
+        apply=AsyncMock(side_effect=["", "popup", ["writer"], "writer",
+                                    "writer"]),
+    )
+    page = MagicMock(
+        evaluate=AsyncMock(return_value="https://x.com/writer"),
+        select=AsyncMock(side_effect=[TimeoutError(), search, search, search]),
+        activate=AsyncMock(),
+        get=AsyncMock(),
+        send=AsyncMock(),
+    )
+
+    await navigate_to_account(page, "writer")
+
+    search.click.assert_awaited_once()
+    assert search.send_keys.await_args_list[0].args == ("@writer",)
+    assert search.send_keys.await_args.args[0][0]["key"] == "Enter"
     page.get.assert_not_awaited()
 
 
@@ -172,51 +179,12 @@ async def test_no_more_keys_until_selection_changes(
     search = MagicMock(
         send_keys=AsyncMock(), apply=AsyncMock(return_value=selected),
     )
-    page = MagicMock(select=AsyncMock())
-
     with pytest.raises(TimeoutError):
         async with asyncio.timeout(0.02):
-            await select_account_suggestion(
-                search, "writer", result_count=2, page=page,
-                popup_selector='[role="listbox"]',
-            )
+            await select_account_suggestion(search, "writer", result_count=2)
 
     assert search.send_keys.await_count == 1
     assert search.send_keys.await_args.args[0][0]["key"] == "ArrowDown"
-    page.select.assert_not_awaited()
-
-
-@pytest.mark.usefixtures("navigation_clock")
-async def test_enter_waits_for_selected_option() -> None:
-    ready = asyncio.Event()
-    search = MagicMock(
-        send_keys=AsyncMock(),
-        apply=AsyncMock(side_effect=[None, "writer", "writer"]),
-    )
-    waiting = asyncio.Event()
-
-    async def select(selector: str, **kwargs: object) -> MagicMock:
-        assert 'aria-selected="true"' in selector
-        assert 'progressbar' not in selector
-        assert 'UserAvatar-Container-writer' in selector
-        waiting.set()
-        await ready.wait()
-
-        return MagicMock()
-
-    page = MagicMock(select=AsyncMock(side_effect=select))
-    async with asyncio.timeout(1):
-        async with asyncio.TaskGroup() as group:
-            task = group.create_task(select_account_suggestion(
-                search, "writer", result_count=1, page=page,
-                popup_selector='[role="listbox"]',
-            ))
-            await waiting.wait()
-            assert not task.done()
-            assert search.send_keys.await_count == 1
-            ready.set()
-
-    assert search.send_keys.await_args.args[0][0]["key"] == "Enter"
 
 
 @pytest.mark.usefixtures("navigation_clock")
@@ -237,13 +205,10 @@ async def test_enter_waits_for_committed_active_descendant() -> None:
     search = MagicMock(
         send_keys=AsyncMock(), apply=AsyncMock(side_effect=apply),
     )
-    page = MagicMock(select=AsyncMock())
-
     async with asyncio.timeout(1):
         async with asyncio.TaskGroup() as group:
             group.create_task(select_account_suggestion(
-                search, "writer", 1, page=page,
-                popup_selector='[role="listbox"]',
+                search, "writer", 1,
             ))
             await waiting.wait()
             search.send_keys.assert_not_awaited()
@@ -257,17 +222,9 @@ async def test_already_selected_account_needs_only_enter() -> None:
     search = MagicMock(
         send_keys=AsyncMock(), apply=AsyncMock(return_value="WatcherGuru"),
     )
-    page = MagicMock(select=AsyncMock())
-    await select_account_suggestion(
-        search, "watcherguru", 9, page=page,
-        popup_selector='[role="listbox"][id="typeaheadDropdown-21"]',
-    )
+    await select_account_suggestion(search, "watcherguru", 9)
     assert search.send_keys.await_count == 1
     assert search.send_keys.await_args.args[0][0]["key"] == "Enter"
-    selector = page.select.await_args.args[0]
-    assert 'aria-selected="true"' in selector
-    assert 'UserAvatar-Container-WatcherGuru' in selector
-    assert 'progressbar' not in selector
 
 
 async def test_scroll_reaches_loaded_pagination_cursor() -> None:

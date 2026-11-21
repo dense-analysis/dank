@@ -7,7 +7,7 @@ import logging
 import pathlib
 import re
 import shutil
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from typing import IO, Any, NamedTuple, cast
 
 import zendriver
@@ -274,6 +274,7 @@ class NetworkCapture:
         tab: zendriver.Tab,
         url_patterns: Iterable[str | re.Pattern[str]],
         resource_types: Iterable[cdp.network.ResourceType] | None = None,
+        *, track_requests: bool = False,
     ) -> None:
         self._tab = tab
         self._patterns = [
@@ -293,6 +294,9 @@ class NetworkCapture:
             cdp.network.ResponseReceived,
         ] = {}
         self._queue: asyncio.Queue[NetworkResponse] = asyncio.Queue()
+        self._track_requests = track_requests
+        self._requests: dict[cdp.network.RequestId, str] = {}
+        self._request_finished = asyncio.Event()
         self._started = False
 
     async def start(self) -> None:
@@ -305,6 +309,11 @@ class NetworkCapture:
             cdp.network.LoadingFinished,
             self._on_loading_finished,
         )
+
+        if self._track_requests:
+            tab.add_handler(cdp.network.RequestWillBeSent, self._on_request)
+            tab.add_handler(cdp.network.LoadingFailed, self._on_loading_failed)
+
         self._started = True
 
         try:
@@ -326,7 +335,39 @@ class NetworkCapture:
             cdp.network.LoadingFinished,
             self._on_loading_finished,
         )
+
+        if self._track_requests:
+            tab.remove_handlers(
+                cdp.network.RequestWillBeSent, self._on_request,
+            )
+            tab.remove_handlers(
+                cdp.network.LoadingFailed, self._on_loading_failed,
+            )
+            self._requests.clear()
+            self._request_finished.set()
+
+        self._pending.clear()
         self._started = False
+
+    def has_pending(self, matches: Callable[[str], bool]) -> bool:
+        return any(matches(url) for url in self._requests.values())
+
+    @property
+    def has_ready(self) -> bool:
+        return not self._queue.empty()
+
+    async def wait_for_pending(
+        self, matches: Callable[[str], bool], *, timeout_seconds: float,
+    ) -> bool:
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                while self.has_pending(matches):
+                    self._request_finished.clear()
+                    await self._request_finished.wait()
+        except TimeoutError:
+            return False
+
+        return True
 
     async def drain(
         self, timeout_seconds: float, *, wait_for_idle: bool = True,
@@ -354,6 +395,31 @@ class NetworkCapture:
         while True:
             yield await self._queue.get()
 
+    async def _on_request(self, event: cdp.network.RequestWillBeSent) -> None:
+        if event.type_ in self._resource_types and self._matches(
+            event.request.url,
+        ):
+            self._requests[event.request_id] = event.request.url
+        else:
+            self._finish_request(event.request_id)
+
+    async def _on_loading_failed(
+        self, event: cdp.network.LoadingFailed,
+    ) -> None:
+        self._pending.pop(event.request_id, None)
+        url = self._requests.get(event.request_id)
+
+        if url is not None:
+            await self._queue.put(NetworkResponse(
+                url, 0, "", "", str(event.request_id), event.type_.value,
+            ))
+
+        self._finish_request(event.request_id)
+
+    def _finish_request(self, request_id: cdp.network.RequestId) -> None:
+        if self._requests.pop(request_id, None) is not None:
+            self._request_finished.set()
+
     async def _on_response(self, event: cdp.network.ResponseReceived) -> None:
         if event.type_ not in self._resource_types:
             return
@@ -376,23 +442,33 @@ class NetworkCapture:
 
         self._pending[event.request_id] = event
 
+        if self._track_requests:
+            self._requests[event.request_id] = url
+
     async def _on_loading_finished(
         self,
         event: cdp.network.LoadingFinished,
     ) -> None:
-        response = self._pending.pop(event.request_id, None)
+        try:
+            response = self._pending.pop(event.request_id, None)
 
-        if response is None:
-            return
+            if response is not None:
+                await self._queue_body(response)
+        finally:
+            self._finish_request(event.request_id)
 
+    async def _queue_body(
+        self, response: cdp.network.ResponseReceived,
+    ) -> None:
+        request_id = response.request_id
         try:
             body, is_base64 = await self._tab.send(
-                cdp.network.get_response_body(request_id=event.request_id),
+                cdp.network.get_response_body(request_id=request_id),
             )
         except Exception:
             logger.debug("Failed to read response body", exc_info=True)
 
-            if response.response.status < 400:
+            if response.response.status < 400 and not self._track_requests:
                 return
 
             body, is_base64 = "", False
@@ -400,7 +476,7 @@ class NetworkCapture:
         text = _decode_body(body, is_base64=is_base64)
         logger.info(
             "Queued matching response body request_id=%s bytes=%d url=%s",
-            event.request_id,
+            request_id,
             len(text),
             response.response.url,
         )
@@ -411,7 +487,7 @@ class NetworkCapture:
                 status=response.response.status,
                 mime_type=response.response.mime_type,
                 body=text,
-                request_id=str(event.request_id),
+                request_id=str(request_id),
                 resource_type=response.type_.value,
                 retry_after=next((
                     str(value)

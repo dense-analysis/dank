@@ -85,6 +85,7 @@ async def test_retry_keeps_saved_records_once_then_visits_next_account(
             yield batch("2")
         else:
             yield batch("3")
+        kw["overlap"].reason = "timeline end"
 
     monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
     stats = SourceMetrics(1, SourceConfig("x.com", ("one", "two")))
@@ -129,6 +130,7 @@ async def test_persistent_account_failure_still_reaches_healthy_account(
                 yield batch("1")
             raise failure("account failed")
         yield batch("2")
+        kw["overlap"].reason = "timeline end"
 
     monkeypatch.setattr("dank.scrape.x._scrape_account", collect)
     saved = [

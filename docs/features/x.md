@@ -70,45 +70,38 @@ The scraper visits accounts in order, typing each full `@handle` into the X
 search bar using `/`. It clears existing text and verifies the input is empty
 before typing. With the search input focused, it presses Down until
 the exact account is highlighted, confirms its handle in the popup, and presses
-Enter. This handles the search-query option before the account results without
-activating a different account. The tab is activated before the shortcut, and
-Down/Enter use explicit native key events with the DOM key names `ArrowDown`
-and `Enter`. The scraper waits for the expanded popup to contain the requested
-account. Each Down waits for the selected option to change; Enter waits for
-that exact option's `aria-selected="true"` marker and a matching
-`aria-activedescendant` that remain unchanged across two animation frames. If the requested account is
-already selected, it presses Enter without another Down. X retains a zero-percent
-progress bar in both the initial results and selected state, so its presence
-does not block selection. A 250 ms pause before each Down/Enter supplements
-the selector and selection checks. Selection is revalidated after the Enter
-pause so an outdated highlight cannot authorize it. Suggestion handles come from the live popup's avatar attributes.
-After Enter, both the route and the main profile header must match the requested
-handle before timeline discovery starts. Navigation logs record query entry,
-each Down, Enter and the matching profile header.
-The homepage and account pass share one tab.
-Account switches reuse the loaded page without a full document reload. Missing
-suggestions or profile navigation time out rather than selecting a different
-account. A timed-out account is recorded as failed (or partial when posts
-were already saved), then the collector moves to the next account in the same
-tab without retrying or reloading. Unexpected account errors also preserve the
-tab; connection/protocol failures retain bounded browser recovery.
+Enter. The tab is activated before the shortcut and sends native Down and Enter
+key events. Each Down waits for the selected option to change. Enter waits for
+the exact selection to remain stable across two animation frames. If the
+requested account is already selected, it presses Enter immediately after that
+check. A 250 ms pause before each Down or Enter gives X time to update its
+selection. A timed-out search retries once through the same search box. Both
+attempts use the existing tab and report the stage that timed out. Connection
+and protocol failures retain bounded browser recovery.
+
+The homepage and account pass share one tab. After the route changes, DANK
+waits up to 30 seconds for a timeline response belonging to the requested
+account. It begins collecting as soon as that response contains usable posts
+or confirms the end of the listing. It identifies the account from the
+browser's profile and timeline responses. If the browser sends no timeline
+request within two seconds, DANK can use one bottom scroll to request a page
+from an already rendered timeline. DANK keeps the account due when it receives
+only pagination responses and misses the top of the timeline.
 
 Timeline scrolling jumps to the bottom of the loaded posts to request the next
-page. Ready timeline responses drain immediately; only an empty response queue
-waits up to 0.1 seconds while progressing (or a shorter configured pause), then
-uses `scroll_pause_seconds` after two idle scrolls to allow slower responses to
-arrive. The homepage allows up to 1.5 seconds for its first response. Login
-prompt checks do not add polling delays to each scroll.
+page. Captured responses are processed immediately. An in-flight timeline
+request has up to 30 seconds to finish, including when it is the last allowed
+scroll or the scan reaches an overlap checkpoint. When there is no request
+in flight, the response queue waits up to 0.1 seconds while the scan is making
+progress and uses `scroll_pause_seconds` after two idle scrolls. The homepage
+uses its own limits and allows up to 1.5 seconds for its first response.
 
-Account timelines stop after `known_overlap` consecutive distinct posts already
-saved for the account, defaulting to five. DANK checks the complete batch of
-responses it has received before stopping. Only top-level posts authored by the
-account count toward overlap. Pinned posts, promoted posts, embedded quotes and
-ID-only references are excluded from the check. DANK looks up prior IDs in
-`raw_posts` and `posts`, so processed posts can serve as checkpoints after raw
-retention expires. Captures already saved serve as checkpoints and their media
-can still be retried. Set `known_overlap = 0` for a full bounded recapture. The
-For You feed and individual post refreshes use their own collection limits.
+Account timelines can stop at `known_overlap` consecutive distinct posts already
+observed in a completed account scan, defaulting to five. Only top-level posts
+authored by the account count toward overlap. Pinned posts, promoted posts,
+embedded quotes and ID-only references are excluded. Saved posts from
+`raw_posts` and `posts` still support deduplication and media retries. Set
+`known_overlap = 0` for a bounded recapture of all configured X accounts.
 
 X uses the same discovery and asset-fetching pipeline as other sources. Each
 post batch is saved before discovery advances, while a separate media worker
@@ -129,13 +122,12 @@ Normal scrapes collect timelines only. Refresh discussions separately with
 `--x-details`; timeline-only captures retain earlier conversation archives in the
 reader instead of replacing them with empty discussions.
 
-Browser startup/navigation, response drains and each scroll step have a
-30-second response budget. A timeout or lost browser connection closes the
-owned browser and retries that account once with the same saved profile.
-Already-saved posts and asset references are filtered from the retry. A second
-failure records a failed/partial account and continues with the next one.
-Account progress and outcomes are logged explicitly; a zero-post response is
-reported as unavailable, not silently treated as a successful empty timeline.
+Browser startup, navigation, response drains and scrolling have bounded waits.
+Search timeouts preserve the current tab and advance to the next account after
+the search retry. A connection or protocol failure can restart the owned
+browser once with the same saved profile. Saved posts and asset references
+are deduplicated across a retry. Account logs distinguish confirmed coverage,
+limits, stalled responses, unavailable timelines, and failed navigation.
 
 Collection can recover from a sign-in prompt with configured credentials.
 Unresolved verification and a busy profile stop X.
@@ -156,17 +148,32 @@ hour and quiet accounts come due within 24 hours of their last successful check.
 Checks run on the first scrape that reaches their due time, with up to a minute
 of tolerance for timer drift near the boundary.
 
-The check time advances on a completed timeline even if it only returns saved
-posts. Failed or interrupted checks remain due. DANK uses the scrape start time
-for successful checks and stores it in `x-account-checks.json` under
-`storage.data_dir`. The schedule reads existing ClickHouse history and needs no
-schema change. Scrubbing raw captures or media leaves the check file and
-processed post history available.
+The check time and post checkpoint advance after a scan reaches the previous
+checkpoint or an explicit timeline end. A scan without a checkpoint can
+establish one by covering the configured maximum check interval or reaching the
+previous check time if that was earlier. A scroll or post limit, unanswered
+request, or failed check preserves the previous checkpoint and keeps the
+account due. DANK uses the scrape start time for successful checks and stores
+the time and checkpoint in `x-account-checks.json` under `storage.data_dir`.
+Older check files establish a checkpoint on the next scan that verifies
+coverage.
 
 Reader refreshes, `known_overlap = 0` backfills, and For You bypass the schedule.
+
 Tune the [shared account schedule](history.md#account-scheduling) under
 `[scrape.account_schedule]`. Fields in `[x.schedule]` still override the shared
 settings for X. Each normal run logs the number of due and deferred accounts.
+
+### Backfill selected accounts
+
+```sh
+make scrape MODE=native ARGS='--account WatcherGuru'
+```
+
+Repeat `--account` to include multiple handles. DANK matches enabled profiles
+in your [configured sources](history.md#account-scheduling). For X, this
+bypasses the schedule, known-overlap cutoff, and For You feed. The configured
+`max_posts` and `max_scrolls` still bound each timeline.
 
 ## Sign in
 

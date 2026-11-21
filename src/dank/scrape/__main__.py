@@ -9,6 +9,15 @@ from dank.scrape.x.conversations import canonical_post_url
 from dank.scrape.x.onepassword import credentials_stdio
 
 
+def _account_name(value: str) -> str:
+    name = value.strip().removeprefix("@")
+
+    if not name or any(char.isspace() or char in "/?#" for char in name):
+        raise argparse.ArgumentTypeError("expected an account handle or ID")
+
+    return name
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="dank.scrape")
     parser.add_argument(
@@ -37,6 +46,10 @@ def main() -> None:
         help="Retry saved RSS page failures instead of collecting feeds",
     )
 
+    parser.add_argument(
+        "--account", action="append", default=[], type=_account_name,
+        help="Scrape matching configured accounts; repeat for multiple names",
+    )
     parser.add_argument(
         "--x-post", action="append", default=[], type=canonical_post_url,
         help="Capture a saved X conversation; repeat for multiple posts",
@@ -93,19 +106,23 @@ def main() -> None:
            for item in args.youtube_thumbnail_id):
         parser.error("--youtube-thumbnail-id must be an 11-character video ID")
 
-    if sum((bool(args.x_post), args.x_details, args.reddit_details,
+    if sum((bool(args.account), bool(args.x_post), args.x_details,
+            args.reddit_details,
             args.reddit_linked_articles,
             args.hacker_news_details, args.retry_failed_pages,
             args.retry_youtube_thumbnails, args.youtube_metadata)) > 1:
         parser.error(
-            "Discussion/detail refresh and retry modes cannot be combined",
+            "Account backfill, detail refresh and retry modes cannot be "
+            "combined",
         )
 
-    if args.x_post and (args.domains or args.retry_failed_pages):
+    if args.x_post and args.domains:
         parser.error(
-            "--x-post cannot be combined with --domains "
-            "or --retry-failed-pages",
+            "--x-post cannot be combined with --domains",
         )
+
+    if args.account and args.domains:
+        parser.error("--account cannot be combined with --domains")
 
     domain_regex = None
 
@@ -124,6 +141,7 @@ def main() -> None:
             domain_regex=domain_regex,
             retry_failed_pages=args.retry_failed_pages,
             x_posts=tuple(args.x_post),
+            accounts=tuple(args.account),
             reddit_details=args.reddit_details,
             reddit_linked_articles=args.reddit_linked_articles,
             x_details=args.x_details,

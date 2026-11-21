@@ -16,17 +16,17 @@ logger = logging.getLogger(__name__)
 
 READY_STATE_TIMEOUT_SECONDS = 2
 ACCOUNT_NAVIGATION_TIMEOUT_SECONDS = 15
+SEARCH_SHORTCUT_TIMEOUT_SECONDS = 2
 TYPEAHEAD_POLL_SECONDS = 0.1
 # Operator-observed X input races need pacing in addition to DOM readiness.
 SEARCH_KEY_PAUSE_SECONDS = 0.25
 SEARCH_INPUT_SELECTOR = '[data-testid="SearchBox_Search_Input"]'
-PROFILE_HEADER_SELECTOR = (
-    '[data-testid="primaryColumn"] [data-testid="UserName"]'
-)
 ACCOUNT_SUGGESTIONS_SCRIPT = """(input) => {
-    const popup = document.getElementById(input.getAttribute('aria-owns'));
+    const popup = document.getElementById(
+        input.getAttribute('aria-owns') || input.getAttribute('aria-controls')
+    );
     return Array.from(popup?.querySelectorAll(
-        'button[data-testid="TypeaheadUser"] ' +
+        '[role="option"] ' +
         '[data-testid^="UserAvatar-Container-"]'
     ) || [], avatar => avatar.getAttribute('data-testid')
         .slice('UserAvatar-Container-'.length));
@@ -36,16 +36,18 @@ ACCOUNT_SUGGESTIONS_SCRIPT = """(input) => {
 # ambiguous; the avatar test ID contains the account's actual handle.
 SELECTED_ACCOUNT_SCRIPT = """(input) => {
     if (document.activeElement !== input) return null;
-    const popup = document.getElementById(input.getAttribute('aria-owns'));
+    const popup = document.getElementById(
+        input.getAttribute('aria-owns') || input.getAttribute('aria-controls')
+    );
     const active = document.getElementById(
         input.getAttribute('aria-activedescendant')
     );
     const activeOption = active?.closest('[role="option"]');
-    const selected = popup?.querySelector(
-        '[role="option"][aria-selected="true"]'
-    ) || (active && popup?.contains(active) &&
+    const selected = (active && popup?.contains(active) &&
         activeOption?.getAttribute('aria-selected') !== 'false'
-        ? activeOption || active : null);
+        ? activeOption || active : null) || popup?.querySelector(
+        '[role="option"][aria-selected="true"]'
+    );
     const avatar = selected?.querySelector(
         '[data-testid^="UserAvatar-Container-"]'
     );
@@ -63,13 +65,10 @@ CONFIRM_SELECTION_SCRIPT = """async (input) => {
     const readSelection = (""" + SELECTED_ACCOUNT_SCRIPT + """);
     const selected = readSelection(input);
     const id = input.getAttribute('aria-activedescendant');
-    const option = document.getElementById(id);
-    if (!option?.matches('[role="option"][aria-selected="true"]')) return null;
+    if (!selected) return null;
     await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
-    return option.isConnected &&
-        option.matches('[role="option"][aria-selected="true"]') &&
-        input.getAttribute('aria-activedescendant') === id &&
+    return input.getAttribute('aria-activedescendant') === id &&
         readSelection(input) === selected ? selected : null;
 }"""
 
@@ -93,8 +92,6 @@ async def press_search_key(
 
 async def select_account_suggestion(
     search: zendriver.Element, handle: str, result_count: int,
-    *, page: zendriver.Tab,
-    popup_selector: str,
 ) -> None:
     # X handles Down/Enter on the combobox, not the nested result button.
     # Include the initial selection check and the "Search for"/"Go to" options.
@@ -106,14 +103,6 @@ async def select_account_suggestion(
             and selected.casefold() == handle.casefold()
         ):
             await asyncio.sleep(SEARCH_KEY_PAUSE_SECONDS)
-            # The zero-percent progress bar persists even with usable results.
-            # Selection is established by the option marker, not its removal.
-            avatar = json.dumps(f"UserAvatar-Container-{selected}")
-            await page.select(
-                f'{popup_selector} [role="option"][aria-selected="true"]'
-                f':has([data-testid={avatar}])',
-                timeout=ACCOUNT_NAVIGATION_TIMEOUT_SECONDS,
-            )
             while True:
                 committed = await search.apply(
                     CONFIRM_SELECTION_SCRIPT, await_promise=True,
@@ -154,88 +143,104 @@ async def navigate_to_account(page: zendriver.Tab, handle: str) -> None:
     await check_login_required(page)
     await page.activate()
 
-    async with asyncio.timeout(ACCOUNT_NAVIGATION_TIMEOUT_SECONDS):
-        logger.info("X search @%s: focusing search with /", handle)
-        # X ignores its search shortcut while an editable element has focus.
-        await page.evaluate("document.activeElement?.blur()")
+    for attempt in range(1, 3):
+        try:
+            await search_for_account(page, handle, retry=attempt > 1)
 
-        for event in KeyEvents.from_mixed_input(["/"]):
-            await page.send(cdp.input_.dispatch_key_event(**event))
+            return
+        except TimeoutError as error:
+            await check_login_required(page)
 
-        search = await page.select(SEARCH_INPUT_SELECTOR)
-        await search.clear_input()
+            if attempt == 2:
+                raise
 
-        while True:
-            if await search.apply("(input) => input.value") == "":
-                break
+            logger.info(
+                "X search @%s: %s; retrying search once",
+                handle, error,
+            )
 
-            await asyncio.sleep(TYPEAHEAD_POLL_SECONDS)
 
-        await search.send_keys(f"@{handle}")
+async def search_for_account(
+    page: zendriver.Tab, handle: str, *, retry: bool,
+) -> None:
+    stage = "focusing search"
 
-        logger.info(
-            "X search @%s: query entered; waiting for suggestions", handle,
-        )
+    try:
+        async with asyncio.timeout(ACCOUNT_NAVIGATION_TIMEOUT_SECONDS):
+            logger.info("X search @%s: focusing search with /", handle)
+            # Release stale focus before invoking the shortcut.
+            await page.evaluate("document.activeElement?.blur()")
 
-        await page.select(
-            f'{SEARCH_INPUT_SELECTOR}[aria-expanded="true"][aria-owns]',
-            timeout=ACCOUNT_NAVIGATION_TIMEOUT_SECONDS,
-        )
-        popup_id = await search.apply(
-            "(input) => input.getAttribute('aria-owns')",
-        )
-        popup_selector = f'[role="listbox"][id={json.dumps(popup_id)}]'
-        avatar = json.dumps(f"UserAvatar-Container-{handle}")
-        logger.info("X search @%s: waiting for exact account option", handle)
-        await page.select(
-            f'{popup_selector} [data-testid={avatar} i]',
-            timeout=ACCOUNT_NAVIGATION_TIMEOUT_SECONDS,
-        )
+            for event in KeyEvents.from_mixed_input(["/"]):
+                await page.send(cdp.input_.dispatch_key_event(**event))
 
-        results = cast(
-            list[str], await search.apply(ACCOUNT_SUGGESTIONS_SCRIPT),
-        )
-        logger.info("X search @%s: found exact suggestion", handle)
-        await select_account_suggestion(
-            search, handle, len(results), page=page,
-            popup_selector=popup_selector,
-        )
+            search = await page.select(
+                SEARCH_INPUT_SELECTOR, timeout=SEARCH_SHORTCUT_TIMEOUT_SECONDS,
+            )
 
-        logger.info("X search @%s: waiting for profile header", handle)
+            if retry:
+                # Focus the input if the shortcut did not open the popup.
+                await search.click()
 
-        while True:
-            location = await get_location(page)
+            stage = "clearing search"
+            await search.clear_input()
 
-            if location and (
-                urlsplit(location).path.rstrip("/").casefold()
-                == f"/{handle.casefold()}"
-            ):
-                # X changes the route before replacing the previous profile.
-                # Scope to the profile header so sidebar/tweet handles cannot
-                # make an old page look ready.
-                header = await page.select(
-                    PROFILE_HEADER_SELECTOR,
-                    timeout=ACCOUNT_NAVIGATION_TIMEOUT_SECONDS,
-                )
-                header_handles = await header.apply(
-                    "(header) => "
-                    "header.innerText.match(/@[A-Za-z0-9_]+/g) || []",
-                )
-
-                if isinstance(header_handles, list) and any(
-                    isinstance(value, str)
-                    and value.casefold() == f"@{handle.casefold()}"
-                    for value in cast(list[object], header_handles)
-                ):
-                    logger.info(
-                        "X search @%s: profile content ready", handle,
-                    )
+            while True:
+                if await search.apply("(input) => input.value") == "":
                     break
 
-            await check_login_required(page)
-            await asyncio.sleep(TYPEAHEAD_POLL_SECONDS)
+                await asyncio.sleep(TYPEAHEAD_POLL_SECONDS)
 
-    await check_login_required(page)
+            await search.send_keys(f"@{handle}")
+
+            stage = "opening suggestions"
+            logger.info(
+                "X search @%s: query entered; waiting for suggestions", handle,
+            )
+
+            await page.select(
+                f'{SEARCH_INPUT_SELECTOR}[aria-expanded="true"]'
+                ':is([aria-owns],[aria-controls])',
+                timeout=ACCOUNT_NAVIGATION_TIMEOUT_SECONDS,
+            )
+            popup_id = await search.apply(
+                "(input) => input.getAttribute('aria-owns') || "
+                "input.getAttribute('aria-controls')",
+            )
+            popup_selector = f'[role="listbox"][id={json.dumps(popup_id)}]'
+            avatar = json.dumps(f"UserAvatar-Container-{handle}")
+            stage = "waiting for exact suggestion"
+            logger.info("X search @%s: %s", handle, stage)
+            await page.select(
+                f'{popup_selector} [data-testid={avatar} i]',
+                timeout=ACCOUNT_NAVIGATION_TIMEOUT_SECONDS,
+            )
+
+            results = cast(
+                list[str], await search.apply(ACCOUNT_SUGGESTIONS_SCRIPT),
+            )
+            logger.info("X search @%s: found exact suggestion", handle)
+            stage = "selecting exact suggestion"
+            await select_account_suggestion(search, handle, len(results))
+
+            stage = "waiting for profile route"
+            logger.info("X search @%s: %s", handle, stage)
+
+            while True:
+                location = await get_location(page)
+
+                if location and (
+                    urlsplit(location).path.rstrip("/").casefold()
+                    == f"/{handle.casefold()}"
+                ):
+                    return
+
+                await asyncio.sleep(TYPEAHEAD_POLL_SECONDS)
+    except asyncio.CancelledError:
+        logger.info("X search @%s: interrupted while %s", handle, stage)
+        raise
+    except TimeoutError as error:
+        raise TimeoutError(f"X search @{handle}: {stage}") from error
 
 
 async def check_login_required(page: zendriver.Tab) -> None:

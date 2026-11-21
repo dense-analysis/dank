@@ -110,29 +110,34 @@ def test_reference_dedup_does_not_suppress_later_content_or_raw_reference(
 
 @pytest.mark.parametrize("scrolls", [0, 1])
 async def test_references_do_not_use_post_limit(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
     scrolls: int,
 ):
     page = MagicMock(get=AsyncMock())
     page.get.return_value = page
-    capture = MagicMock(start=AsyncMock(), stop=AsyncMock())
-    caplog.set_level("INFO", logger="dank.scrape.x")
+    capture = MagicMock(
+        start=AsyncMock(), stop=AsyncMock(),
+        has_pending=MagicMock(return_value=False), has_ready=False,
+    )
     replies: list[tuple[list[RawPost], list[AssetDiscovery]]] = [
-        ([raw(reference=True)], []), ([raw(reference=False)], []),
+        ([raw(reference=True), raw(reference=False)], []),
     ]
-    remaining = iter(replies + ([([], [])] if scrolls else []))
+    remaining = iter(replies)
 
     async def next_drain(
-        capture: object, seen_posts: set[str], seen_assets: set[str],
-        seen_references: set[str], **options: Any,
-    ) -> tuple[list[RawPost], list[AssetDiscovery]]:
+        capture: object, **options: Any,
+    ) -> ScrapeBatch:
         posts, assets = next(remaining)
+        overlap = options["overlap"]
 
         for post in posts:
-            target = seen_references if post.is_reference else seen_posts
+            target = (
+                overlap.captured_references if post.is_reference
+                else overlap.captured_posts
+            )
             target.add(post.post_id)
 
-        return posts, assets
+        return ScrapeBatch(posts=posts, assets=assets)
 
     drain = AsyncMock(side_effect=next_drain)
     monkeypatch.setattr(
@@ -154,8 +159,7 @@ async def test_references_do_not_use_post_limit(
     ]
     assert sum(b.post_count for b in saved) == 1
     assert sum(b.reference_count for b in saved) == 1
-    assert drain.await_count == 2 + scrolls
-    assert "total_posts=1" in caplog.text
+    drain.assert_awaited_once()
 
 
 async def test_retry_keeps_reference_and_later_content_once(
