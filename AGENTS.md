@@ -101,6 +101,10 @@ module.
   command people run, including a `[project.scripts]` entry, add or update its
   Make target in the same change, list it in `make help`, and add it to the
   command table in `README.md`. `tests/test_makefile.py` checks this.
+* Keep edits focused on the file's purpose. Put feature behavior and
+  configuration in the relevant feature guide. Keep `make help` and the README
+  command table focused on what each command does and how to run it. Update
+  command summaries only when the command's purpose or usage changes.
 * Run `make lint` to run all linters to check for and autofix errors.
 * After changing an API route or a response model, run `make openapi` and
   commit `reader/openapi.json` and `reader/src/lib/api.gen.ts`. A test fails
