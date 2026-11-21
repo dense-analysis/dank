@@ -199,6 +199,11 @@ still apply: older videos gain new versions only when encountered again.
 
 ## Limits and downloads
 
+The [shared account schedule](history.md#account-scheduling) defers quiet
+channel tabs using the first appearance of each saved item in prior scans.
+Explicit channel URLs with query parameters keep their regular cadence, as do
+recommendations, News, Hype, and playlists.
+
 Channel, News and Hype limits apply per feed. `max_scrolls` limits continuation
 requests after the first page, `scroll_pause_seconds` paces HTTP requests, and
 `stall_scrolls` limits consecutive pages without new items. A channel's latest

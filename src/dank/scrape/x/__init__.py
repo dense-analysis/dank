@@ -4,7 +4,7 @@ import asyncio
 import datetime
 import json
 import logging
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -78,26 +78,34 @@ class _TimelineOverlap:
         self.pinned: set[str] = set()
         self.consecutive = 0
         self.found_saved = False
+        self.observed_timeline = False
+        self.failed_timeline = False
 
     @property
     def reached(self) -> bool:
         return bool(self.known_ids) and self.consecutive >= self.threshold
 
     def observe(
-        self, response: NetworkResponse, payload: Mapping[str, object],
+        self, response: NetworkResponse, payload: Mapping[str, object] | None,
     ) -> None:
-        if (not self.known_ids or response.status != 200
-                or payload.get("errors")):
-            return
-
         operation = urlsplit(response.url).path.rsplit("/", 1)[-1]
 
         if operation not in ACCOUNT_TIMELINE_OPERATIONS:
             return
 
+        if response.status != 200 or payload is None or payload.get("errors"):
+            self.failed_timeline = True
+
+            return
+
         for post_id in account_timeline_post_ids(
             payload, self.handle, pinned=self.pinned,
         ):
+            self.observed_timeline = True
+
+            if not self.known_ids:
+                break
+
             if post_id in self.seen:
                 continue
 
@@ -113,6 +121,10 @@ class _TimelineOverlap:
         self.found_saved = True
 
         return True
+
+    def record_check(self, on_checked: Callable[[str], None] | None) -> None:
+        if on_checked and self.observed_timeline and not self.failed_timeline:
+            on_checked(self.handle)
 
 
 class XBrowser:
@@ -161,6 +173,7 @@ async def scrape_x_accounts(
     *,
     browser: XBrowser | None = None,
     known_ids: Mapping[str, set[str]] | None = None,
+    on_checked: Callable[[str], None] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     if not accounts:
         stats = current_source.get()
@@ -191,6 +204,7 @@ async def scrape_x_accounts(
 
             async for batch in _collect_account(
                 browser, account, settings, history.get(handle, set()),
+                on_checked=on_checked,
             ):
                 yield batch
         except (LoginRequiredError, BrowserProfileBusyError,
@@ -210,7 +224,7 @@ async def scrape_x_accounts(
 
 async def _collect_account(
     browser: XBrowser, account: str, settings: XSettings,
-    known_ids: set[str],
+    known_ids: set[str], *, on_checked: Callable[[str], None] | None,
 ) -> AsyncIterator[ScrapeBatch]:
     seen_posts: set[str] = set()
     seen_references: set[str] = set()
@@ -280,6 +294,8 @@ async def _collect_account(
                     account, len(seen_posts), len(seen_references),
                     attempt + 1, reason,
                 )
+
+                overlap.record_check(on_checked)
 
             return
 
@@ -509,6 +525,28 @@ def _scroll_pause_seconds(configured_pause: float, idle_scrolls: int) -> float:
     return min(configured_pause, FAST_SCROLL_PAUSE_SECONDS)
 
 
+def _response_payload(response: NetworkResponse) -> dict[str, object] | None:
+    try:
+        payload = json.loads(response.body)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Skipping non-JSON X response request_id=%s url=%s",
+            response.request_id, response.url,
+        )
+
+        return None
+
+    if not isinstance(payload, dict):
+        logger.warning(
+            "Skipping non-object X payload request_id=%s url=%s",
+            response.request_id, response.url,
+        )
+
+        return None
+
+    return cast(dict[str, object], payload)
+
+
 def extract_posts_and_assets(
     responses: Iterable[NetworkResponse],
     seen_posts: set[str],
@@ -533,28 +571,13 @@ def extract_posts_and_assets(
             response.url,
         )
 
-        try:
-            payload = json.loads(response.body)
-        except json.JSONDecodeError:
-            logger.warning(
-                "Skipping non-JSON X response request_id=%s url=%s",
-                response.request_id,
-                response.url,
-            )
-            continue
-
-        if not isinstance(payload, dict):
-            logger.warning(
-                "Skipping non-object X payload request_id=%s url=%s",
-                response.request_id,
-                response.url,
-            )
-            continue
-
-        payload = cast(dict[str, object], payload)
+        payload = _response_payload(response)
 
         if overlap is not None:
             overlap.observe(response, payload)
+
+        if payload is None:
+            continue
 
         extracted_posts = extract_posts_from_payload(payload)
         logger.info(

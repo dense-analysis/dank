@@ -142,6 +142,31 @@ Browser cleanup has a 20-second budget; if it cannot close safely, X stops
 rather than opening another browser on the same profile. Saved posts remain
 available in every case; other sources can continue.
 
+### Account check schedule
+
+Normal scrapes check new accounts immediately. Once an account has been checked
+successfully, DANK estimates how long it takes to publish one post. It counts
+distinct saved posts by publication time over the configured `lookback`, or the
+shorter history available for a recently added account. A fresh post near the
+last check or insufficient dated history keeps the account on the minimum
+interval. An account whose saved posts all predate the lookback uses the maximum
+interval. With the default hourly timer, active accounts can be checked each
+hour and quiet accounts come due within 24 hours of their last successful check.
+Checks run on the first scrape that reaches their due time, with up to a minute
+of tolerance for timer drift near the boundary.
+
+The check time advances on a completed timeline even if it only returns saved
+posts. Failed or interrupted checks remain due. DANK uses the scrape start time
+for successful checks and stores it in `x-account-checks.json` under
+`storage.data_dir`. The schedule reads existing ClickHouse history and needs no
+schema change. Scrubbing raw captures or media leaves the check file and
+processed post history available.
+
+Reader refreshes, `known_overlap = 0` backfills, and For You bypass the schedule.
+Tune the [shared account schedule](history.md#account-scheduling) under
+`[scrape.account_schedule]`. Fields in `[x.schedule]` still override the shared
+settings for X. Each normal run logs the number of due and deferred accounts.
+
 ## Sign in
 
 **Docker**

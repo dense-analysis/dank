@@ -12,16 +12,24 @@ import pytest
 from dank.config import (
     BrowserScrapeSettings,
     ConfigError,
+    SourceAdapter,
     SourceConfig,
     XSettings,
     load_settings,
 )
+from dank.scrape.account_schedule import AccountCheck
 from dank.scrape.metrics import SourceMetrics, current_source
 from dank.scrape.runner import (
+    _AccountSchedule,  # pyright: ignore[reportPrivateUsage]
+    _load_account_checks,  # pyright: ignore[reportPrivateUsage]
+    _plan_account_checks,  # pyright: ignore[reportPrivateUsage]
     _x_listing_batches,  # pyright: ignore[reportPrivateUsage]
 )
+from dank.scrape.types import ScrapeBatch
 from dank.scrape.x.payloads import account_timeline_post_ids
 from dank.scrape.zendriver import NetworkResponse
+
+START = dt.datetime(2026, 11, 21, tzinfo=dt.UTC)
 
 
 def tweet(post_id: str, **extra: object) -> dict[str, Any]:
@@ -81,8 +89,22 @@ def collect_x(monkeypatch: pytest.MonkeyPatch):
     return capture, scroll, session
 
 
+@pytest.fixture
+async def account_schedule(tmp_path: Path) -> _AccountSchedule:
+    config = tmp_path / "settings.toml"
+    config.write_text("")
+    settings = load_settings(config)._replace(
+        data_dir=tmp_path, sources=(SourceConfig("x.com", ("writer",)),),
+    )
+    plans = await _plan_account_checks(settings, MagicMock(), START)
+
+    return plans[SourceAdapter.X]
+
+
 async def test_x_overlap_saves_new_posts_before_stopping(
     collect_x: tuple[MagicMock, AsyncMock, MagicMock],
+    tmp_path: Path,
+    account_schedule: _AccountSchedule,
 ) -> None:
     capture, scroll, session = collect_x
     quoted = {"result": tweet("1")}
@@ -100,12 +122,20 @@ async def test_x_overlap_saves_new_posts_before_stopping(
         {"handle": "writer", "post_id": str(post_id)}
         for post_id in range(1, 9)
     ])))
-    started_at = dt.datetime(2026, 11, 21, tzinfo=dt.UTC)
-    batches = [batch async for batch in _x_listing_batches(
-        XSettings(homepage=False, known_overlap=2), (" @Writer ",),
-        session, client, scrape_started_at=started_at,
-    )]
+    state = tmp_path / "x-account-checks.json"
+    batches: list[ScrapeBatch] = []
 
+    async for batch in _x_listing_batches(
+        XSettings(homepage=False, known_overlap=2), (" @Writer ",),
+        session, client, scrape_started_at=START,
+        account_plan=account_schedule,
+    ):
+        assert not state.exists()
+        batches.append(batch)
+
+    assert _load_account_checks(state) == {
+        "writer": AccountCheck(START, START),
+    }
     assert [post.post_id for batch in batches for post in batch.posts
             if not post.is_reference] == ["10", "9"]
     assert [post.post_id for batch in batches for post in batch.posts
@@ -118,12 +148,14 @@ async def test_x_overlap_saves_new_posts_before_stopping(
     assert "scraped_at < %(cutoff)s" in sql
     assert "updated_at < %(cutoff)s" in sql
     assert params["accounts"] == ["writer"]
-    assert params["cutoff"] == started_at
+    assert params["cutoff"] == START
 
 
 async def test_all_known_timeline_completes_without_scrolling(
     collect_x: tuple[MagicMock, AsyncMock, MagicMock],
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    account_schedule: _AccountSchedule,
 ) -> None:
     capture, scroll, session = collect_x
     capture.drain.side_effect = [[page(tweet("12"), tweet("11"))]]
@@ -134,11 +166,13 @@ async def test_all_known_timeline_completes_without_scrolling(
     stats = SourceMetrics(1, source)
     caplog.set_level("INFO", logger="dank.scrape.x")
     token = current_source.set(stats)
+    state = tmp_path / "x-account-checks.json"
 
     try:
         batches = [batch async for batch in _x_listing_batches(
             XSettings(homepage=False, known_overlap=2), source.accounts,
-            session, client,
+            session, client, scrape_started_at=START,
+            account_plan=account_schedule,
         )]
     finally:
         current_source.reset(token)
@@ -148,6 +182,39 @@ async def test_all_known_timeline_completes_without_scrolling(
     assert "outcome=completed" in caplog.text
     assert "reason=known account overlap" in caplog.text
     scroll.assert_not_awaited()
+    assert _load_account_checks(state) == {
+        "writer": AccountCheck(START, START),
+    }
+
+
+@pytest.mark.parametrize("rate_limited", [False, True])
+async def test_partial_timeline_does_not_record_success(
+    collect_x: tuple[MagicMock, AsyncMock, MagicMock], tmp_path: Path,
+    account_schedule: _AccountSchedule, *, rate_limited: bool,
+) -> None:
+    capture, scroll, session = collect_x
+    initial = [page(tweet("12"))]
+
+    if rate_limited:
+        capture.drain.side_effect = [
+            initial, [initial[0]._replace(status=429)], [],
+        ]
+    else:
+        capture.drain.side_effect = [initial]
+        scroll.side_effect = TimeoutError("fixture timeout")
+
+    client = MagicMock(fetch_json=AsyncMock(
+        return_value=SimpleNamespace(rows=[]),
+    ))
+    state = tmp_path / "x-account-checks.json"
+    batches = [batch async for batch in _x_listing_batches(
+        XSettings(scrape=BrowserScrapeSettings(max_scrolls=1), homepage=False),
+        ("writer",), session, client, account_plan=account_schedule,
+    )]
+
+    posts = [post.post_id for batch in batches for post in batch.posts]
+    assert posts == ["12"]
+    assert not state.exists()
 
 
 def test_only_authored_timeline_entries_qualify_for_overlap() -> None:

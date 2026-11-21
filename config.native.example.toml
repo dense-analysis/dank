@@ -59,6 +59,13 @@ http_per_host = 2
 media_concurrency = 4
 queue_batches = 2
 
+# Optional scheduling defaults for X accounts and YouTube channel feeds.
+# [scrape.account_schedule]
+# enabled = true
+# min_interval = "1h"
+# max_interval = "24h"
+# lookback = "7d"
+
 [reddit]
 # Minimum spacing between Reddit browser actions; reuse unchanged details.
 request_interval_seconds = 2.0

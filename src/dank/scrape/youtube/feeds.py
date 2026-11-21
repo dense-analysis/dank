@@ -10,6 +10,10 @@ NEWS_PATH = "/feed/news_destination"
 NEWS_CHANNEL = "/channel/UCYfdidRxbB8Qhf0Nx7ioOYw"
 
 
+def is_scheduled_channel(feed: YouTubeFeed) -> bool:
+    return feed.kind == "channel" and not urlsplit(feed.url).query
+
+
 def describe_feed(url: str) -> YouTubeFeed:
     parsed = urlsplit(url)
     path = parsed.path.rstrip("/")

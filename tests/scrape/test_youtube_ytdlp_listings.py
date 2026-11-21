@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import subprocess
 import sys
@@ -19,8 +20,15 @@ from dank.config import (
     YouTubeSettings,
     load_settings,
 )
+from dank.scrape.account_schedule import AccountCheck
 from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.metrics import SourceMetrics, current_source
+from dank.scrape.runner import (
+    _discover_source_batches,  # pyright: ignore[reportPrivateUsage]
+    _load_account_checks,  # pyright: ignore[reportPrivateUsage]
+    _plan_account_checks,  # pyright: ignore[reportPrivateUsage]
+    _save_account_checks,  # pyright: ignore[reportPrivateUsage]
+)
 from dank.scrape.youtube import scrape_youtube_feeds, ytdlp_listings
 from dank.scrape.youtube.feeds import describe_feed
 from dank.scrape.youtube.playlists import playlist_capture, playlist_metadata
@@ -33,6 +41,7 @@ from dank.scrape.youtube.ytdlp_listings import (
     collect_listing,
 )
 from dank.scrape.youtube.ytdlp_worker import MAX_EVENT_BYTES
+from dank.storage.clickhouse import QueryResult
 
 CHANNEL = "https://www.youtube.com/@example/videos"
 PLAYLIST = "https://www.youtube.com/playlist?list=PLtest"
@@ -208,6 +217,88 @@ async def test_listings_use_worker_without_browser_or_watch_page(
         )
     else:
         load.assert_not_awaited()
+
+
+async def test_only_due_channels_are_checked_after_their_batches_are_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tmp_path / "settings.toml"
+    config.write_text('[youtube]\nhype = false\nplaylists = false\n')
+    settings = load_settings(config)._replace(data_dir=tmp_path)
+    sorted_feed = "https://www.youtube.com/@sorted/videos?sort=p"
+    quiet = "https://www.youtube.com/@quiet/videos"
+    failed = "https://www.youtube.com/@failed/videos"
+    source = SourceConfig(
+        "youtube.com", ("@example", "@quiet", "@failed"), (sorted_feed,),
+    )
+    now = dt.datetime(2026, 11, 21, tzinfo=dt.UTC)
+    day = dt.timedelta(days=1)
+    prior = AccountCheck(now - 10 * day, now - dt.timedelta(hours=1))
+    state = tmp_path / "youtube-account-checks.json"
+    _save_account_checks(state, {CHANNEL: prior, quiet: prior, failed: prior})
+    attempted: list[str] = []
+
+    async def worker(
+        self: ListingWorker, request: dict[str, Any], budget: float,
+        receive: Any,
+    ) -> str:
+        url: str = request["feed"]["url"]
+        attempted.append(url)
+        receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
+                 "raw": renderer(VIDEO)["videoRenderer"]})
+        receive({"event": "page"})
+
+        if url == failed:
+            raise ListingFailure("partial fixture")
+
+        return "listing exhausted"
+
+    activity = QueryResult([
+        {"adapter": "youtube", "account": CHANNEL, "recent_posts": 250,
+         "oldest_at": now - 8 * day,
+         "latest_at": now - day},
+        {"adapter": "youtube", "account": quiet, "recent_posts": 0,
+         "oldest_at": now - 9 * day,
+         "latest_at": now - 8 * day},
+    ])
+    client = Mock(fetch_json=AsyncMock(side_effect=[
+        activity, QueryResult([]), QueryResult([]),
+    ]))
+    monkeypatch.setattr(ListingWorker, "collect", worker)
+    plans = await _plan_account_checks(
+        settings._replace(sources=(source,)), client, now,
+    )
+
+    async for batch in _discover_source_batches(
+        settings, source, client, AsyncMock(), AsyncMock(), feed_staleness=day,
+        batch_size=50, scrape_started_at=now, account_plans=plans,
+    ):
+        assert batch.posts
+
+        for post in batch.posts:
+            url = json.loads(post.payload)["discovery"]["feed_url"]
+
+            if url == CHANNEL:
+                assert _load_account_checks(state)[url].last_checked_at == (
+                    prior.last_checked_at
+                )
+
+    assert sorted(attempted) == sorted([
+        CHANNEL, failed, sorted_feed,
+        "https://www.youtube.com/feed/news_destination",
+        "https://www.youtube.com/feed/news_destination/business",
+        "https://www.youtube.com/feed/news_destination/world",
+    ])
+    activity_call, overlap_call, _ = client.fetch_json.await_args_list
+    assert activity_call.args[1]["accounts"] == [
+        ("youtube", feed, now - 7 * day)
+        for feed in sorted((CHANNEL, quiet, failed))
+    ]
+    assert overlap_call.args[1]["feeds"] == [CHANNEL, failed]
+    assert _load_account_checks(state) == {
+        CHANNEL: AccountCheck(prior.first_checked_at, now), quiet: prior,
+        failed: prior._replace(retry_due=True),
+    }
 
 
 async def test_channel_yields_ready_pages_and_cancels_the_worker_on_close(

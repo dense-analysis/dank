@@ -175,6 +175,43 @@ capacity. Older rows have zero for unrecorded HTTP limits and the previously
 unbounded queue. Limits, entry/file-size settings and `code_version` (including
 the dependency lock) make comparisons reproducible.
 
+## Account scheduling
+
+Normal scrapes use one account schedule for X timelines and YouTube channel
+feeds. New accounts are due immediately. DANK uses saved activity to estimate
+how long it takes for one new item to appear. The default interval ranges from
+one hour for busy accounts to 24 hours for quiet accounts. A run can check an
+account up to a minute early to absorb timer drift. These settings are optional.
+
+```toml
+[scrape.account_schedule]
+enabled = true
+min_interval = "1h"
+max_interval = "24h"
+lookback = "7d"
+```
+
+Set `max_interval` to control how long a quiet account can go between checks.
+For example, `max_interval = "12h"` makes an inactive account due 12 hours after
+its last successful check. DANK checks it on the next regular scrape.
+
+X counts distinct saved posts by publication time. YouTube estimates activity
+from the first appearance of each item after its initial channel listing.
+One saved YouTube listing gives too little evidence to defer the next check.
+YouTube tracks each configured channel tab separately. A single ClickHouse query
+estimates activity for all accounts that need it in a run. It combines the
+source-independent raw and processed post history with channel discoveries.
+Only accounts between the minimum and maximum check intervals need an estimate.
+DANK saves successful check times in `x-account-checks.json` and
+`youtube-account-checks.json` under `storage.data_dir`. Failed checks stay due
+and normal runs log the number of due and deferred accounts.
+
+Reader refreshes, recommendations, ranked feeds, RSS, and playlist checks keep
+their usual collection behavior. Set `enabled = false` in the block above to
+check every account each run. Existing `[x.schedule]` fields override the shared
+settings for X. See [X timelines](x.md#account-check-schedule) and
+[YouTube collection limits](youtube.md#limits-and-downloads).
+
 ## Query history
 
 **Native**

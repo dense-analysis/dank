@@ -1014,6 +1014,18 @@ within the configured post and scroll limits. Offline fixtures verify that a
 known-only account completes successfully and that pins and contextual posts
 cannot end a scan. [X overlap tests](../tests/scrape/test_x_overlap.py)
 
+Normal X and YouTube runs can defer quiet accounts until their next estimated
+check. Rates reflect saved history and can miss sudden changes in activity.
+For YouTube, a newly visible older item can count as activity because the
+estimate uses first appearances. The default maximum makes an account due at
+24 hours. A verified known-only listing advances the schedule. A failed or
+unverified empty listing remains eligible for retry. Missing or unreadable local
+state also leaves accounts eligible. If the shared history query fails, accounts
+use their minimum check interval. Offline fixtures cover cadence, verified
+completion, and retries. [Account scheduling](features/history.md#account-scheduling),
+[X tests](../tests/scrape/test_x_schedule.py),
+[YouTube tests](../tests/scrape/test_youtube_ytdlp_listings.py)
+
 ## Shared handling and gaps
 
 These are implemented safeguards or known limitations across sources. Generic

@@ -12,13 +12,14 @@ import re
 import shutil
 import tempfile
 import uuid
-from collections.abc import AsyncIterator
-from contextlib import ExitStack, nullcontext
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import ExitStack, nullcontext, suppress
 from itertools import batched
 from typing import Any, NamedTuple, cast
 from urllib.parse import urlsplit
 
 import aiohttp
+from clickhouse_connect.driver.exceptions import ClickHouseError
 
 from dank.collection_lock import (
     CollectionBusyError as CollectionBusyError,
@@ -27,6 +28,7 @@ from dank.collection_lock import (
 from dank.config import (
     MEDIA_DOWNLOAD_TYPES,
     NO_SIZE_LIMITS,
+    AccountScheduleSettings,
     HackerNewsSettings,
     MediaSizeLimits,
     RedditSettings,
@@ -52,6 +54,12 @@ from dank.model import (
 from dank.progress import Progress
 from dank.references import reference_rows as post_reference_rows
 from dank.runtime import runtime_info
+from dank.scrape.account_schedule import (
+    AccountCheck,
+    PostingActivity,
+    check_interval,
+    recent_check_age,
+)
 from dank.scrape.assets import download_assets, scrubbed_assets
 from dank.scrape.assets.http import (
     thumbnail_observation,
@@ -94,6 +102,7 @@ from dank.scrape.x.home import scrape_x_for_you
 from dank.scrape.x.session import LoginRequiredError
 from dank.scrape.youtube import scrape_youtube_feeds
 from dank.scrape.youtube.channels import CHANNEL_ID, channel_icon_url
+from dank.scrape.youtube.feeds import configured_feeds, is_scheduled_channel
 from dank.scrape.youtube.metadata import fetch_video_metadata
 from dank.scrape.youtube.playlists import playlist_posts, snapshot_hash
 from dank.scrape.youtube.transcripts import fetch_video_transcript
@@ -102,7 +111,10 @@ from dank.scrape.zendriver import (
     BrowserProfileBusyError,
     BrowserSession,
 )
-from dank.storage.clickhouse import ClickHouseClient, parse_datetime
+from dank.storage.clickhouse import (
+    ClickHouseClient,
+    parse_datetime,
+)
 from dank.thumbnails import thumbnail_suffix
 from dank.x_content import X_ACCOUNT_PATTERN
 from dank.youtube import VIDEO_ID, discovery_from_post, payload_object
@@ -116,6 +128,46 @@ MAX_LINKED_METADATA_PER_RUN = 100
 # Limit extra watch-page requests; older items are checked when opened.
 MAX_TRANSCRIPTS_PER_RUN = 25
 X_KNOWN_IDS_PER_ACCOUNT = 1000
+_POST_HISTORY = (
+    "SELECT domain, source, url, post_id, post_created_at AS published_at, "
+    "scraped_at AS observed_at FROM raw_posts "
+    "WHERE NOT is_reference AND scraped_at < %(cutoff)s "
+    "UNION ALL "
+    "SELECT domain, source, url, post_id, created_at AS published_at, "
+    "updated_at AS observed_at FROM posts "
+    "WHERE updated_at < %(cutoff)s"
+)
+_X_ACCOUNT_POST_FILTER = "domain IN ('x.com', 'twitter.com') AND source = 'x'"
+_ACCOUNT_ACTIVITY_SOURCES = {
+    SourceAdapter.X: (
+        "SELECT 'x' AS adapter, "
+        f"extract(lowerUTF8(url), '{X_ACCOUNT_PATTERN}') AS account, "
+        "post_id AS item_id, published_at, observed_at "
+        f"FROM ({_POST_HISTORY}) WHERE {_X_ACCOUNT_POST_FILTER} "
+        "AND account IN (SELECT account FROM requested WHERE adapter = 'x') "
+        "AND published_at < %(cutoff)s"
+    ),
+    SourceAdapter.YOUTUBE: (
+        "SELECT 'youtube' AS adapter, feed_url AS account, item_id, "
+        "CAST(NULL AS Nullable(DateTime64(3, 'UTC'))) AS published_at, "
+        "observed_at FROM youtube_discoveries WHERE feed_kind = 'channel' "
+        "AND feed_url IN ("
+        "SELECT account FROM requested WHERE adapter = 'youtube') "
+        "AND observed_at < %(cutoff)s"
+    ),
+}
+
+
+class _AccountSchedule(NamedTuple):
+    due: set[str]
+    checked: Callable[[str], None]
+
+
+class _AccountInventory(NamedTuple):
+    path: pathlib.Path
+    settings: AccountScheduleSettings
+    accounts: set[str]
+    checks: dict[str, AccountCheck]
 
 
 async def run_scrape(
@@ -735,6 +787,14 @@ async def _collect_with_history(
     scoped: bool = False,
 ) -> None:
     sources = iter(enumerate(settings.sources, 1))
+    detail_run = any((
+        target_post, x_posts, retry_failed_pages, reddit_details, x_details,
+        reddit_linked_articles, hacker_news_details,
+    ))
+    account_plans = (
+        {} if scoped or detail_run
+        else await _plan_account_checks(settings, client, history.started_at)
+    )
     totals_seen: set[str] = set()
     seen_articles: set[str] = set()
     source_locks = {
@@ -769,7 +829,7 @@ async def _collect_with_history(
                 reddit_linked_articles=reddit_linked_articles,
                 hacker_news_details=hacker_news_details,
                 totals_seen=totals_seen, seen_articles=seen_articles,
-                target_post=target_post,
+                target_post=target_post, account_plans=account_plans,
             )
 
     try:
@@ -825,6 +885,7 @@ async def _collect_source(
     target_post: tuple[str, str] | None = None,
     totals_seen: set[str] | None = None,
     seen_articles: set[str] | None = None,
+    account_plans: Mapping[SourceAdapter, _AccountSchedule] | None = None,
 ) -> None:
     stats = SourceMetrics(index, source)
     history.sources[index] = stats
@@ -860,6 +921,7 @@ async def _collect_source(
                     totals_seen=totals_seen, seen_articles=seen_articles,
                     target_post=target_post,
                     scrape_started_at=history.started_at,
+                    account_plans=account_plans,
                 ):
                     playlist_rows: list[dict[str, Any]] = []
 
@@ -971,6 +1033,7 @@ async def _discover_source_batches(
     totals_seen: set[str] | None = None,
     seen_articles: set[str] | None = None,
     scrape_started_at: datetime.datetime | None = None,
+    account_plans: Mapping[SourceAdapter, _AccountSchedule] | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     if target_post is not None:
         async for batch in _refresh_target_post(
@@ -999,6 +1062,7 @@ async def _discover_source_batches(
         return
 
     for adapter in source.collection_adapters:
+        account_plan = (account_plans or {}).get(adapter.kind)
         logger.info(
             "%s: collecting with %s adapter", source.domain, adapter.kind,
         )
@@ -1009,7 +1073,7 @@ async def _discover_source_batches(
                 session, feed_staleness=feed_staleness,
                 batch_size=batch_size, totals_seen=totals_seen,
                 seen_articles=seen_articles,
-                scrape_started_at=scrape_started_at,
+                scrape_started_at=scrape_started_at, account_plan=account_plan,
             ):
                 logger.info(
                     "Discovered batch domain=%s adapter=%s posts=%d "
@@ -1192,6 +1256,7 @@ async def _discover_adapter_batches(
     session: BrowserSession, *, feed_staleness: datetime.timedelta,
     batch_size: int, totals_seen: set[str] | None, seen_articles: set[str],
     scrape_started_at: datetime.datetime | None,
+    account_plan: _AccountSchedule | None,
 ) -> AsyncIterator[ScrapeBatch]:
     match adapter.kind:
         case SourceAdapter.HACKER_NEWS:
@@ -1199,16 +1264,9 @@ async def _discover_adapter_batches(
                 settings, source, client, http_client, seen=seen_articles,
             )
         case SourceAdapter.YOUTUBE:
-            known_ids = await _known_youtube_channel_ids(client)
-            saved_playlists = await client.fetch_json(
-                "SELECT * FROM youtube_playlists "
-                "ORDER BY checked_at DESC LIMIT 1 BY playlist_id",
-            )
-            known_playlists = {str(row["playlist_id"]): row
-                               for row in saved_playlists.rows}
-            batches_iter = scrape_youtube_feeds(
-                settings, source, session, known_ids=known_ids,
-                known_playlists=known_playlists,
+            batches_iter = _youtube_listing_batches(
+                settings, source, session, client,
+                account_plan=account_plan,
             )
         case SourceAdapter.REDDIT:
             batches_iter = await _reddit_listing_batches(
@@ -1221,6 +1279,7 @@ async def _discover_adapter_batches(
             batches_iter = _x_listing_batches(
                 settings.x, source.accounts, session, client,
                 scrape_started_at=scrape_started_at,
+                account_plan=account_plan,
             )
         case SourceAdapter.RSS:
             batches_iter = _rss_adapter_batches(
@@ -1237,6 +1296,7 @@ async def _x_listing_batches(
     settings: XSettings, accounts: tuple[str, ...], session: BrowserSession,
     client: ClickHouseClient, *,
     scrape_started_at: datetime.datetime | None = None,
+    account_plan: _AccountSchedule | None = None,
 ) -> AsyncIterator[ScrapeBatch]:
     browser = XBrowser(session)
     cutoff = scrape_started_at or datetime.datetime.now(datetime.UTC)
@@ -1253,12 +1313,336 @@ async def _x_listing_batches(
     if not accounts and settings.homepage:
         return
 
+    if account_plan is not None:
+        accounts = tuple(
+            account for handle, account in _x_handles(accounts).items()
+            if handle in account_plan.due
+        )
+
+    if not accounts and account_plan is not None:
+        stats = current_source.get()
+
+        if (stats is not None and not settings.homepage
+                and not stats.counts["posts_queued"]):
+            stats.skipped = True
+
+        return
+
     known_ids = await _known_x_account_ids(client, accounts, settings, cutoff)
 
     async for batch in scrape_x_accounts(
         settings, accounts, session, browser=browser, known_ids=known_ids,
+        on_checked=account_plan.checked if account_plan is not None else None,
     ):
         yield batch
+
+
+def _x_handles(accounts: tuple[str, ...]) -> dict[str, str]:
+    return {
+        account.strip().lstrip("@").casefold(): account for account in accounts
+    }
+
+
+async def _youtube_listing_batches(
+    settings: Settings, source: SourceConfig, session: BrowserSession,
+    client: ClickHouseClient, *, account_plan: _AccountSchedule | None,
+) -> AsyncIterator[ScrapeBatch]:
+    feeds = configured_feeds(settings.youtube, source)
+
+    if account_plan is not None:
+        feeds = tuple(feed for feed in feeds if not is_scheduled_channel(feed)
+                      or feed.url in account_plan.due)
+
+    channels = tuple(feed.url for feed in feeds if is_scheduled_channel(feed))
+    known_ids = await _known_youtube_channel_ids(client, channels)
+    saved_playlists = await client.fetch_json(
+        "SELECT * FROM youtube_playlists "
+        "ORDER BY checked_at DESC LIMIT 1 BY playlist_id",
+    )
+    known_playlists = {str(row["playlist_id"]): row
+                       for row in saved_playlists.rows}
+
+    async for batch in scrape_youtube_feeds(
+        settings, source, session, known_ids=known_ids,
+        known_playlists=known_playlists, feeds=feeds,
+        track_checks=account_plan is not None,
+    ):
+        if batch.checked_account and account_plan is not None:
+            account_plan.checked(batch.checked_account)
+        else:
+            yield batch
+
+
+def _account_inventories(
+    settings: Settings,
+) -> dict[SourceAdapter, _AccountInventory]:
+    schedules = {SourceAdapter.YOUTUBE: settings.account_schedule}
+
+    # Zero overlap requests a bounded recapture of every X account.
+    if settings.x.known_overlap:
+        schedules[SourceAdapter.X] = (
+            settings.x.schedule or settings.account_schedule
+        )
+
+    accounts: dict[SourceAdapter, set[str]] = {}
+
+    for source in settings.sources:
+        for adapter in source.collection_adapters:
+            kind = adapter.kind
+            schedule = schedules.get(kind)
+
+            if schedule is None or not schedule.enabled:
+                continue
+
+            accounts.setdefault(kind, set()).update(
+                _scheduled_account_ids(kind, settings, source),
+            )
+
+    inventories: dict[SourceAdapter, _AccountInventory] = {}
+
+    for kind, identifiers in accounts.items():
+        if identifiers:
+            path = settings.data_dir / f"{kind.value}-account-checks.json"
+            inventories[kind] = _AccountInventory(
+                path, schedules[kind], identifiers, _load_account_checks(path),
+            )
+
+    return inventories
+
+
+def _scheduled_account_ids(
+    kind: SourceAdapter, settings: Settings, source: SourceConfig,
+) -> tuple[str, ...]:
+    match kind:
+        case SourceAdapter.X:
+            return tuple(_x_handles(source.accounts))
+        case SourceAdapter.YOUTUBE:
+            return tuple(
+                feed.url for feed in configured_feeds(settings.youtube, source)
+                if is_scheduled_channel(feed)
+            )
+        case _:
+            return ()
+
+
+async def _plan_account_checks(
+    settings: Settings, client: ClickHouseClient, cutoff: datetime.datetime,
+) -> dict[SourceAdapter, _AccountSchedule]:
+    inventories = _account_inventories(settings)
+    requested: dict[tuple[SourceAdapter, str], datetime.datetime] = {}
+
+    for kind, inventory in inventories.items():
+        for account in sorted(inventory.accounts & inventory.checks.keys()):
+            age = recent_check_age(
+                inventory.settings, inventory.checks[account], cutoff,
+            )
+
+            if age is not None and age >= inventory.settings.min_interval:
+                requested[kind, account] = cutoff - inventory.settings.lookback
+
+    activity = await _load_posting_activity(client, requested, cutoff)
+
+    return {
+        kind: _schedule_accounts(
+            kind, inventory, cutoff, activity.get(kind, {}),
+        )
+        for kind, inventory in inventories.items()
+    }
+
+
+def _schedule_accounts(
+    kind: SourceAdapter, inventory: _AccountInventory,
+    cutoff: datetime.datetime, activity: Mapping[str, PostingActivity],
+) -> _AccountSchedule:
+    path, settings, accounts, checks = inventory
+    due = set(accounts)
+
+    for account in sorted(accounts & checks.keys()):
+        check = checks[account]
+        age = recent_check_age(settings, check, cutoff)
+
+        if age is None:
+            continue
+
+        interval = check_interval(
+            settings, check, activity.get(account), cutoff,
+        )
+
+        if age < interval:
+            due.remove(account)
+            logger.info(
+                "%s account=%s deferred; next check due=%s", kind, account,
+                (check.last_checked_at + interval).isoformat(),
+            )
+
+    logger.info(
+        "%s account schedule: due=%d deferred=%d",
+        kind, len(due), len(accounts) - len(due),
+    )
+    pending = {
+        account: checks[account]._replace(retry_due=True) for account in due
+        if account in checks and not checks[account].retry_due
+    }
+
+    # Keep due checks eligible if collection stops before they complete.
+    if pending:
+        checks.update(pending)
+        _save_account_checks(path, checks)
+
+    def checked(account: str) -> None:
+        previous = checks.get(account)
+        first = min(previous.first_checked_at if previous else cutoff, cutoff)
+        # Use the run start to keep the hourly cadence for busy accounts.
+        checks[account] = AccountCheck(first, cutoff)
+        due.discard(account)
+        _save_account_checks(path, checks)
+
+    return _AccountSchedule(due, checked)
+
+
+def _load_account_checks(path: pathlib.Path) -> dict[str, AccountCheck]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected account check format")
+
+        document = cast(dict[str, object], data)
+
+        if document.get("version") != 1:
+            raise ValueError("Unexpected account check format")
+
+        saved = document.get("accounts")
+
+        if not isinstance(saved, dict):
+            raise ValueError("Missing account checks")
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        logger.warning(
+            "Could not read account checks from %s; checking all accounts",
+            path,
+        )
+
+        return {}
+
+    checks: dict[str, AccountCheck] = {}
+
+    for account, value in cast(dict[str, object], saved).items():
+        if not isinstance(value, dict):
+            continue
+
+        entry = cast(dict[str, object], value)
+        first = parse_datetime(entry.get("first_checked_at"))
+        last = parse_datetime(entry.get("last_checked_at"))
+
+        if first is not None and last is not None and first <= last:
+            checks[account] = AccountCheck(
+                first, last, entry.get("retry_due") is True,
+            )
+
+    return checks
+
+
+def _save_account_checks(
+    path: pathlib.Path, checks: dict[str, AccountCheck],
+) -> None:
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", dir=path.parent, prefix=f".{path.name}.", encoding="utf-8",
+            delete=False,
+        ) as output:
+            temp_path = pathlib.Path(output.name)
+            json.dump({"version": 1, "accounts": {
+                account: {
+                    "first_checked_at": check.first_checked_at.isoformat(),
+                    "last_checked_at": check.last_checked_at.isoformat(),
+                    "retry_due": check.retry_due,
+                }
+                for account, check in checks.items()
+            }}, output)
+
+        temp_path.replace(path)
+    except OSError:
+        logger.warning(
+            "Could not save account checks to %s", path, exc_info=True,
+        )
+
+        if temp_path is not None:
+            with suppress(OSError):
+                temp_path.unlink()
+
+
+async def _load_posting_activity(
+    client: ClickHouseClient,
+    requested: Mapping[tuple[SourceAdapter, str], datetime.datetime],
+    cutoff: datetime.datetime,
+) -> dict[SourceAdapter, dict[str, PostingActivity]]:
+    if not requested:
+        return {}
+
+    kinds = {kind for kind, _ in requested}
+    observations = " UNION ALL ".join(
+        sql for kind, sql in _ACCOUNT_ACTIVITY_SOURCES.items() if kind in kinds
+    )
+    # Dated items count when published. For undated items the first listing is
+    # inventory, so count only later first appearances once a follow-up exists.
+    try:
+        result = await client.fetch_json(
+            "WITH requested AS ("
+            "SELECT entry.1 AS adapter, entry.2 AS account, "
+            "toDateTime64(entry.3, 3, 'UTC') AS since "
+            "FROM (SELECT arrayJoin(%(accounts)s) AS entry)), "
+            "items AS (SELECT adapter, account, item_id, "
+            "min(published_at) AS publication_time, "
+            "min(observed_at) AS first_observed, "
+            "max(observed_at) AS last_observed "
+            f"FROM ({observations}) GROUP BY adapter, account, item_id), "
+            "timeline AS (SELECT *, "
+            "coalesce(publication_time, first_observed) AS first_at, "
+            "min(first_observed) OVER (PARTITION BY adapter, account) "
+            "AS baseline FROM items) "
+            "SELECT timeline.adapter AS adapter, timeline.account AS account, "
+            "countIf(first_at >= since "
+            "AND (publication_time IS NOT NULL OR first_at > baseline)) "
+            "AS recent_posts, min(first_at) AS oldest_at, "
+            "max(first_at) AS latest_at FROM timeline "
+            "INNER JOIN requested USING (adapter, account) "
+            "GROUP BY timeline.adapter, timeline.account "
+            "HAVING count(publication_time) > 0 "
+            "OR max(last_observed) > min(first_observed)",
+            {
+                "accounts": [
+                    (kind.value, account, since)
+                    for (kind, account), since in requested.items()
+                ],
+                "cutoff": cutoff,
+            },
+        )
+    except (ClickHouseError, TimeoutError):
+        logger.warning(
+            "Could not load account activity; using minimum check intervals",
+            exc_info=True,
+        )
+
+        return {}
+
+    activity: dict[SourceAdapter, dict[str, PostingActivity]] = {}
+
+    for row in result.rows:
+        oldest = parse_datetime(row["oldest_at"])
+        latest = parse_datetime(row["latest_at"])
+
+        if oldest is not None and latest is not None:
+            kind = SourceAdapter(row["adapter"])
+            account = str(row["account"])
+            activity.setdefault(kind, {})[account] = PostingActivity(
+                int(row["recent_posts"]), oldest, latest,
+            )
+
+    return activity
 
 
 async def _known_x_account_ids(
@@ -1271,21 +1655,13 @@ async def _known_x_account_ids(
     # Processed posts retain their identities after the raw captures expire.
     result = await client.fetch_json(
         f"SELECT extract(lowerUTF8(url), '{X_ACCOUNT_PATTERN}') AS handle, "
-        "post_id FROM ("
-        "SELECT url, post_id, coalesce(post_created_at, scraped_at) AS stamp "
-        "FROM raw_posts WHERE domain IN ('x.com', 'twitter.com') "
-        "AND source = 'x' AND NOT is_reference AND scraped_at < %(cutoff)s "
-        "UNION ALL "
-        "SELECT url, post_id, created_at AS stamp FROM posts "
-        "WHERE domain IN ('x.com', 'twitter.com') AND source = 'x' "
-        "AND updated_at < %(cutoff)s"
-        ") WHERE handle IN %(accounts)s AND handle != '' "
-        "GROUP BY handle, post_id ORDER BY max(stamp) DESC, post_id DESC "
+        f"post_id FROM ({_POST_HISTORY}) WHERE {_X_ACCOUNT_POST_FILTER} "
+        "AND handle IN %(accounts)s AND handle != '' "
+        "GROUP BY handle, post_id "
+        "ORDER BY max(coalesce(published_at, observed_at)) DESC, post_id DESC "
         "LIMIT %(limit)s BY handle",
         {
-            "accounts": sorted({
-                account.strip().lstrip("@").casefold() for account in accounts
-            }),
+            "accounts": sorted(_x_handles(accounts)),
             "limit": max(X_KNOWN_IDS_PER_ACCOUNT, settings.known_overlap),
             "cutoff": cutoff,
         },
@@ -1677,14 +2053,19 @@ async def _persist_youtube_playlist_order(
 
 
 async def _known_youtube_channel_ids(
-    client: ClickHouseClient,
+    client: ClickHouseClient, feeds: tuple[str, ...],
 ) -> dict[str, set[str]]:
+    if not feeds:
+        return {}
+
     # Only recent channel appearances are needed to detect the saved frontier.
     # Recommendation feeds must refresh even when all their videos are known.
     result = await client.fetch_json(
         "SELECT feed_url, item_id FROM youtube_discoveries "
-        "WHERE feed_kind = 'channel' ORDER BY observed_at DESC "
+        "WHERE feed_kind = 'channel' AND feed_url IN %(feeds)s "
+        "ORDER BY observed_at DESC "
         "LIMIT 1000 BY feed_url",
+        {"feeds": list(feeds)},
     )
     known: dict[str, set[str]] = {}
 

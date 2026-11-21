@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import math
 import pathlib
 import re
@@ -9,6 +10,7 @@ from enum import StrEnum
 from typing import Any, NamedTuple, cast
 from urllib.parse import parse_qs, urlsplit
 
+from dank.age import parse_age_window
 from dank.category_config import CategorySettings, parse_categories
 
 MEDIA_DOWNLOAD_TYPES = ("image", "audio", "video")
@@ -71,12 +73,23 @@ class XConversationSettings(NamedTuple):
     timeout_seconds: float = 30.0
 
 
+class AccountScheduleSettings(NamedTuple):
+    enabled: bool = True
+    min_interval: datetime.timedelta = datetime.timedelta(hours=1)
+    max_interval: datetime.timedelta = datetime.timedelta(hours=24)
+    lookback: datetime.timedelta = datetime.timedelta(days=7)
+
+
+DEFAULT_ACCOUNT_SCHEDULE = AccountScheduleSettings()
+
+
 class XSettings(NamedTuple):
     scrape: BrowserScrapeSettings = BrowserScrapeSettings(max_posts=200)
     onepassword: XOnePasswordSettings | None = None
     conversation: XConversationSettings = XConversationSettings()
     homepage: bool = True
     known_overlap: int = 5
+    schedule: AccountScheduleSettings | None = None
 
 
 class YouTubeOnePasswordSettings(NamedTuple):
@@ -277,6 +290,7 @@ class Settings(NamedTuple):
     # Whether sources come from Postgres instead of `sources` above. One or
     # the other, never both; see docs/features/sources.md.
     sources_in_database: bool = False
+    account_schedule: AccountScheduleSettings = DEFAULT_ACCOUNT_SCHEDULE
 
 
 def _as_dict(value: object) -> dict[str, Any] | None:
@@ -853,7 +867,9 @@ def _size_limit(name: str, value: object) -> int | None:
     return value if value > 0 else None
 
 
-def _parse_scrape_settings(value: object) -> ScrapeSettings:
+def _parse_scrape_settings(
+    value: object,
+) -> tuple[ScrapeSettings, AccountScheduleSettings]:
     data = _as_dict(value)
 
     if data is None:
@@ -874,7 +890,11 @@ def _parse_scrape_settings(value: object) -> ScrapeSettings:
 
         values[key] = setting
 
-    return ScrapeSettings(**values)
+    schedule = _parse_account_schedule(
+        data.get("account_schedule", {}), "scrape.account_schedule",
+    )
+
+    return ScrapeSettings(**values), schedule
 
 
 def _parse_sources_in_database(
@@ -1072,7 +1092,49 @@ def _parse_x_onepassword(value: object) -> XOnePasswordSettings | None:
     return XOnePasswordSettings(*references)
 
 
-def _parse_x_settings(value: object) -> XSettings:
+def _parse_account_schedule(
+    value: object, key: str,
+    defaults: AccountScheduleSettings = DEFAULT_ACCOUNT_SCHEDULE,
+) -> AccountScheduleSettings:
+    data = _as_dict(value)
+
+    if data is None:
+        raise ConfigError(f"{key} must be a table")
+
+    enabled = data.get("enabled", defaults.enabled)
+
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"{key}.enabled must be a boolean")
+
+    durations: dict[str, datetime.timedelta] = {}
+
+    for field in ("min_interval", "max_interval", "lookback"):
+        if field not in data:
+            continue
+
+        duration = data[field]
+
+        try:
+            if not isinstance(duration, str):
+                raise ValueError
+
+            durations[field] = parse_age_window(duration)
+        except (ValueError, OverflowError):
+            raise ConfigError(
+                f"{key}.{field} must be a positive duration like '1h'",
+            ) from None
+
+    schedule = defaults._replace(enabled=enabled, **durations)
+
+    if schedule.min_interval > schedule.max_interval:
+        raise ConfigError(f"{key}.min_interval cannot exceed max_interval")
+
+    return schedule
+
+
+def _parse_x_settings(
+    value: object, account_schedule: AccountScheduleSettings,
+) -> XSettings:
     x_data = _as_dict(value) or {}
     x_defaults = XSettings().scrape
 
@@ -1097,6 +1159,12 @@ def _parse_x_settings(value: object) -> XSettings:
         conversation=_parse_x_conversation(x_data.get("conversation", {})),
         homepage=x_data.get("homepage", True),
         known_overlap=known_overlap,
+        schedule=(
+            _parse_account_schedule(
+                x_data["schedule"], "x.schedule", account_schedule,
+            )
+            if "schedule" in x_data else None
+        ),
     )
 
 
@@ -1110,7 +1178,10 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         raise ConfigError(f"Broken {path}: {error}") from None
 
     sources = _parse_sources(data.get("sources"))
-    x_settings = _parse_x_settings(data.get("x"))
+    scrape_settings, account_schedule = _parse_scrape_settings(
+        data.get("scrape", {}),
+    )
+    x_settings = _parse_x_settings(data.get("x"), account_schedule)
 
     clickhouse: dict[str, Any] = _as_dict(data.get("clickhouse")) or {}
     use_http = bool(clickhouse.get("use_http", True))
@@ -1197,7 +1268,8 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         logging=logging_settings,
         keep_feed_on_fetch_failure=keep_feed_on_fetch_failure,
         max_entries_per_feed=max_entries_per_feed,
-        scrape=_parse_scrape_settings(data.get("scrape", {})),
+        scrape=scrape_settings,
+        account_schedule=account_schedule,
         media_download_types=_parse_media_download_types(
             data.get("media", {}),
         ),

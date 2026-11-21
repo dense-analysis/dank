@@ -41,7 +41,7 @@ from .browser import (
     snapshot,
 )
 from .channels import discover_channel
-from .feeds import configured_feeds
+from .feeds import configured_feeds, is_scheduled_channel
 from .home_merge import merge_home_posts
 from .payloads import (
     ORIGIN,
@@ -474,6 +474,7 @@ async def _scrape_feed(
     settings: YouTubeSettings, known_ids: set[str], *,
     cookies: Sequence[Mapping[str, object]] = (),
     worker: ListingWorker | None = None,
+    track_checks: bool = False,
 ) -> AsyncGenerator[ScrapeBatch]:
     if feed.kind == "playlist":
         result = await collect_playlist(feed.url, settings, cookies=cookies)
@@ -502,6 +503,7 @@ async def _scrape_feed(
 
     async with aclosing(_scrape_listing_feed(
         feed, settings, known_ids, cookies=cookies, worker=worker,
+        track_checks=track_checks,
     )) as listing:
         async for batch in listing:
             yield batch
@@ -582,6 +584,7 @@ class _ListingCapture(FeedCapture):
 async def _scrape_listing_feed(
     feed: YouTubeFeed, settings: YouTubeSettings, known_ids: set[str], *,
     cookies: Sequence[Mapping[str, object]], worker: ListingWorker | None,
+    track_checks: bool = False,
 ) -> AsyncGenerator[ScrapeBatch]:
     capture = _ListingCapture(feed, settings, known_ids)
 
@@ -615,6 +618,10 @@ async def _scrape_listing_feed(
         raise YouTubeFeedError(
             "No usable feed items found; check access or renderer changes",
         )
+
+    if (track_checks and is_scheduled_channel(feed)
+            and reason != "repeated stall"):
+        yield ScrapeBatch([], [], checked_account=feed.url)
 
 
 async def _verify_saved_session(
@@ -652,8 +659,12 @@ async def scrape_youtube_feeds(
     *,
     known_ids: Mapping[str, set[str]] | None = None,
     known_playlists: Mapping[str, dict[str, Any]] | None = None,
+    feeds: tuple[YouTubeFeed, ...] | None = None,
+    track_checks: bool = False,
 ) -> AsyncIterator[ScrapeBatch]:
-    feeds = configured_feeds(settings.youtube, source)
+    if feeds is None:
+        feeds = configured_feeds(settings.youtube, source)
+
     stats = current_source.get()
 
     if stats is not None:
@@ -685,6 +696,7 @@ async def scrape_youtube_feeds(
         async with aclosing(_browserless_batches(
             settings.youtube, listings, session_path,
             known_ids or {}, known_playlists or {}, library=library,
+            track_checks=track_checks,
         )) as batches:
             async for batch in batches:
                 yield batch
@@ -693,13 +705,13 @@ async def scrape_youtube_feeds(
 async def _listing_batches(
     settings: YouTubeSettings, feeds: Iterable[YouTubeFeed],
     cookies: Sequence[Mapping[str, object]], known_ids: Mapping[str, set[str]],
-    worker: ListingWorker,
+    worker: ListingWorker, *, track_checks: bool,
 ) -> AsyncGenerator[ScrapeBatch]:
     for feed in feeds:
         try:
             async with aclosing(_scrape_feed(
                 None, feed, settings, known_ids.get(feed.url, set()),
-                cookies=cookies, worker=worker,
+                cookies=cookies, worker=worker, track_checks=track_checks,
             )) as batches:
                 async for batch in batches:
                     yield batch
@@ -710,7 +722,7 @@ async def _listing_batches(
 async def _channel_batches(
     settings: YouTubeSettings, feeds: Sequence[YouTubeFeed],
     cookies: Sequence[Mapping[str, object]], known_ids: Mapping[str, set[str]],
-    workers: Sequence[ListingWorker],
+    workers: Sequence[ListingWorker], *, track_checks: bool,
 ) -> AsyncGenerator[ScrapeBatch]:
     ready: asyncio.Queue[ScrapeBatch] = asyncio.Queue(maxsize=len(workers))
     remaining = iter(feeds)
@@ -719,6 +731,7 @@ async def _channel_batches(
         # Claim the next feed from the shared iterator before awaiting I/O.
         async with aclosing(_listing_batches(
             settings, remaining, cookies, known_ids, worker,
+            track_checks=track_checks,
         )) as batches:
             async for batch in batches:
                 await ready.put(batch)
@@ -752,6 +765,7 @@ async def _browserless_batches(
     settings: YouTubeSettings, feeds: tuple[YouTubeFeed, ...],
     session_path: pathlib.Path, known_ids: Mapping[str, set[str]],
     known_playlists: Mapping[str, dict[str, Any]], *, library: bool,
+    track_checks: bool,
 ) -> AsyncGenerator[ScrapeBatch]:
     try:
         cookies = (
@@ -785,11 +799,12 @@ async def _browserless_batches(
                 if is_channel and len(workers) > 1:
                     listing = _channel_batches(
                         settings, feed_group, cookies, known_ids,
-                        workers[:len(feed_group)],
+                        workers[:len(feed_group)], track_checks=track_checks,
                     )
                 else:
                     listing = _listing_batches(
                         settings, feed_group, cookies, known_ids, primary,
+                        track_checks=track_checks,
                     )
 
                 async with aclosing(listing) as batches:

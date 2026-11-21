@@ -27,6 +27,8 @@ class ScrapeBatch(NamedTuple):
     youtube_channels: tuple[YouTubeChannelDiscovery, ...] = ()
     youtube_playlists: tuple[YouTubePlaylistCapture, ...] = ()
     youtube_playlist_order: tuple[str, ...] | None = None
+    # Ordered behind the listing batches that must be saved first.
+    checked_account: str = ""
 
 
     @property
