@@ -1,5 +1,7 @@
+import datetime
 import logging
 import pathlib
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -63,3 +65,34 @@ def test_reconfiguring_logging_does_not_duplicate_console_messages(
     logging.getLogger("dank.process.test").info("single progress event")
 
     assert capsys.readouterr().out.count("single progress event") == 1
+
+
+@pytest.mark.parametrize("log_name", ["dank.log", "events.txt"])
+def test_log_rotates_at_utc_midnight_and_keeps_the_configured_backup_count(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    log_name: str,
+) -> None:
+    now = datetime.datetime(2026, 11, 20, 23, 59, tzinfo=datetime.UTC)
+    monkeypatch.setattr(time, "time", lambda: now.timestamp())
+    path = tmp_path / log_name
+    configure_logging(
+        LoggingSettings(path, "INFO", backup_count=1), component="scrape",
+    )
+    logger = logging.getLogger("dank.scrape.test")
+    logger.info("first day's entry")
+
+    now += datetime.timedelta(minutes=2)
+    logger.info("second day's entry")
+
+    first_archive = tmp_path / f"{log_name}.2026-11-20"
+    assert "first day's entry" in first_archive.read_text()
+    assert "second day's entry" in path.read_text()
+
+    now += datetime.timedelta(days=1)
+    logger.info("third day's entry")
+
+    assert not first_archive.exists()
+    archive = tmp_path / f"{log_name}.2026-11-21"
+    assert "second day's entry" in archive.read_text()
+    assert "third day's entry" in path.read_text()

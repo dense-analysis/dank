@@ -14,6 +14,7 @@ from dank.age import parse_age_window
 from dank.category_config import CategorySettings, parse_categories
 
 MEDIA_DOWNLOAD_TYPES = ("image", "audio", "video")
+DEFAULT_LOG_BACKUP_COUNT = 14
 # X's posts are saved under x.com, but people still write its old name.
 SITE_ALIASES = {"twitter.com": "x.com"}
 
@@ -279,6 +280,7 @@ class BrowserSettings(NamedTuple):
 class LoggingSettings(NamedTuple):
     file_path: pathlib.Path
     level: str
+    backup_count: int = DEFAULT_LOG_BACKUP_COUNT
 
 
 class ScrapeSettings(NamedTuple):
@@ -1247,6 +1249,18 @@ def _parse_x_settings(
     )
 
 
+def _parse_logging_settings(value: object) -> LoggingSettings:
+    data = _as_dict(value) or {}
+    file_path = _parse_path(data.get("file")) or pathlib.Path("dank.log")
+    level = str(data.get("level", "INFO")).strip().upper() or "INFO"
+    backup_count = data.get("backup_count", DEFAULT_LOG_BACKUP_COUNT)
+
+    if type(backup_count) is not int or backup_count < 1:
+        raise ConfigError("logging.backup_count must be a positive integer")
+
+    return LoggingSettings(file_path, level, backup_count)
+
+
 def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
     config_path = pathlib.Path(path)
 
@@ -1315,19 +1329,6 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         ),
     )
 
-    logging_data: dict[str, Any] = _as_dict(data.get("logging")) or {}
-    file_path = _parse_path(logging_data.get("file"))
-
-    if file_path is None:
-        file_path = pathlib.Path("dank.log")
-
-    level = str(logging_data.get("level", "INFO")).strip().upper()
-
-    if not level:
-        level = "INFO"
-
-    logging_settings = LoggingSettings(file_path=file_path, level=level)
-
     try:
         category_settings = parse_categories(data.get("categories", {}))
     except ValueError as error:
@@ -1346,7 +1347,7 @@ def load_settings(path: str | pathlib.Path = "config.toml") -> Settings:
         feed_staleness_days=feed_staleness_days,
         sources=sources,
         browser=browser_settings,
-        logging=logging_settings,
+        logging=_parse_logging_settings(data.get("logging")),
         keep_feed_on_fetch_failure=keep_feed_on_fetch_failure,
         max_entries_per_feed=max_entries_per_feed,
         scrape=scrape_settings,

@@ -106,10 +106,9 @@ native runs do not keep a debugging browser open after cancellation. Saved
 posts remain available. Media still buffered when cancelled may need a later
 run, and abrupt termination can leave the database's run status unfinished.
 
-Logs are ignored by Git and kept until you delete them. The application still
-writes its configured `dank.log`; direct `uv run` or `docker compose run`
-commands do not create these per-run archives. The recorded checkout revision
-identifies host source; Docker uses the application image last built.
+These per-run logs are ignored by Git and kept until you delete them. The
+recorded checkout revision identifies host source. Docker uses the application
+image last built.
 
 Find recent runs and review warnings, errors and outcomes:
 
@@ -122,6 +121,18 @@ rg --no-ignore -n 'WARNING|ERROR|Traceback|Exit status:' logs/scrape logs/proces
 For a comparison, ask an agent to inspect these folders and compare matching
 commands and source selections, checking errors, counts and elapsed times.
 An exit status of zero does not rule out source warnings or partial results.
+
+## Application log
+
+The combined application log rotates on the first write after UTC midnight
+in native and Docker runs. Git ignores the dated archives beside the active
+file, such as `dank.log.2026-11-20`. DANK keeps up to 14 archives by default.
+If runs are infrequent, those archives can span more than two weeks. Set
+`backup_count` to a positive whole number under `[logging]` in `config.toml`
+to change the limit.
+
+Python's rotating file handler is designed for one writing process per log
+file. [Python logging cookbook](https://docs.python.org/3.13/howto/logging-cookbook.html#logging-to-a-single-file-from-multiple-processes)
 
 ## Concurrency
 

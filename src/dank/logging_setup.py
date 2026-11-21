@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import pathlib
 import sys
 
@@ -37,7 +38,13 @@ def configure_logging(
             "%(name)s %(message)s"
         ),
         handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
+            logging.handlers.TimedRotatingFileHandler(
+                log_path,
+                when="midnight",
+                backupCount=settings.backup_count,
+                encoding="utf-8",
+                utc=True,
+            ),
             stdout,
             stderr,
         ],

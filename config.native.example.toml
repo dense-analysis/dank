@@ -88,6 +88,7 @@ max_entries_per_feed = 0
 [logging]
 file = "data/dank.log"
 level = "INFO"
+backup_count = 14
 
 # Browser auto-detection is used when executable_path is omitted.
 # [browser]

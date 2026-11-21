@@ -9,6 +9,8 @@ config.toml
 data
 /examples
 *.log
+# Daily rotation also applies to custom log filenames.
+*.[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]
 /logs/
 compose.local.yaml
 /.codex/stop-trigger

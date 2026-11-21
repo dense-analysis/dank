@@ -89,6 +89,7 @@ executable_path = "/usr/local/bin/dank-chromium"
 [logging]
 file = "data/dank.log"
 level = "INFO"
+backup_count = 14
 
 # Sign in with make x-login before collecting X accounts.
 # Optional collection limits; no X password belongs in this file.

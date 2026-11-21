@@ -4,10 +4,39 @@ import pytest
 
 from dank.config import (
     ConfigError,
+    LoggingSettings,
     MediaSizeLimits,
     SourceConfig,
     load_settings,
 )
+
+
+def test_application_log_settings(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text("")
+    assert load_settings(path).logging == LoggingSettings(
+        pathlib.Path("dank.log"), "INFO", 14,
+    )
+    path.write_text(
+        "[logging]\n"
+        'file = "events.log"\n'
+        'level = "debug"\n'
+        "backup_count = 7\n",
+    )
+    assert load_settings(path).logging == LoggingSettings(
+        pathlib.Path("events.log"), "DEBUG", 7,
+    )
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "true", "1.5", '"14"'])
+def test_log_backup_count_requires_a_positive_integer(
+    tmp_path: pathlib.Path, value: str,
+) -> None:
+    path = tmp_path / "settings.fixture.toml"
+    path.write_text(f"[logging]\nbackup_count = {value}\n")
+
+    with pytest.raises(ConfigError, match=r"logging\.backup_count"):
+        load_settings(path)
 
 
 @pytest.mark.parametrize(
