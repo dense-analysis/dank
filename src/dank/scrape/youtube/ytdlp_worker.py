@@ -122,6 +122,30 @@ async def session_cookies(page: zendriver.Tab) -> list[dict[str, Any]]:
         ]
 
 
+async def start_worker(module: str) -> asyncio.subprocess.Process:
+    return await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        module,
+        "--worker",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        limit=MAX_EVENT_BYTES,
+    )
+
+
+async def stop_worker(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+
+    # Drain the remaining output so a paused pipe cannot delay reaping.
+    await process.communicate()
+
+
 async def run_worker(
     module: str,
     request: dict[str, Any],
@@ -132,16 +156,7 @@ async def run_worker(
 
     try:
         async with asyncio.timeout(timeout_seconds):
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                module,
-                "--worker",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-                limit=MAX_EVENT_BYTES,
-            )
+            process = await start_worker(module)
             assert process.stdin is not None
             assert process.stdout is not None
             process.stdin.write(json.dumps(request).encode())
@@ -157,12 +172,7 @@ async def run_worker(
         request.clear()
 
         if process is not None and process.returncode is None:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-
-            await process.wait()
+            await stop_worker(process)
 
 
 def emit(event: dict[str, Any]) -> None:

@@ -255,7 +255,9 @@ On 2026-11-21 a signed-out check collected channel Videos, News and Hype with
 browser startup disabled. Both DANK and stock yt-dlp received HTTP 403 on the
 channel's live browse continuation. DANK kept the 30 first-page items. The
 [listing worker tests](../tests/scrape/test_youtube_ytdlp_listings.py) cover
-successful pagination, bounded and partial results, and routing.
+successful pagination, stopping before a continuation request, and reuse across
+channels. A listing timeout reaps the worker and keeps streamed results. The
+next listing starts a replacement process.
 
 A native Debian scrape reported a missing JavaScript runtime while Node was
 installed at `/usr/bin/node`. DANK now searches `PATH` first and then common

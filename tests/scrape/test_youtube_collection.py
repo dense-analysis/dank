@@ -17,6 +17,7 @@ from dank.scrape.youtube.payloads import (
     normalize_renderer,
     renderers,
 )
+from dank.scrape.youtube.ytdlp_listings import ListingStopped, ListingWorker
 
 FIXTURE = Path(__file__).parents[1] / "fixtures/youtube_listing_renderers.json"
 NEWS = YouTubeFeed(
@@ -333,17 +334,23 @@ async def test_hype_stops_after_top_100_without_extra_scrolls(
     )
 
     feed = YouTubeFeed("https://www.youtube.com/feed/hype", "Hype", "hype")
+
     async def worker(
-        module: str, request: dict[str, Any], budget: float, receive: Any,
-    ) -> int:
+        self: ListingWorker, request: dict[str, Any], budget: float,
+        receive: Any,
+    ) -> str:
         for index in range(101):
             receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
                      "raw": {"videoId": f"{index:011d}"}})
 
-        receive({"event": "page"})
+        try:
+            receive({"event": "page"})
+        except ListingStopped as stop:
+            return str(stop)
+
         pytest.fail("The Top 100 must stop before another page")
 
-    monkeypatch.setattr(ytdlp_listings, "run_worker", worker)
+    monkeypatch.setattr(ListingWorker, "collect", worker)
     batches = [batch async for batch in _scrape_feed(
         None, feed, YouTubeSettings(), set(),
     )]

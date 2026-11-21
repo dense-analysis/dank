@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import AsyncExitStack, aclosing
 from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -28,7 +30,13 @@ from .payloads import (
 )
 from .playlists import LIBRARY_URL, discover_playlists, playlist_id
 from .ytdlp_playlists import select_playlist_tab
-from .ytdlp_worker import WorkerLogger, cookie_jar, emit, run_worker
+from .ytdlp_worker import (
+    WorkerLogger,
+    cookie_jar,
+    emit,
+    start_worker,
+    stop_worker,
+)
 
 # Allow the first request and paginated browse calls, even if a feed stalls.
 LISTING_TIMEOUT_SECONDS = 90.0
@@ -42,34 +50,95 @@ class ListingStopped(Exception):
     """The caller reached its item, overlap, or stall limit."""
 
 
+async def _send(stream: asyncio.StreamWriter, value: object) -> None:
+    stream.write((json.dumps(value) + "\n").encode())
+    await stream.drain()
+
+
+class ListingWorker:
+    """Serve one listing at a time in a reusable subprocess."""
+
+    def __init__(self) -> None:
+        self._process: asyncio.subprocess.Process | None = None
+
+    async def aclose(self) -> None:
+        process, self._process = self._process, None
+
+        if process is not None:
+            await stop_worker(process)
+
+    async def collect(
+        self, request: dict[str, Any], timeout_seconds: float,
+        consume: Callable[[dict[str, Any]], None],
+    ) -> str:
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                process = self._process
+
+                if process is None or process.returncode is not None:
+                    await self.aclose()
+                    process = self._process = await start_worker(__name__)
+
+                result = await self._exchange(process, request, consume)
+        except BaseException:
+            await self.aclose()
+            raise
+
+        if result["event"] == "error":
+            raise ListingFailure(str(result["error_type"]))
+
+        return str(result["reason"])
+
+    async def _exchange(
+        self, process: asyncio.subprocess.Process, request: dict[str, Any],
+        consume: Callable[[dict[str, Any]], None],
+    ) -> dict[str, Any]:
+        assert process.stdin is not None and process.stdout is not None
+        await _send(process.stdin, request)
+        stop: str | None = None
+
+        while line := await process.stdout.readline():
+            event = cast(dict[str, Any], json.loads(line))
+
+            if event["event"] in {"done", "error"}:
+                return event
+
+            if stop is None:
+                try:
+                    consume(event)
+                except ListingStopped as reached:
+                    # Drain this page, then stop the listing at its boundary.
+                    stop = str(reached)
+
+            if event["event"] == "page":
+                await _send(process.stdin, stop)
+
+        raise ListingFailure("Listing worker exited before completing")
+
+
 async def collect_listing(
     feed: YouTubeFeed, settings: YouTubeSettings,
     consume: Callable[[dict[str, Any]], None], *,
     cookies: Sequence[Mapping[str, object]] = (),
     timeout_seconds: float = LISTING_TIMEOUT_SECONDS,
     max_pages: int | None = None,
+    worker: ListingWorker | None = None,
 ) -> str:
-    stop: str | None = None
-
     def event_received(event: dict[str, Any]) -> None:
-        nonlocal stop
+        if event.get("event") == "warning":
+            if event["category"] in {
+                "expired_session", "feed_redirected_to_home",
+                "extractor_error",
+            }:
+                raise ListingFailure(str(event["category"]))
+        else:
+            consume(event)
 
-        match event.get("event"):
-            case "done":
-                stop = str(event["reason"])
-            case "error":
-                raise ListingFailure(str(event["error_type"]))
-            case "warning":
-                if event["category"] in {
-                    "expired_session", "feed_redirected_to_home",
-                    "extractor_error",
-                }:
-                    raise ListingFailure(str(event["category"]))
-            case _:
-                consume(event)
+    async with AsyncExitStack() as stack:
+        if worker is None:
+            worker = await stack.enter_async_context(aclosing(ListingWorker()))
 
-    try:
-        returncode = await run_worker(__name__, {
+        return await worker.collect({
             "feed": feed._asdict(),
             "region": feed.region or settings.region,
             "cookies": list(cookies),
@@ -78,13 +147,6 @@ async def collect_listing(
             ),
             "pause": settings.scrape.scroll_pause_seconds,
         }, timeout_seconds, event_received)
-    except ListingStopped as reached:
-        return str(reached)
-
-    if returncode or stop is None:
-        raise ListingFailure("Listing worker exited before completing")
-
-    return stop
 
 
 def localized(url: str, region: str) -> str:
@@ -242,6 +304,7 @@ def _queue_continuations(
 
 def _read_pages(
     extractor: Any, feed: YouTubeFeed, region: str, max_pages: int,
+    page_stop: Callable[[], str | None],
 ) -> str:
     url, data, config = _open_listing(extractor, feed, region)
 
@@ -266,6 +329,10 @@ def _read_pages(
 
     for page in range(1, max_pages + 1):
         _emit_page(feed, content, shelf)
+
+        if (reason := page_stop()) is not None:
+            return reason
+
         _queue_continuations(extractor, content, shelf, pending, seen)
 
         if not pending:
@@ -295,36 +362,45 @@ def _read_pages(
     return "page limit"
 
 
-def _worker() -> None:
+def _read_page_decision() -> str | None:
+    return cast(str | None, json.loads(sys.stdin.readline()))
+
+
+def _collect_request(request: dict[str, Any]) -> str:
     from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
 
-    try:
-        request: dict[str, Any] = json.load(sys.stdin)
-        options: dict[str, Any] = {
-            "extract_flat": True, "skip_download": True, "cachedir": False,
-            "quiet": True, "logger": WorkerLogger(), "socket_timeout": 15,
-            "sleep_interval_requests": request["pause"], "retries": 0,
-            "extractor_retries": 0,
-            "js_runtimes": js_runtime_options(),
-            "extractor_args": {"youtube": {"lang": ["en-GB"]}},
-        }
+    options: dict[str, Any] = {
+        "extract_flat": True, "skip_download": True, "cachedir": False,
+        "quiet": True, "logger": WorkerLogger(), "socket_timeout": 15,
+        "sleep_interval_requests": request["pause"], "retries": 0,
+        "extractor_retries": 0,
+        "js_runtimes": js_runtime_options(),
+        "extractor_args": {"youtube": {"lang": ["en-GB"]}},
+    }
 
-        # Use the pinned tab extractor's HTTP and browse response handling.
-        # https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_tab.py
-        with YoutubeDL(cast(Any, options)) as provider:
-            downloader: Any = provider
-            downloader.cookiejar = cookie_jar(request["cookies"])
-            extractor = downloader.get_info_extractor("YoutubeTab")
-            extractor.initialize()
-            reason = _read_pages(
-                extractor, YouTubeFeed(**request["feed"]),
-                request["region"], request["max_pages"],
-            )
+    # A fresh downloader gives each feed its own cookies and request pacing.
+    # https://github.com/yt-dlp/yt-dlp/blob/2026.10.26/yt_dlp/extractor/common.py#L871
+    with YoutubeDL(cast(Any, options)) as provider:
+        downloader: Any = provider
+        downloader.cookiejar = cookie_jar(request["cookies"])
+        extractor = downloader.get_info_extractor("YoutubeTab")
+        extractor.initialize()
+
+        return _read_pages(
+            extractor, YouTubeFeed(**request["feed"]),
+            request["region"], request["max_pages"], _read_page_decision,
+        )
+
+
+def _worker() -> None:
+    while line := sys.stdin.readline():
+        try:
+            reason = _collect_request(json.loads(line))
             emit({"event": "done", "reason": reason})
-    except ListingFailure as error:
-        emit({"event": "error", "error_type": str(error)})
-    except Exception as error:
-        emit({"event": "error", "error_type": type(error).__name__})
+        except ListingFailure as error:
+            emit({"event": "error", "error_type": str(error)})
+        except Exception as error:
+            emit({"event": "error", "error_type": type(error).__name__})
 
 
 if __name__ == "__main__" and sys.argv[1:] == ["--worker"]:

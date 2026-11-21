@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
+from contextlib import aclosing
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
@@ -16,14 +19,19 @@ from dank.scrape.youtube.feeds import describe_feed
 from dank.scrape.youtube.playlists import playlist_capture, playlist_metadata
 from dank.scrape.youtube.ytdlp_listings import (
     ListingFailure,
+    ListingStopped,
+    ListingWorker,
     _hype_content,  # pyright: ignore[reportPrivateUsage]
     _read_pages,  # pyright: ignore[reportPrivateUsage]
+    collect_listing,
 )
+from dank.scrape.youtube.ytdlp_worker import MAX_EVENT_BYTES
 
 CHANNEL = "https://www.youtube.com/@example/videos"
 PLAYLIST = "https://www.youtube.com/playlist?list=PLtest"
 CHANNEL_ID = "UC" + "a" * 22
 VIDEO = "abcdefghijk"
+_REAL_POPEN = subprocess.Popen
 
 
 def renderer(identifier: str) -> dict[str, Any]:
@@ -51,15 +59,18 @@ def channel_page() -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("repeat", [False, True])
+@pytest.mark.parametrize("outcome", ["complete", "repeat", "stop"])
 def test_channel_worker_uses_pinned_tab_paging_and_keeps_original_items(
-    monkeypatch: pytest.MonkeyPatch, *, repeat: bool,
+    monkeypatch: pytest.MonkeyPatch, outcome: str,
 ) -> None:
     events: list[dict[str, Any]] = []
     monkeypatch.setattr(ytdlp_listings, "emit", events.append)
     first = channel_page()
     next_video = renderer("zyxwvutsrqp")
-    following = [next_video, continuation("next")] if repeat else [next_video]
+    following = [next_video]
+
+    if outcome == "repeat":
+        following.append(continuation("next"))
 
     options = cast(Any, {"quiet": True, "cachedir": False})
 
@@ -74,22 +85,35 @@ def test_channel_worker_uses_pinned_tab_paging_and_keeps_original_items(
         monkeypatch.setattr(extractor, "_extract_data", initial)
         monkeypatch.setattr(extractor, "_extract_response", browse)
         feed = describe_feed(CHANNEL)
+        stop = "known channel overlap" if outcome == "stop" else None
+        page_decision = Mock(return_value=stop)
 
-        if repeat:
+        if outcome == "repeat":
             with pytest.raises(ListingFailure, match="Repeated listing"):
-                _read_pages(extractor, feed, "GB", 3)
+                _read_pages(extractor, feed, "GB", 3, page_decision)
         else:
-            assert _read_pages(extractor, feed, "GB", 3) == "listing exhausted"
+            assert _read_pages(
+                extractor, feed, "GB", 3, page_decision,
+            ) == (stop or "listing exhausted")
 
         initial.assert_called_once_with(CHANNEL + "?gl=GB&hl=en-GB", feed.name)
-        browse.assert_called_once()
-        assert browse.call_args.kwargs["query"]["continuation"] == "next"
+
+        if stop:
+            page_decision.assert_called_once()
+            browse.assert_not_called()
+        else:
+            assert page_decision.call_count == 2
+            browse.assert_called_once()
+            assert browse.call_args.kwargs["query"]["continuation"] == "next"
 
     assert events[0]["raw"] == {"metadata": first["metadata"]}
     items = [event["raw"] for event in events if event["event"] == "renderer"]
-    assert items == [
-        renderer(VIDEO)["videoRenderer"], next_video["videoRenderer"],
-    ]
+    expected = [renderer(VIDEO)["videoRenderer"]]
+
+    if not stop:
+        expected.append(next_video["videoRenderer"])
+
+    assert items == expected
 
 
 def test_hype_uses_ranked_lockups_from_the_requested_playlist() -> None:
@@ -140,8 +164,9 @@ async def test_listings_use_worker_without_browser_or_watch_page(
     feed_kinds: list[str] = []
 
     async def worker(
-        module: str, request: dict[str, Any], budget: float, receive: Any,
-    ) -> int:
+        self: ListingWorker, request: dict[str, Any], budget: float,
+        receive: Any,
+    ) -> str:
         feed = request["feed"]
         feed_kinds.append(feed["kind"])
         assert request["cookies"] == (cookies if authenticated else [])
@@ -150,14 +175,13 @@ async def test_listings_use_worker_without_browser_or_watch_page(
         receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
                  "raw": renderer(VIDEO)["videoRenderer"]})
         receive({"event": "page"})
-        receive({"event": "done", "reason": "listing exhausted"})
 
-        return 0
+        return "listing exhausted"
 
     playlist = AsyncMock(return_value=playlist_capture(
         "PLtest", playlist_metadata("PLtest", {}), (), status="complete",
     ))
-    monkeypatch.setattr(ytdlp_listings, "run_worker", worker)
+    monkeypatch.setattr(ListingWorker, "collect", worker)
     monkeypatch.setattr("dank.scrape.youtube.collect_playlist", playlist)
     batches = [batch async for batch in scrape_youtube_feeds(
         settings, source, session,
@@ -180,42 +204,26 @@ async def test_listings_use_worker_without_browser_or_watch_page(
 
 
 async def test_channel_yields_ready_pages_and_cancels_the_worker_on_close(
-    monkeypatch: pytest.MonkeyPatch,
+    listing_children: list[asyncio.subprocess.Process],
 ) -> None:
     from dank.scrape.youtube import (
         _scrape_feed,  # pyright: ignore[reportPrivateUsage]
     )
 
-    stopped = asyncio.Event()
+    feed = describe_feed(CHANNEL.replace("example", "hang"))
 
-    async def worker(
-        module: str, request: dict[str, Any], budget: float, receive: Any,
-    ) -> int:
-        receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
-                 "raw": renderer(VIDEO)["videoRenderer"]})
-        receive({"event": "page"})
-
-        try:
-            await asyncio.Event().wait()
-        finally:
-            stopped.set()
-
-        return 0
-
-    monkeypatch.setattr(ytdlp_listings, "run_worker", worker)
-    batches = _scrape_feed(
-        None, describe_feed(CHANNEL), YouTubeSettings(), set(),
-    )
-
-    try:
-        async with asyncio.timeout(1):
+    async with aclosing(_scrape_feed(
+        None, feed, YouTubeSettings(), set(),
+    )) as batches:
+        async with asyncio.timeout(5):
             batch = await anext(batches)
 
-        assert [post.post_id for post in batch.posts] == [f"video:{VIDEO}"]
-    finally:
-        await batches.aclose()
+        assert [post.post_id for post in batch.posts] == [
+            f"video:{VIDEO}", "video:aaaaaaaaaaa",
+        ]
 
-    assert stopped.is_set()
+    assert len(listing_children) == 1
+    assert listing_children[0].returncode is not None
 
 
 @pytest.mark.parametrize("timed_out", [False, True])
@@ -232,17 +240,21 @@ async def test_channel_overlap_and_timeout_keep_posts_without_browser_fallback(
     session = AsyncMock()
 
     async def worker(
-        module: str, request: dict[str, Any], budget: float, receive: Any,
-    ) -> int:
-        receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
-                 "raw": renderer(VIDEO)["videoRenderer"]})
+        self: ListingWorker, request: dict[str, Any], budget: float,
+        receive: Any,
+    ) -> str:
+        try:
+            receive({"event": "renderer", "key": "videoRenderer", "shelf": "",
+                     "raw": renderer(VIDEO)["videoRenderer"]})
+        except ListingStopped as stop:
+            return str(stop)
 
         if timed_out:
             raise TimeoutError
 
         pytest.fail("The known overlap must stop the worker")
 
-    monkeypatch.setattr(ytdlp_listings, "run_worker", worker)
+    monkeypatch.setattr(ListingWorker, "collect", worker)
     token = current_source.set(stats)
 
     try:
@@ -258,3 +270,108 @@ async def test_channel_overlap_and_timeout_keep_posts_without_browser_fallback(
     assert json.loads(post.payload)["renderer"] == renderer(VIDEO)
     assert stats.counts["fetch_failures"] == int(timed_out)
     session.get_browser.assert_not_awaited()
+
+
+@pytest.fixture
+def listing_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[asyncio.subprocess.Process]:
+    children: list[asyncio.subprocess.Process] = []
+    code = f'''
+import time
+from dank.scrape.youtube import ytdlp_listings as listing
+
+def page(*video_ids):
+    for video_id in video_ids:
+        listing.emit({{
+            "event": "renderer", "key": "videoRenderer", "shelf": "",
+            "raw": {{"videoId": video_id}},
+        }})
+    listing.emit({{"event": "page"}})
+    return listing._read_page_decision()
+
+def collect(request):
+    if stop := page({VIDEO!r}, "aaaaaaaaaaa"):
+        return stop
+    if request["feed"]["name"] == "@hang":
+        time.sleep(30)
+    return page("bbbbbbbbbbb") or "listing exhausted"
+
+listing._collect_request = collect
+listing._worker()
+'''
+
+    def local_script_only(args: Any, **kwargs: Any):
+        assert tuple(args) == (sys.executable, "-c", code)
+
+        return _REAL_POPEN(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", local_script_only)
+
+    async def start(module: str) -> asyncio.subprocess.Process:
+        assert module == ytdlp_listings.__name__
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, "-c", code,
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL, limit=MAX_EVENT_BYTES,
+        )
+        children.append(process)
+
+        return process
+
+    monkeypatch.setattr(ytdlp_listings, "start_worker", start)
+
+    return children
+
+
+async def test_scrape_reuses_listing_process_after_overlap(
+    tmp_path: Path, listing_children: list[asyncio.subprocess.Process],
+) -> None:
+    fixture = tmp_path / "settings.toml"
+    fixture.touch()
+    settings = load_settings(fixture)._replace(youtube=YouTubeSettings(
+        hype=False, news_tabs=(), playlists=False, known_overlap=1,
+    ))
+    source = SourceConfig("youtube.com", accounts=("@example", "@next"))
+
+    async with asyncio.timeout(5):
+        batches = [batch async for batch in scrape_youtube_feeds(
+            settings, source, AsyncMock(),
+            known_ids={CHANNEL: {f"video:{VIDEO}"}},
+        )]
+
+    assert [[post.post_id for post in batch.posts] for batch in batches] == [
+        [f"video:{VIDEO}"], [f"video:{VIDEO}", "video:aaaaaaaaaaa"],
+        ["video:bbbbbbbbbbb"],
+    ]
+    assert len(listing_children) == 1
+    assert listing_children[0].returncode is not None
+
+
+async def test_listing_worker_restarts_after_timeout(
+    listing_children: list[asyncio.subprocess.Process],
+) -> None:
+    settings = YouTubeSettings()
+    events: list[dict[str, Any]] = []
+
+    async with asyncio.timeout(8), aclosing(ListingWorker()) as worker:
+        feed = describe_feed(CHANNEL)
+        await collect_listing(feed, settings, events.append, worker=worker)
+        events.clear()
+
+        with pytest.raises(TimeoutError):
+            await collect_listing(
+                describe_feed(CHANNEL.replace("example", "hang")),
+                settings, events.append, worker=worker, timeout_seconds=0.5,
+            )
+
+        assert [event["event"] for event in events] == [
+            "renderer", "renderer", "page",
+        ]
+        assert listing_children[0].returncode is not None
+        assert await collect_listing(
+            feed, settings, events.append, worker=worker,
+        ) == "listing exhausted"
+
+    assert len(listing_children) == 2
+    assert listing_children[1].returncode is not None

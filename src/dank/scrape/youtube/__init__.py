@@ -57,6 +57,7 @@ from .playlists import playlist_id
 from .ytdlp_home import YtDlpHomeResult, collect_ytdlp_home
 from .ytdlp_listings import (
     ListingStopped,
+    ListingWorker,
     collect_listing,
     localized as _localized,
 )
@@ -471,6 +472,7 @@ async def _scrape_feed(
     page: zendriver.Tab | None, feed: YouTubeFeed,
     settings: YouTubeSettings, known_ids: set[str], *,
     cookies: Sequence[Mapping[str, object]] = (),
+    worker: ListingWorker | None = None,
 ) -> AsyncGenerator[ScrapeBatch]:
     if feed.kind == "playlist":
         result = await collect_playlist(feed.url, settings, cookies=cookies)
@@ -498,7 +500,7 @@ async def _scrape_feed(
         return
 
     async with aclosing(_scrape_listing_feed(
-        feed, settings, known_ids, cookies=cookies,
+        feed, settings, known_ids, cookies=cookies, worker=worker,
     )) as listing:
         async for batch in listing:
             yield batch
@@ -578,29 +580,30 @@ class _ListingCapture(FeedCapture):
 
 async def _scrape_listing_feed(
     feed: YouTubeFeed, settings: YouTubeSettings, known_ids: set[str], *,
-    cookies: Sequence[Mapping[str, object]],
+    cookies: Sequence[Mapping[str, object]], worker: ListingWorker | None,
 ) -> AsyncGenerator[ScrapeBatch]:
     capture = _ListingCapture(feed, settings, known_ids)
 
     async def collect() -> str:
         try:
             return await collect_listing(
-                feed, settings, capture.receive, cookies=cookies,
+                feed, settings, capture.receive,
+                cookies=cookies, worker=worker,
             )
         finally:
             capture.flush()
             capture.batches.put_nowait(None)
 
-    worker = asyncio.create_task(collect())
+    collection = asyncio.create_task(collect())
 
     try:
         while (batch := await capture.batches.get()) is not None:
             yield batch
 
-        reason = await worker
+        reason = await collection
     finally:
-        worker.cancel()
-        await asyncio.gather(worker, return_exceptions=True)
+        collection.cancel()
+        await asyncio.gather(collection, return_exceptions=True)
 
     logger.info(
         "YouTube %s via yt-dlp: items=%d reason=%s",
@@ -705,16 +708,17 @@ async def _browserless_batches(
         return
 
     try:
-        for feed in feeds:
-            try:
-                async with aclosing(_scrape_feed(
-                    None, feed, settings, known_ids.get(feed.url, set()),
-                    cookies=cookies,
-                )) as batches:
-                    async for batch in batches:
-                        yield batch
-            except Exception as error:
-                _collection_failure(feed.name, error)
+        async with aclosing(ListingWorker()) as worker:
+            for feed in feeds:
+                try:
+                    async with aclosing(_scrape_feed(
+                        None, feed, settings, known_ids.get(feed.url, set()),
+                        cookies=cookies, worker=worker,
+                    )) as batches:
+                        async for batch in batches:
+                            yield batch
+                except Exception as error:
+                    _collection_failure(feed.name, error)
 
         if library:
             try:

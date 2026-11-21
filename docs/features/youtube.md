@@ -203,8 +203,10 @@ requests after the first page, `scroll_pause_seconds` paces HTTP requests, and
 `stall_scrolls` limits consecutive pages without new items. A channel's latest
 Videos tab also stops at `known_overlap` consecutive saved items. Explicitly
 sorted channel listings keep their own order and use the page and item limits.
-Each listing has a 90-second deadline. DANK saves pages as they arrive and keeps
-the available items if a later page fails.
+Channel, News and Hype listings for a source share one worker process. Each
+listing starts a fresh yt-dlp instance and has a 90-second deadline. The worker
+waits for DANK to check the limits before fetching another page. DANK saves pages
+as they arrive and starts a replacement worker for the next feed after a timeout.
 
 Livestreams and scheduled/upcoming broadcasts are excluded. Shorts and
 community-post switches apply globally. Individual watch pages and comment
