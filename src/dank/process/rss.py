@@ -7,14 +7,15 @@ from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple, cast
 
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
-from dank.html_utils import html_base_url, is_page_challenge, remove_page_noise
+from dank.html_utils import (
+    html_base_url,
+    html_text,
+    is_page_challenge,
+    remove_page_noise,
+)
 from dank.model import Post, RawPost
 from dank.process.feed_html import feed_is_excerpt, recover_feed_html
-from dank.process.page import (
-    extract_article_html,
-    extract_page_metadata,
-    strip_html,
-)
+from dank.process.page import extract_article_html, extract_page_metadata
 
 ATOM_NAMESPACE = "http://www.w3.org/2005/Atom"
 RSS1_NAMESPACE = "http://purl.org/rss/1.0/"
@@ -85,7 +86,7 @@ def convert_raw_post(row: RawPost) -> Post | None:
     content_html = page_derived.content_html
 
     if not title:
-        title_source = parsed.text or strip_html(content_html)
+        title_source = parsed.text or html_text(content_html)
         if title_source:
             title = title_source.splitlines()[0].strip()
 

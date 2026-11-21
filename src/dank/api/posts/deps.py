@@ -14,8 +14,7 @@ from dank.api.posts.service import (
     PostStore,
     SearchEmbeddings,
 )
-from dank.api.sources.deps import source_catalog
-from dank.api.sources.service import SourceCatalog
+from dank.api.sources.deps import LoadSourcesDep
 from dank.embeddings import get_embedding_model
 
 
@@ -32,12 +31,12 @@ def clock() -> Clock:
 
 
 def post_service(
-    catalog: Annotated[SourceCatalog, Depends(source_catalog)],
+    load_sources: LoadSourcesDep,
     store: Annotated[PostStore, Depends(post_store)],
     embeddings: Annotated[SearchEmbeddings, Depends(search_embeddings)],
     now: Annotated[Clock, Depends(clock)],
 ) -> PostService:
-    return PostService(catalog, store, embeddings, now)
+    return PostService(load_sources, store, embeddings, now)
 
 
 PostServiceDep = Annotated[PostService, Depends(post_service)]

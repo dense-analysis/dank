@@ -1,4 +1,4 @@
-"""Wires SourceService to its adapters. Tests override the adapters here."""
+"""Provides the source loader and collection statistics."""
 
 from typing import Annotated
 
@@ -6,14 +6,9 @@ from fastapi import Depends, Request
 
 from dank.api.deps import ResourcesDep, SettingsDep, resources
 from dank.api.sources.clickhouse import ClickHouseCollectionStats
-from dank.api.sources.config_catalog import ConfigSourceCatalog
-from dank.api.sources.saved_catalog import SavedSourceCatalog
-from dank.api.sources.service import (
-    CollectionStats,
-    SourceCatalog,
-    SourceService,
-)
+from dank.api.sources.service import CollectionStats, LoadSources
 from dank.db.sources import PostgresSourceRepository
+from dank.sources.model import CompiledSources, compile_sources
 from dank.sources.service import SourceRepository
 
 
@@ -32,13 +27,17 @@ def saved_sources(
 def source_catalog(
     settings: SettingsDep,
     saved: Annotated[SourceRepository | None, Depends(saved_sources)],
-) -> SourceCatalog:
-    # One place or the other, never both: with the switch on, config.toml's
-    # sources are ignored even when the table is empty.
-    if saved is None:
-        return ConfigSourceCatalog(settings)
+) -> LoadSources:
+    """Read saved sources only when a use case asks for them."""
 
-    return SavedSourceCatalog(saved)
+    async def load() -> CompiledSources:
+        if saved is None:
+            # Every TOML source is enabled.
+            return CompiledSources(settings.sources, settings.sources)
+
+        return compile_sources(await saved.list())
+
+    return load
 
 
 def collection_stats(resources: ResourcesDep) -> CollectionStats:
@@ -47,11 +46,5 @@ def collection_stats(resources: ResourcesDep) -> CollectionStats:
     )
 
 
-def source_service(
-    catalog: Annotated[SourceCatalog, Depends(source_catalog)],
-    stats: Annotated[CollectionStats, Depends(collection_stats)],
-) -> SourceService:
-    return SourceService(catalog, stats)
-
-
-SourceServiceDep = Annotated[SourceService, Depends(source_service)]
+LoadSourcesDep = Annotated[LoadSources, Depends(source_catalog)]
+CollectionStatsDep = Annotated[CollectionStats, Depends(collection_stats)]

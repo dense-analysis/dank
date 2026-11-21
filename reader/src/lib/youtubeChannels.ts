@@ -2,7 +2,6 @@ import { apiGet } from "./api";
 import type { components } from "./api.gen";
 import type { YouTubeFilters } from "./youtubeCollection";
 
-export type YouTubeChannelGroup = components["schemas"]["YouTubeChannelOut"];
 export type YouTubeChannelPage =
   components["schemas"]["YouTubeChannelsResponse"];
 

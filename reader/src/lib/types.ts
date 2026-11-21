@@ -8,7 +8,6 @@ import type { components } from "./api.gen";
 
 type Schemas = components["schemas"];
 
-export type RedditComment = Schemas["RedditCommentOut"];
 export type RedditCommentCapture = Schemas["RedditCommentCaptureOut"];
 export type RedditVideo = Schemas["RedditVideoOut"];
 export type RedditImage = Schemas["RedditImageOut"];
@@ -21,10 +20,8 @@ export type RedditCommunity = Schemas["CommunityOut"];
 
 /** A collected post another one links to; linked posts carry an excerpt. */
 export type PostReference = Schemas["LinkedPostOut"];
-export type CollectionOrigin = Schemas["CollectionOriginOut"];
 export type CollectionInfo = Schemas["CollectionInfoOut"];
 export type YouTubePost = Schemas["YouTubeOut"];
-export type CategoryAssignment = Schemas["CategoryAssignmentOut"];
 
 /** A feed post, or one opened on its own, whose platform fields add detail. */
 export type Post = Omit<Schemas["PostOut"], "x" | "reddit" | "hacker_news"> & {
@@ -42,12 +39,10 @@ export type XProfile = Pick<Schemas["XOut"], "handle" | "name" | "icon_url">;
 export type XAccount = Schemas["XAccountOut"];
 export type XLink = Schemas["XLinkOut"];
 export type XMedia = Schemas["XMediaOut"];
-export type XReplyTo = Schemas["XReplyToOut"];
 export type XQuote = Schemas["XQuoteOut"];
 /** A feed post's X fields; an opened post also has its conversation. */
 export type XPost = Schemas["XOut"] &
   Partial<Pick<Schemas["XDetailOut"], "conversation">>;
-export type XConversationStatus = Schemas["XOut"]["replies_status"];
 export type XConversationNode = Schemas["XConversationNodeOut"];
 export type XConversation = Schemas["XConversationOut"];
 /** A post saved inside a quote or a conversation, with its X fields. */

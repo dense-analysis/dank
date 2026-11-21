@@ -92,7 +92,7 @@ async def clickhouse_settings(
 async def clickhouse(
     clickhouse_settings: ClickHouseSettings,
 ) -> AsyncIterator[ClickHouseClient]:
-    """A client for the throwaway database, after the servers' startup."""
+    """A client for the throwaway database, after the web app's startup."""
     async with ClickHouseClient(clickhouse_settings) as client:
         await prepare_clickhouse(client)
 

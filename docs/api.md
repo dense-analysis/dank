@@ -18,8 +18,9 @@ aiohttp is still DANK's HTTP client for collection.
 Every feature has three layers:
 
 - **Domain** (`model.py`): DANK's rules as NamedTuples and pure functions.
-- **Application** (`service.py`): a service class that runs the use cases,
-  plus a `Protocol` for each outside thing it needs (its ports).
+- **Application** (`service.py`): use cases and the interfaces they use for I/O.
+  A function can take one operation as a callable or a group of related
+  operations through a `Protocol`.
 - **Edge and adapters**: the router and Pydantic schemas turn HTTP into service
   calls; adapters implement the ports against ClickHouse, Postgres or
   `config.toml`.
@@ -34,7 +35,8 @@ src/dank/
   sources/               Sources people manage, outside api/ because the CLIs
                          use them too
     model.py             Source, normalized(), compile_sources(), encoding
-    service.py           SourceService, port SourceRepository
+    service.py           get_source(), add_source(), update_source(),
+                         import_settings(), port SourceRepository
   db/sources.py          PostgresSourceRepository
   api/
     app.py               create_app(): routers, error handlers, guard, headers
@@ -51,10 +53,9 @@ src/dank/
       router.py          GET /api/reader/sources
       schemas.py         SourcesResponse, one variant per source kind
       deps.py            picks the adapters; tests override them here
-      service.py         SourceService, ports SourceCatalog and CollectionStats
+      service.py         source_overview(), LoadSources, port CollectionStats
       model.py           SourceSummary, XActivity, summarize(), source_kind()
       clickhouse.py      ClickHouseCollectionStats
-      config_catalog.py  ConfigSourceCatalog, over Settings.sources
     source_settings/
       router.py          GET, POST and PUT /api/reader/source-settings
       schemas.py         SourceBody, SourceOut, SourceListResponse
@@ -78,8 +79,8 @@ src/dank/
       router.py          GET /api/reader/source-icon, a PNG
       schemas.py         SourceIconQuery
       deps.py            picks the adapters; tests override them here
-      service.py         SourceIconService, ports IconCache, CollectedDomains
-      model.py           source_icon_url(), which domains may have an icon
+      service.py         source_icon(), ports IconCache, CollectedDomains
+      model.py           icon_domain(), which domains may have an icon
       clickhouse.py      ClickHouseCollectedDomains
     files/
       router.py          GET /reader and /reader/..., the redirect to /
@@ -122,12 +123,13 @@ adapter without I/O.
    checks through OpenAPI that every route returns a strict model. Wide
    projections are the one exception inside; see Projections. Pages and files
    have no JSON to model; see Pages and files.
-4. **Controllers are thin.** A route lets Pydantic parse the input, calls one
-   service method and shapes the result: no SQL, no `try`/`except`, no
-   business rules. Routes are plain functions on an `APIRouter`.
-5. **Ports only where I/O happens.** A service declares a `Protocol` for a
-   database, the clock, a model, the network or a subprocess. Pure code calls
-   pure code directly. Adapters match a port by shape and never inherit.
+4. **Controllers are thin.** Routes are plain functions on an `APIRouter`.
+   Pydantic parses the input, the use case or read port supplies the result,
+   and the route shapes the response. Business rules and SQL live in their
+   own modules.
+5. **Ports only where I/O happens.** Pass I/O dependencies directly to use
+   cases. Pure code calls pure code directly. Adapters match protocols by
+   shape.
 6. **Repositories for writes, read stores for reads.** ClickHouse reads go
    through read stores that return domain values or projections, never rows.
    Postgres app state, starting with sources, gets repositories.
@@ -317,12 +319,12 @@ to `/` in [DEN-77](https://linear.app/dense-analysis/issue/DEN-77).
 
 ## Startup and shutdown
 
-Both servers run the same ClickHouse startup steps, in order, from
-`dank/web/startup.py`: `reddit.sql`, `categories.sql`, then YouTube, link and
-reference storage. The refresh manager starts after them. At shutdown uvicorn gives in-flight
-requests 10 seconds, then the lifespan waits for refresh workers (about 95
-seconds). That stays within the 110-second `stop_grace_period` in
-`compose.yaml`.
+FastAPI's lifespan runs the ClickHouse startup steps in order through
+`dank/web/startup.py`. It applies `reddit.sql` and `categories.sql`, then
+prepares YouTube, link and reference storage before starting the refresh
+manager. At shutdown uvicorn gives in-flight requests 10 seconds, then the
+lifespan waits for refresh workers (about 95 seconds). That stays within the
+110-second `stop_grace_period` in `compose.yaml`.
 
 ## Refresh jobs
 
@@ -432,5 +434,4 @@ training example's confidence and cosine similarity, not a new probability.
 
 Repeat `category` on `/api/reader/posts` (and X author listings) to match any
 selected exact, case-sensitive name. Category filtering combines with other
-filters using AND and is bound into pagination cursors. Category choices do
-not trigger training or processing. Both servers provide these routes.
+filters using AND and is bound into pagination cursors.

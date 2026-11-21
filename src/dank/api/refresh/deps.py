@@ -11,8 +11,7 @@ from dank.api.refresh.service import (
     RefreshService,
     RefreshTargets,
 )
-from dank.api.sources.deps import source_catalog
-from dank.api.sources.service import SourceCatalog
+from dank.api.sources.deps import LoadSourcesDep
 
 
 def refresh_targets(resources: ResourcesDep) -> RefreshTargets:
@@ -25,11 +24,11 @@ def refresh_queue(resources: ResourcesDep) -> RefreshQueue:
 
 def refresh_service(
     settings: SettingsDep,
-    catalog: Annotated[SourceCatalog, Depends(source_catalog)],
+    load_sources: LoadSourcesDep,
     targets: Annotated[RefreshTargets, Depends(refresh_targets)],
     queue: Annotated[RefreshQueue, Depends(refresh_queue)],
 ) -> RefreshService:
-    return RefreshService(settings, catalog, targets, queue)
+    return RefreshService(settings, load_sources, targets, queue)
 
 
 RefreshServiceDep = Annotated[RefreshService, Depends(refresh_service)]

@@ -507,7 +507,7 @@ its navigation callbacks keep article routing outside the graph renderer.
 Additional relationship views can supply their own adapters.
 
 `src/components` owns presentation; `src/lib` owns API contracts, validation,
-URL filters and persistence; `src/hooks` bridges browser state. The additive
+URL filters and persistence; `src/hooks` bridges browser state. The
 Python API is in `src/dank/api/`, over the reader helpers in `src/dank/web/`.
 
 The article adapter sanitizes imported HTML and creates hosts for React portals.

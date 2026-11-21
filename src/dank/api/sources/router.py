@@ -3,18 +3,21 @@
 from fastapi import APIRouter
 
 from dank.api.deps import SettingsDep
-from dank.api.sources.deps import SourceServiceDep
+from dank.api.sources.deps import CollectionStatsDep, LoadSourcesDep
 from dank.api.sources.schemas import CategoriesResponse, SourcesResponse
+from dank.api.sources.service import source_overview
 
 router = APIRouter(prefix="/api/reader", tags=["sources"])
 
 
 @router.get("/sources")
 async def list_sources(
-    service: SourceServiceDep, settings: SettingsDep,
+    load_sources: LoadSourcesDep,
+    stats: CollectionStatsDep,
+    settings: SettingsDep,
 ) -> SourcesResponse:
     """Configured and collected sources, with post counts."""
-    overview = await service.overview()
+    overview = await source_overview(load_sources, stats)
 
     return SourcesResponse.from_overview(
         overview, in_database=settings.sources_in_database,

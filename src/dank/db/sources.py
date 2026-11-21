@@ -126,8 +126,7 @@ def _raise_duplicate(error: IntegrityError) -> NoReturn:
 async def sources_in_use(settings: Settings) -> CompiledSources:
     """The sources a command works on: config.toml's, or the sources table's.
 
-    The web app reads the table through a SourceCatalog instead, on the
-    engine it already holds.
+    The web app reads the table using its existing engine.
     """
     if not settings.sources_in_database:
         # config.toml has no way to turn a source off.

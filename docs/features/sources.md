@@ -1,12 +1,9 @@
 # Sources in Postgres
 
-DANK is moving its sources from `config.toml` into Postgres, so they can be
-edited without a restart. This page covers the `sources` table, a one-time
-import, the `sources_in_database` switch that puts the table in use, the
-reader's screens for editing sources, and the API behind them.
-
-`sources` in `config.toml` is deprecated. Import it once, turn the switch on,
-and keep your sources in Postgres from then on.
+DANK supports sources in `config.toml` and in Postgres. The TOML list is the
+default and is loaded at startup. Set `sources_in_database = true` to use the
+Postgres table and apply source edits from the reader without restarting DANK.
+If you already have a TOML list, import it before switching.
 
 ## Import config.toml once
 

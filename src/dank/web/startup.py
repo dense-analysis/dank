@@ -1,4 +1,4 @@
-"""Database startup work that both web servers run before serving."""
+"""Database startup work for the FastAPI lifespan."""
 
 from __future__ import annotations
 

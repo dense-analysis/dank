@@ -6,7 +6,7 @@ import asyncio
 from typing import NamedTuple, Protocol
 
 from dank.api.posts.service import Clock
-from dank.api.sources.service import SourceCatalog
+from dank.api.sources.service import LoadSources
 from dank.api.youtube.model import (
     RECOMMENDATIONS_FEED,
     ChannelCursor,
@@ -114,9 +114,9 @@ class CollectionLimits(NamedTuple):
 
 class YouTubeService:
     def __init__(
-        self, catalog: SourceCatalog, store: YouTubeStore, clock: Clock,
+        self, load_sources: LoadSources, store: YouTubeStore, clock: Clock,
     ) -> None:
-        self._catalog = catalog
+        self._load_sources = load_sources
         self._store = store
         self._clock = clock
 
@@ -162,7 +162,9 @@ class YouTubeService:
         )
 
     async def overview(self) -> SourcesPayload:
-        return await self._store.overview(await self._catalog.sources())
+        sources = await self._load_sources()
+
+        return await self._store.overview(sources.known)
 
     async def playlists(self, page: PlaylistPage) -> PlaylistsPage:
         # A capture can finish before its rows are published. Freeze on a
@@ -219,9 +221,9 @@ class YouTubeService:
         return await self._configured_channels()
 
     async def _configured_channels(self) -> tuple[str, ...]:
-        return await self._store.configured_channels(
-            await self._catalog.sources(),
-        )
+        sources = await self._load_sources()
+
+        return await self._store.configured_channels(sources.known)
 
     async def _item_snapshot(self, filters: YouTubeFilters) -> str:
         if filters.feed != RECOMMENDATIONS_FEED:

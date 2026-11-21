@@ -1,7 +1,6 @@
 import { apiPost } from "./api";
 import type { components } from "./api.gen";
 
-export type YouTubeMetadataCapture = components["schemas"]["MetadataStateOut"];
 export type YouTubeMetadataResult = components["schemas"]["VideoMetadataOut"];
 
 export function collectYouTubeMetadata(

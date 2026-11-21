@@ -1,4 +1,4 @@
-"""Wires SourceService to its repository. Tests override it here."""
+"""Provides the repository for saved source settings."""
 
 from typing import Annotated
 
@@ -6,7 +6,7 @@ from fastapi import Depends
 
 from dank.api.deps import ResourcesDep
 from dank.db.sources import PostgresSourceRepository
-from dank.sources.service import SourceRepository, SourceService
+from dank.sources.service import SourceRepository
 
 
 def source_repository(resources: ResourcesDep) -> SourceRepository:
@@ -15,10 +15,4 @@ def source_repository(resources: ResourcesDep) -> SourceRepository:
     return PostgresSourceRepository(resources.postgres)
 
 
-def source_service(
-    repository: Annotated[SourceRepository, Depends(source_repository)],
-) -> SourceService:
-    return SourceService(repository)
-
-
-SourceServiceDep = Annotated[SourceService, Depends(source_service)]
+SourceRepositoryDep = Annotated[SourceRepository, Depends(source_repository)]

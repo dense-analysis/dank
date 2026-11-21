@@ -7,7 +7,7 @@ here changes two things in one transaction.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import NamedTuple, Protocol
 
 from dank.config import Settings
@@ -62,70 +62,68 @@ class ImportResult(NamedTuple):
     duplicates: int
 
 
-class SourceService:
-    def __init__(
-        self,
-        repository: SourceRepository,
-        new_id: Callable[[], uuid.UUID] = uuid.uuid4,
-    ) -> None:
-        self._repository = repository
-        self._new_id = new_id
+async def get_source(
+    source_id: uuid.UUID, repository: SourceRepository,
+) -> Source:
+    source = await repository.get(source_id)
 
-    async def sources(self) -> tuple[Source, ...]:
-        return await self._repository.list()
+    if source is None:
+        raise NotFound("No source has this ID.")
 
-    async def source(self, source_id: uuid.UUID) -> Source:
-        source = await self._repository.get(source_id)
+    return source
 
-        if source is None:
-            raise NotFound("No source has this ID.")
 
-        return source
+async def add_source(
+    new: NewSource, repository: SourceRepository,
+) -> Source:
+    source = normalized(new).with_id(uuid.uuid4())
+    await repository.add(source)
 
-    async def add(self, new: NewSource) -> Source:
-        source = normalized(new).with_id(self._new_id())
-        await self._repository.add(source)
+    return source
 
-        return source
 
-    async def update(self, source: Source) -> Source:
-        source = normalized(source)
-        await self._repository.update(source)
+async def update_source(
+    source: Source, repository: SourceRepository,
+) -> Source:
+    source = normalized(source)
+    await repository.update(source)
 
-        return source
+    return source
 
-    async def import_settings(self, settings: Settings) -> ImportResult:
-        """Save config.toml's sources, once per database."""
-        problems: list[FieldProblem] = []
-        # Keyed by everything but the ID: what the table calls a duplicate.
-        unique: dict[tuple[object, ...], Source] = {}
-        imported = sources_from_settings(settings, self._new_id)
 
-        for index, source in enumerate(imported):
-            try:
-                source = normalized(source)
-            except InvalidSource as error:
-                # config.toml may have skipped entries it couldn't read, so
-                # the domain says which source this is too.
-                problems.extend(
-                    problem._replace(
-                        path=f"sources.{index}.{problem.path}",
-                        message=f"{problem.message} ({source.domain})",
-                    )
-                    for problem in error.fields
+async def import_settings(
+    settings: Settings, repository: SourceRepository,
+) -> ImportResult:
+    """Save config.toml's sources, once per database."""
+    problems: list[FieldProblem] = []
+    # Keyed by everything but the ID: what the table calls a duplicate.
+    unique: dict[tuple[object, ...], Source] = {}
+    imported = sources_from_settings(settings, uuid.uuid4)
+
+    for index, source in enumerate(imported):
+        try:
+            source = normalized(source)
+        except InvalidSource as error:
+            # config.toml may have skipped entries it couldn't read, so
+            # the domain says which source this is too.
+            problems.extend(
+                problem._replace(
+                    path=f"sources.{index}.{problem.path}",
+                    message=f"{problem.message} ({source.domain})",
                 )
-
-                continue
-
-            unique.setdefault(tuple(source)[1:], source)
-
-        if problems:
-            raise InvalidSource(
-                problems,
-                "Some sources in config.toml can't be imported, so nothing "
-                "was.",
+                for problem in error.fields
             )
 
-        await self._repository.add_all(unique.values())
+            continue
 
-        return ImportResult(len(unique), len(imported) - len(unique))
+        unique.setdefault(tuple(source)[1:], source)
+
+    if problems:
+        raise InvalidSource(
+            problems,
+            "Some sources in config.toml can't be imported, so nothing was.",
+        )
+
+    await repository.add_all(unique.values())
+
+    return ImportResult(len(unique), len(imported) - len(unique))

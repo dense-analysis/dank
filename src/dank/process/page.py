@@ -7,7 +7,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any, NamedTuple, cast
 
-from dank.html_utils import VOID_TAGS, html_text, is_youtube_url
+from dank.html_utils import VOID_TAGS, html_text
 
 
 class PageMetadata(NamedTuple):
@@ -224,29 +224,6 @@ class _ContentExtractor(HTMLParser):
             capture.parts.append(html.escape(data, quote=False))
 
 
-class _YouTubeEmbedParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.iframes: list[str] = []
-
-    def handle_starttag(
-        self,
-        tag: str,
-        attrs: list[tuple[str, str | None]],
-    ) -> None:
-        if tag != "iframe":
-            return
-
-        attr_map = _attrs_to_map(attrs)
-        src = attr_map.get("src")
-
-        if not src or not is_youtube_url(src):
-            return
-
-        self.iframes.append(_render_start_tag(tag, attrs) + "</iframe>")
-
-
 def extract_page_metadata(page_html: str) -> PageMetadata:
     if not page_html:
         return PageMetadata(title="", author="", published_at=None)
@@ -378,23 +355,6 @@ def _extract_next_article_html(page_html: str) -> str:
                 continue
 
     return ""
-
-
-def extract_youtube_iframes(page_html: str) -> str:
-    if not page_html:
-        return ""
-
-    parser = _YouTubeEmbedParser()
-    parser.feed(page_html)
-
-    if not parser.iframes:
-        return ""
-
-    return "\n".join(parser.iframes)
-
-
-def strip_html(value: str) -> str:
-    return html_text(value)
 
 
 def _select_author(meta: dict[str, str], jsonld_author: str) -> str:

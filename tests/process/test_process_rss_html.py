@@ -1,7 +1,6 @@
 from dank.process.page import (
     extract_article_html,
     extract_page_metadata,
-    extract_youtube_iframes,
 )
 
 HTML_SINGLE_POST = """
@@ -86,12 +85,6 @@ def test_extract_page_metadata_author_from_jsonld() -> None:
     metadata = extract_page_metadata(HTML_ARTICLE)
 
     assert metadata.author == "Writer Name"
-
-
-def test_extract_youtube_iframes() -> None:
-    iframe_html = extract_youtube_iframes(HTML_ARTICLE)
-
-    assert "youtube.com/embed/abc123" in iframe_html
 
 
 def test_extract_page_metadata_author_from_twitter_label() -> None:

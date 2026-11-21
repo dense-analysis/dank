@@ -1,8 +1,7 @@
 # DANK reader development
 
-- Read README.md. This is DANK’s new reader, developed separately from the
-  legacy templates within this repository. Keep its branding, code and
-  development artifacts under DANK.
+- Read README.md. The reader lives in this directory and DANK serves it at
+  `/`. Keep its branding, code and development artifacts under DANK.
 - Use TypeScript strict mode, React components and plain CSS. Keep product state
   explicit; URL filters, query cache and local library each have one authority.
 - Keep the HTTP contract in src/lib and source identity as (domain, post id).

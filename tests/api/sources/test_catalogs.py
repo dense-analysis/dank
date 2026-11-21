@@ -2,8 +2,7 @@
 
 import uuid
 
-from dank.api.sources.config_catalog import ConfigSourceCatalog
-from dank.api.sources.saved_catalog import SavedSourceCatalog
+from dank.api.sources.deps import source_catalog
 from dank.config import Settings
 from dank.sources.model import Source, Target
 from tests.sources.fakes import FakeSourceRepository
@@ -21,44 +20,39 @@ def saved(
 async def test_config_sources_are_all_known_and_all_collected(
     settings: Settings,
 ) -> None:
-    catalog = ConfigSourceCatalog(settings)
+    sources = await source_catalog(settings, None)()
 
-    assert await catalog.sources() == settings.sources
-    assert await catalog.collectable() == settings.sources
+    assert sources.known == settings.sources
+    assert sources.collectable == settings.sources
 
 
-async def test_saved_sources_stay_known_when_disabled() -> None:
-    catalog = SavedSourceCatalog(FakeSourceRepository(
+async def test_only_enabled_saved_sources_and_targets_are_collected(
+    settings: Settings,
+) -> None:
+    repository = FakeSourceRepository(
         saved(1, "x.com", Target("alice"), Target("bob", enabled=False)),
         saved(2, "off.example", enabled=False),
-    ))
+    )
+    sources = await source_catalog(settings, repository)()
 
     assert [
-        (source.domain, source.accounts)
-        for source in await catalog.sources()
+        (source.domain, source.accounts) for source in sources.known
     ] == [("x.com", ("alice", "bob")), ("off.example", ())]
-
-
-async def test_only_enabled_saved_sources_and_targets_are_collected() -> None:
-    catalog = SavedSourceCatalog(FakeSourceRepository(
-        saved(1, "x.com", Target("alice"), Target("bob", enabled=False)),
-        saved(2, "off.example", enabled=False),
-    ))
-
     assert [
-        (source.domain, source.accounts)
-        for source in await catalog.collectable()
+        (source.domain, source.accounts) for source in sources.collectable
     ] == [("x.com", ("alice",))]
 
 
-async def test_saved_sources_are_read_again_each_time() -> None:
+async def test_saved_sources_are_read_again_each_time(
+    settings: Settings,
+) -> None:
     repository = FakeSourceRepository()
-    catalog = SavedSourceCatalog(repository)
+    load_sources = source_catalog(settings, repository)
 
-    assert await catalog.sources() == ()
+    empty = await load_sources()
+    assert empty.known == empty.collectable == ()
 
     await repository.add(saved(1, "new.example"))
 
-    assert [source.domain for source in await catalog.sources()] == [
-        "new.example",
-    ]
+    sources = await load_sources()
+    assert [source.domain for source in sources.known] == ["new.example"]

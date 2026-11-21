@@ -23,7 +23,7 @@ from dank.api.posts.model import (
     parse_author_cursor,
     require_author_feed,
 )
-from dank.api.sources.service import SourceCatalog
+from dank.api.sources.service import LoadSources
 from dank.config import SourceConfig
 from dank.errors import NotFound
 
@@ -72,12 +72,12 @@ class PostStore(Protocol):
 class PostService:
     def __init__(
         self,
-        catalog: SourceCatalog,
+        load_sources: LoadSources,
         store: PostStore,
         embeddings: SearchEmbeddings,
         clock: Clock,
     ) -> None:
-        self._catalog = catalog
+        self._load_sources = load_sources
         self._store = store
         self._embeddings = embeddings
         self._clock = clock
@@ -85,10 +85,10 @@ class PostService:
     async def page(self, filters: ReaderFilters) -> PostsPage:
         snapshot = feed_snapshot(filters, self._clock())
         sources, embedding = await asyncio.gather(
-            self._catalog.sources(), self._embedding(filters),
+            self._load_sources(), self._embedding(filters),
         )
         listed = await self._store.listing(
-            filters, sources, embedding, snapshot,
+            filters, sources.known, embedding, snapshot,
         )
         shown = listed[:filters.limit]
         has_more = len(listed) > filters.limit
@@ -122,10 +122,10 @@ class PostService:
         after = parse_author_cursor(filters, cursor) if cursor else None
         snapshot = after.snapshot if after else self._clock().isoformat()
         sources, embedding = await asyncio.gather(
-            self._catalog.sources(), self._embedding(filters),
+            self._load_sources(), self._embedding(filters),
         )
         listing = await self._store.authors(
-            filters, sources, embedding, snapshot, after,
+            filters, sources.known, embedding, snapshot, after,
         )
         last = listing.authors[-1] if listing.authors else None
 

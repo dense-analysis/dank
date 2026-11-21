@@ -3,10 +3,9 @@
 from typing import Protocol
 
 from dank.api.source_icons.model import icon_domain
-from dank.api.sources.service import SourceCatalog
+from dank.api.sources.service import LoadSources
 from dank.errors import NotFound
 
-# Today's wording, for a response the reader never shows.
 NO_ICON = "Not Found"
 
 
@@ -20,35 +19,27 @@ class CollectedDomains(Protocol):
     async def has_posts(self, domain: str) -> bool: ...
 
 
-class SourceIconService:
-    def __init__(
-        self,
-        catalog: SourceCatalog,
-        collected: CollectedDomains,
-        icons: IconCache,
-    ) -> None:
-        self._catalog = catalog
-        self._collected = collected
-        self._icons = icons
+async def source_icon(
+    requested: str,
+    load_sources: LoadSources,
+    collected: CollectedDomains,
+    icons: IconCache,
+) -> bytes:
+    domain = icon_domain(requested)
 
-    async def icon(self, requested: str) -> bytes:
-        domain = icon_domain(requested)
+    if domain is None:
+        raise NotFound(NO_ICON)
 
-        # Capturing fetches from the Internet, so only known sources may.
-        if domain is None or not await self._known(domain):
-            raise NotFound(NO_ICON)
+    # Capturing fetches from the Internet, so only known sources may.
+    sources = (await load_sources()).known
+    configured = any(source.domain == domain for source in sources)
 
-        icon = await self._icons.get(domain)
+    if not configured and not await collected.has_posts(domain):
+        raise NotFound(NO_ICON)
 
-        if icon is None:
-            raise NotFound(NO_ICON)
+    icon = await icons.get(domain)
 
-        return icon
+    if icon is None:
+        raise NotFound(NO_ICON)
 
-    async def _known(self, domain: str) -> bool:
-        sources = await self._catalog.sources()
-
-        return (
-            any(source.domain == domain for source in sources)
-            or await self._collected.has_posts(domain)
-        )
+    return icon

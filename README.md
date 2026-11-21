@@ -104,12 +104,12 @@ Edit the top-level `sources` setting in your private `config.toml`, for example:
 sources = ["blog.codinghorror.com"]
 ```
 
-`sources` is deprecated in favour of [sources in Postgres](docs/features/sources.md),
-which apply edits without a restart. Import them once with
-`make sources-import`, then set `sources_in_database = true` near the top of
-`config.toml`, before any `[section]`. The example configs already have the
-line set to `false`. From then on, DANK no longer uses `sources` in
-`config.toml`.
+DANK uses the `sources` list in `config.toml` by default. To manage sources in
+the reader, set `sources_in_database = true` before any `[section]` in
+`config.toml` and restart DANK. If you already have a TOML list, run
+`make sources-import` before switching. Later source edits in the reader take
+effect without a restart.
+[Sources in Postgres](docs/features/sources.md)
 
 **Native**
 

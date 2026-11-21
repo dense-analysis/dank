@@ -16,7 +16,7 @@ from dank.db import atlas, install_atlas
 from dank.db.engine import async_engine, async_sessions, create_database
 from dank.db.sources import PostgresSourceRepository
 from dank.errors import DankError
-from dank.sources.service import ImportResult, SourceService
+from dank.sources.service import ImportResult, import_settings
 
 
 def _settings(args: argparse.Namespace) -> PostgresSettings:
@@ -95,7 +95,7 @@ async def import_sources(settings: Settings) -> ImportResult:
     try:
         repository = PostgresSourceRepository(async_sessions(engine))
 
-        return await SourceService(repository).import_settings(settings)
+        return await import_settings(settings, repository)
     finally:
         await engine.dispose()
 

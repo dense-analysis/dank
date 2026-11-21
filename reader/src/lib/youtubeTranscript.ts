@@ -1,7 +1,6 @@
 import { apiGet, apiPost } from "./api";
 import type { components } from "./api.gen";
 
-export type TranscriptSegment = components["schemas"]["TranscriptSegmentOut"];
 export type YouTubeTranscript = components["schemas"]["VideoTranscriptOut"];
 
 const TRANSCRIPT = "/api/reader/youtube/transcript/{video_id}";

@@ -6,11 +6,7 @@ type Schemas = components["schemas"];
 
 export type YouTubeItem = Schemas["YouTubeItemOut"];
 export type YouTubeKind = YouTubeItem["kind"];
-export type YouTubeDiscovery = Schemas["DiscoveryOut"];
 export type YouTubeReference = Schemas["VideoReferenceOut"];
-export type YouTubeTitleVersion = Schemas["TitleVersionOut"];
-export type YouTubeTitlePair = Schemas["ThumbnailTitleOut"];
-export type YouTubeThumbnailVariant = Schemas["ThumbnailVariantOut"];
 export type YouTubeFeed = Schemas["YouTubeFeedOut"];
 export type YouTubeSources = Schemas["YouTubeSourcesResponse"];
 export type YouTubePage = Schemas["YouTubeResponse"];

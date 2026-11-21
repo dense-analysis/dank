@@ -7,8 +7,7 @@ from fastapi import Depends
 from dank.api.deps import ResourcesDep
 from dank.api.posts.deps import clock
 from dank.api.posts.service import Clock
-from dank.api.sources.deps import source_catalog
-from dank.api.sources.service import SourceCatalog
+from dank.api.sources.deps import LoadSourcesDep
 from dank.api.youtube.clickhouse import ClickHouseYouTubeStore
 from dank.api.youtube.collector import COLLECTION_LIMITS, ScrapeVideoCollector
 from dank.api.youtube.service import (
@@ -47,11 +46,11 @@ def collection_limits() -> CollectionLimits:
 
 
 def youtube_service(
-    catalog: Annotated[SourceCatalog, Depends(source_catalog)],
+    load_sources: LoadSourcesDep,
     store: Annotated[YouTubeStore, Depends(youtube_store)],
     now: Annotated[Clock, Depends(clock)],
 ) -> YouTubeService:
-    return YouTubeService(catalog, store, now)
+    return YouTubeService(load_sources, store, now)
 
 
 def video_capture_service(

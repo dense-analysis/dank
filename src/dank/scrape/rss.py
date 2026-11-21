@@ -701,20 +701,6 @@ def _build_raw_post(
     return raw_post, assets
 
 
-def dedupe_discoveries(
-    discoveries: list[PageDiscovery],
-    seen_urls: set[str],
-) -> list[PageDiscovery]:
-    unique: dict[str, PageDiscovery] = {}
-
-    for discovery in discoveries:
-        if discovery.url and discovery.url not in seen_urls:
-            seen_urls.add(discovery.url)
-            unique.setdefault(discovery.url, discovery)
-
-    return list(unique.values())
-
-
 def _compose_payload(
     feed_xml: str, page_html: str, *,
     page_final_url: str | None, feed_final_url: str,

@@ -6,9 +6,6 @@ import { parseFilters } from "./navigation";
 type Schemas = components["schemas"];
 
 export type RefreshScope = Schemas["RefreshRequest"]["scope"];
-export type RefreshPlatform = NonNullable<
-  Schemas["AllScope"]["platforms"]
->[number];
 export type RefreshJob = Schemas["RefreshJobOut"];
 
 type KeysOf<U> = U extends unknown ? keyof U : never;
