@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from dank.config import load_settings
 from dank.model import RawPost
 from dank.scrape.types import ScrapeBatch
 from dank.scrape.youtube import (
@@ -20,6 +19,7 @@ from dank.scrape.youtube import (
 )
 from dank.scrape.youtube.ytdlp_home import YtDlpHomeEntry, YtDlpHomeResult
 from dank.scrape.zendriver import BrowserConfig
+from tests.settings import native_settings
 
 VIDEO_A = "video:abcdefghijk"
 VIDEO_B = "video:lmnopqrstuv"
@@ -118,7 +118,7 @@ def raw_post() -> RawPost:
 
 
 def setup_browser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    settings = load_settings("config.native.example.toml")._replace(
+    settings = native_settings()._replace(
         data_dir=tmp_path,
     )
     cookie_values = [
@@ -370,7 +370,7 @@ async def test_invalid_budget_never_opens_profile(
 
     with pytest.raises(ValueError, match="at most 240"):
         await comparison.compare_home(
-            load_settings("config.native.example.toml"),
+            native_settings(),
             budget,
         )
 

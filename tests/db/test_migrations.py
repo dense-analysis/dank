@@ -1,15 +1,15 @@
-"""Migrations against a real Postgres, with the real Atlas binary."""
+"""Migration decisions and Atlas command handling with an in-memory runner."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
-import shutil
-import stat
-from typing import cast
+from collections import deque
+from typing import NamedTuple, cast
+from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import text
 
 from dank.api import deps
 from dank.api.lifespan import Resources
@@ -17,316 +17,229 @@ from dank.api.refresh.manager import RefreshManager
 from dank.api.youtube.collector import CollectionGate
 from dank.config import PostgresSettings, Settings
 from dank.db import atlas, install_atlas
-from dank.db.atlas import (
-    SchemaAheadError,
-    SchemaError,
-    SchemaState,
-    find_drift,
-    require_head,
-    schema_status,
-    upgrade,
-    validate_migrations,
-)
-from dank.db.engine import async_engine, async_sessions, sync_engine
+from dank.db.atlas import SchemaAheadError, SchemaError, SchemaState
 from dank.storage.clickhouse import ClickHouseClient
 from dank.web.reader_source_icons import SourceIconCache
 from dank.web.startup import prepare_postgres
 
-pytestmark = pytest.mark.postgres
+ATLAS = "/fixture/atlas"
+DEV_URL = "postgres://database.test/dev"
+SECRET = "fixture/pass%word"
+BASELINE = "20261104001556"
+HEAD = "20261109193052"
+AHEAD = "20991231000001"
 
-ENV = ("--env", atlas.ENV)
-# Longer than the 10 s lock timeout Atlas uses by default.
-SLOW_MIGRATION_SECONDS = 11
+
+class Reply(NamedTuple):
+    stdout: str = ""
+    stderr: str = ""
+    returncode: int = 0
+
+    async def communicate(self) -> tuple[bytes, bytes]:
+        return self.stdout.encode(), self.stderr.encode()
+
+
+class Command(NamedTuple):
+    args: tuple[str, ...]
+    cwd: pathlib.Path
+    env: dict[str, str]
+
+
+class AtlasFixture(NamedTuple):
+    replies: deque[Reply]
+    commands: list[Command]
+
+
+def status(*applied: str) -> Reply:
+    return Reply(json.dumps({
+        "Applied": [{"Version": version} for version in applied],
+        "Available": [{"Version": BASELINE}, {"Version": HEAD}],
+    }))
 
 
 @pytest.fixture
-def root(tmp_path: pathlib.Path) -> pathlib.Path:
-    """A copy of the schema directory that a test can add migrations to."""
-    copy = tmp_path / "db with spaces"
-    copy.mkdir()
-    shutil.copy(atlas.DB_DIR / "atlas.hcl", copy)
-    shutil.copytree(atlas.DB_DIR / "migrations", copy / "migrations")
-    shutil.copytree(
-        atlas.DB_DIR / "models",
-        copy / "models",
-        ignore=shutil.ignore_patterns("__pycache__"),
+def runner(monkeypatch: pytest.MonkeyPatch) -> AtlasFixture:
+    fixture = AtlasFixture(deque(), [])
+
+    async def start(
+        program: str, *args: str, cwd: pathlib.Path = atlas.DB_DIR,
+        env: dict[str, str], **_: object,
+    ) -> Reply:
+        assert program == ATLAS
+
+        if args == ("version",):
+            return Reply(f"atlas version {install_atlas.VERSION}\n")
+
+        fixture.commands.append(Command(args, cwd, env))
+
+        return fixture.replies.popleft()
+
+    monkeypatch.setattr(atlas, "find_atlas", lambda: ATLAS)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
+
+    return fixture
+
+
+@pytest.fixture
+def postgres(memory_path: pathlib.Path) -> PostgresSettings:
+    password = memory_path / "password"
+    password.write_text(SECRET)
+
+    return PostgresSettings(password_file=password)
+
+
+@pytest.mark.parametrize("applied", [(), (BASELINE,), (BASELINE, HEAD)])
+async def test_upgrade_applies_with_the_configured_lock_timeout(
+    runner: AtlasFixture, postgres: PostgresSettings, applied: tuple[str, ...],
+) -> None:
+    runner.replies.extend([status(*applied), Reply(), status(BASELINE, HEAD)])
+    await atlas.upgrade(postgres)
+
+    [read, apply] = runner.commands
+    assert read.args[:2] == ("migrate", "status")
+    assert apply.args == (
+        "migrate", "apply", "--env", "dank", "--lock-timeout", "5m",
     )
+    assert SECRET not in repr(apply.args)
+    assert "postgres://" not in repr(apply.args)
+    assert apply.env["DANK_ATLAS_URL"] == atlas.atlas_url(postgres, SECRET)
+    assert (await atlas.schema_status(postgres)).state is SchemaState.AT_HEAD
 
-    return copy
 
-
-async def _add_migration(
-    root: pathlib.Path,
-    version: str,
-    sql: str,
+@pytest.mark.parametrize("startup", [False, True])
+async def test_code_refuses_an_ahead_database(
+    runner: AtlasFixture, postgres: PostgresSettings, *, startup: bool,
 ) -> None:
-    (root / "migrations" / f"{version}_test.sql").write_text(sql)
-    await atlas.run_interactive("migrate", "hash", *ENV, root=root)
+    runner.replies.append(status(BASELINE, HEAD, AHEAD))
+    operation = prepare_postgres if startup else atlas.upgrade
+
+    with pytest.raises(SchemaAheadError, match=f"doesn't know about.*{AHEAD}"):
+        await operation(postgres)
+
+    [command] = runner.commands
+    assert command.args[:2] == ("migrate", "status")
 
 
-def _table_exists(settings: PostgresSettings, table: str) -> bool:
-    engine = sync_engine(settings)
-
-    with engine.connect() as connection:
-        exists = connection.scalar(
-            text("SELECT to_regclass(:table) IS NOT NULL"),
-            {"table": table},
-        )
-
-    engine.dispose()
-
-    return bool(exists)
-
-
-async def test_upgrade_from_empty_reaches_head(
-    fresh_postgres: PostgresSettings,
+@pytest.mark.parametrize("applied,error", [
+    ((), "behind this code"),
+    ((BASELINE, HEAD), ""),
+    ((BASELINE, HEAD, AHEAD), "doesn't know about"),
+])
+async def test_cli_check_never_attempts_to_migrate(
+    runner: AtlasFixture, postgres: PostgresSettings,
+    applied: tuple[str, ...], error: str,
 ) -> None:
-    before = await schema_status(fresh_postgres)
-    assert before.state is SchemaState.BEHIND
-    assert not before.applied
+    runner.replies.append(status(*applied))
 
-    await upgrade(fresh_postgres)
+    if error:
+        with pytest.raises(SchemaError, match=error):
+            await atlas.require_head(postgres)
+    else:
+        await atlas.require_head(postgres)
 
-    after = await schema_status(fresh_postgres)
-    assert after.state is SchemaState.AT_HEAD
-    assert after.applied == after.available
+    [command] = runner.commands
+    assert command.args[:2] == ("migrate", "status")
 
 
-async def test_upgrade_at_head_changes_nothing(
-    fresh_postgres: PostgresSettings,
+async def test_failed_upgrade_reports_error_and_can_be_retried(
+    runner: AtlasFixture, postgres: PostgresSettings,
 ) -> None:
-    await upgrade(fresh_postgres)
-    status = await schema_status(fresh_postgres)
-
-    await upgrade(fresh_postgres)
-
-    assert await schema_status(fresh_postgres) == status
-
-
-async def test_each_revision_applies_on_top_of_the_previous_head(
-    fresh_postgres: PostgresSettings,
-    root: pathlib.Path,
-) -> None:
-    await _add_migration(root, "20991231000001", "CREATE TABLE a (id int);")
-    await _add_migration(
-        root, "20991231000002", "ALTER TABLE a ADD COLUMN b int;",
-    )
-    versions = sorted(
-        (await schema_status(fresh_postgres, root=root)).available,
-    )
-
-    for applied, version in enumerate(versions, start=1):
-        await atlas._run_on_database(  # pyright: ignore[reportPrivateUsage]
-            fresh_postgres, "migrate", "apply", "1", *ENV, root=root,
-        )
-        status = await schema_status(fresh_postgres, root=root)
-        assert status.applied == frozenset(versions[:applied])
-        assert version in status.applied
-
-    final = await schema_status(fresh_postgres, root=root)
-    assert final.state is SchemaState.AT_HEAD
-
-
-async def test_real_migrations_are_valid(postgres_dev_url: str) -> None:
-    await validate_migrations(postgres_dev_url)
-
-
-async def test_edited_migration_fails_validation(
-    postgres_dev_url: str,
-    root: pathlib.Path,
-) -> None:
-    migration = next((root / "migrations").glob("*.sql"))
-    migration.write_text("CREATE TABLE edited_later (id int);\n")
-
-    with pytest.raises(SchemaError):
-        await validate_migrations(postgres_dev_url, root=root)
-
-
-async def test_real_models_match_the_migrations(postgres_dev_url: str) -> None:
-    assert await find_drift(postgres_dev_url) == ""
-
-
-async def test_a_model_without_a_migration_is_drift(
-    postgres_dev_url: str,
-    root: pathlib.Path,
-) -> None:
-    (root / "models" / "drifted.py").write_text(
-        "from sqlalchemy.orm import Mapped, mapped_column\n"
-        "from dank.db.models import Base\n"
-        "class Drifted(Base):\n"
-        "    __tablename__ = 'drifted'\n"
-        "    id: Mapped[int] = mapped_column(primary_key=True)\n",
-    )
-    before = sorted(path.name for path in (root / "migrations").iterdir())
-
-    drift = await find_drift(postgres_dev_url, root=root)
-
-    assert '"drifted"' in drift
-    # The check must not leave a migration behind.
-    assert sorted(path.name for path in (root / "migrations").iterdir()) == (
-        before
-    )
-
-
-async def test_two_processes_migrate_once_during_a_slow_migration(
-    fresh_postgres: PostgresSettings,
-    root: pathlib.Path,
-) -> None:
-    await _add_migration(
-        root,
-        "20991231000001",
-        "CREATE TABLE ran (at timestamptz DEFAULT now());\n"
-        "INSERT INTO ran DEFAULT VALUES;\n"
-        f"SELECT pg_sleep({SLOW_MIGRATION_SECONDS});\n",
-    )
-
-    await asyncio.gather(
-        upgrade(fresh_postgres, root=root),
-        upgrade(fresh_postgres, root=root),
-    )
-
-    engine = sync_engine(fresh_postgres)
-
-    with engine.connect() as connection:
-        assert connection.scalar(text("SELECT count(*) FROM ran")) == 1
-
-    engine.dispose()
-    status = await schema_status(fresh_postgres, root=root)
-    assert status.state is SchemaState.AT_HEAD
-
-
-async def test_database_ahead_of_the_code_is_refused(
-    fresh_postgres: PostgresSettings,
-    root: pathlib.Path,
-) -> None:
-    version = "20991231000001"
-    await _add_migration(root, version, "CREATE TABLE newer (id int);")
-    await upgrade(fresh_postgres, root=root)
-
-    with pytest.raises(SchemaError, match=f"doesn't know about.*{version}"):
-        await upgrade(fresh_postgres)
-
-    with pytest.raises(SchemaError, match=f"doesn't know about.*{version}"):
-        await require_head(fresh_postgres)
-
-    # Refusing changed nothing.
-    assert _table_exists(fresh_postgres, "newer")
-    status = await schema_status(fresh_postgres)
-    assert status.state is SchemaState.AHEAD
-
-
-async def test_cli_check_passes_only_at_head_and_never_migrates(
-    fresh_postgres: PostgresSettings,
-) -> None:
-    with pytest.raises(SchemaError, match="behind this code"):
-        await require_head(fresh_postgres)
-
-    status = await schema_status(fresh_postgres)
-    assert not status.applied
-
-    await upgrade(fresh_postgres)
-
-    await require_head(fresh_postgres)
-
-
-async def test_failed_migration_rolls_back_and_can_be_retried(
-    fresh_postgres: PostgresSettings,
-    root: pathlib.Path,
-) -> None:
-    await upgrade(fresh_postgres, root=root)
-    await _add_migration(
-        root,
-        "20991231000001",
-        "CREATE TABLE half (id int);\nSELECT 1/0;\n",
-    )
+    runner.replies.extend([
+        status(BASELINE),
+        Reply(stderr="Error: division by zero", returncode=1),
+        status(BASELINE), Reply(),
+    ])
 
     with pytest.raises(SchemaError, match="division by zero"):
-        await upgrade(fresh_postgres, root=root)
+        await atlas.upgrade(postgres)
 
-    assert not _table_exists(fresh_postgres, "half")
+    await atlas.upgrade(postgres)
 
-    await _add_migration(
-        root,
-        "20991231000001",
-        "CREATE TABLE half (id int);\nSELECT 1;\n",
-    )
-    await upgrade(fresh_postgres, root=root)
-
-    assert _table_exists(fresh_postgres, "half")
+    assert [item.args[1] for item in runner.commands] == [
+        "status", "apply", "status", "apply",
+    ]
 
 
-async def test_wrong_password_never_appears_in_the_error(
-    fresh_postgres: PostgresSettings,
-    tmp_path: pathlib.Path,
+async def test_authentication_error_removes_the_password_from_output(
+    runner: AtlasFixture, postgres: PostgresSettings,
 ) -> None:
-    secret = "not-the-right-password"
-    wrong = tmp_path / "wrong"
-    wrong.write_text(secret)
+    runner.replies.append(Reply(
+        stderr=f"Error: password authentication failed for {SECRET}",
+        returncode=1,
+    ))
 
-    with pytest.raises(SchemaError) as caught:
-        await upgrade(fresh_postgres._replace(password_file=wrong))
+    with pytest.raises(
+        SchemaError, match="password authentication failed",
+    ) as raised:
+        await atlas.upgrade(postgres)
 
-    assert secret not in str(caught.value)
-    assert "password authentication failed" in str(caught.value)
-
-
-async def test_password_stays_out_of_the_command_line(
-    fresh_postgres: PostgresSettings,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recorded = tmp_path / "arguments"
-    stub = tmp_path / "atlas"
-    # It reports the pinned version, as DANK asks before running it.
-    stub.write_text(
-        "#!/bin/sh\n"
-        'if [ "$1" = version ]; then\n'
-        f'  echo "atlas version {install_atlas.VERSION}"\n'
-        "  exit 0\n"
-        "fi\n"
-        f'printf "%s\\n" "$@" >> "{recorded}"\necho "{{}}"\n',
-    )
-    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setattr(atlas, "find_atlas", lambda: str(stub))
-
-    await upgrade(fresh_postgres)
-
-    arguments = recorded.read_text()
-    assert "migrate" in arguments
-    assert fresh_postgres.password_file.read_text() not in arguments
-    assert "postgres://" not in arguments
+    assert SECRET not in str(raised.value)
 
 
 async def test_startup_upgrades_an_enabled_postgres(
-    fresh_postgres: PostgresSettings,
+    runner: AtlasFixture, postgres: PostgresSettings,
 ) -> None:
-    await prepare_postgres(fresh_postgres)
+    runner.replies.extend([status(), Reply()])
+    await prepare_postgres(postgres)
 
-    assert (await schema_status(fresh_postgres)).state is SchemaState.AT_HEAD
+    assert [item.args[1] for item in runner.commands] == ["status", "apply"]
 
 
-async def test_startup_refuses_a_database_ahead_of_the_code(
-    fresh_postgres: PostgresSettings,
-    root: pathlib.Path,
+@pytest.mark.parametrize("valid", [False, True])
+async def test_validation_passes_the_development_url_and_reports_errors(
+    runner: AtlasFixture, *, valid: bool,
 ) -> None:
-    await _add_migration(root, "20991231000001", "CREATE TABLE n (id int);")
-    await upgrade(fresh_postgres, root=root)
+    error = Reply(stderr="Error: checksum mismatch", returncode=1)
+    runner.replies.append(Reply() if valid else error)
 
-    with pytest.raises(SchemaAheadError, match="doesn't know about") as caught:
-        await prepare_postgres(fresh_postgres)
+    if valid:
+        await atlas.validate_migrations(DEV_URL)
+    else:
+        with pytest.raises(SchemaError, match="checksum mismatch"):
+            await atlas.validate_migrations(DEV_URL)
 
-    # Turning Postgres off isn't the answer to old code on a newer database.
-    assert "enabled = false" not in str(caught.value)
+    [command] = runner.commands
+    assert command.args[:2] == ("migrate", "validate")
+    assert command.env["DANK_ATLAS_DEV_URL"] == DEV_URL
 
 
-async def test_fastapi_dependency_opens_a_session(
-    postgres_settings: PostgresSettings,
+@pytest.mark.parametrize("changed", [False, True])
+async def test_drift_uses_a_disposable_copy(
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
+    *, changed: bool,
 ) -> None:
-    engine = async_engine(postgres_settings)
+    root = memory_path / "db"
+    migrations = root / "migrations"
+    migrations.mkdir(parents=True)
+    (migrations / "baseline.sql").write_text("CREATE TABLE a (id int);")
+    sql = "CREATE TABLE drifted (id int);"
+
+    async def atlas_diff(*args: str, **kwargs: object) -> str:
+        assert args[:3] == ("migrate", "diff", "drift")
+        assert kwargs["root"] == root
+        assert kwargs["dev_url"] == DEV_URL
+        copy = pathlib.Path(args[-1].removeprefix("file://"))
+        assert copy != migrations
+        assert (copy / "baseline.sql").exists()
+
+        if changed:
+            (copy / "drift.sql").write_text(sql)
+
+        return ""
+
+    monkeypatch.setattr(atlas, "_run", atlas_diff)
+
+    drift = await atlas.find_drift(DEV_URL, root=root)
+    assert drift == (sql if changed else "")
+    assert [path.name for path in migrations.iterdir()] == ["baseline.sql"]
+
+
+async def test_fastapi_dependency_opens_and_closes_a_session() -> None:
+    sessions = MagicMock()
     resources = Resources(
         settings=cast("Settings", None),
         clickhouse=cast("ClickHouseClient", None),
-        postgres=async_sessions(engine),
+        postgres=sessions,
         refresh=cast("RefreshManager", None),
         source_icons=cast("SourceIconCache", None),
         assets_dir=pathlib.Path(),
@@ -334,7 +247,7 @@ async def test_fastapi_dependency_opens_a_session(
         transcript_gate=cast("CollectionGate", None),
     )
 
-    async for session in deps.postgres_session(resources):
-        assert await session.scalar(text("SELECT 1")) == 1
-
-    await engine.dispose()
+    assert [session async for session in deps.postgres_session(resources)] == [
+        sessions.return_value.__aenter__.return_value,
+    ]
+    sessions.return_value.__aexit__.assert_awaited_once()

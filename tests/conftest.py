@@ -1,319 +1,374 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
+import fcntl
+import os
 import pathlib
-import socket
+import sqlite3
 import subprocess
-import uuid
-from collections.abc import AsyncIterator, Container, Iterator
-from typing import Any, Never, Self
-from urllib.parse import urlsplit
+import sys
+import threading
+import urllib.request
+from collections.abc import Callable, Generator, Iterator
+from contextlib import contextmanager, nullcontext
+from typing import Any, Never, TextIO
 
+import clickhouse_connect
+import psycopg
 import pytest
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
-from sqlalchemy.orm import Session
+from psycopg import generators
+from pyfakefs import pytest_plugin as fakefs
+from pyfakefs.fake_file import FakeDirectory, FakeFile
+from pyfakefs.fake_filesystem import FakeFilesystem
+from pyfakefs.fake_filesystem_unittest import Patcher, Pause
 
-from dank.config import PostgresSettings
-from dank.db.atlas import atlas_url, find_atlas, upgrade
-from dank.db.engine import async_engine, sync_engine
-from tests.postgres import (
-    create_database,
-    drop_database,
-    server_settings,
-)
+# Keep pyfakefs's fixtures while replacing its reporting hooks.
+fs = fakefs.fs
+fs_class = fakefs.fs_class
+fs_module = fakefs.fs_module
+fs_session = fakefs.fs_session
 
-
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--clickhouse-url",
-        default="",
-        help=(
-            "Run tests marked clickhouse against this loopback server, "
-            "e.g. http://default:@127.0.0.1:18123"
-        ),
+_LIVE_IO_MARKERS = ('clickhouse', 'shell_io', 'embeddings')
+_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_CHECKOUT_PARENTS = _ROOT.parts[1:-1]
+_TEST_DIRECTORY = str(_ROOT / 'tests') + os.sep
+# Pytest reads these public inputs once, alongside the test modules.
+_CHECKOUT_INPUTS = {
+    path.relative_to(_ROOT): path.read_bytes()
+    for path in (
+        *(_ROOT / name for name in (
+            '.gitignore', 'Makefile', 'README.md', 'pyproject.toml',
+            'schema.sql', 'compose.yaml',
+            'reader/openapi.json', 'src/dank/container_entrypoint.sh',
+            'src/dank/db/migrations/atlas.sum',
+        )),
+        *(_ROOT / 'src/dank/db/migrations').glob('*.sql'),
+        _ROOT / 'config.example.toml',
+        _ROOT / 'config.native.example.toml',
+        *(_ROOT / 'src/dank/storage').glob('*.sql'),
+        _ROOT / 'src/dank/scrape/history.sql',
+        *(_ROOT / 'tests/fixtures').glob('*.html'),
+        *(_ROOT / 'tests/fixtures').glob('*.json'),
     )
-    parser.addoption(
-        "--postgres-url",
-        default="",
-        help=(
-            "Run tests marked postgres against this loopback server, "
-            "e.g. postgresql://postgres:test@127.0.0.1:15433/postgres"
-        ),
-    )
+}
+
+_CHECKOUT_DIRS = sorted({
+    parent for path in _CHECKOUT_INPUTS for parent in path.parents
+    if parent.parts
+}, key=lambda path: len(path.parts))
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item],
+) -> None:
+    # Retain the live cases while their assertions are converted to unit tests.
+    deferred = [
+        item for item in items
+        if any(item.get_closest_marker(marker) for marker in _LIVE_IO_MARKERS)
+    ]
+
+    if deferred:
+        config.hook.pytest_deselected(items=deferred)
+        excluded = set(deferred)
+        items[:] = [item for item in items if item not in excluded]
+
+        # The compact forkserver summary counts only the items it received.
+        reporter: Any = config.pluginmanager.get_plugin('terminalreporter')
+
+        if reporter is not None and not hasattr(config, 'workerinput'):
+            reporter.write_line(
+                f'{len(deferred)} cases deselected '
+                '(live ClickHouse, shell or embedding model)',
+            )
+            reporter.flush()
 
 
 def pytest_report_teststatus(report: Any, config: Any) -> Any:
-    if report.passed and report.when == "call":
-        return report.outcome, "", report.outcome.upper()
+    if report.passed and report.when == 'call':
+        return report.outcome, '', report.outcome.upper()
 
 
-class GuardedSocket:
-    __slots__ = ('_allowed', '_s')
-    _s: socket.socket
-    _allowed: frozenset[tuple[str, int]]
+@pytest.hookimpl(trylast=True)
+def pytest_collection_finish(session: pytest.Session) -> None:
+    # Cache pytest's paths while all of its Path objects are still real.
+    for item in session.items:
+        _ = item.location
 
-    def __init__(
-        self,
-        s: socket.socket,
-        allowed: frozenset[tuple[str, int]] = frozenset(),
+
+def _report_filesystem(*, failed: bool) -> Pause | nullcontext[None]:
+    patcher = Patcher.PATCHER
+
+    if failed and patcher is not None and patcher.is_patching:
+        return Pause(patcher)
+
+    return nullcontext()
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_makereport(
+    call: pytest.CallInfo[None],
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    # pyfakefs normally restores and reapplies the mocks around every report.
+    # Tracebacks need the checkout. Passing reports already have their paths.
+    with _report_filesystem(failed=call.excinfo is not None):
+        return (yield)
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_logreport(report: pytest.TestReport) -> Iterator[None]:
+    with _report_filesystem(failed=not report.passed):
+        yield
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionfinish() -> None:
+    Patcher.clear_fs_cache()
+
+
+class CheckoutDirectory(FakeDirectory):
+    """Mount the collected checkout inputs only when a test looks them up."""
+
+    def __init__(self, name: str, filesystem: FakeFilesystem) -> None:
+        super().__init__(name, filesystem=filesystem)
+        self._populated = False
+        self._mount_lock = threading.RLock()
+
+    def _populate(self) -> None:
+        # add_entry also consults entries. Keep other threads out while the
+        # mounting thread fills the directory.
+        with self._mount_lock:
+            if self._populated:
+                return
+
+            self._populated = True
+            filesystem = self.filesystem
+            directories: dict[pathlib.PurePath, FakeDirectory] = {
+                pathlib.PurePath('.'): self,
+            }
+
+            for path in _CHECKOUT_DIRS:
+                child = FakeDirectory(path.name, filesystem=filesystem)
+                directories[path.parent].add_entry(child)
+                directories[path] = child
+
+            for path, contents in _CHECKOUT_INPUTS.items():
+                directories[path.parent].add_entry(FakeFile(
+                    os.fsencode(path.name), contents=contents,
+                    filesystem=filesystem,
+                ))
+
+    @property
+    def entries(self) -> dict[str, FakeFile]:
+        self._populate()
+
+        return super().entries
+
+    @property
+    def ordered_dirs(self) -> list[str]:
+        self._populate()
+
+        return super().ordered_dirs
+
+
+@pytest.fixture(autouse=True)
+def in_memory_files(fs_session: FakeFilesystem) -> None:
+    fs_session.reset(init_pathlib=False)
+    parent = fs_session.root_dir
+
+    if (
+        fs_session.is_case_sensitive and _CHECKOUT_PARENTS
+        and _CHECKOUT_PARENTS[0] not in parent.entries
     ):
-        object.__setattr__(self, '_s', s)
-        object.__setattr__(self, '_allowed', allowed)
+        # The entire path is new. Insert it one component at a time.
+        perm_bits = 0o777 & ~fs_session.umask
 
-    def connect(self, address: socket._Address) -> None:  # type: ignore
-        # AF_UNIX connects use a path string.
-        if self._permits(address):
-            return self._s.connect(address)
+        for name in _CHECKOUT_PARENTS:
+            child = FakeDirectory(
+                name, perm_bits=perm_bits, filesystem=fs_session,
+            )
+            parent.add_entry(child)
+            parent = child
+    else:
+        parent_path = pathlib.Path(_ROOT.parent)
+        parent_path.mkdir(parents=True, exist_ok=True)
+        parent = fs_session.resolve(str(parent_path))
 
-        raise RuntimeError('Network is disabled in tests')
+        assert isinstance(parent, FakeDirectory)
 
-    def connect_ex(self, address: socket._Address) -> int:  # type: ignore
-        # AF_UNIX connects use a path string.
-        if self._permits(address):
-            return self._s.connect_ex(address)
-
-        raise RuntimeError('Network is disabled in tests')
-
-    def _permits(self, address: Any) -> bool:
-        return isinstance(address, str) or tuple(address[:2]) in self._allowed
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._s, name)
-
-    def __enter__(self) -> Self:
-        self._s.__enter__()
-        return self
-
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any):
-        return self._s.__exit__(exc_type, exc, tb)
+    parent.add_entry(CheckoutDirectory(_ROOT.name, filesystem=fs_session))
+    fs_session.cwd = str(_ROOT)
 
 
-def loopback_addresses(
-    url: str,
-    *,
-    option: str = '--clickhouse-url',
-    default_port: int = 8123,
-) -> frozenset[tuple[str, int]]:
-    """The addresses a test server URL may connect to; loopback only."""
-    if not url:
-        return frozenset()
+@pytest.fixture
+def memory_path() -> pathlib.Path:
+    path = pathlib.Path('/fixture')
+    path.mkdir()
 
-    parts = urlsplit(url)
-    port = parts.port or default_port
-    addresses = frozenset(
-        (str(info[4][0]), port)
-        for info in socket.getaddrinfo(parts.hostname, port)
+    return path
+
+
+@pytest.fixture
+def tmp_path(
+    memory_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> pathlib.Path:
+    # pyfakefs treats flock as a no-op. Collection and browser profile locks
+    # belong to an open handle and are released when that handle is closed.
+    locks: dict[str, list[tuple[TextIO, int]]] = {}
+
+    def flock(handle: TextIO, operation: int) -> None:
+        mode = operation & ~fcntl.LOCK_NB
+        others = [
+            (owner, lock) for owner, lock in locks.get(handle.name, [])
+            if owner is not handle and not owner.closed
+        ]
+
+        if mode != fcntl.LOCK_UN:
+            if any(fcntl.LOCK_EX in (mode, lock) for _, lock in others):
+                raise BlockingIOError(handle.name)
+
+            others.append((handle, mode))
+
+        locks[handle.name] = others
+
+    monkeypatch.setattr(fcntl, 'flock', flock)
+
+    return memory_path
+
+
+def _network_disabled(*args: Any, **kwargs: Any) -> Never:
+    raise RuntimeError('Network is disabled in tests')
+
+
+def _database_disabled(*args: Any, **kwargs: Any) -> Never:
+    raise RuntimeError('Database connections are disabled in tests')
+
+
+def _subprocess_disabled(*args: Any, **kwargs: Any) -> Never:
+    raise RuntimeError('Subprocesses are disabled in tests')
+
+
+_SOCKET_EVENTS = frozenset({
+    'socket.__new__', 'socket.bind', 'socket.connect', 'socket.getaddrinfo',
+    'socket.gethostbyaddr', 'socket.gethostbyname', 'socket.getnameinfo',
+    'socket.sendmsg', 'socket.sendto',
+})
+_SOCKETPAIR_EVENTS = {'socket.__new__', 'socket.bind', 'socket.connect'}
+_PROCESS_EVENTS = frozenset({
+    'subprocess.Popen', '_posixsubprocess.fork_exec', 'os.exec', 'os.fork',
+    'os.forkpty', 'os.kill', 'os.killpg', 'os.posix_spawn', 'os.spawn',
+    'os.startfile', 'os.startfile/2', 'os.system',
+})
+_AUDIT_BLOCKERS = {
+    **dict.fromkeys(_SOCKET_EVENTS, _network_disabled),
+    **dict.fromkeys(_PROCESS_EVENTS, _subprocess_disabled),
+    'sqlite3.connect': _database_disabled,
+    'urllib.Request': _network_disabled,
+}
+
+
+_FILE_EVENTS = frozenset({
+    'open', 'os.chdir', 'os.chmod', 'os.chown', 'os.link', 'os.listdir',
+    'os.mkdir', 'os.remove', 'os.rename', 'os.rmdir', 'os.scandir',
+    'os.symlink', 'os.truncate', 'os.utime',
+})
+
+
+def _check_real_file_access(event: str) -> None:
+    # Imports and traceback formatting still need Python source. Walk the
+    # stack only for a syscall that escaped the in-memory filesystem.
+    frame = sys._getframe(2)  # pyright: ignore[reportPrivateUsage]
+
+    while frame is not None:
+        module = frame.f_globals.get('__name__', '')
+
+        if module in {'importlib._bootstrap_external', 'linecache',
+                      'pytest_fast'}:
+            return
+
+        if module.startswith(('_pytest.', 'pluggy.', 'xdist.', 'execnet.',
+                              'coverage.')):
+            return
+
+        if (module.startswith(('dank.', 'tests.'))
+                or frame.f_code.co_filename.startswith(_TEST_DIRECTORY)):
+            break
+
+        frame = frame.f_back
+
+    # A callable submitted directly to a thread pool has no test frames.
+    raise RuntimeError(f'Real filesystem I/O is disabled in tests ({event})')
+
+
+@contextmanager
+def block_audited_io(*, files: bool = False) -> Generator[pytest.MonkeyPatch]:
+    active = True
+    local = threading.local()
+    make_self_pipe: Callable[[asyncio.SelectorEventLoop], None] = getattr(  # noqa: B009
+        asyncio.SelectorEventLoop, '_make_self_pipe',
     )
 
-    if not all(
-        ipaddress.ip_address(host).is_loopback for host, _ in addresses
-    ):
-        raise pytest.UsageError(f'{option} must be a loopback address')
+    def audit(event: str, _args: tuple[object, ...]) -> None:
+        if active and files and event in _FILE_EVENTS:
+            _check_real_file_access(event)
 
-    return addresses
+        blocked = _AUDIT_BLOCKERS.get(event) if active else None
+
+        if blocked is None:
+            return
+
+        if (
+            event in _SOCKETPAIR_EVENTS
+            and getattr(local, 'in_socketpair', False)
+        ):
+            return
+
+        blocked()
+
+    def local_wakeup_pipe(loop: asyncio.SelectorEventLoop) -> None:
+        # asyncio uses a connected socket pair for waking its event loop.
+        local.in_socketpair = True
+
+        try:
+            make_self_pipe(loop)
+        finally:
+            local.in_socketpair = False
+
+    sys.addaudithook(audit)
+
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(
+                asyncio.SelectorEventLoop,
+                '_make_self_pipe',
+                local_wakeup_pipe,
+            )
+            # libpq opens connections without calling Python's socket module.
+            patch.setattr(generators, 'connect', _database_disabled)
+            yield patch
+    finally:
+        # Python audit hooks remain registered for the process lifetime.
+        active = False
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_collection() -> Iterator[object]:
+    with block_audited_io():
+        yield
 
 
 @pytest.fixture(scope='session', autouse=True)
-def block_all_network(request: pytest.FixtureRequest) -> Iterator[None]:
-    """
-    This fixture blocks all network traffic during test runs so running
-    pytest never accidentally dials network connections at any point.
+def block_external_io() -> Iterator[None]:
+    with block_audited_io(files=True) as patch:
+        patch.setattr(urllib.request, 'urlopen', _network_disabled)
+        patch.setattr(urllib.request.OpenerDirector, 'open', _network_disabled)
+        patch.setattr(subprocess, 'Popen', _subprocess_disabled)
 
-    This keeps tests predictable and efficient. The exceptions are the
-    loopback servers named by --clickhouse-url and --postgres-url, if any,
-    and the Atlas binary that the Postgres lane runs.
-    """
-    clickhouse_url = str(request.config.getoption('clickhouse_url'))
-    postgres_url = str(request.config.getoption('postgres_url'))
-    allowed = loopback_addresses(clickhouse_url) | loopback_addresses(
-        postgres_url,
-        option='--postgres-url',
-        default_port=5432,
-    )
-    # The drivers resolve the URL's host name before connecting.
-    allowed_hosts: Container[object] = {
-        urlsplit(url).hostname
-        for url in (clickhouse_url, postgres_url)
-        if url
-    } | {host for host, _ in allowed}
+        for target in (psycopg, psycopg.Connection, psycopg.AsyncConnection):
+            patch.setattr(target, 'connect', _database_disabled)
 
-    ###
-    ### Save originals
-    ###
-    real_socket = socket.socket
-    real_create_connection = socket.create_connection
-    real_socketpair = socket.socketpair
-    real_getaddrinfo = socket.getaddrinfo
-    real_gethostbyname = socket.gethostbyname
-    real_gethostbyname_ex = socket.gethostbyname_ex
-    real_popen = subprocess.Popen
+        for name in ('get_client', 'get_async_client', 'create_client'):
+            patch.setattr(clickhouse_connect, name, _database_disabled)
 
-    ###
-    ### Create mock functions
-    ###
-    def blocked(*args: Any, **kwargs: Any) -> Never:
-        raise RuntimeError('Network is disabled in tests')
-
-    def guarded_socketpair(*args: Any, **kwargs: Any) -> tuple[
-        GuardedSocket,
-        GuardedSocket,
-    ]:
-        a, b = real_socketpair(*args, **kwargs)
-
-        return GuardedSocket(a), GuardedSocket(b)
-
-    def guarded_socket(
-        family: socket.AddressFamily | int=-1,
-        type: socket.SocketKind=socket.SOCK_STREAM,  # noqa
-        proto: int=-1,
-        fileno: int | None=None,
-    ):
-        # Allow UNIX sockets for local IPC (asyncio uses these via socketpair).
-        if family == socket.AF_UNIX:
-            return (
-                GuardedSocket(real_socket(family, type, proto, fileno))
-                if fileno is not None else
-                GuardedSocket(real_socket(family, type, proto))
-            )
-
-        # TCP sockets may only connect to the --clickhouse-url server.
-        if allowed and fileno is None:
-            return GuardedSocket(real_socket(family, type, proto), allowed)
-
-        # Block all other networking.
-        blocked()
-
-    def guarded_popen(args: Any, *rest: Any, **kwargs: Any) -> Any:
-        # asyncio starts subprocesses through this name, passing a tuple.
-        if postgres_url and pathlib.Path(str(args[0])).name == 'atlas':
-            return real_popen(args, *rest, **kwargs)
-
-        blocked()
-
-    def guarded_getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
-        if host in allowed_hosts:
-            return real_getaddrinfo(host, *args, **kwargs)
-
-        blocked()
-
-    ###
-    ### Patch functions
-    ###
-    socket.socket = guarded_socket
-    socket.create_connection = blocked
-    socket.socketpair = guarded_socketpair
-    socket.getaddrinfo = guarded_getaddrinfo
-    socket.gethostbyname = blocked
-    socket.gethostbyname_ex = blocked
-    subprocess.Popen = guarded_popen
-
-    try:
+        patch.setattr(sqlite3, 'connect', _database_disabled)
         yield
-    finally:
-        ###
-        ### Restore functions
-        ###
-        socket.socket = real_socket
-        socket.create_connection = real_create_connection
-        socket.socketpair = real_socketpair
-        socket.getaddrinfo = real_getaddrinfo
-        socket.gethostbyname = real_gethostbyname
-        socket.gethostbyname_ex = real_gethostbyname_ex
-        subprocess.Popen = real_popen
-
-
-@pytest.fixture(scope='session')
-def postgres_server(
-    request: pytest.FixtureRequest,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> PostgresSettings:
-    """The --postgres-url server. Tests using it skip when it's missing."""
-    url = str(request.config.getoption('postgres_url'))
-
-    if not url:
-        pytest.skip('needs --postgres-url; see make test-postgres')
-
-    if find_atlas() is None:
-        pytest.skip('needs Atlas; run make atlas')
-
-    return server_settings(url, tmp_path_factory.mktemp('postgres'))
-
-
-@pytest.fixture(scope='session')
-def postgres_dev_url(postgres_server: PostgresSettings) -> Iterator[str]:
-    """An empty database for Atlas to compare schemas in."""
-    settings = postgres_server._replace(database=f'dev_{uuid.uuid4().hex}')
-    create_database(settings)
-
-    try:
-        yield atlas_url(settings, settings.password_file.read_text())
-    finally:
-        drop_database(settings)
-
-
-@pytest.fixture
-def fresh_postgres(postgres_server: PostgresSettings) -> Iterator[
-    PostgresSettings
-]:
-    """A new, empty database for one test, such as a migration test."""
-    settings = postgres_server._replace(database=f'test_{uuid.uuid4().hex}')
-    create_database(settings)
-
-    try:
-        yield settings
-    finally:
-        drop_database(settings)
-
-
-@pytest.fixture(scope='session')
-def postgres_settings(postgres_server: PostgresSettings) -> Iterator[
-    PostgresSettings
-]:
-    """A database migrated to head, shared by every test in the session."""
-    settings = postgres_server._replace(database=f'test_{uuid.uuid4().hex}')
-    create_database(settings)
-
-    try:
-        asyncio.run(upgrade(settings))
-        yield settings
-    finally:
-        drop_database(settings)
-
-
-@pytest.fixture
-def postgres_session(postgres_settings: PostgresSettings) -> Iterator[Session]:
-    """A session whose work rolls back after the test, even commits."""
-    engine = sync_engine(postgres_settings)
-
-    with engine.connect() as connection, connection.begin() as transaction:
-        with Session(
-            bind=connection,
-            join_transaction_mode='create_savepoint',
-        ) as session:
-            yield session
-
-        transaction.rollback()
-
-    engine.dispose()
-
-
-@pytest.fixture
-async def async_postgres_session(
-    postgres_settings: PostgresSettings,
-) -> AsyncIterator[AsyncSession]:
-    """The same for the web app's async sessions."""
-    engine = async_engine(postgres_settings)
-    connection: AsyncConnection
-
-    async with engine.connect() as connection, connection.begin() as outer:
-        async with AsyncSession(
-            bind=connection,
-            join_transaction_mode='create_savepoint',
-            expire_on_commit=False,
-        ) as session:
-            yield session
-
-        await outer.rollback()
-
-    await engine.dispose()

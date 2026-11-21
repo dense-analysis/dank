@@ -3,11 +3,11 @@ MODE ?= docker
 COMPOSE ?= docker compose
 UV ?= uv
 ARGS ?=
+TEST_WORKERS ?=
 NAME ?=
 FILE ?=
 # The Compose service's role and database.
 POSTGRES_ARGS := --username=dank --dbname=dank
-POSTGRES_IMAGE := postgres:18
 
 ifeq ($(MODE),docker)
 CONFIG_TEMPLATE := config.example.toml
@@ -27,7 +27,7 @@ else
 $(error MODE must be docker or native)
 endif
 
-.PHONY: help config up web down logs scrape scrub process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas sources-import openapi test lint test-postgres
+.PHONY: help config up web down logs scrape scrub process train query embed download-model x-login youtube-login youtube-compare postgres-dump postgres-restore db-upgrade db-current db-create db-check db-diff db-atlas atlas sources-import openapi test lint
 
 help:
 	@printf '%s\n' \
@@ -58,9 +58,8 @@ help:
 		'  atlas           On the host: install the pinned Atlas binary; ARGS=--dir=DIR shares one' \
 		'  sources-import  Import the sources in config.toml into Postgres, once' \
 		'  openapi         On the host: regenerate the API schema and the reader'\''s types' \
-		'  test            On the host: run the tests; pass paths or options through ARGS' \
+		'  test            On the host: use all CPUs for pytest; pass paths or options through ARGS' \
 		'  lint            On the host: run all linters, which can fix files' \
-		'  test-postgres   Run the Postgres tests against a disposable server' \
 		'' \
 		'ARGS goes to the application command, or to Compose for Docker up/web.' \
 		'Existing configuration is preserved; MODE does not convert it.'
@@ -174,19 +173,7 @@ openapi:
 	npm --prefix reader run api:generate
 
 test:
-	$(UV) run pytest $(ARGS)
+	$(UV) run pytest $(if $(TEST_WORKERS),-n $(TEST_WORKERS)) $(value ARGS)
 
 lint:
 	./run-linters.sh
-
-test-postgres:
-	@set -e; \
-	name="dank-test-postgres-$$$$"; \
-	docker run --detach --rm --name "$$name" --env POSTGRES_PASSWORD=test \
-		--publish 127.0.0.1::5432 $(POSTGRES_IMAGE) > /dev/null; \
-	trap 'docker stop "$$name" > /dev/null' EXIT; \
-	until docker exec "$$name" pg_isready --quiet --host=127.0.0.1 --username=postgres; do \
-		sleep 1; \
-	done; \
-	port="$$(docker port "$$name" 5432/tcp | sed 's/.*://')"; \
-	$(UV) run pytest -m postgres --postgres-url="postgresql://postgres:test@127.0.0.1:$$port/postgres" $(ARGS)

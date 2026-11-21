@@ -218,13 +218,13 @@ async def test_awkward_file_names_are_reachable(
 ])
 async def test_only_files_inside_the_directory_are_served(
     client: AsyncClient,
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
     assets: pathlib.Path,
     video: pathlib.Path,
     path: str,
 ) -> None:
-    (tmp_path / "secret.txt").write_text("secret")
-    (assets / "link.txt").symlink_to(tmp_path / "secret.txt")
+    (memory_path / "secret.txt").write_text("secret")
+    (assets / "link.txt").symlink_to(memory_path / "secret.txt")
 
     response = await client.get(path)
 

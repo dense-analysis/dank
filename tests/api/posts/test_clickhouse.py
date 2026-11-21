@@ -1,10 +1,9 @@
-"""ClickHousePostStore and search embeddings against a real database."""
+"""ClickHousePostStore against a real database."""
 
 from __future__ import annotations
 
 import datetime as dt
 import pathlib
-import threading
 from typing import Any
 
 import pytest
@@ -13,7 +12,6 @@ from httpx import AsyncClient
 
 from dank.api.posts.clickhouse import ClickHousePostStore
 from dank.api.posts.deps import post_store
-from dank.api.posts.embeddings import CachedSearchEmbeddings
 from dank.api.posts.model import ReaderFilters, Recommendation
 from dank.config import ClickHouseSettings, Settings, SourceConfig
 from dank.model import parse_datetime
@@ -31,24 +29,8 @@ from tests.api.clickhouse import (
 
 pytestmark = pytest.mark.clickhouse
 
-MODEL = "test-model"
 FOR_YOU = "for_you"
 SNAPSHOT = COLLECTED_AT.isoformat()
-
-
-class FakeEmbedder:
-    """Stands in for the model, which tests can't download."""
-
-    model_name = MODEL
-
-    def __init__(self, vectors: list[tuple[float, ...]]) -> None:
-        self._vectors = vectors
-        self.threads: list[threading.Thread] = []
-
-    def embed_texts(self, items: list[str]) -> list[tuple[float, ...]]:
-        self.threads.append(threading.current_thread())
-
-        return self._vectors
 
 
 @pytest.fixture
@@ -307,46 +289,3 @@ async def test_authors_cursor_keeps_its_cutoff_for_later_pages(
 
     assert response.json()["total"] == 2
     assert [item["handle"] for item in response.json()["authors"]] == ["bob"]
-
-
-async def test_a_cached_embedding_avoids_the_model(
-    clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "web_embedding_cache", [{
-        "model_name": MODEL, "search_text": "hello", "embedding": [0.5, 0.25],
-        "created_at": dt.datetime.now(dt.UTC),
-    }])
-    embedder = FakeEmbedder([(9.0, 9.0)])
-
-    found = await CachedSearchEmbeddings(
-        clickhouse, lambda: embedder,
-    ).embed("hello")
-
-    assert found == (0.5, 0.25)
-
-
-async def test_a_new_search_runs_the_model_in_a_thread_and_saves_the_result(
-    clickhouse: ClickHouseClient,
-) -> None:
-    embedder = FakeEmbedder([(0.5, 0.25)])
-    embeddings = CachedSearchEmbeddings(clickhouse, lambda: embedder)
-
-    found = await embeddings.embed("hello")
-    embedder_later = FakeEmbedder([(9.0, 9.0)])
-    again = await CachedSearchEmbeddings(
-        clickhouse, lambda: embedder_later,
-    ).embed("hello")
-
-    assert found == (0.5, 0.25)
-    assert again == (0.5, 0.25)
-    assert embedder.threads[0] is not threading.main_thread()
-
-
-async def test_a_model_with_no_answer_means_no_embedding(
-    clickhouse: ClickHouseClient,
-) -> None:
-    embedder = FakeEmbedder([])
-
-    assert await CachedSearchEmbeddings(
-        clickhouse, lambda: embedder,
-    ).embed("hello") is None

@@ -16,6 +16,25 @@ from zendriver import cdp
 from dank import youtube_session as session
 
 
+@pytest.fixture
+def tmp_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
+) -> pathlib.Path:
+    # pyfakefs 6.3 applies the creation mode even to read-only opens.
+    # Preserve the stored mode so the real cache permission checks run.
+    open_file = os.open
+
+    def open_cache(path: pathlib.Path, flags: int, mode: int = 0o777) -> int:
+        if flags == os.O_RDONLY | os.O_NOFOLLOW and path.exists():
+            mode = stat.S_IMODE(path.stat().st_mode)
+
+        return open_file(path, flags, mode)
+
+    monkeypatch.setattr(session.os, "open", open_cache)
+
+    return tmp_path
+
+
 def cookie(**changes: Any) -> cdp.network.Cookie:
     data = {
         "name": "SID", "value": "private-auth-cookie", "domain": ".google.com",
@@ -226,11 +245,14 @@ async def test_cookie_capture_waits_for_committed_static_document(
         get=AsyncMock(),
     )
     save = AsyncMock(return_value=True)
+    pause = AsyncMock()
+    monkeypatch.setattr(session.asyncio, "sleep", pause)
     monkeypatch.setattr(session, "save_youtube_session", save)
     assert await session.save_youtube_session_from_page(
         cast(Any, object()), page, tmp_path / "session.json",
     )
     assert page.evaluate.await_count == 5
+    assert pause.await_count == 2
     save.assert_awaited_once()
 
 
@@ -245,10 +267,12 @@ async def test_cookie_capture_preserves_cache_if_static_page_never_commits(
     page: Any = SimpleNamespace(evaluate=evaluate, get=AsyncMock())
     save = AsyncMock()
     monkeypatch.setattr(session, "save_youtube_session", save)
-    monkeypatch.setattr(session, "COOKIE_CAPTURE_TIMEOUT_SECONDS", 0.01)
+    # The timeout fires at the first suspension, when the page starts polling.
+    monkeypatch.setattr(session, "COOKIE_CAPTURE_TIMEOUT_SECONDS", 0)
     assert not await session.save_youtube_session_from_page(
         cast(Any, object()), page, tmp_path / "session.json",
     )
+    page.get.assert_awaited_once_with("https://www.youtube.com/robots.txt")
     save.assert_not_awaited()
 
 

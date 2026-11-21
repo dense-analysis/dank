@@ -3,16 +3,20 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
-import subprocess
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import aclosing, asynccontextmanager
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
+from yt_dlp.networking import Request, Response  # type: ignore[import-untyped]
+from yt_dlp.networking.exceptions import (
+    HTTPError,  # type: ignore[import-untyped]
+)
 
 from dank.config import (
     ScrapeSettings,
@@ -40,14 +44,13 @@ from dank.scrape.youtube.ytdlp_listings import (
     _read_pages,  # pyright: ignore[reportPrivateUsage]
     collect_listing,
 )
-from dank.scrape.youtube.ytdlp_worker import MAX_EVENT_BYTES
 from dank.storage.clickhouse import QueryResult
+from tests.worker import MemoryProcess, write_message
 
 CHANNEL = "https://www.youtube.com/@example/videos"
 PLAYLIST = "https://www.youtube.com/playlist?list=PLtest"
 CHANNEL_ID = "UC" + "a" * 22
 VIDEO = "abcdefghijk"
-_REAL_POPEN = subprocess.Popen
 
 
 def renderer(identifier: str) -> dict[str, Any]:
@@ -158,12 +161,12 @@ def test_hype_uses_ranked_lockups_from_the_requested_playlist() -> None:
 
 @pytest.mark.parametrize("authenticated", [False, True])
 async def test_listings_use_worker_without_browser_or_watch_page(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, authenticated: bool,
+    monkeypatch: pytest.MonkeyPatch, memory_path: Path, *, authenticated: bool,
 ) -> None:
-    fixture = tmp_path / "settings.toml"
+    fixture = memory_path / "settings.toml"
     fixture.touch()
     settings = load_settings(fixture)._replace(
-        data_dir=tmp_path,
+        data_dir=memory_path,
         youtube=YouTubeSettings(authenticated=authenticated, playlists=False,
                                 news_tabs=("top_stories",)),
     )
@@ -213,18 +216,18 @@ async def test_listings_use_worker_without_browser_or_watch_page(
 
     if authenticated:
         load.assert_awaited_once_with(
-            tmp_path / "youtube-browser-profile/youtube-session.json",
+            memory_path / "youtube-browser-profile/youtube-session.json",
         )
     else:
         load.assert_not_awaited()
 
 
 async def test_only_due_channels_are_checked_after_their_batches_are_saved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    memory_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = tmp_path / "settings.toml"
+    config = memory_path / "settings.toml"
     config.write_text('[youtube]\nhype = false\nplaylists = false\n')
-    settings = load_settings(config)._replace(data_dir=tmp_path)
+    settings = load_settings(config)._replace(data_dir=memory_path)
     sorted_feed = "https://www.youtube.com/@sorted/videos?sort=p"
     quiet = "https://www.youtube.com/@quiet/videos"
     failed = "https://www.youtube.com/@failed/videos"
@@ -234,7 +237,7 @@ async def test_only_due_channels_are_checked_after_their_batches_are_saved(
     now = dt.datetime(2026, 11, 21, tzinfo=dt.UTC)
     day = dt.timedelta(days=1)
     prior = AccountCheck(now - 10 * day, now - dt.timedelta(hours=1))
-    state = tmp_path / "youtube-account-checks.json"
+    state = memory_path / "youtube-account-checks.json"
     _save_account_checks(state, {CHANNEL: prior, quiet: prior, failed: prior})
     attempted: list[str] = []
 
@@ -302,7 +305,7 @@ async def test_only_due_channels_are_checked_after_their_batches_are_saved(
 
 
 async def test_channel_yields_ready_pages_and_cancels_the_worker_on_close(
-    listing_children: list[asyncio.subprocess.Process],
+    listing_children: list[MemoryProcess],
 ) -> None:
     from dank.scrape.youtube import (
         _scrape_feed,  # pyright: ignore[reportPrivateUsage]
@@ -326,9 +329,9 @@ async def test_channel_yields_ready_pages_and_cancels_the_worker_on_close(
 
 @pytest.mark.parametrize("timed_out", [False, True])
 async def test_channel_overlap_and_timeout_keep_posts_without_browser_fallback(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, timed_out: bool,
+    monkeypatch: pytest.MonkeyPatch, memory_path: Path, *, timed_out: bool,
 ) -> None:
-    fixture = tmp_path / "settings.toml"
+    fixture = memory_path / "settings.toml"
     fixture.touch()
     settings = load_settings(fixture)._replace(youtube=YouTubeSettings(
         hype=False, news_tabs=(), playlists=False, known_overlap=1,
@@ -370,57 +373,62 @@ async def test_channel_overlap_and_timeout_keep_posts_without_browser_fallback(
     session.get_browser.assert_not_awaited()
 
 
+async def listing_peer(
+    stdin: asyncio.StreamReader, stdout: asyncio.StreamReader,
+) -> int:
+    async def page(*video_ids: str) -> str | None:
+        for video_id in video_ids:
+            write_message(stdout, {
+                "event": "renderer", "key": "videoRenderer", "shelf": "",
+                "raw": {"videoId": video_id},
+            })
+
+        write_message(stdout, {"event": "page"})
+
+        return cast(str | None, json.loads(await stdin.readline()))
+
+    while line := await stdin.readline():
+        request = json.loads(line)
+        write_message(stdout, {
+            "event": "http_request", "host": "www.youtube.com",
+        })
+        decision = json.loads(await stdin.readline())
+
+        if decision is not None:
+            write_message(stdout, {"event": "error", "error_type": decision})
+            continue
+
+        name = request["feed"]["name"]
+
+        if name == "@limited":
+            write_message(stdout, {"event": "rate_limited", "delay": 90.0})
+            write_message(stdout, {
+                "event": "error", "error_type": "rate limited",
+            })
+            continue
+
+        stop = await page(VIDEO, "aaaaaaaaaaa")
+
+        if stop is None:
+            if name == "@hang":
+                await asyncio.Event().wait()
+
+            stop = await page("bbbbbbbbbbb")
+
+        write_message(stdout, {
+            "event": "done", "reason": stop or "listing exhausted",
+        })
+
+    return 0
+
+
 @pytest.fixture
-def listing_children(
-    monkeypatch: pytest.MonkeyPatch,
-) -> list[asyncio.subprocess.Process]:
-    children: list[asyncio.subprocess.Process] = []
-    code = f'''
-import io
-import time
-from dank.scrape.youtube import ytdlp_listings as listing
-from yt_dlp.networking import Request, Response
-from yt_dlp.networking.exceptions import HTTPError
+def listing_children(monkeypatch: pytest.MonkeyPatch) -> list[MemoryProcess]:
+    children: list[MemoryProcess] = []
 
-def page(*video_ids):
-    for video_id in video_ids:
-        listing.emit({{
-            "event": "renderer", "key": "videoRenderer", "shelf": "",
-            "raw": {{"videoId": video_id}},
-        }})
-    listing.emit({{"event": "page"}})
-    return listing._read_page_decision()
-
-def collect(request):
-    def fetch(req):
-        if request["feed"]["name"] == "@limited":
-            raise HTTPError(Response(io.BytesIO(), req.url,
-                                     {{"Retry-After": "90"}}, status=429))
-    listing._open_request(fetch, Request(request["feed"]["url"]))
-    if stop := page({VIDEO!r}, "aaaaaaaaaaa"):
-        return stop
-    if request["feed"]["name"] == "@hang":
-        time.sleep(30)
-    return page("bbbbbbbbbbb") or "listing exhausted"
-
-listing._collect_request = collect
-listing._worker()
-'''
-
-    def local_script_only(args: Any, **kwargs: Any):
-        assert tuple(args) == (sys.executable, "-c", code)
-
-        return _REAL_POPEN(args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "Popen", local_script_only)
-
-    async def start(module: str) -> asyncio.subprocess.Process:
+    async def start(module: str) -> MemoryProcess:
         assert module == ytdlp_listings.__name__
-        process = await asyncio.create_subprocess_exec(
-            sys.executable, "-c", code,
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL, limit=MAX_EVENT_BYTES,
-        )
+        process = MemoryProcess(listing_peer)
         children.append(process)
 
         return process
@@ -430,10 +438,40 @@ listing._worker()
     return children
 
 
-async def test_scrape_reuses_listing_process_after_overlap(
-    tmp_path: Path, listing_children: list[asyncio.subprocess.Process],
+def test_listing_worker_translates_yt_dlp_rate_limit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    fixture = tmp_path / "settings.toml"
+    def collect(request: dict[str, str]) -> str:
+        def fetch(req: Any) -> Any:
+            raise HTTPError(Response(
+                BytesIO(), req.url, {"Retry-After": "90"}, status=429,
+            ))
+
+        ytdlp_listings._open_request(  # pyright: ignore[reportPrivateUsage]
+            fetch, Request(request["url"]),
+        )
+        pytest.fail("The worker accepted an HTTP 429")
+
+    monkeypatch.setattr(ytdlp_listings, "_collect_request", collect)
+    monkeypatch.setattr(sys, "stdin", StringIO(
+        json.dumps({"url": CHANNEL}) + "\nnull\n",
+    ))
+    ytdlp_listings._worker()  # pyright: ignore[reportPrivateUsage]
+
+    assert list(map(json.loads, capsys.readouterr().out.splitlines())) == [
+        {"event": "http_request", "host": "www.youtube.com"},
+        {"event": "rate_limited", "delay": 90.0},
+        {
+            "event": "error",
+            "error_type": "YouTube listing request rate limited",
+        },
+    ]
+
+
+async def test_scrape_reuses_listing_process_after_overlap(
+    memory_path: Path, listing_children: list[MemoryProcess],
+) -> None:
+    fixture = memory_path / "settings.toml"
     fixture.write_text(
         "[youtube]\nhype = false\nnews_tabs = []\nplaylists = false\n"
         "known_overlap = 1\nlisting_workers = 1\n",
@@ -456,10 +494,10 @@ async def test_scrape_reuses_listing_process_after_overlap(
 
 
 async def test_concurrent_channels_share_http_slots_and_reuse_processes(
-    tmp_path: Path, listing_children: list[asyncio.subprocess.Process],
+    memory_path: Path, listing_children: list[MemoryProcess],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = tmp_path / "settings.toml"
+    fixture = memory_path / "settings.toml"
     fixture.write_text("[youtube]\nhype = false\nnews_tabs = []\n")
     settings = load_settings(fixture)
     accounts = tuple(f"@channel{index}" for index in range(5))
@@ -512,7 +550,7 @@ async def test_concurrent_channels_share_http_slots_and_reuse_processes(
 
 
 async def test_listing_429_uses_shared_cooldown(
-    listing_children: list[asyncio.subprocess.Process],
+    listing_children: list[MemoryProcess],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     limiter = RequestLimiter(ScrapeSettings())
@@ -545,7 +583,7 @@ async def test_listing_429_uses_shared_cooldown(
 
 
 async def test_listing_worker_restarts_after_timeout(
-    listing_children: list[asyncio.subprocess.Process],
+    listing_children: list[MemoryProcess],
 ) -> None:
     settings = YouTubeSettings()
     events: list[dict[str, Any]] = []
@@ -558,7 +596,7 @@ async def test_listing_worker_restarts_after_timeout(
         with pytest.raises(TimeoutError):
             await collect_listing(
                 describe_feed(CHANNEL.replace("example", "hang")),
-                settings, events.append, worker=worker, timeout_seconds=0.5,
+                settings, events.append, worker=worker, timeout_seconds=0.02,
             )
 
         assert [event["event"] for event in events] == [

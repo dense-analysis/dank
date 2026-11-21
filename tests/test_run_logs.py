@@ -13,7 +13,9 @@ from subprocess import PIPE, CompletedProcess, Popen, TimeoutExpired
 
 import pytest
 
-# Bind Popen before the session network guard; only local fixtures run here.
+pytestmark = pytest.mark.shell_io
+
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "src/dank/run_logged.sh"
 

@@ -1,9 +1,9 @@
 import pathlib
+from unittest.mock import AsyncMock, MagicMock, Mock
 
+import psycopg
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from dank.config import ConfigError, PostgresSettings
 from dank.db.engine import (
@@ -19,12 +19,22 @@ from dank.db.models import NAMING_CONVENTION, Base
 SECRET = "correct-horse-battery-staple"
 
 
-def test_url_never_holds_a_password(tmp_path: pathlib.Path) -> None:
-    password_file = tmp_path / "password"
-    password_file.write_text(SECRET)
-    settings = PostgresSettings(password_file=password_file)
+class ConnectionAttempt(Exception):
+    """Stop the SQLAlchemy test at the driver boundary."""
 
-    url = postgres_url(settings)
+
+@pytest.fixture
+def postgres(memory_path: pathlib.Path) -> PostgresSettings:
+    password_file = memory_path / "password"
+    password_file.write_text(SECRET)
+
+    return PostgresSettings(
+        database="fixture_database", password_file=password_file,
+    )
+
+
+def test_url_never_holds_a_password(postgres: PostgresSettings) -> None:
+    url = postgres_url(postgres)
 
     assert url.password is None
     assert SECRET not in url.render_as_string(hide_password=False)
@@ -41,104 +51,85 @@ def test_models_name_their_constraints() -> None:
     assert dict(Base.metadata.naming_convention) == NAMING_CONVENTION
 
 
-@pytest.mark.postgres
 def test_sync_engine_connects_with_the_password_file(
-    fresh_postgres: PostgresSettings,
+    postgres: PostgresSettings, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine = sync_engine(fresh_postgres)
-
-    with sync_sessions(engine)() as session:
-        assert session.scalar(text("SELECT current_database()")) == (
-            fresh_postgres.database
-        )
-
-    engine.dispose()
-
-
-@pytest.mark.postgres
-async def test_async_engine_connects_with_the_password_file(
-    fresh_postgres: PostgresSettings,
-) -> None:
-    engine = async_engine(fresh_postgres)
-
-    async with async_sessions(engine)() as session:
-        assert await session.scalar(text("SELECT current_database()")) == (
-            fresh_postgres.database
-        )
-
-    await engine.dispose()
-
-
-@pytest.mark.postgres
-def test_connecting_without_the_password_file_says_so(
-    fresh_postgres: PostgresSettings,
-) -> None:
-    missing = pathlib.Path("/nonexistent/password")
-    engine = sync_engine(fresh_postgres._replace(password_file=missing))
-
-    with pytest.raises(ConfigError, match=r"postgres\.password_file"):
-        engine.connect()
-
-    engine.dispose()
-
-
-@pytest.mark.postgres
-def test_create_database_only_creates_a_missing_one(
-    fresh_postgres: PostgresSettings,
-) -> None:
-    assert create_database(fresh_postgres) is False
-
-    settings = fresh_postgres._replace(
-        database=f"{fresh_postgres.database}_new",
-    )
+    connect = Mock(side_effect=ConnectionAttempt)
+    monkeypatch.setattr(psycopg, "connect", connect)
+    engine = sync_engine(postgres)
 
     try:
-        assert create_database(settings) is True
-        assert create_database(settings) is False
+        with (
+            sync_sessions(engine)() as session,
+            pytest.raises(ConnectionAttempt),
+        ):
+            session.scalar(text("SELECT current_database()"))
     finally:
-        from tests.postgres import drop_database
+        engine.dispose()
 
-        drop_database(settings)
+    assert connect.call_args.kwargs["dbname"] == postgres.database
+    assert connect.call_args.kwargs["password"] == SECRET
 
 
-@pytest.mark.postgres
-def test_session_work_rolls_back_between_tests_first(
-    postgres_session: Session,
+async def test_async_engine_connects_with_the_password_file(
+    postgres: PostgresSettings, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    postgres_session.execute(text("CREATE TABLE rollback_probe (id int)"))
-    postgres_session.commit()
+    connect = AsyncMock(side_effect=ConnectionAttempt)
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    engine = async_engine(postgres)
 
-    assert postgres_session.scalar(
-        text("SELECT to_regclass('rollback_probe') IS NOT NULL"),
-    )
+    try:
+        async with async_sessions(engine)() as session:
+            assert not session.sync_session.expire_on_commit
+
+            with pytest.raises(ConnectionAttempt):
+                await session.scalar(text("SELECT current_database()"))
+    finally:
+        await engine.dispose()
+
+    assert connect.call_args.kwargs["dbname"] == postgres.database
+    assert connect.call_args.kwargs["password"] == SECRET
 
 
-@pytest.mark.postgres
-def test_session_work_rolls_back_between_tests_second(
-    postgres_session: Session,
+def test_connecting_without_the_password_file_says_so(
+    postgres: PostgresSettings, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert not postgres_session.scalar(
-        text("SELECT to_regclass('rollback_probe') IS NOT NULL"),
-    )
+    connect = Mock(side_effect=ConnectionAttempt)
+    monkeypatch.setattr(psycopg, "connect", connect)
+    missing = postgres.password_file.with_name("missing")
+    engine = sync_engine(postgres._replace(password_file=missing))
+
+    try:
+        with pytest.raises(ConfigError, match=r"postgres\.password_file"):
+            engine.connect()
+    finally:
+        engine.dispose()
+
+    connect.assert_not_called()
 
 
-@pytest.mark.postgres
-async def test_async_session_work_rolls_back_between_tests_first(
-    async_postgres_session: AsyncSession,
+@pytest.mark.parametrize(("exists", "racing", "created"), [
+    (True, False, False), (False, False, True), (False, True, False),
+])
+def test_create_database_only_creates_a_missing_one(
+    postgres: PostgresSettings, monkeypatch: pytest.MonkeyPatch,
+    *, exists: bool, racing: bool, created: bool,
 ) -> None:
-    session = async_postgres_session
-    await session.execute(text("CREATE TABLE async_rollback_probe (id int)"))
-    await session.commit()
+    response = Mock()
+    response.fetchone.return_value = (1,) if exists else None
+    context = MagicMock()
+    manager = Mock(return_value=context)
+    connection = context.__enter__.return_value
+    connection.execute.side_effect = [
+        response, psycopg.errors.DuplicateDatabase() if racing else None,
+    ]
+    monkeypatch.setattr(psycopg, "connect", manager)
 
-    assert await session.scalar(
-        text("SELECT to_regclass('async_rollback_probe') IS NOT NULL"),
-    )
+    assert create_database(postgres) is created
+    assert connection.execute.call_count == (1 if exists else 2)
+    assert manager.call_args.kwargs["dbname"] == "postgres"
+    assert manager.call_args.kwargs["autocommit"] is True
 
-
-@pytest.mark.postgres
-async def test_async_session_work_rolls_back_between_tests_second(
-    async_postgres_session: AsyncSession,
-) -> None:
-    assert not await async_postgres_session.scalar(
-        text("SELECT to_regclass('async_rollback_probe') IS NOT NULL"),
-    )
+    if not exists:
+        statement = connection.execute.call_args.args[0]
+        assert statement.as_string() == 'CREATE DATABASE "fixture_database"'

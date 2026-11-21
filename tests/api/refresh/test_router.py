@@ -4,6 +4,8 @@ import asyncio
 import json
 import pathlib
 import uuid
+from collections.abc import Awaitable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -11,11 +13,14 @@ from fastapi import FastAPI
 from httpx import AsyncClient
 
 from dank.api import deps
+from dank.api.refresh import (
+    manager as refresh_manager,
+    model,
+)
 from dank.api.refresh.deps import refresh_queue
 from dank.api.refresh.manager import RefreshManager, Report, running_refresh
 from dank.api.refresh.model import (
     MAX_CONCURRENT_JOBS,
-    MAX_HISTORY_JOBS,
     MAX_PENDING_JOBS,
     RefreshPlan,
 )
@@ -28,6 +33,26 @@ from tests.sources.fakes import FakeSourceRepository
 
 PATH = "/api/reader/refresh"
 QUEUE_FULL = "The refresh queue is full. Try again when a job finishes."
+
+
+@pytest.fixture
+def refresh_history_file(settings: Settings) -> pathlib.Path:
+    return settings.data_dir / "reader-refresh.json"
+
+
+@pytest.fixture(autouse=True)
+def stub_refresh_history(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Only the restart and history-file tests need to serialize job updates.
+    if "refresh_history_file" in request.fixturenames:
+        return
+
+    def ignore_history(_manager: RefreshManager) -> None:
+        pass
+
+    monkeypatch.setattr(RefreshManager, "persist", ignore_history)
+    monkeypatch.setattr(RefreshManager, "restore", ignore_history)
 
 
 def source(domain: str) -> dict[str, Any]:
@@ -252,6 +277,7 @@ async def test_restart_preserves_results_and_marks_unfinished_jobs_interrupted(
     settings: Settings,
     manager: RefreshManager,
     worker: FakeWorker,
+    refresh_history_file: pathlib.Path,
 ) -> None:
     await start(client, source("blog.example"))
     await finished(manager)
@@ -272,8 +298,6 @@ async def test_restart_preserves_results_and_marks_unfinished_jobs_interrupted(
         async with http_client(app) as restarted:
             interrupted, completed = await jobs(restarted)
 
-        path = pathlib.Path(settings.data_dir) / "reader-refresh.json"
-
         assert completed["status"] == "completed"
         assert interrupted["status"] == "interrupted"
         assert interrupted["finished_at"]
@@ -282,7 +306,8 @@ async def test_restart_preserves_results_and_marks_unfinished_jobs_interrupted(
             "You can start it again."
         )
         assert replacement.pending.empty()
-        assert "settings" not in path.read_text()
+        saved_text = refresh_history_file.read_text()  # noqa: ASYNC240
+        assert "settings" not in saved_text
 
 
 async def test_shutdown_interrupts_active_and_queued_jobs(
@@ -311,21 +336,32 @@ async def test_shutdown_interrupts_active_and_queued_jobs(
     assert all(job["message"] == "Refresh was interrupted." for job in saved)
 
 
+@pytest.fixture
+def history_limit(monkeypatch: pytest.MonkeyPatch) -> int:
+    # The model tests exercise the production cap. A small cap lets real
+    # HTTP submissions cross the same eviction boundary in a few requests.
+    monkeypatch.setattr(model, "MAX_HISTORY_JOBS", 3)
+
+    return model.MAX_HISTORY_JOBS
+
+
 async def test_history_retention_keeps_the_newest_jobs(
-    client: AsyncClient, manager: RefreshManager,
+    client: AsyncClient, manager: RefreshManager, history_limit: int,
 ) -> None:
-    for index in range(MAX_HISTORY_JOBS + 5):
+    for index in range(history_limit + 2):
         await start(client, source(f"source{index}.example"))
         await finished(manager)
 
     saved = await jobs(client)
 
-    assert len(saved) == MAX_HISTORY_JOBS
-    assert saved[0]["scope"] == source("source24.example")
+    assert [job["scope"] for job in saved] == [
+        source(f"source{index}.example")
+        for index in reversed(range(2, history_limit + 2))
+    ]
 
 
 async def test_history_keeps_long_running_job_while_other_jobs_finish(
-    client: AsyncClient, worker: FakeWorker,
+    client: AsyncClient, worker: FakeWorker, history_limit: int,
 ) -> None:
     entered = asyncio.Event()
     release = asyncio.Event()
@@ -341,7 +377,7 @@ async def test_history_keeps_long_running_job_while_other_jobs_finish(
     slow = await start(client, source("blog.example"))
     await asyncio.wait_for(entered.wait(), 1)
 
-    for index in range(MAX_HISTORY_JOBS + 5):
+    for index in range(history_limit + 2):
         job = await start(client, source(f"source{index}.example"))
 
         async with asyncio.timeout(1):
@@ -354,7 +390,7 @@ async def test_history_keeps_long_running_job_while_other_jobs_finish(
 
     saved = await jobs(client)
 
-    assert len(saved) == MAX_HISTORY_JOBS
+    assert len(saved) == history_limit
     assert next(
         job["status"] for job in saved if job["id"] == slow["id"]
     ) == "running"
@@ -401,10 +437,9 @@ async def test_malformed_json_is_rejected_before_the_origin_is_checked(
 
 
 async def test_corrupt_history_starts_empty_and_keeps_working(
-    app: FastAPI, settings: Settings,
+    app: FastAPI, settings: Settings, refresh_history_file: pathlib.Path,
 ) -> None:
-    path = pathlib.Path(settings.data_dir) / "reader-refresh.json"
-    path.write_text("{not json")
+    refresh_history_file.write_text("{not json")  # noqa: ASYNC240
 
     async with running_refresh(settings, FakeWorker()) as manager:
         app.dependency_overrides[refresh_queue] = lambda: manager
@@ -419,7 +454,7 @@ async def test_corrupt_history_starts_empty_and_keeps_working(
 
 
 async def test_saved_history_is_answered_as_it_was_written(
-    app: FastAPI, settings: Settings,
+    app: FastAPI, settings: Settings, refresh_history_file: pathlib.Path,
 ) -> None:
     saved = {
         "id": "4cdecd31-4320-4843-9097-7d76b83a80d4",
@@ -432,8 +467,7 @@ async def test_saved_history_is_answered_as_it_was_written(
         "posts_saved": 28,
         "run_id": "55f77cb8-e60b-4be0-8e3d-9130d6d579b7",
     }
-    path = pathlib.Path(settings.data_dir) / "reader-refresh.json"
-    path.write_text(json.dumps([saved]))
+    refresh_history_file.write_text(json.dumps([saved]))  # noqa: ASYNC240
 
     async with running_refresh(settings, FakeWorker()) as manager:
         app.dependency_overrides[refresh_queue] = lambda: manager
@@ -441,7 +475,8 @@ async def test_saved_history_is_answered_as_it_was_written(
         async with http_client(app) as client:
             assert await jobs(client) == [saved]
 
-    assert json.loads(path.read_text()) == [saved]
+    saved_text = refresh_history_file.read_text()  # noqa: ASYNC240
+    assert json.loads(saved_text) == [saved]
 
 
 @pytest.mark.parametrize(("body", "paths"), [
@@ -685,10 +720,31 @@ async def test_parallel_workers_are_bounded_and_cancel_together(
 
 
 async def test_external_collection_busy_retries_without_failing_job(
-    app: FastAPI, settings: Settings,
+    app: FastAPI, settings: Settings, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     worker = FakeWorker()
     attempts = 0
+    elapsed = 0.0
+    retry_waits: list[float] = []
+
+    async def wait_for(
+        signal: Awaitable[bool], delay: float | None,
+    ) -> bool:
+        nonlocal elapsed
+
+        if delay is not None:
+            retry_waits.append(delay)
+            elapsed += delay
+            delay = 0
+
+        return await asyncio.wait_for(signal, delay)
+
+    clocked_asyncio = SimpleNamespace(**vars(asyncio))
+    clocked_asyncio.get_running_loop = lambda: SimpleNamespace(
+        time=lambda: elapsed,
+    )
+    clocked_asyncio.wait_for = wait_for
+    monkeypatch.setattr(refresh_manager, "asyncio", clocked_asyncio)
 
     async def busy_once(plan: RefreshPlan, report: Report) -> None:
         nonlocal attempts
@@ -712,6 +768,7 @@ async def test_external_collection_busy_retries_without_failing_job(
             await finished(manager)
             saved = await jobs(client)
 
+    assert len(retry_waits) == 1 and retry_waits[0] >= 0.01
     assert attempts == 2
     assert [item["id"] for item in saved] == [job["id"]]
     assert saved[0]["status"] == "completed"
@@ -773,26 +830,6 @@ async def test_head_and_cache_headers_follow_the_platform(
     assert get.headers["cache-control"] == "no-store"
     assert (head.status_code, head.content) == (200, b"")
 
-
-async def test_openapi_describes_the_scope_kinds_and_statuses(
-    client: AsyncClient,
-) -> None:
-    document = (await client.get("/api/openapi.json")).json()
-    schemas = document["components"]["schemas"]
-    post = document["paths"][PATH]["post"]
-
-    assert set(post["responses"]) >= {"202"}
-    assert set(schemas["RefreshRequest"]["properties"]) == {"scope"}
-    assert schemas["RefreshRequest"]["required"] == ["scope"]
-    assert set(
-        schemas["RefreshRequest"]["properties"]["scope"]["discriminator"][
-            "mapping"
-        ],
-    ) == {"all", "rss", "reddit", "x", "hacker_news", "youtube", "post"}
-    assert set(schemas["RefreshJobOut"]["properties"]["status"]["enum"]) == {
-        "queued", "running", "processing", "completed", "partial", "failed",
-        "interrupted",
-    }
 
 
 async def test_the_switch_collects_enabled_saved_sources_and_no_others(

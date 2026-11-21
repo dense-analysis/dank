@@ -51,8 +51,14 @@ def test_unknown_or_unlimited_cgroups_do_not_invent_limits(
 
 
 def test_runtime_applies_capacity_limits_and_stable_code_fingerprint(
-    monkeypatch: pytest.MonkeyPatch,
+    memory_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    module = memory_path / "src/dank/runtime.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("version = 1")
+    lock = memory_path / "uv.lock"
+    lock.write_text("package fixture")
+    monkeypatch.setattr(runtime, "__file__", str(module))
     monkeypatch.setattr(runtime.os, "process_cpu_count", lambda: 8)
     monkeypatch.setattr(runtime, "_physical_memory", lambda: 8 * 1024 ** 3)
     monkeypatch.setattr(
@@ -64,6 +70,13 @@ def test_runtime_applies_capacity_limits_and_stable_code_fingerprint(
     assert first.memory_limit_bytes == 2 * 1024 ** 3
     assert first.code_version == second.code_version
     assert len(first.code_version) == 16
+
+    module.write_text("version = 2")
+    changed = runtime.runtime_info().code_version
+    assert changed != first.code_version
+
+    lock.write_text("new package fixture")
+    assert runtime.runtime_info().code_version != changed
 
 
 def test_macos_memory_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

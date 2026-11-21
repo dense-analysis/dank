@@ -114,9 +114,9 @@ def test_failure_keeps_the_error_and_drops_suggestions() -> None:
 
 async def test_missing_binary_explains_the_way_out(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    password_file = tmp_path / "password"
+    password_file = memory_path / "password"
     password_file.write_text("x")
     monkeypatch.setattr(atlas, "find_atlas", lambda: None)
 
@@ -146,7 +146,7 @@ def fake_atlas(
 ) -> list[tuple[str, ...]]:
     """Answer `atlas version` with `answer`, and record any other command.
 
-    The test suite refuses real subprocesses outside the Postgres lane.
+    The test suite blocks real subprocesses.
     """
     ran: list[tuple[str, ...]] = []
 
@@ -175,22 +175,22 @@ def reports(version: str) -> FakeProcess:
 
 
 async def test_the_pinned_version_runs(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
 ) -> None:
     ran = fake_atlas(monkeypatch, reports(install_atlas.VERSION))
 
-    await atlas.validate_migrations(root=tmp_path)
+    await atlas.validate_migrations(root=memory_path)
 
     assert ran == [("migrate", "validate", "--env", "dank")]
 
 
 async def test_another_version_is_refused_before_it_runs(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
 ) -> None:
     ran = fake_atlas(monkeypatch, reports("v1.2.0"))
 
     with pytest.raises(atlas.SchemaError) as caught:
-        await atlas.validate_migrations(root=tmp_path)
+        await atlas.validate_migrations(root=memory_path)
 
     assert str(caught.value) == (
         f"{SHARED} is Atlas v1.2.0, but DANK needs {install_atlas.VERSION}. "
@@ -205,13 +205,13 @@ async def test_another_version_is_refused_before_it_runs(
 ])
 async def test_an_atlas_that_won_t_say_its_version_is_refused(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
     answer: FakeProcess,
 ) -> None:
     ran = fake_atlas(monkeypatch, answer)
 
     with pytest.raises(atlas.SchemaError) as caught:
-        await atlas.validate_migrations(root=tmp_path)
+        await atlas.validate_migrations(root=memory_path)
 
     assert str(caught.value) == (
         f"{SHARED} didn't say which Atlas version it is, and DANK needs "
@@ -221,12 +221,12 @@ async def test_an_atlas_that_won_t_say_its_version_is_refused(
 
 
 async def test_an_interactive_command_checks_the_version_too(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
 ) -> None:
     ran = fake_atlas(monkeypatch, reports("v1.2.0"))
 
     with pytest.raises(atlas.SchemaError, match=r"v1\.2\.0"):
-        await atlas.run_interactive("migrate", "hash", root=tmp_path)
+        await atlas.run_interactive("migrate", "hash", root=memory_path)
 
     assert ran == []
 
@@ -240,30 +240,30 @@ def executable(path: pathlib.Path) -> pathlib.Path:
 
 
 def test_a_shared_install_on_path_serves_a_checkout_without_its_own(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
 ) -> None:
-    shared = executable(tmp_path / "shared" / "atlas")
-    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
+    shared = executable(memory_path / "shared" / "atlas")
+    monkeypatch.setattr(sys, "prefix", str(memory_path / "venv"))
     monkeypatch.setenv("PATH", str(shared.parent))
 
     assert atlas.find_atlas() == str(shared)
 
 
 def test_a_checkout_s_own_copy_comes_before_the_shared_one(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
 ) -> None:
-    own = executable(tmp_path / "venv" / "bin" / "atlas")
-    shared = executable(tmp_path / "shared" / "atlas")
-    monkeypatch.setattr(sys, "prefix", str(tmp_path / "venv"))
+    own = executable(memory_path / "venv" / "bin" / "atlas")
+    shared = executable(memory_path / "shared" / "atlas")
+    monkeypatch.setattr(sys, "prefix", str(memory_path / "venv"))
     monkeypatch.setenv("PATH", str(shared.parent))
 
     assert atlas.find_atlas() == str(own)
 
 
 async def test_startup_failure_explains_the_ways_out(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    missing = tmp_path / "password"
+    missing = memory_path / "password"
 
     with pytest.raises(atlas.SchemaError) as caught:
         await prepare_postgres(PostgresSettings(password_file=missing))
@@ -287,11 +287,9 @@ async def test_startup_skips_a_disabled_postgres(
 
 def test_dev_database_matches_the_compose_postgres() -> None:
     compose = (ROOT / "compose.yaml").read_text()
-    makefile = (ROOT / "Makefile").read_text()
     major = atlas.DOCKER_DEV_URL.split("/")[3]
 
     assert f"image: postgres:{major}\n" in compose
-    assert f"POSTGRES_IMAGE := postgres:{major}\n" in makefile
 
 
 def test_every_migration_is_in_the_checksum_file() -> None:

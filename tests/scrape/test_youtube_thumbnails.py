@@ -343,7 +343,7 @@ async def test_same_image_url_keeps_each_listing_title_and_capture_time(
     client = Client({CAPTURED: Response(picture())})
     saved = await download_assets(
         discoveries, assets_dir=tmp_path, http_client=cast(Any, client),
-        scraped_at=NOW, download_types=("image",),
+        scraped_at=NOW, download_types=("image",), concurrency=1,
     )
     assert len(saved) == 2
     assert saved[0].local_path == saved[1].local_path

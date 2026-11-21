@@ -1,12 +1,8 @@
-"""ClickHouseCollectionStats against a real, throwaway ClickHouse database.
-
-Runs with --clickhouse-url; see tests/api/conftest.py.
-"""
+"""Collection stats projected from synthetic ClickHouse result rows."""
 
 import datetime as dt
+import json
 import pathlib
-
-import pytest
 
 from dank.api.sources.clickhouse import ClickHouseCollectionStats
 from dank.api.sources.model import (
@@ -17,65 +13,34 @@ from dank.api.sources.model import (
     XAccount,
     XActivity,
 )
-from dank.storage.clickhouse import ClickHouseClient
-from tests.api.clickhouse import (
-    COLLECTED_AT,
-    insert,
-    post,
-    raw_post,
-    reddit_url,
-    x_url,
-)
+from tests.api.clickhouse import COLLECTED_AT, query_client
 
-pytestmark = pytest.mark.clickhouse
-
+ASSETS = pathlib.Path("/fixture/assets")
 ICON = "https://pbs.twimg.com/profile_images/123/profile_normal.png"
-FOR_YOU = {"dank_x_home": {"feed": "for_you"}}
 
 
-@pytest.fixture
-def stats(
-    clickhouse: ClickHouseClient, tmp_path: pathlib.Path,
-) -> ClickHouseCollectionStats:
-    return ClickHouseCollectionStats(clickhouse, tmp_path)
-
-
-async def test_domain_counts_count_reprocessed_posts_once(
-    clickhouse: ClickHouseClient, stats: ClickHouseCollectionStats,
-) -> None:
-    await insert(clickhouse, "posts", [
-        post("a.example", "1"),
-        # Processed again; FINAL keeps only the newer version.
-        post("a.example", "1", updated_at=COLLECTED_AT + dt.timedelta(days=1)),
-        post("a.example", "2"),
-        post("b.example", "3"),
-    ])
+async def test_domain_counts_use_integer_values() -> None:
+    stats = ClickHouseCollectionStats(query_client([
+        {"domain": "a.example", "count": "2"},
+        {"domain": "b.example", "count": 1},
+    ]), ASSETS)
 
     assert await stats.domain_counts() == {"a.example": 2, "b.example": 1}
 
 
-async def test_x_activity_lists_configured_accounts_with_profiles(
-    clickhouse: ClickHouseClient, stats: ClickHouseCollectionStats,
-) -> None:
-    await insert(clickhouse, "posts", [
-        post("x.com", "1", url=x_url("WatcherGuru", "1"), source="x"),
-        post("x.com", "2", url=x_url("WatcherGuru", "2"), source="x"),
-        post("x.com", "3", url=x_url("OtherAuthor", "3"), source="x"),
-    ])
-    profile = {"core": {"user_results": {"result": {
-        "core": {"screen_name": "WatcherGuru", "name": "Watcher.Guru"},
-        "avatar": {"image_url": ICON},
-    }}}}
-    await insert(clickhouse, "raw_posts", [
-        raw_post(
-            "x.com", "1", profile | FOR_YOU,
-            url=x_url("WatcherGuru", "1"), source="x",
-        ),
-        raw_post(
-            "x.com", "3", FOR_YOU, url=x_url("OtherAuthor", "3"), source="x",
-        ),
-    ])
-
+async def test_x_activity_lists_configured_accounts_with_profiles() -> None:
+    stats = ClickHouseCollectionStats(query_client(
+        [{"handle": "watcherguru", "count": 2},
+         {"handle": "otherauthor", "count": 1}],
+        [{
+            "domain": "x.com", "handle": "watcherguru",
+            "profile": json.dumps({
+                "core": {"screen_name": "WatcherGuru", "name": "Watcher.Guru"},
+                "avatar": {"image_url": ICON},
+            }),
+        }],
+        [{"x_home_count": "2"}],
+    ), ASSETS)
     activity = await stats.x_activity(
         "x.com", ("@WatcherGuru", "Empty_Account"),
     )
@@ -89,32 +54,18 @@ async def test_x_activity_lists_configured_accounts_with_profiles(
     )
 
 
-async def test_reddit_activity_covers_each_configured_community(
-    clickhouse: ClickHouseClient, stats: ClickHouseCollectionStats,
-) -> None:
-    await insert(clickhouse, "posts", [
-        post(
-            "reddit.com", f"t3_{post_id}",
-            url=reddit_url(community, post_id), source="reddit",
-        )
-        for community, post_id in (
-            ("LocalLLaMA", "a"), ("LocalLLaMA", "b"), ("python", "c"),
-        )
-    ])
-    await insert(clickhouse, "raw_posts", [
-        raw_post(
-            "reddit.com", f"t3_{post_id}", {"link_flair_text": flair},
-            source="reddit",
-        )
-        for post_id, flair in (("a", " News "), ("b", "News"), ("c", "News"))
-    ])
+async def test_reddit_activity_covers_each_configured_community() -> None:
     updated = COLLECTED_AT - dt.timedelta(hours=1)
-    await insert(clickhouse, "reddit_community_totals", [{
-        "community": "localllama", "total_posts": 120,
-        "source": "arctic_shift", "updated_at": updated,
-        "scraped_at": COLLECTED_AT, "request_url": "", "payload": "{}",
-    }])
-
+    stats = ClickHouseCollectionStats(query_client(
+        [{"community": "localllama", "count": "2"}], [],
+        [{
+            "community": "localllama", "total_posts": "120",
+            "source": "arctic_shift", "updated_at": updated,
+            "scraped_at": COLLECTED_AT,
+        }],
+        [{"community": "localllama", "name": "News", "count": 2},
+         {"community": "python", "name": "News", "count": 1}],
+    ), ASSETS)
     activity = await stats.reddit_activity(
         {"localllama": "LocalLLaMA", "accelerate": "accelerate"},
     )
@@ -130,12 +81,11 @@ async def test_reddit_activity_covers_each_configured_community(
                 ),
             ),
         ),
-        # Flairs from communities that aren't configured count too.
         flairs=(Flair("News", 3),),
     )
 
 
-async def test_reddit_activity_without_communities_queries_nothing(
-    stats: ClickHouseCollectionStats,
-) -> None:
+async def test_reddit_activity_without_communities_queries_nothing() -> None:
+    stats = ClickHouseCollectionStats(query_client(), ASSETS)
+
     assert await stats.reddit_activity({}) == RedditActivity((), ())

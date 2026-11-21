@@ -71,17 +71,17 @@ def test_recently_added_account_uses_its_shorter_observation_span() -> None:
     ('[scrape.account_schedule]\nlookback = "0d"', "lookback"),
 ])
 def test_invalid_schedule_config(
-    tmp_path: Path, config: str, key: str,
+    memory_path: Path, config: str, key: str,
 ) -> None:
-    path = tmp_path / "test-config.toml"
+    path = memory_path / "test-config.toml"
     path.write_text(config)
 
     with pytest.raises(ConfigError, match=key):
         load_settings(path)
 
 
-def test_schedule_defaults_and_overrides(tmp_path: Path) -> None:
-    path = tmp_path / "test-config.toml"
+def test_schedule_defaults_and_overrides(memory_path: Path) -> None:
+    path = memory_path / "test-config.toml"
     path.write_text("")
     settings = load_settings(path)
     assert settings.account_schedule == AccountScheduleSettings(
@@ -108,23 +108,23 @@ def test_schedule_defaults_and_overrides(tmp_path: Path) -> None:
     ("6h", True), ("12h", False),
 ])
 async def test_quiet_accounts_use_configured_max_interval(
-    tmp_path: Path, max_interval: str, *, due: bool,
+    memory_path: Path, max_interval: str, *, due: bool,
 ) -> None:
-    path = tmp_path / "test-config.toml"
+    path = memory_path / "test-config.toml"
     path.write_text(
         f'[scrape.account_schedule]\nmax_interval = "{max_interval}"\n',
     )
     channel = "https://www.youtube.com/@quiet/videos"
-    settings = load_settings(path)._replace(data_dir=tmp_path, sources=(
+    settings = load_settings(path)._replace(data_dir=memory_path, sources=(
         SourceConfig("x.com", ("quiet",)),
         SourceConfig("youtube.com", ("@quiet",)),
     ))
     previous = AccountCheck(START - 12 * DAY, START - 8 * HOUR)
     _save_account_checks(
-        tmp_path / "x-account-checks.json", {"quiet": previous},
+        memory_path / "x-account-checks.json", {"quiet": previous},
     )
     _save_account_checks(
-        tmp_path / "youtube-account-checks.json", {channel: previous},
+        memory_path / "youtube-account-checks.json", {channel: previous},
     )
     client = MagicMock(fetch_json=AsyncMock(return_value=QueryResult([
         {"adapter": kind, "account": account, "recent_posts": 0,
@@ -141,11 +141,11 @@ async def test_quiet_accounts_use_configured_max_interval(
 
 @pytest.mark.parametrize("bypass", ["", "scoped", "disabled", "backfill"])
 async def test_select_accounts_for_regular_and_forced_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bypass: str,
+    memory_path: Path, monkeypatch: pytest.MonkeyPatch, bypass: str,
 ) -> None:
-    path = tmp_path / "test-config.toml"
+    path = memory_path / "test-config.toml"
     path.write_text("[x]\nhomepage = false\n")
-    settings = load_settings(path)._replace(data_dir=tmp_path)
+    settings = load_settings(path)._replace(data_dir=memory_path)
 
     if bypass == "disabled":
         settings = settings._replace(x=settings.x._replace(
@@ -154,7 +154,7 @@ async def test_select_accounts_for_regular_and_forced_runs(
     elif bypass == "backfill":
         settings = settings._replace(x=settings.x._replace(known_overlap=0))
 
-    state = tmp_path / "x-account-checks.json"
+    state = memory_path / "x-account-checks.json"
     # The hourly timer can start a few seconds earlier on the following run.
     timer_offset = dt.timedelta(seconds=20)
     recent = AccountCheck(START - 10 * DAY, START - HOUR + timer_offset)
@@ -237,15 +237,15 @@ async def test_select_accounts_for_regular_and_forced_runs(
 
 
 async def test_all_deferred_accounts_delay_browser_start(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    memory_path: Path, caplog: pytest.LogCaptureFixture,
 ) -> None:
-    config = tmp_path / "test-config.toml"
+    config = memory_path / "test-config.toml"
     config.write_text("[x]\nhomepage = false\n")
-    settings = load_settings(config)._replace(data_dir=tmp_path)
+    settings = load_settings(config)._replace(data_dir=memory_path)
     source = SourceConfig("x.com", ("quiet",))
     seen_at = START - HOUR / 2
     _save_account_checks(
-        tmp_path / "x-account-checks.json",
+        memory_path / "x-account-checks.json",
         {"quiet": AccountCheck(seen_at, seen_at)},
     )
     session = MagicMock(get_browser=AsyncMock())
@@ -274,9 +274,9 @@ async def test_all_deferred_accounts_delay_browser_start(
 
 @pytest.mark.parametrize("mode", ["regular", "scoped", "unavailable"])
 async def test_run_shares_one_activity_query_across_account_sources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+    memory_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
 ) -> None:
-    path = tmp_path / "test-config.toml"
+    path = memory_path / "test-config.toml"
     path.write_text('[x.schedule]\nlookback = "14d"\n')
     channel = "https://www.youtube.com/@writer/videos"
     sources = (
@@ -284,13 +284,15 @@ async def test_run_shares_one_activity_query_across_account_sources(
         SourceConfig("youtube.com", ("@writer",)),
         SourceConfig("x.com", ("@WRITER",)),
     )
-    settings = load_settings(path)._replace(data_dir=tmp_path, sources=sources)
+    settings = load_settings(path)._replace(
+        data_dir=memory_path, sources=sources,
+    )
     previous = AccountCheck(START - 15 * DAY, START - HOUR)
     _save_account_checks(
-        tmp_path / "x-account-checks.json", {"writer": previous},
+        memory_path / "x-account-checks.json", {"writer": previous},
     )
     _save_account_checks(
-        tmp_path / "youtube-account-checks.json", {channel: previous},
+        memory_path / "youtube-account-checks.json", {channel: previous},
     )
     result = QueryResult([
         {"adapter": "x", "account": "writer", "recent_posts": 0,
@@ -318,7 +320,7 @@ async def test_run_shares_one_activity_query_across_account_sources(
 
     await _collect_with_history(
         settings, client, MagicMock(), MagicMock(), MagicMock(), MagicMock(),
-        history, tmp_path, youtube_profile=None, scoped=mode == "scoped",
+        history, memory_path, youtube_profile=None, scoped=mode == "scoped",
     )
 
     plans = [
@@ -346,8 +348,10 @@ async def test_run_shares_one_activity_query_across_account_sources(
     assert plans[0][SourceAdapter.YOUTUBE].due == {channel}
 
 
-def test_bad_local_check_file_does_not_defer_accounts(tmp_path: Path) -> None:
-    path = tmp_path / "x-account-checks.json"
+def test_bad_local_check_file_does_not_defer_accounts(
+    memory_path: Path,
+) -> None:
+    path = memory_path / "x-account-checks.json"
     path.write_text("{")
     assert _load_account_checks(path) == {}
     invalid = {"version": 1, "accounts": {"quiet": "invalid"}}

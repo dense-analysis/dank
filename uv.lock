@@ -255,9 +255,12 @@ dependencies = [
 dev = [
     { name = "atlas-provider-sqlalchemy" },
     { name = "httpx" },
+    { name = "pyfakefs" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pytest-fast" },
+    { name = "pytest-xdist" },
     { name = "ruff" },
 ]
 
@@ -285,9 +288,12 @@ requires-dist = [
 dev = [
     { name = "atlas-provider-sqlalchemy", specifier = "==0.6.0" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "pyfakefs", specifier = "==6.3.0" },
     { name = "pyright", specifier = "==1.1.409" },
     { name = "pytest", specifier = "==9.0.2" },
     { name = "pytest-asyncio", specifier = "==1.3.0" },
+    { name = "pytest-fast", specifier = "==0.17.0" },
+    { name = "pytest-xdist", specifier = "==3.8.0" },
     { name = "ruff", specifier = "==0.15.1" },
 ]
 
@@ -310,6 +316,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cb/7d/01cddcbb6f5cc0ba72e00ddf9b1fa206c802d557fd0a20b18e130edf1336/emoji-2.14.1.tar.gz", hash = "sha256:f8c50043d79a2c1410ebfae833ae1868d5941a67a6cd4d18377e2eb0bd79346b", size = 597182, upload-time = "2025-01-16T06:31:24.983Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/91/db/a0335710caaa6d0aebdaa65ad4df789c15d89b7babd9a30277838a7d9aac/emoji-2.14.1-py3-none-any.whl", hash = "sha256:35a8a486c1460addb1499e3bf7929d3889b2e2841a57401903699fef595e942b", size = 590617, upload-time = "2025-01-16T06:31:23.526Z" },
+]
+
+[[package]]
+name = "execnet"
+version = "2.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
 ]
 
 [[package]]
@@ -1200,6 +1215,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyfakefs"
+version = "6.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/93/fc6ae9a1ffbe4d9a1ea657845912e150aab0c4b7da5092e696449be12439/pyfakefs-6.3.0.tar.gz", hash = "sha256:b24c4922b485170cf42c00e503b7d2ef38171e23358a4b73db80a3a6ce1bbf3f", size = 235628, upload-time = "2026-11-01T18:03:34.799Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/18/1b/b857582848a21ce4497e6f1faecdd76ea38e79b42519e77665122efc511e/pyfakefs-6.3.0-py3-none-any.whl", hash = "sha256:176e01cf9dd484b24be7a3e33e531b1adbbf1a41262e715acee49329e9a7b6f7", size = 248047, upload-time = "2026-11-01T18:03:33.288Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1247,6 +1271,31 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/90/2c/8af215c0f776415f3590cac4f9086ccefd6fd463befeae41cd4d3f193e5a/pytest_asyncio-1.3.0.tar.gz", hash = "sha256:d7f52f36d231b80ee124cd216ffb19369aa168fc10095013c6b014a34d3ee9e5", size = 50087, upload-time = "2025-11-10T16:07:47.256Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/35/f8b19922b6a25bc0880171a2f1a003eaeb93657475193ab516fd87cac9da/pytest_asyncio-1.3.0-py3-none-any.whl", hash = "sha256:611e26147c7f77640e6d0a92a38ed17c3e9848063698d5c93d5aa7aa11cebff5", size = 15075, upload-time = "2025-11-10T16:07:45.537Z" },
+]
+
+[[package]]
+name = "pytest-fast"
+version = "0.17.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e0/c2/5ce7590e3affd22d4452fc9d7a012d98950b0d5d72910d8c77197db929d8/pytest_fast-0.17.0.tar.gz", hash = "sha256:a3d73817f1d763e1e07b90800e9b785d1d59631c1f35e703abe4a857a69999cf", size = 65883, upload-time = "2026-10-31T22:46:38.421Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/5a/af5e23a71866d3130164295dfcf31677a11bcd91597d30f18bf737effefd/pytest_fast-0.17.0-py3-none-any.whl", hash = "sha256:b501a82696f08fc130d769437dd8dd37a32122bbd52b695767330d98833e8d1f", size = 66190, upload-time = "2026-10-31T22:46:37.099Z" },
+]
+
+[[package]]
+name = "pytest-xdist"
+version = "3.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "execnet" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/31/d4e37e9e550c2b92a9cbc2e4d0b7420a27224968580b5a447f420847c975/pytest_xdist-3.8.0-py3-none-any.whl", hash = "sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88", size = 46396, upload-time = "2025-07-01T13:30:56.632Z" },
 ]
 
 [[package]]

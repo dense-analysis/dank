@@ -457,24 +457,6 @@ async def test_author_rule_violations_keep_their_wording(
     assert (response.status_code, response.json()["error"]) == (400, message)
 
 
-async def test_openapi_describes_filters_and_each_post_shape(
-    client: AsyncClient,
-) -> None:
-    document = (await client.get("/api/openapi.json")).json()
-    schemas = document["components"]["schemas"]
-    posts = document["paths"]["/api/reader/posts"]["get"]
-    parameters = {item["name"]: item for item in posts["parameters"]}
-
-    assert parameters["domain"]["schema"]["type"] == "array"
-    assert parameters["limit"]["schema"]["maximum"] == 100
-    assert parameters["mode"]["schema"]["enum"] == [
-        "words", "meaning", "combined",
-    ]
-    assert "conversation" in schemas["XDetailOut"]["properties"]
-    assert "conversation" not in schemas["XOut"]["properties"]
-    assert "comments_items" not in schemas["HackerNewsOut"]["properties"]
-    assert schemas["PostOut"]["additionalProperties"] is False
-
 
 class SourcesSeen(FakePostStore):
     """Remembers which sources each listing was given."""

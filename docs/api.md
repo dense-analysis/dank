@@ -143,7 +143,7 @@ adapter without I/O.
    sessions, refresh workers, collection locks and limiters, and settings are
    opened in the lifespan and reached through `Annotated` dependencies. There
    are no module-level clients.
-10. **Fakes over mocks, real databases over fakes of SQL.** See Testing.
+10. **Fakes for external services.** See Testing.
 
 ## Errors
 
@@ -371,36 +371,16 @@ there by `tests/api/ruff.toml`.
   `ASGITransport`. Only driven adapters are replaced, with one
   `dependency_overrides` line each, by fakes in the feature's `fakes.py` that
   hold plain values and are type-checked against their port.
-- **Repository tests** run Postgres repositories against a real database, and
-  are marked `postgres`; see [Postgres migrations](development.md#postgres-migrations).
-  `tests/db/test_sources.py` races real transactions, which a fake can't.
-- **Adapter tests** run each adapter against a real, throwaway ClickHouse
-  database. They are marked `clickhouse` and skipped unless
-  `--clickhouse-url` names a loopback server:
+- **Adapter tests** exercise SQL binding and row mapping with supplied driver
+  results. Existing cases that require live connections are tracked under
+  [the fixture conversion](https://linear.app/dense-analysis/issue/DEN-102).
+- **Process tests** cover worker updates, cancellation and cleanup in
+  `tests/api/refresh/test_worker.py`.
 
-  ```sh
-  docker run -d --name dank-test-clickhouse \
-    -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 127.0.0.1:18123:8123 \
-    clickhouse/clickhouse-server:25.8
-  uv run pytest tests/api --clickhouse-url=http://default:@127.0.0.1:18123
-  ```
-
-  Each test gets a new database with `schema.sql` and the startup steps
-  applied, and drops it afterwards. The network guard allows that one address.
-- **Projection tests** do the same over HTTP: the real router and service, with
-  the real store swapped in for the fake. Each test states its rows and checks
-  the JSON, as in `tests/api/posts/test_payloads.py`.
-- **Process tests** use real processes, signals and pipes, as in
-  `tests/api/refresh/test_worker.py`. `tests/api/refresh/test_lifecycle.py` runs
-  whole jobs through real workers, collecting from a feed server on the same
-  machine.
-
-Rules: no `AsyncMock`, `patch` or `monkeypatch.setattr` on DANK modules; no
-assertions on SQL text, call counts or call order. A test that needs a patch
-points to a missing port.
-
-Semantic search reads `web_embedding_cache`, so no adapter test loads the model;
-date those rows from the clock, because the table's TTL drops old ones.
+Route tests replace external services through their ports. Adapter tests can
+replace the driver or worker boundary and check the request it receives. Use
+fixed fixture rows for semantic search so the tests can exercise cached vectors
+without loading an embedding model.
 
 ## Adding a route
 

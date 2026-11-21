@@ -10,7 +10,7 @@ TARGETS = re.search(r"^\.PHONY: (.+)$", MAKEFILE, re.MULTILINE)
 
 
 def _mentions(text: str, word: str) -> bool:
-    # Hyphens count as part of a name, so test doesn't match test-postgres.
+    # Hyphens count as part of a command name.
     return bool(re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", text))
 
 

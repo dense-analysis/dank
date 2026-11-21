@@ -10,6 +10,9 @@ from subprocess import PIPE, Popen
 
 import pytest
 
+pytestmark = pytest.mark.shell_io
+
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 USERNAME = "fixture-user"
 PASSWORD = "  p'ass $`word\\ $(touch should-not-exist)  "

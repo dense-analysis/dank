@@ -1,133 +1,128 @@
-"""Real jobs through the real app: its lifespan, spawned workers and storage.
-
-Each job collects from a feed server on this machine, so nothing leaves it. An
-empty feed saves no posts, so no embedding model loads.
-"""
-
-from __future__ import annotations
+"""Refresh jobs run through the app's lifespan with a scripted worker."""
 
 import asyncio
 import json
-import multiprocessing
 import pathlib
+from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
+import clickhouse_connect
 import pytest
+from fastapi import FastAPI
+from httpx import AsyncClient
 
+from dank.api import lifespan
 from dank.api.app import create_app
-from dank.config import ClickHouseSettings, Settings, SourceConfig
+from dank.api.refresh.manager import Report
+from dank.api.refresh.model import RefreshPlan
+from dank.config import Settings, SourceConfig
+from dank.storage.clickhouse import ClickHouseClient
 from tests.api.client import serving
-
-pytestmark = pytest.mark.clickhouse
+from tests.api.refresh.fakes import FakeWorker
 
 PATH = "/api/reader/refresh"
-# A worker imports the scrapers before it does anything else.
-WORKER_SECONDS = 60
 
 
-def with_feed(
-    settings: Settings,
-    clickhouse: ClickHouseSettings,
-    port: int,
-    path: str,
-) -> Settings:
-    return settings._replace(
-        clickhouse=clickhouse,
-        sources=(
-            SourceConfig(
-                "feed.test", (),
-                feed_urls=(f"http://127.0.0.1:{port}{path}",),
-            ),
-        ),
-    )
+class Driver:
+    async def close(self) -> None:
+        pass
 
 
-async def job_when(
-    client: httpx.AsyncClient, job_id: str, statuses: set[str],
-) -> dict[str, Any]:
-    async with asyncio.timeout(WORKER_SECONDS):
-        while True:
-            jobs = (await client.get(PATH)).json()["jobs"]
-            job = next(item for item in jobs if item["id"] == job_id)
-
-            if job["status"] in statuses:
-                return job
-
-            await asyncio.sleep(0.1)
+@pytest.fixture
+def selected(settings: Settings) -> Settings:
+    return settings._replace(sources=(SourceConfig(
+        "feed.test", (), feed_urls=("https://feed.test/news.xml",),
+    ),))
 
 
-async def test_a_job_runs_in_a_real_worker_to_the_end(
-    settings: Settings,
-    clickhouse_settings: ClickHouseSettings,
-    feed_port: int,
+@pytest.fixture
+def running_app(
+    selected: Settings, worker: FakeWorker, monkeypatch: pytest.MonkeyPatch,
+) -> FastAPI:
+    async def connect(**_options: object) -> Driver:
+        return Driver()
+
+    async def prepare(_client: ClickHouseClient) -> None:
+        pass
+
+    monkeypatch.setattr(clickhouse_connect, "get_async_client", connect)
+    monkeypatch.setattr(lifespan, "prepare_clickhouse", prepare)
+    monkeypatch.setattr(lifespan, "ProcessWorker", lambda: worker)
+
+    return create_app(selected)
+
+
+@pytest.fixture
+async def running_client(running_app: FastAPI) -> AsyncIterator[AsyncClient]:
+    async with serving(running_app) as client:
+        yield client
+
+
+async def start(client: AsyncClient) -> dict[str, Any]:
+    response = await client.post(PATH, json={
+        "scope": {"kind": "rss", "domains": ["feed.test"]},
+    })
+
+    assert response.status_code == 202
+
+    return response.json()["job"]
+
+
+async def test_a_job_runs_inside_the_app_lifespan(
+    running_client: AsyncClient, worker: FakeWorker,
 ) -> None:
-    selected = with_feed(
-        settings, clickhouse_settings, feed_port, "/empty.xml",
-    )
+    reported = asyncio.Event()
 
-    async with serving(create_app(selected)) as client:
-        response = await client.post(PATH, json={
-            "scope": {"kind": "rss", "domains": ["feed.test"]},
+    async def complete(plan: RefreshPlan, report: Report) -> None:
+        assert plan.settings.sources[0].domain == "feed.test"
+        report({
+            "status": "completed", "posts_saved": 0, "run_id": "capture-1",
+            "message": "Refresh complete. Updates are ready to view.",
         })
+        reported.set()
 
-        assert response.status_code == 202
+    worker.script = complete
+    accepted = await start(running_client)
+    await asyncio.wait_for(reported.wait(), 1)
+    [done] = (await running_client.get(PATH)).json()["jobs"]
 
-        accepted = response.json()["job"]
-
-        assert accepted["status"] == "queued"
-        assert accepted["label"] == "feed.test"
-
-        done = await job_when(
-            client, accepted["id"], {"completed", "partial", "failed"},
-        )
-
+    assert accepted["status"] == "queued"
+    assert accepted["label"] == "feed.test"
+    assert done["id"] == accepted["id"]
     assert done["status"] == "completed"
     assert done["message"] == "Refresh complete. Updates are ready to view."
     assert done["posts_saved"] == 0
-    assert done["run_id"]
+    assert done["run_id"] == "capture-1"
     assert done["finished_at"]
 
 
-async def test_shutdown_stops_a_running_worker_and_interrupts_its_job(
-    settings: Settings,
-    clickhouse_settings: ClickHouseSettings,
-    feed_port: int,
-    tmp_path: pathlib.Path,
+async def test_leaving_the_lifespan_stops_work_and_saves_interruption(
+    running_app: FastAPI, selected: Settings, worker: FakeWorker,
 ) -> None:
-    selected = with_feed(
-        settings, clickhouse_settings, feed_port, "/hang.xml",
-    )
-    entered = tmp_path / "feed-entered"
+    entered = asyncio.Event()
+    stopped = asyncio.Event()
 
-    async with serving(create_app(selected)) as client:
-        response = await client.post(PATH, json={
-            "scope": {"kind": "rss", "domains": ["feed.test"]},
-        })
-        job = response.json()["job"]
+    async def hold(_plan: RefreshPlan, _report: Report) -> None:
+        entered.set()
 
-        async with asyncio.timeout(WORKER_SECONDS):
-            while not entered.exists():  # noqa: ASYNC110 - another process
-                await asyncio.sleep(0.1)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
 
-        running = await job_when(client, job["id"], {"running"})
+    worker.script = hold
 
+    async with serving(running_app) as client:
+        job = await start(client)
+        await asyncio.wait_for(entered.wait(), 1)
+        [running] = (await client.get(PATH)).json()["jobs"]
+
+        assert running["status"] == "running"
         assert running["finished_at"] is None
-        assert [
-            child.name for child in multiprocessing.active_children()
-            if child.name.startswith("dank-refresh-")
-        ] == [f"dank-refresh-{job['id']}"]
 
-    # Leaving the lifespan waited for the worker to go.
-    assert not [
-        child for child in multiprocessing.active_children()
-        if child.name.startswith("dank-refresh-")
-    ]
-
-    [saved] = json.loads(
-        (pathlib.Path(selected.data_dir) / "reader-refresh.json").read_text(),
-    )
-
+    assert stopped.is_set()
+    path = pathlib.Path(selected.data_dir) / "reader-refresh.json"
+    [saved] = json.loads(path.read_text())
     assert saved["id"] == job["id"]
     assert saved["status"] == "interrupted"
     assert saved["message"] == "Refresh was interrupted."

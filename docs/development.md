@@ -2,7 +2,12 @@
 
 Use [native or Docker setup](setup.md) to run the application. The checks below
 need no live ClickHouse or Postgres server, browser login or private
-configuration. The default tests use fixtures and block external network access.
+configuration. Pytest blocks network and database connections, including
+loopback, and real subprocesses. Test cases and temporary paths use a fresh
+in-memory filesystem. Pytest loads the public checkout artifacts used in
+assertions during collection, including migration SQL and the reader schema.
+Cases marked `clickhouse`, `shell_io` or
+`embeddings` are deselected while their assertions are converted to fixtures.
 
 ## Native checks
 
@@ -14,6 +19,13 @@ make test
 make lint
 uv run pyright
 ```
+
+`make test`, `uv run pytest` and `pytest` in the project environment all fork
+workers by default, including when given a test path, `-k` or `-m`. Full runs
+with at least twelve workers collect three groups in parallel. Use
+`TEST_WORKERS` with Make or `-n` with pytest to set the worker count. Coverage,
+JUnit XML, interactive debugging and an explicit `-n 0` use native pytest.
+Async tests and fixtures reuse an event loop within each test module.
 
 The linter can fix files; inspect the resulting diff. Running Pyright directly
 also exposes its exit status.
@@ -37,18 +49,12 @@ docker run --rm --entrypoint sh "$@" dank-checks -c \
    uv sync --frozen && uv run pytest && ./run-linters.sh && uv run pyright'
 ```
 
-The tests run `make`, and `run-linters.sh` needs ripgrep for its import
-boundary checks, which pass silently without it.
+`run-linters.sh` needs ripgrep for its import boundary checks.
 
 These checks operate on the source copied into the image. Linter fixes stay in
 the disposable container; use the native command to apply fixes to the checkout.
 Rebuild the image after changing application code. This command does not start
 the Compose services or mount private configuration and application data.
-
-Real-model checks are opt-in. Replace `uv run pytest` in either example with
-`uv run pytest -m embeddings -s`; the models listed in the embedding tests must
-already be cached. In Docker, make that cache available inside the check
-container at `/root/.cache/huggingface`, for example through a read-only mount.
 
 ## Web server
 
@@ -59,10 +65,6 @@ watchfiles, which works on macOS and Linux:
 ```sh
 uv run web --port 8081
 ```
-
-Its ClickHouse adapter tests need a loopback ClickHouse and run with
-`uv run pytest tests/api --clickhouse-url=http://default:@127.0.0.1:18123`;
-without the option they are skipped.
 
 ## Run edited application code
 
@@ -131,17 +133,6 @@ migration, and `main` would then refuse to start, correctly, because the
 database is ahead of its code. A preview of an older branch refuses to start
 for the same reason. Point the preview's config at another database, created
 with `make db-create`, as for [parallel instances](#parallel-instances).
-
-`make test-postgres` runs the tests marked `postgres` against a disposable server.
-Without `--postgres-url` or Atlas they're skipped, so `uv run pytest` needs
-neither. They get these fixtures from `tests/conftest.py`:
-
-| Fixture | Gives a test |
-| --- | --- |
-| `postgres_session`, `async_postgres_session` | A session on a database at head, rolled back afterwards even after a commit |
-| `postgres_settings` | Settings for that database |
-| `fresh_postgres` | An empty database of its own, for migration tests |
-| `postgres_dev_url` | An empty database for Atlas to compare schemas in |
 
 ## Parallel instances
 

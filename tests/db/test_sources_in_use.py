@@ -1,81 +1,80 @@
-"""The sources a command works on: config.toml's, or the sources table's."""
+"""Commands select configured or saved sources without opening a database."""
 
-import asyncio
-import socket
+import pathlib
 import uuid
+from unittest.mock import AsyncMock, MagicMock
 
+import psycopg
 import pytest
-from sqlalchemy import insert
+from sqlalchemy.exc import DBAPIError
 
-from dank.config import PostgresSettings, Settings, SourceConfig, load_settings
-from dank.db.atlas import upgrade
-from dank.db.engine import async_engine, async_sessions
-from dank.db.models.sources import SourceRow
-from dank.db.sources import (
-    NO_SOURCES,
-    PostgresSourceRepository,
-    SourcesError,
-    sources_in_use,
+from dank.config import Settings, SourceConfig, load_settings
+from dank.db import (
+    atlas,
+    sources as source_storage,
 )
-from dank.sources.model import CompiledSources, Source, Target
+from dank.db.models.sources import SourceRow
+from dank.db.sources import NO_SOURCES, SourcesError, sources_in_use
+from dank.sources.model import CompiledSources, Source, Target, encode_config
 
 CONFIG_SOURCES = (SourceConfig("config.example", ()),)
 
 
-def settings(postgres: PostgresSettings, *, in_database: bool) -> Settings:
-    return load_settings("config.example.toml")._replace(
-        postgres=postgres,
+@pytest.fixture
+def configured(memory_path: pathlib.Path) -> Settings:
+    config = memory_path / "settings.toml"
+    config.write_text("")
+
+    return load_settings(config)._replace(
         sources=CONFIG_SOURCES,
-        sources_in_database=in_database,
+        sources_in_database=True,
     )
 
 
-async def save(postgres: PostgresSettings, *sources: Source) -> None:
-    engine = async_engine(postgres)
-
-    try:
-        await PostgresSourceRepository(async_sessions(engine)).add_all(sources)
-    finally:
-        await engine.dispose()
-
-
-def closed_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-
-        return int(listener.getsockname()[1])
-
-
 @pytest.fixture
-def database(fresh_postgres: PostgresSettings) -> PostgresSettings:
-    asyncio.run(upgrade(fresh_postgres))
+def session(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    session = AsyncMock()
+    engine = AsyncMock()
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = session
+    monkeypatch.setattr(atlas, "require_head", AsyncMock())
+    monkeypatch.setattr(source_storage, "async_engine", MagicMock(
+        return_value=engine,
+    ))
+    monkeypatch.setattr(source_storage, "async_sessions", MagicMock(
+        return_value=factory,
+    ))
 
-    return fresh_postgres
+    return session
 
 
-async def test_config_sources_are_used_while_the_switch_is_off() -> None:
-    # Postgres is off, so reading it would fail.
-    off = settings(PostgresSettings(enabled=False), in_database=False)
+def row(source: Source) -> SourceRow:
+    return SourceRow(
+        id=source.id, enabled=source.enabled, config=encode_config(source),
+    )
+
+
+async def test_config_sources_are_used_while_the_switch_is_off(
+    configured: Settings,
+) -> None:
+    off = configured._replace(sources_in_database=False)
 
     assert await sources_in_use(off) == CompiledSources(
         CONFIG_SOURCES, CONFIG_SOURCES,
     )
 
 
-@pytest.mark.postgres
 async def test_saved_sources_replace_config_sources(
-    database: PostgresSettings,
+    configured: Settings, session: AsyncMock,
 ) -> None:
-    await save(
-        database,
-        Source(
-            uuid.uuid4(), enabled=True, domain="x.com",
+    session.scalars.return_value = [
+        row(Source(
+            uuid.UUID(int=1), domain="x.com", enabled=True,
             accounts=(Target("alice"), Target("bob", enabled=False)),
-        ),
-        Source(uuid.uuid4(), enabled=False, domain="off.example"),
-    )
-
-    sources = await sources_in_use(settings(database, in_database=True))
+        )),
+        row(Source(uuid.UUID(int=2), enabled=False, domain="off.example")),
+    ]
+    sources = await sources_in_use(configured)
 
     assert [(s.domain, s.accounts) for s in sources.known] == [
         ("x.com", ("alice", "bob")), ("off.example", ()),
@@ -85,25 +84,23 @@ async def test_saved_sources_replace_config_sources(
     ]
 
 
-@pytest.mark.postgres
 async def test_saved_sources_are_ignored_while_the_switch_is_off(
-    database: PostgresSettings,
+    configured: Settings, session: AsyncMock,
 ) -> None:
-    await save(
-        database, Source(uuid.uuid4(), enabled=True, domain="saved.example"),
-    )
-
-    sources = await sources_in_use(settings(database, in_database=False))
+    off = configured._replace(sources_in_database=False)
+    sources = await sources_in_use(off)
 
     assert sources.known == CONFIG_SOURCES
+    session.scalars.assert_not_awaited()
 
 
-@pytest.mark.postgres
 async def test_an_empty_table_says_how_to_fill_it(
-    database: PostgresSettings,
+    configured: Settings, session: AsyncMock,
 ) -> None:
+    session.scalars.return_value = []
+
     with pytest.raises(SourcesError) as raised:
-        await sources_in_use(settings(database, in_database=True))
+        await sources_in_use(configured)
 
     assert str(raised.value) == NO_SOURCES == (
         "No sources in the database. Run make sources-import, or add one in "
@@ -111,44 +108,40 @@ async def test_an_empty_table_says_how_to_fill_it(
     )
 
 
-@pytest.mark.postgres
 async def test_the_schema_must_be_at_head(
-    fresh_postgres: PostgresSettings,
+    configured: Settings, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(atlas, "require_head", AsyncMock(
+        side_effect=atlas.SchemaError("Postgres schema is behind"),
+    ))
+
     with pytest.raises(SourcesError, match="schema is behind"):
-        await sources_in_use(settings(fresh_postgres, in_database=True))
+        await sources_in_use(configured)
 
 
-@pytest.mark.postgres
 async def test_a_row_this_code_cannot_read_is_an_error(
-    database: PostgresSettings,
+    configured: Settings, session: AsyncMock,
 ) -> None:
-    engine = async_engine(database)
+    session.scalars.return_value = [SourceRow(
+        id=uuid.UUID(int=7), enabled=True, config={"domain": 1},
+    )]
 
-    try:
-        async with engine.begin() as connection:
-            await connection.execute(insert(SourceRow).values(
-                id=uuid.UUID(int=7), enabled=True, config={"domain": 1},
-            ))
-    finally:
-        await engine.dispose()
+    with pytest.raises(SourcesError, match=r"Stored source .*000007"):
+        await sources_in_use(configured)
 
-    with pytest.raises(SourcesError) as raised:
-        await sources_in_use(settings(database, in_database=True))
 
-    assert "Stored source 00000000-0000-0000-0000-000000000007" in str(
-        raised.value,
+async def test_an_outage_is_an_error_and_never_config_sources(
+    configured: Settings, session: AsyncMock,
+) -> None:
+    session.scalars.side_effect = DBAPIError(
+        "SELECT sources", {"password": "synthetic-password"},
+        psycopg.OperationalError("connection refused"),
     )
 
+    with pytest.raises(
+        SourcesError, match="Postgres: connection refused",
+    ) as raised:
+        await sources_in_use(configured)
 
-@pytest.mark.postgres
-async def test_an_outage_is_an_error_and_never_config_sources(
-    database: PostgresSettings,
-) -> None:
-    down = database._replace(port=closed_port())
-
-    with pytest.raises(SourcesError) as raised:
-        await sources_in_use(settings(down, in_database=True))
-
-    assert "Postgres" in str(raised.value)
-    assert database.password_file.read_text().strip() not in str(raised.value)
+    assert "synthetic-password" not in str(raised.value)
+    assert "SELECT" not in str(raised.value)

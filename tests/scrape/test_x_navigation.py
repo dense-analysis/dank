@@ -1,4 +1,6 @@
 import asyncio
+from collections.abc import Callable
+from contextvars import Context
 from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock
 
@@ -21,6 +23,30 @@ from dank.scrape.x.navigation import (
 from dank.scrape.x.session import LoginRequiredError
 
 
+@pytest.fixture
+async def navigation_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = asyncio.get_running_loop()
+    call_later = loop.call_later
+    now = loop.time()
+
+    def time() -> float:
+        return now
+
+    def call_without_waiting(
+        delay: float, callback: Callable[..., object], *args: object,
+        context: Context | None = None,
+    ) -> asyncio.TimerHandle:
+        nonlocal now
+        now += delay
+
+        return call_later(0, callback, *args, context=context)
+
+    # Keep asyncio's timer callbacks and task scheduling, without wall time.
+    monkeypatch.setattr(loop, "time", time)
+    monkeypatch.setattr(loop, "call_later", call_without_waiting)
+
+
+@pytest.mark.usefixtures("navigation_clock")
 @pytest.mark.parametrize("header_states", [
     [["@writer"]], [["@previous"], [], ["@writer"]],
 ])
@@ -83,7 +109,7 @@ async def test_search_selects_exact_handle_and_waits_for_profile(
         ["Enter", "Enter"],
     ]
     assert all(
-        later - earlier >= SEARCH_KEY_PAUSE_SECONDS
+        later >= earlier + SEARCH_KEY_PAUSE_SECONDS
         for earlier, later in pairwise(key_times)
     )
     page.activate.assert_awaited_once()
@@ -160,6 +186,7 @@ async def test_no_more_keys_until_selection_changes(
     page.select.assert_not_awaited()
 
 
+@pytest.mark.usefixtures("navigation_clock")
 async def test_enter_waits_for_selected_option() -> None:
     ready = asyncio.Event()
     search = MagicMock(
@@ -192,6 +219,7 @@ async def test_enter_waits_for_selected_option() -> None:
     assert search.send_keys.await_args.args[0][0]["key"] == "Enter"
 
 
+@pytest.mark.usefixtures("navigation_clock")
 async def test_enter_waits_for_committed_active_descendant() -> None:
     from dank.scrape.x.navigation import CONFIRM_SELECTION_SCRIPT
 
@@ -224,6 +252,7 @@ async def test_enter_waits_for_committed_active_descendant() -> None:
     assert search.send_keys.await_args.args[0][0]["key"] == "Enter"
 
 
+@pytest.mark.usefixtures("navigation_clock")
 async def test_already_selected_account_needs_only_enter() -> None:
     search = MagicMock(
         send_keys=AsyncMock(), apply=AsyncMock(return_value="WatcherGuru"),

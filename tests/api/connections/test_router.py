@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import pytest
+from fastapi import FastAPI
 from httpx import AsyncClient
 
+from dank.api.connections.clickhouse import ClickHouseConnectionStore
+from dank.api.connections.deps import connection_store
 from dank.api.connections.model import ConnectionKey, ConnectionScope
+from dank.storage.clickhouse import ClickHouseClient
+from tests.api.clickhouse import QueryResults
 from tests.api.connections.fakes import FakeConnectionStore
 
 STAMP = dt.datetime(2026, 10, 17, 12, microsecond=123000, tzinfo=dt.UTC)
@@ -89,6 +94,24 @@ async def test_unknown_root_is_not_found(client: AsyncClient) -> None:
     assert (response.status_code, response.json()) == (404, {
         "error": "Article not found", "code": "not_found", "fields": [],
     })
+
+
+async def test_empty_post_lookup_returns_not_found(
+    app: FastAPI, client: AsyncClient,
+) -> None:
+    driver = QueryResults(([],))
+    store = ClickHouseConnectionStore(cast(ClickHouseClient, driver))
+    app.dependency_overrides[connection_store] = lambda: store
+
+    response = await client.get("/api/reader/connections?domain=no&id=no")
+
+    assert (response.status_code, response.json()["code"]) == (
+        404, "not_found",
+    )
+    [(statement, params)] = driver.requests
+    assert "WHERE domain = %(domain)s AND post_id = %(id)s" in statement
+    assert params is not None
+    assert (params["domain"], params["id"]) == ("no", "no")
 
 
 @pytest.mark.parametrize("query", [
@@ -206,14 +229,3 @@ async def test_malformed_lookups_are_rejected(
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
-
-
-async def test_openapi_describes_connections(client: AsyncClient) -> None:
-    schemas = (await client.get("/api/openapi.json")).json()["components"][
-        "schemas"
-    ]
-
-    assert schemas["ConnectionsResponse"]["additionalProperties"] is False
-    assert schemas["ConnectionOut"]["properties"]["direction"]["enum"] == [
-        "incoming", "outgoing", "related",
-    ]

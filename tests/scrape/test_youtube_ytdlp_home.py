@@ -3,9 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import subprocess
-import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 from unittest.mock import Mock
 
@@ -18,9 +16,7 @@ from dank.scrape.youtube.ytdlp_home import (
     classify_entry,
     collect_ytdlp_home,
 )
-
-# Saved before the suite blocks subprocesses; only fixed local scripts use it.
-_REAL_POPEN = subprocess.Popen
+from tests.worker import MemoryProcess, write_message
 
 COOKIES: list[dict[str, object]] = [{
     "name": "SAPISID", "value": "synthetic-session-value",
@@ -151,23 +147,37 @@ def test_worker_item_guard_does_not_advance_the_generator_again(
 
 
 def _substitute_worker(
-    monkeypatch: pytest.MonkeyPatch, code: str,
-) -> tuple[list[asyncio.subprocess.Process], asyncio.Event]:
-    spawn = asyncio.create_subprocess_exec
-
-    def local_script_only(args: Any, **kwargs: Any):
-        assert tuple(args) == (sys.executable, "-c", code)
-
-        return _REAL_POPEN(args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "Popen", local_script_only)
-    children: list[asyncio.subprocess.Process] = []
+    monkeypatch: pytest.MonkeyPatch,
+    events: tuple[dict[str, Any] | bytes, ...] = (),
+    *, hang: bool = False,
+    check_request: Callable[[dict[str, Any]], None] | None = None,
+) -> tuple[list[MemoryProcess], asyncio.Event]:
+    children: list[MemoryProcess] = []
     launched = asyncio.Event()
 
-    async def substitute(*args: Any, **kwargs: Any):
+    async def worker(
+        stdin: asyncio.StreamReader, stdout: asyncio.StreamReader,
+    ) -> int:
+        request = json.loads(await stdin.read())
+
+        if check_request is not None:
+            check_request(request)
+
+        for event in events:
+            if isinstance(event, bytes):
+                stdout.feed_data(event)
+            else:
+                write_message(stdout, event)
+
+        if hang:
+            await asyncio.Event().wait()
+
+        return 0
+
+    async def substitute(*args: Any, **kwargs: Any) -> MemoryProcess:
         assert "synthetic-session-value" not in repr(args)
         assert "env" not in kwargs
-        child = await spawn(sys.executable, "-c", code, **kwargs)
+        child = MemoryProcess(worker)
         children.append(child)
         launched.set()
 
@@ -178,19 +188,19 @@ def _substitute_worker(
     return children, launched
 
 
-async def test_subprocess_timeout_returns_partial_data_and_reaps_worker(
+async def test_worker_timeout_returns_partial_data_and_reaps_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    children, _ = _substitute_worker(monkeypatch, '''
-import json, sys, time
-request = json.load(sys.stdin)
-assert request['cookies'][0]['value'] == 'synthetic-session-value'
-print(json.dumps({'event':'entry', 'raw':{
-    'id':'abcdefghijk', 'ie_key':'Youtube', 'title':'Original metadata'}}),
-    flush=True)
-time.sleep(30)
-''')
-    result = await collect_ytdlp_home(COOKIES, timeout_seconds=0.5)
+    def check_request(request: dict[str, Any]) -> None:
+        assert request["cookies"][0]["value"] == "synthetic-session-value"
+
+    children, _ = _substitute_worker(monkeypatch, ({
+        "event": "entry", "raw": {
+            "id": "abcdefghijk", "ie_key": "Youtube",
+            "title": "Original metadata",
+        },
+    },), hang=True, check_request=check_request)
+    result = await collect_ytdlp_home(COOKIES, timeout_seconds=0.02)
     assert result.outcome == "timeout"
     assert result.error_type == "TimeoutError"
     assert len(result.entries) == 1
@@ -203,11 +213,7 @@ time.sleep(30)
 async def test_cancellation_kills_and_reaps_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    children, launched = _substitute_worker(monkeypatch, '''
-import json, sys, time
-json.load(sys.stdin)
-time.sleep(30)
-''')
+    children, launched = _substitute_worker(monkeypatch, hang=True)
     task = asyncio.create_task(collect_ytdlp_home(COOKIES))
     await asyncio.wait_for(launched.wait(), 2)
     task.cancel()
@@ -221,16 +227,14 @@ time.sleep(30)
 async def test_completed_worker_keeps_duplicates_and_reports_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    children, _ = _substitute_worker(monkeypatch, '''
-import json, sys
-json.load(sys.stdin)
-for event in [
-    {'event':'entry', 'raw':{'id':'abcdefghijk', 'ie_key':'Youtube'}},
-    {'event':'entry', 'raw':{'id':'abcdefghijk', 'ie_key':'Youtube'}},
-    {'event':'warning', 'category':'repeated_continuation'},
-    {'event':'done', 'outcome':'completed'}]:
-    print(json.dumps(event), flush=True)
-''')
+    entry = {"event": "entry", "raw": {
+        "id": "abcdefghijk", "ie_key": "Youtube",
+    }}
+    children, _ = _substitute_worker(monkeypatch, (
+        entry, entry,
+        {"event": "warning", "category": "repeated_continuation"},
+        {"event": "done", "outcome": "completed"},
+    ))
     result = await collect_ytdlp_home(_cookie_jar(COOKIES))
     assert result.outcome == "completed"
     assert [entry.position for entry in result.entries] == [1, 2]
@@ -242,12 +246,9 @@ for event in [
 async def test_invalid_worker_output_returns_failure_without_leaking_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    children, _ = _substitute_worker(monkeypatch, '''
-import json, sys, time
-json.load(sys.stdin)
-print('synthetic-session-value malformed', flush=True)
-time.sleep(30)
-''')
+    children, _ = _substitute_worker(
+        monkeypatch, (b"synthetic-session-value malformed\n",), hang=True,
+    )
     result = await collect_ytdlp_home(COOKIES)
     assert result.outcome == "failed"
     assert result.error_type == "JSONDecodeError"
@@ -343,17 +344,16 @@ def test_regional_home_url_needs_the_explicit_redirect_compatibility_option(
 async def test_renderer_timeout_keeps_shelf_context_and_reaps_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    children, _ = _substitute_worker(monkeypatch, '''
-import json, sys, time
-request = json.load(sys.stdin)
-assert request['include_renderers'] is True
-print(json.dumps({'event':'renderer', 'key':'reelItemRenderer',
-    'raw':{'videoId':'abcdefghijk'}, 'shelf':'Shorts','shelves':['Shorts']}),
-    flush=True)
-time.sleep(30)
-''')
+    def check_request(request: dict[str, Any]) -> None:
+        assert request["include_renderers"] is True
+
+    children, _ = _substitute_worker(monkeypatch, ({
+        "event": "renderer", "key": "reelItemRenderer",
+        "raw": {"videoId": "abcdefghijk"},
+        "shelf": "Shorts", "shelves": ["Shorts"],
+    },), hang=True, check_request=check_request)
     result = await collect_ytdlp_home(
-        COOKIES, timeout_seconds=0.5, include_renderers=True,
+        COOKIES, timeout_seconds=0.02, include_renderers=True,
     )
     assert result.outcome == "timeout"
     assert result.entries == ()

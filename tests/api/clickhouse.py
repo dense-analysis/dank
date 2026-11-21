@@ -1,46 +1,40 @@
-"""Throwaway ClickHouse databases and rows for the clickhouse test lane."""
+"""Synthetic ClickHouse rows and a replay client for adapter tests."""
 
 from __future__ import annotations
 
 import datetime as dt
 import json
 import pathlib
-import re
-from typing import Any
-from urllib.parse import urlsplit
+from collections import deque
+from typing import Any, cast
 
-from dank.config import ClickHouseSettings
-from dank.storage.clickhouse import ClickHouseClient
+from dank.storage.clickhouse import ClickHouseClient, QueryResult
 
-SCHEMA = pathlib.Path(__file__).parents[2] / "schema.sql"
 COLLECTED_AT = dt.datetime(2026, 10, 30, 12, tzinfo=dt.UTC)
 
 
-def server_settings(url: str) -> ClickHouseSettings:
-    parts = urlsplit(url)
+class QueryResults:
+    def __init__(self, responses: tuple[list[dict[str, Any]], ...]) -> None:
+        self.responses = deque(responses)
+        self.requests: list[tuple[str, dict[str, Any] | None]] = []
+        self.writes: list[tuple[str, list[dict[str, Any]]]] = []
 
-    return ClickHouseSettings(
-        host=parts.hostname or "127.0.0.1",
-        port=parts.port or 8123,
-        database="default",
-        username=parts.username or "default",
-        password=parts.password or "",
-        secure=parts.scheme == "https",
-        use_http=True,
-    )
+    async def fetch_json(
+        self, query: str, params: dict[str, Any] | None = None,
+    ) -> QueryResult:
+        assert self.responses, f"Unexpected ClickHouse statement: {query}"
+        self.requests.append((query, params))
+
+        return QueryResult(self.responses.popleft())
+
+    async def insert_rows(
+        self, table: str, rows: list[dict[str, Any]],
+    ) -> None:
+        self.writes.append((table, rows))
 
 
-def schema_statements(database: str) -> list[str]:
-    # Comments go first, since some contain semicolons. schema.sql names
-    # the dank database, so the throwaway database takes its place.
-    text = re.sub(r"--[^\n]*", "", SCHEMA.read_text())
-    statements = (statement.strip() for statement in text.split(";"))
-
-    return [
-        statement.replace("dank.", f"{database}.")
-        for statement in statements
-        if statement and not statement.startswith("CREATE DATABASE")
-    ]
+def query_client(*responses: list[dict[str, Any]]) -> ClickHouseClient:
+    return cast(ClickHouseClient, QueryResults(responses))
 
 
 def post(

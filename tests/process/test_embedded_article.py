@@ -131,7 +131,8 @@ def test_only_reads_the_known_json_script(attributes: str) -> None:
 
 
 @pytest.mark.parametrize("block", [
-    '{broken json', 'window.state = {};', '[' * 2000 + ']' * 2000,
+    '{broken json', 'window.state = {};',
+    pytest.param('[' * 2000 + ']' * 2000, id="excessive-nesting"),
 ])
 def test_malformed_json_does_not_break_processing(block: str) -> None:
     script = ('<script id="__NEXT_DATA__" type="application/json">'

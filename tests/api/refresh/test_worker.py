@@ -1,129 +1,191 @@
-"""The worker process's side of a refresh: real processes, signals, pipes."""
+"""Refresh worker reporting and shutdown with in-memory process control."""
 
 from __future__ import annotations
 
 import asyncio
-import multiprocessing
 import os
-import pathlib
-import time
+import signal
+from collections import deque
 from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
-from dank.api.refresh.worker import read_updates, stop_worker
+from dank.api.refresh.model import RefreshPlan
+from dank.api.refresh.worker import ProcessWorker, read_updates, stop_worker
 from dank.config import Settings
 from dank.scrape.metrics import RunMetrics
 from dank.web.refresh_worker import collect_and_process, watch_owner
-from tests.api.refresh.processes import (
-    cooperative,
-    stubborn_group_leader,
-    stubborn_in_servers_group,
-)
-
-SPAWN = multiprocessing.get_context("spawn")
-READY_SECONDS = 30
 
 
-def gone(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
+class Process:
+    def __init__(
+        self, *, pid: int | None = 42, exits_on_terminate: bool = False,
+    ) -> None:
+        self.pid = pid
+        self.exits_on_terminate = exits_on_terminate
+        self.started = False
+        self.alive = pid is not None
+        self.terminated = False
+        self.killed = False
+        self.closed = False
+        self.waits: list[float | None] = []
 
-    return False
+    def is_alive(self) -> bool:
+        return self.alive
 
+    def start(self) -> None:
+        self.started = True
 
-async def until_gone(pid: int) -> None:
-    # A browser left behind is reaped by init, some time after its group dies.
-    async with asyncio.timeout(5):
-        while not gone(pid):  # noqa: ASYNC110 - another process's lifetime
-            await asyncio.sleep(0.01)
+    def terminate(self) -> None:
+        self.terminated = True
 
+    def join(self, timeout: float | None = None) -> None:
+        self.waits.append(timeout)
 
-def ready_value(receive: Connection) -> Any:
-    assert receive.poll(READY_SECONDS)
+        if self.terminated and self.exits_on_terminate:
+            self.alive = False
 
-    return receive.recv()
+    def kill(self) -> None:
+        self.killed = True
+        self.alive = False
 
-
-def updates(receive: Connection) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-
-    while receive.poll():
-        result.append(receive.recv())
-
-    return result
-
-
-async def test_stop_kills_a_stubborn_worker_with_its_browsers() -> None:
-    receive, send = SPAWN.Pipe(duplex=False)
-    process = SPAWN.Process(target=stubborn_group_leader, args=(send,))
-    process.start()
-    browser = ready_value(receive)
-    worker = process.pid
-
-    assert worker is not None
-
-    await stop_worker(process, stop_seconds=0.1)
-
-    assert gone(worker)
-
-    await until_gone(browser)
+    def close(self) -> None:
+        assert not self.alive
+        self.closed = True
 
 
-async def test_stop_never_signals_the_servers_own_group() -> None:
-    receive, send = SPAWN.Pipe(duplex=False)
-    process = SPAWN.Process(target=stubborn_in_servers_group, args=(send,))
-    process.start()
-    worker = ready_value(receive)
+class Messages:
+    def __init__(
+        self, *messages: dict[str, Any], closed: bool = False,
+    ) -> None:
+        self.messages: deque[dict[str, Any]] = deque(messages)
+        self.closed = closed
 
-    # A signal to this group would end the test run here.
-    assert os.getpgid(worker) == os.getpgrp()
+    def send(self, message: dict[str, Any]) -> None:
+        if self.closed:
+            raise BrokenPipeError
 
-    await stop_worker(process, stop_seconds=0.1)
+        self.messages.append(message)
 
-    assert gone(worker)
+    def poll(self) -> bool:
+        return bool(self.messages) or self.closed
+
+    def close(self) -> None:
+        self.closed = True
+
+    def recv(self) -> dict[str, Any]:
+        if not self.messages:
+            raise EOFError
+
+        return self.messages.popleft()
 
 
-async def test_stop_waits_for_a_worker_to_clean_up(
-    tmp_path: pathlib.Path,
+async def test_stop_kills_a_stubborn_workers_own_process_group(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    marker = tmp_path / "cleaned"
-    receive, send = SPAWN.Pipe(duplex=False)
-    process = SPAWN.Process(target=cooperative, args=(send, str(marker)))
-    process.start()
-    worker = ready_value(receive)
-    started = time.monotonic()
-    await stop_worker(process)
+    process = Process()
+    signals: list[tuple[int, int]] = []
 
-    assert marker.read_text() == "cleaned up"
-    assert gone(worker)
-    assert time.monotonic() - started < READY_SECONDS
+    def kill_group(group: int, sig: int) -> None:
+        signals.append((group, sig))
+        process.alive = False
+
+    monkeypatch.setattr(os, "getpgid", int)
+    monkeypatch.setattr(os, "killpg", kill_group)
+    await stop_worker(cast(BaseProcess, process), stop_seconds=0.1)
+
+    assert process.terminated and process.closed and not process.killed
+    assert signals == [(process.pid, signal.SIGKILL)]
+    assert process.waits == [0.1, 5, 0]
+
+
+async def test_stop_never_signals_the_servers_own_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = Process()
+
+    def server_group(pid: int) -> int:
+        return 1
+
+    def unexpected_signal(group: int, sig: int) -> None:
+        pytest.fail(f"Signalled the server group {group} with {sig}")
+
+    monkeypatch.setattr(os, "getpgid", server_group)
+    monkeypatch.setattr(os, "killpg", unexpected_signal)
+    await stop_worker(cast(BaseProcess, process), stop_seconds=0.1)
+
+    assert process.killed and process.closed
+
+
+async def test_stop_waits_for_a_worker_to_clean_up() -> None:
+    process = Process(exits_on_terminate=True)
+    await stop_worker(cast(BaseProcess, process), stop_seconds=2)
+
+    assert process.terminated and process.closed and not process.killed
+    assert process.waits == [2, 0]
 
 
 async def test_stop_ignores_a_process_that_never_started() -> None:
-    await stop_worker(SPAWN.Process(target=print))
+    process = Process(pid=None)
+    await stop_worker(cast(BaseProcess, process))
+
+    assert not process.terminated and not process.closed
+    assert not process.waits
 
 
 def test_updates_skip_heartbeats_and_end_with_the_pipe() -> None:
-    receive, send = SPAWN.Pipe(duplex=False)
-    send.send({})
-    send.send({"status": "completed"})
-    send.close()
+    receive = Messages({}, {"status": "completed"}, closed=True)
     reports: list[Any] = []
-    read_updates(receive, reports.append)
+    read_updates(cast(Connection, receive), reports.append)
 
     assert reports == [{"status": "completed"}]
 
 
+async def test_collection_drains_the_worker_and_closes_its_resources(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receive = Messages({}, {"status": "completed", "posts_saved": 2})
+    send = Messages()
+    reports: list[dict[str, Any]] = []
+    process = Process()
+    process.alive = False
+    spawned: dict[str, Any] = {}
+
+    def child(**options: Any) -> Process:
+        spawned.update(options)
+
+        return process
+
+    def pipe(*, duplex: bool) -> tuple[Messages, Messages]:
+        assert not duplex
+
+        return receive, send
+
+    def context(method: str) -> object:
+        assert method == "spawn"
+
+        return SimpleNamespace(Pipe=pipe, Process=child)
+
+    monkeypatch.setattr("multiprocessing.get_context", context)
+    plan = RefreshPlan(settings=settings, scope={"kind": "all"}, label="All")
+    await ProcessWorker().collect("job", plan, lambda row: reports.append(
+        dict(row),
+    ))
+
+    assert spawned["name"] == "dank-refresh-job"
+    assert spawned["args"] == (settings, None, send)
+    assert process.started
+    assert reports == [{"status": "completed", "posts_saved": 2}]
+    assert process.closed and receive.closed and send.closed
+
+
 async def test_worker_cancels_collection_if_parent_closes_pipe() -> None:
-    receive, send = SPAWN.Pipe(duplex=False)
-    receive.close()
+    send = Messages(closed=True)
     task = asyncio.create_task(asyncio.Event().wait())
-    await asyncio.wait_for(watch_owner(send, task), 2)
+    await watch_owner(cast(Connection, send), task, heartbeat_seconds=0)
 
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -143,7 +205,7 @@ async def test_worker_processes_only_its_captures_and_preserves_partial_status(
     captures = {("example.com", "one")}
     processed: list[tuple[Settings, dict[str, Any]]] = []
     scraped: list[dict[str, Any]] = []
-    receive, send = SPAWN.Pipe(duplex=False)
+    send = Messages()
 
     async def scrape(selected: Settings, **options: Any) -> RunMetrics:
         scraped.append(options)
@@ -154,8 +216,8 @@ async def test_worker_processes_only_its_captures_and_preserves_partial_status(
         processed.append((selected, options))
 
     await collect_and_process(
-        settings, ("example.com", "one"), send, exclusive=True,
-        scrape=scrape, process=process,
+        settings, ("example.com", "one"), cast(Connection, send),
+        exclusive=True, scrape=scrape, process=process,
     )
 
     assert scraped == [{
@@ -166,7 +228,7 @@ async def test_worker_processes_only_its_captures_and_preserves_partial_status(
         "since": "collection-start", "post_keys": captures,
     })]
 
-    first, last = updates(receive)
+    first, last = send.messages
 
     assert first == {
         "status": "processing", "message": "Preparing collected content…",
@@ -187,7 +249,7 @@ async def test_worker_processes_only_its_captures_and_preserves_partial_status(
 async def test_worker_without_captures_skips_processing(
     settings: Settings, status: str, final: str,
 ) -> None:
-    receive, send = SPAWN.Pipe(duplex=False)
+    send = Messages()
 
     async def scrape(selected: Settings, **options: Any) -> RunMetrics:
         return metrics(status, set())
@@ -196,7 +258,7 @@ async def test_worker_without_captures_skips_processing(
         raise AssertionError("Processed without captures")
 
     await collect_and_process(
-        settings, None, send, scrape=scrape, process=process,
+        settings, None, cast(Connection, send), scrape=scrape, process=process,
     )
 
-    assert updates(receive)[-1]["status"] == final
+    assert send.messages[-1]["status"] == final

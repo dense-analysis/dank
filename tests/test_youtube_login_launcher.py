@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
+import signal
 import subprocess
 import sys
-from subprocess import Popen
-from typing import Any
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -19,70 +19,83 @@ REFERENCES = {
 }
 
 
+@pytest.fixture
+def spawn(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    spawn = Mock()
+    monkeypatch.setattr(launcher.subprocess, "Popen", spawn)
+
+    return spawn
+
+
+def child(*lines: str, running: bool = False) -> MagicMock:
+    process = MagicMock()
+    process.stdout = io.StringIO("".join(line + "\n" for line in lines))
+    process.wait.return_value = 0
+    process.poll.return_value = None if running else 0
+
+    return process
+
+
 def test_credentials_are_requested_lazily_and_only_passed_over_stdin(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
-):
-    monkeypatch.setattr(launcher.subprocess, "Popen", Popen)
+    spawn: Mock,
+) -> None:
     secret = "a private 'password' with $shell characters"
     values = {"username": "private-user", "password": secret, "otp": "123456"}
-    requested: list[str] = []
-
-    def read(field: str) -> str:
-        requested.append(field)
-        return values[field]
-
+    read = Mock(side_effect=values.__getitem__)
     monkeypatch.setattr(
         launcher, "OnePasswordLogin", Mock(return_value=Mock(read=read)),
     )
-    code = '''
-import json, sys
-for field in ('username', 'password', 'otp'):
-    print('DANK_YOUTUBE_CREDENTIAL:' + field, flush=True)
-    value = json.loads(sys.stdin.readline())['value']
-    assert value and value not in str(sys.argv)
-print('Session saved', flush=True)
-'''
-    assert launcher.broker([sys.executable, "-c", code], REFERENCES) == 0
-    assert requested == ["username", "password", "otp"]
+    process = spawn.return_value = child(
+        *(launcher.REQUEST_PREFIX + field for field in values),
+        "Session saved",
+    )
+    command = ["compose", "login-fixture"]
+
+    assert launcher.broker(command, REFERENCES) == 0
+    assert [call.args[0] for call in read.call_args_list] == list(values)
+    assert [
+        json.loads(call.args[0]) for call in process.stdin.write.call_args_list
+    ] == [{"value": value} for value in values.values()]
     output = capsys.readouterr()
     assert output.out == "Session saved\n"
     assert not output.err
+    assert all(value not in repr(spawn.call_args) for value in values.values())
     assert all(value not in output.out for value in values.values())
 
 
 def test_unknown_request_never_reads_the_vault(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
-):
-    monkeypatch.setattr(launcher.subprocess, "Popen", Popen)
+    spawn: Mock,
+) -> None:
     read = Mock()
     monkeypatch.setattr(
         launcher, "OnePasswordLogin", Mock(return_value=Mock(read=read)),
     )
-    code = '''
-import json, sys
-print('DANK_YOUTUBE_CREDENTIAL:op://other/vault/secret', flush=True)
-assert json.loads(sys.stdin.readline()) == {'error': True}
-'''
-    assert launcher.broker([sys.executable, "-c", code], REFERENCES) == 0
+    process = spawn.return_value = child(
+        launcher.REQUEST_PREFIX + "op://other/vault/secret",
+    )
+
+    assert launcher.broker(["login-fixture"], REFERENCES) == 0
     read.assert_not_called()
+    assert json.loads(process.stdin.write.call_args.args[0]) == {"error": True}
     assert "not configured" in capsys.readouterr().err
 
 
 def test_otp_is_not_requested_when_google_does_not_need_it(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setattr(launcher.subprocess, "Popen", Popen)
+    monkeypatch: pytest.MonkeyPatch, spawn: Mock,
+) -> None:
     read = Mock(return_value="private-user")
     monkeypatch.setattr(
         launcher, "OnePasswordLogin", Mock(return_value=Mock(read=read)),
     )
-    code = '''
-import json, sys
-print('DANK_YOUTUBE_CREDENTIAL:username', flush=True)
-assert json.loads(sys.stdin.readline())['value']
-'''
-    assert launcher.broker([sys.executable, "-c", code], REFERENCES) == 0
+    process = spawn.return_value = child(launcher.REQUEST_PREFIX + "username")
+
+    assert launcher.broker(["login-fixture"], REFERENCES) == 0
     read.assert_called_once_with("username")
+    assert json.loads(process.stdin.write.call_args.args[0]) == {
+        "value": "private-user",
+    }
 
 
 def test_reused_session_never_asks_for_references_or_credentials(
@@ -136,67 +149,55 @@ def test_reference_contract():
 
 
 def test_closed_credential_pipe_still_terminates_child(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    children: list[subprocess.Popen[str]] = []
-
-    def start(*args: Any, **kwargs: Any) -> Popen[str]:
-        process = Popen(*args, **kwargs)
-        children.append(process)
-        return process
-
-    monkeypatch.setattr(launcher.subprocess, "Popen", start)
-    monkeypatch.setattr(
-        launcher, "OnePasswordLogin",
-        Mock(return_value=Mock(read=Mock(return_value="secret"))),
+    monkeypatch: pytest.MonkeyPatch, spawn: Mock,
+) -> None:
+    process = spawn.return_value = child(
+        launcher.REQUEST_PREFIX + "password", running=True,
     )
-    code = """
-import os, time
-os.close(0)
-print('DANK_YOUTUBE_CREDENTIAL:password', flush=True)
-time.sleep(30)
-"""
+    process.stdin.write.side_effect = BrokenPipeError
+    credentials = Mock(read=Mock(return_value="secret"))
+    monkeypatch.setattr(
+        launcher, "OnePasswordLogin", Mock(return_value=credentials),
+    )
 
     with pytest.raises(BrokenPipeError):
-        launcher.broker([sys.executable, "-c", code], REFERENCES)
+        launcher.broker(["login-fixture"], REFERENCES)
 
-    assert len(children) == 1
-    assert children[0].poll() is not None
+    credentials.close.assert_called_once_with()
+    process.terminate.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=30)
 
 
-def test_termination_closes_login_child_without_vault_access():
-    import os
+def test_termination_closes_login_child_without_vault_access(
+    monkeypatch: pytest.MonkeyPatch, spawn: Mock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    process = spawn.return_value = child(running=True)
+    process.stdout = MagicMock()
+    credentials = Mock()
+    handler = Mock()
 
-    code = """
-import sys
-from dank import run_youtube_login as launcher
-references = {
- 'account':'fixture','username':'op://vault/item/username',
- 'password':'op://vault/item/password','otp':''
-}
-child = "import os,time; print(os.getpid(),flush=True); time.sleep(30)"
-launcher.run = lambda *_: launcher.broker(
- [sys.executable, '-c', child], references
-)
-sys.argv = ['youtube-login', 'fixture-compose', '--']
-launcher.main()
-"""
-    process = Popen(
-        [sys.executable, "-c", code],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    def dispatch() -> None:
+        handler.call_args.args[1](signal.SIGTERM, None)
+
+    def run(compose: list[str], arguments: list[str]) -> int:
+        return launcher.broker([*compose, *arguments], REFERENCES)
+
+    process.stdout.__iter__.side_effect = dispatch
+    monkeypatch.setattr(signal, "signal", handler)
+    monkeypatch.setattr(launcher, "run", run)
+    monkeypatch.setattr(
+        launcher, "OnePasswordLogin", Mock(return_value=credentials),
     )
-    assert process.stdout is not None
+    monkeypatch.setattr(
+        sys, "argv", ["youtube-login", "fixture-compose", "--"],
+    )
 
-    try:
-        child_pid = int(process.stdout.readline())
-        process.terminate()
-        _stdout, stderr = process.communicate(timeout=10)
-        assert process.returncode == 130
-        assert "cancelled" in stderr
+    with pytest.raises(SystemExit) as exited:
+        launcher.main()
 
-        with pytest.raises(ProcessLookupError):
-            os.kill(child_pid, 0)
-    finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait()
+    assert exited.value.code == 130
+    assert "cancelled" in capsys.readouterr().err
+    credentials.read.assert_not_called()
+    process.terminate.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=30)

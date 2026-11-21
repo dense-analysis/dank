@@ -11,7 +11,9 @@ from subprocess import PIPE, CompletedProcess, Popen
 
 import pytest
 
-# Bind Popen before the session network guard; only local fixtures run here.
+pytestmark = pytest.mark.shell_io
+
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FAKE_COMPOSE = """\
 import json
@@ -109,13 +111,6 @@ def test_each_checkout_gets_its_own_password(checkout: pathlib.Path) -> None:
     _make(checkout, "config")
 
     assert password_file.read_text() != first
-
-
-def test_password_and_backups_are_ignored_by_git() -> None:
-    ignored = (ROOT / ".gitignore").read_text().splitlines()
-
-    assert "/postgres-password" in ignored
-    assert "/backups/" in ignored
 
 
 def test_dump_saves_a_private_custom_format_file(

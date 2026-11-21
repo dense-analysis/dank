@@ -130,21 +130,6 @@ async def test_unconfigured_reddit_still_lists_its_empty_communities(
     assert (source["communities"], source["flairs"]) == ([], [])
 
 
-async def test_openapi_describes_each_source_kind(client: AsyncClient) -> None:
-    schemas = (await client.get("/api/openapi.json")).json()["components"][
-        "schemas"
-    ]
-    union = schemas["SourcesResponse"]["properties"]["sources"]["items"]
-
-    assert union["discriminator"]["mapping"] == {
-        "rss": "#/components/schemas/FeedSourceOut",
-        "hacker_news": "#/components/schemas/FeedSourceOut",
-        "youtube": "#/components/schemas/FeedSourceOut",
-        "x": "#/components/schemas/XSourceOut",
-        "reddit": "#/components/schemas/RedditSourceOut",
-    }
-    assert schemas["XSourceOut"]["additionalProperties"] is False
-
 
 async def test_the_switch_reads_saved_sources_and_ignores_config(
     app: FastAPI, client: AsyncClient, settings: Settings,

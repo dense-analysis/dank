@@ -335,17 +335,22 @@ async def test_host_cooldown_does_not_consume_the_detail_page_budget() -> None:
         URL, 200, "application/json", json.dumps(_thread(_comment("first"))),
         "id", "Fetch",
     )]
+    pause = asyncio.sleep
+    deadline = asyncio.timeout
+    slot_acquired = False
+    deadlines: list[tuple[bool, float | None]] = []
 
     @asynccontextmanager
     async def slot(url: str, **kwargs: Any) -> AsyncGenerator[None]:
-        ready = asyncio.Event()
-        timer = asyncio.get_running_loop().call_later(0.1, ready.set)
+        nonlocal slot_acquired
+        await pause(0)
+        slot_acquired = True
+        yield
 
-        try:
-            await ready.wait()
-            yield
-        finally:
-            timer.cancel()
+    def start_deadline(seconds: float | None) -> asyncio.Timeout:
+        deadlines.append((slot_acquired, seconds))
+
+        return deadline(seconds)
 
     token = current_limiter.set(cast(Any, SimpleNamespace(slot=slot)))
 
@@ -355,6 +360,9 @@ async def test_host_cooldown_does_not_consume_the_detail_page_budget() -> None:
             patch("dank.scrape.reddit.details.NetworkCapture",
                   return_value=capture),
             patch("dank.scrape.reddit.details.asyncio.sleep"),
+            patch(
+                "dank.scrape.reddit.details.asyncio.timeout", start_deadline,
+            ),
         ):
             result = json.loads((await capture_post_detail(
                 page, _raw(), RedditSettings(),
@@ -362,6 +370,7 @@ async def test_host_cooldown_does_not_consume_the_detail_page_budget() -> None:
     finally:
         current_limiter.reset(token)
 
+    assert deadlines == [(True, 0.05)]
     assert result["detail_capture"]["status"] == "captured"
 
 

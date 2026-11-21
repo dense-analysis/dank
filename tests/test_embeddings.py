@@ -1,14 +1,17 @@
 import sys
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from dank import embeddings
 from dank.embedding_vectors import EMPTY_STRING_VECTOR
-from dank.embeddings import EmbeddingModel
+from dank.embeddings import (
+    _MODEL_LOAD_LOCK,  # pyright: ignore[reportPrivateUsage]
+    EmbeddingModel,
+)
 
 
 class _DummySentenceTransformer:
@@ -94,8 +97,7 @@ class _LoadWatcher:
             self.loads += 1
             self.overlapped = self.overlapped or self.loading > 1
 
-        # Long enough for the other threads to arrive while this one loads.
-        time.sleep(0.05)
+        assert _MODEL_LOAD_LOCK.locked()
 
         with self.lock:
             self.loading -= 1
@@ -115,35 +117,49 @@ def watcher(monkeypatch: pytest.MonkeyPatch) -> _LoadWatcher:
     return found
 
 
-def _load_together(*models: EmbeddingModel) -> list[Any]:
+def _load_together(
+    monkeypatch: pytest.MonkeyPatch, *models: EmbeddingModel,
+) -> list[Any]:
     start = threading.Barrier(len(models))
 
-    def load(model: EmbeddingModel) -> Any:
-        start.wait()
+    class ContendedLock:
+        def __enter__(self) -> None:
+            # Each caller has observed an unloaded model before any caller
+            # can publish one. The real lock still serializes the loads.
+            start.wait(timeout=2)
+            _MODEL_LOAD_LOCK.acquire()
 
-        return model._get_model()  # pyright: ignore[reportPrivateUsage]
+        def __exit__(self, *_exc: object) -> None:
+            _MODEL_LOAD_LOCK.release()
+
+    monkeypatch.setattr(embeddings, "_MODEL_LOAD_LOCK", ContendedLock())
 
     with ThreadPoolExecutor(len(models)) as pool:
-        return list(pool.map(load, models))
+        return list(pool.map(
+            EmbeddingModel._get_model,  # pyright: ignore[reportPrivateUsage]
+            models,
+        ))
 
 
 def test_concurrent_first_uses_load_the_model_once(
-    watcher: _LoadWatcher,
+    watcher: _LoadWatcher, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     model = EmbeddingModel()
 
-    found = _load_together(model, model, model, model)
+    found = _load_together(monkeypatch, model, model, model, model)
 
     assert watcher.loads == 1
     assert all(item is found[0] for item in found)
 
 
 def test_separate_instances_never_load_at_the_same_time(
-    watcher: _LoadWatcher,
+    watcher: _LoadWatcher, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Loading changes process-wide state in transformers, which is what made
     # concurrent loads fail with "Cannot copy out of meta tensor".
-    _load_together(EmbeddingModel(), EmbeddingModel(), EmbeddingModel())
+    _load_together(
+        monkeypatch, EmbeddingModel(), EmbeddingModel(), EmbeddingModel(),
+    )
 
     assert watcher.loads == 3
     assert not watcher.overlapped

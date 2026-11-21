@@ -179,8 +179,7 @@ Make defaults to Docker. Add `MODE=native` to run an application command with
 | `make db-atlas ARGS='<command>'` | Run any other Atlas command with telemetry off; on the host |
 | `make sources-import` | Import the sources in `config.toml` into Postgres, once; see [sources](docs/features/sources.md) |
 | `make openapi` | Regenerate `reader/openapi.json` and the reader's API types after changing a route or model; on the host |
-| `make test` | Run the tests; pass paths or options through `ARGS`; on the host |
-| `make test-postgres` | Run the Postgres tests against a disposable server |
+| `make test` | Run pytest on all available CPUs. Pass paths or options through `ARGS`. |
 | `make lint` | Run all linters, which can fix files; on the host |
 
 **Native**

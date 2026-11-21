@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import aiohttp
 import pytest
+from aiohttp.streams import AsyncStreamIterator
 
 from dank.scrape import runner
 from dank.scrape.youtube.metadata import (
@@ -44,9 +46,14 @@ class Response:
         if self.status >= 400:
             raise aiohttp.ClientError(f"HTTP {self.status}")
 
-    async def iter_chunked(self, size: int):
-        for start in range(0, len(self.body), 7):
-            yield self.body[start:start + 7]
+    def iter_chunked(self, size: int) -> AsyncStreamIterator[bytes]:
+        body = io.BytesIO(self.body)
+        chunk_size = min(size, 256)
+
+        async def read() -> bytes:
+            return body.read(chunk_size)
+
+        return AsyncStreamIterator(read)
 
 
 class HTTP:
@@ -97,7 +104,7 @@ async def test_unavailable_previews_back_off_and_keep_response(status: int):
     (b"<html>challenge</html>", 200), (b"{}", 200),
     (json.dumps({**PREVIEW, "title": " "}).encode(), 200),
     (b"Rate limited", 429), (b"Busy", 503),
-    (b"x" * (MAX_PREVIEW_BYTES + 1), 200),
+    pytest.param(b"x" * (MAX_PREVIEW_BYTES + 1), 200, id="oversize"),
 ])
 async def test_invalid_previews_are_failed_attempts(body: bytes, status: int):
     row = await fetch_video_metadata(cast(Any, HTTP(body, status)), VIDEO)

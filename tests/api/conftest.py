@@ -1,15 +1,9 @@
-"""The app and an HTTP client for every API test, and the ClickHouse lane.
-
-Route tests use the real app over httpx and swap only driven adapters.
-Tests marked clickhouse get a throwaway database on the server named by
---clickhouse-url, and are skipped without it.
-"""
+"""The real app over httpx, with driven adapters supplied by test fixtures."""
 
 from __future__ import annotations
 
 import pathlib
-import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import httpx
 import pytest
@@ -18,24 +12,30 @@ from fastapi import FastAPI
 from dank.api import deps
 from dank.api.app import create_app
 from dank.config import (
+    BrowserSettings,
     ClickHouseSettings,
+    LoggingSettings,
     PostgresSettings,
     Settings,
     SourceConfig,
-    load_settings,
+    XSettings,
 )
-from dank.storage.clickhouse import ClickHouseClient
-from dank.web.startup import prepare_clickhouse
-from tests.api.clickhouse import schema_statements, server_settings
 from tests.api.client import http_client
 
-ROOT = pathlib.Path(__file__).parents[2]
 
-
-@pytest.fixture
-def settings(tmp_path: pathlib.Path) -> Settings:
-    return load_settings(ROOT / "config.example.toml")._replace(
-        data_dir=tmp_path,
+@pytest.fixture(scope="session")
+def api_settings() -> Settings:
+    return Settings(
+        clickhouse=ClickHouseSettings(
+            "database.test", 8123, "dank", "default", "",
+            secure=False, use_http=True,
+        ),
+        x=XSettings(),
+        data_dir=pathlib.Path("/fixture/data"),
+        max_asset_bytes=10 * 1024 * 1024,
+        feed_staleness_days=14,
+        browser=BrowserSettings(None, None, None),
+        logging=LoggingSettings(pathlib.Path("/fixture/dank.log"), "INFO"),
         postgres=PostgresSettings(enabled=False),
         sources=(
             SourceConfig("politics.example", (), tags=("politics",)),
@@ -45,55 +45,28 @@ def settings(tmp_path: pathlib.Path) -> Settings:
 
 
 @pytest.fixture
-def app(settings: Settings) -> FastAPI:
-    app = create_app(settings)
+def settings(api_settings: Settings) -> Settings:
+    return api_settings
+
+
+@pytest.fixture(scope="session")
+def route_app(api_settings: Settings) -> FastAPI:
+    return create_app(api_settings)
+
+
+@pytest.fixture
+def app(route_app: FastAPI, settings: Settings) -> Iterator[FastAPI]:
     # ASGITransport doesn't run the lifespan, so nothing connects to
     # ClickHouse. Feature conftests swap their driven adapters for fakes.
-    app.dependency_overrides[deps.settings] = lambda: settings
+    route_app.dependency_overrides[deps.settings] = lambda: settings
 
-    return app
+    try:
+        yield route_app
+    finally:
+        route_app.dependency_overrides.clear()
 
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     async with http_client(app) as client:
-        yield client
-
-
-@pytest.fixture
-async def clickhouse_settings(
-    request: pytest.FixtureRequest,
-) -> AsyncIterator[ClickHouseSettings]:
-    """A throwaway database with schema.sql applied, dropped afterwards."""
-    url = str(request.config.getoption("clickhouse_url"))
-
-    if not url:
-        pytest.skip("needs --clickhouse-url")
-
-    server = server_settings(url)
-    database = "dank_test_" + uuid.uuid4().hex[:12]
-
-    async with ClickHouseClient(server) as admin:
-        await admin.execute(f"CREATE DATABASE {database}")
-
-        try:
-            throwaway = server._replace(database=database)
-
-            async with ClickHouseClient(throwaway) as client:
-                for statement in schema_statements(database):
-                    await client.execute(statement)
-
-            yield throwaway
-        finally:
-            await admin.execute(f"DROP DATABASE IF EXISTS {database} SYNC")
-
-
-@pytest.fixture
-async def clickhouse(
-    clickhouse_settings: ClickHouseSettings,
-) -> AsyncIterator[ClickHouseClient]:
-    """A client for the throwaway database, after the web app's startup."""
-    async with ClickHouseClient(clickhouse_settings) as client:
-        await prepare_clickhouse(client)
-
         yield client

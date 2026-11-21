@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
-import sys
-from subprocess import DEVNULL, Popen
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -251,11 +249,8 @@ async def test_profile_lock_prevents_overlapping_login_and_scrape(
 async def test_stalled_cleanup_kills_owned_process_and_releases_profile(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, hang: str,
 ) -> None:
-    process = await asyncio.to_thread(
-        Popen,
-        [sys.executable, "-c", "import time; time.sleep(60)"],
-        stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL,
-    )
+    process = MagicMock()
+    process.poll.return_value = None
     browser = _browser()
     browser.stopped = True
     browser._process = process
@@ -273,23 +268,18 @@ async def test_stalled_cleanup_kills_owned_process_and_releases_profile(
     )
     config = BrowserConfig(profile_dir=tmp_path / "profile")
 
-    try:
-        async with asyncio.timeout(2):
-            async with BrowserSession(config) as session:
-                await session.get_browser()
+    async with asyncio.timeout(2):
+        async with BrowserSession(config) as session:
+            await session.get_browser()
 
-        assert process.poll() is not None
-        browser.stop.assert_awaited_once()
-        browser._process = None
-        target.side_effect = None
+    process.kill.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=0.02)
+    browser.stop.assert_awaited_once()
+    browser._process = None
+    target.side_effect = None
 
-        async with BrowserSession(config) as next_session:
-            await next_session.get_browser()
-    finally:
-        if process.poll() is None:
-            process.kill()
-
-        await asyncio.to_thread(process.wait, timeout=2)
+    async with BrowserSession(config) as next_session:
+        await next_session.get_browser()
 
 
 async def test_cancelled_native_scrape_does_not_hold_browser_open(

@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
-import subprocess
-import sys
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -14,7 +13,6 @@ from dank.scrape import runner
 from dank.scrape.youtube import transcripts
 from dank.storage.clickhouse import QueryResult
 
-_REAL_POPEN = subprocess.Popen
 VIDEO = "L_6pAVHYoFM"
 URL = "https://www.youtube.com/api/timedtext?v=" + VIDEO
 BODY = json.dumps(
@@ -170,7 +168,9 @@ async def test_missing_tracks_are_cached_without_caption_request(
         (b"rate limited", 429),
         (b"redirect", 302),
         (b"", 200),
-        (b"x" * (transcripts.MAX_TRANSCRIPT_BYTES + 1), 200),
+        pytest.param(
+            b"x" * (transcripts.MAX_TRANSCRIPT_BYTES + 1), 200, id="oversize",
+        ),
     ],
 )
 async def test_failed_tracks_have_failure_cache(
@@ -352,9 +352,8 @@ async def test_cancelled_extractor_terminates_and_drains_process(
 def dubbed_captions(sources: list[str]) -> dict[str, list[dict[str, str]]]:
     """List tracks as yt-dlp does: each source, then translated into the rest.
 
-    Sizes match `eqYqUAdjsL0`, whose 157 languages and seven formats reach
-    about 480 bytes an entry. A language's translations from earlier sources
-    come before its own track, which is why selection has to look past them.
+    A language's translations from earlier sources come before its own track,
+    which is why selection has to look past them.
     """
     languages = [*sources, *(f"t{number}" for number in range(157))][:157]
     captions: dict[str, list[dict[str, str]]] = {}
@@ -381,50 +380,41 @@ def dubbed_captions(sources: list[str]) -> dict[str, list[dict[str, str]]]:
     return captions
 
 
-def substitute_extractor(monkeypatch: Any, code: str) -> None:
-    """Run a local script as yt-dlp, past the tests' network guard."""
-    spawn = asyncio.create_subprocess_exec
+def substitute_extractor(
+    monkeypatch: pytest.MonkeyPatch, *, stdout: bytes = b"",
+    stderr: bytes = b"", returncode: int = 0,
+) -> None:
+    def stream(contents: bytes) -> asyncio.StreamReader:
+        reader = asyncio.StreamReader()
+        reader.feed_data(contents)
+        reader.feed_eof()
 
-    def local_script_only(args: Any, **kwargs: Any):
-        assert tuple(args) == (sys.executable, "-c", code)
+        return reader
 
-        return _REAL_POPEN(args, **kwargs)
-
-    async def substitute(*args: Any, **kwargs: Any):
-        return await spawn(sys.executable, "-c", code, **kwargs)
-
-    monkeypatch.setattr(subprocess, "Popen", local_script_only)
+    process = SimpleNamespace(
+        stdout=stream(stdout), stderr=stream(stderr), returncode=returncode,
+        wait=AsyncMock(return_value=returncode), communicate=AsyncMock(),
+    )
     monkeypatch.setattr(
-        transcripts.asyncio,
-        "create_subprocess_exec",
-        substitute,
+        transcripts.asyncio, "create_subprocess_exec",
+        AsyncMock(return_value=process),
     )
 
 
 async def test_dubbed_video_listing_gets_a_transcript(
-    monkeypatch: Any,
-    tmp_path: Any,
-):
-    listing = tmp_path / "metadata.json"
-    listing.write_text(
-        json.dumps(
-            {
-                "id": VIDEO,
-                "automatic_captions": dubbed_captions(
-                    ["bn", "en", *(f"s{number}" for number in range(19))],
-                ),
-                "language": "en-US",
-            },
-        ),
-    )
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = json.dumps({
+        "id": VIDEO,
+        "automatic_captions": dubbed_captions(["bn", "en"]),
+        "language": "en-US",
+    }).encode()
+    # Preserve the oversized stdout from a dubbed video. JSON whitespace
+    # exercises the output limit without encoding more copies of the tracks.
+    listing = listing.ljust(8 * 1024 * 1024 + 1, b" ")
     # Guards the fixture: this size overflowed the former 8 MiB limit.
-    assert listing.stat().st_size > 8 * 1024 * 1024
-    substitute_extractor(
-        monkeypatch,
-        "import shutil, sys\n"
-        f"with open({str(listing)!r}) as metadata:\n"
-        "    shutil.copyfileobj(metadata, sys.stdout)",
-    )
+    assert len(listing) > 8 * 1024 * 1024
+    substitute_extractor(monkeypatch, stdout=listing)
     http = HTTP()
 
     row = await transcripts.fetch_video_transcript(cast(Any, http), VIDEO)
@@ -441,9 +431,7 @@ async def test_dubbed_video_listing_gets_a_transcript(
 async def test_extractor_exit_saves_what_yt_dlp_reported(monkeypatch: Any):
     substitute_extractor(
         monkeypatch,
-        "import sys\n"
-        "sys.stderr.write('ERROR: [youtube] blocked')\n"
-        "sys.exit(1)",
+        stderr=b"ERROR: [youtube] blocked", returncode=1,
     )
 
     row = await transcripts.fetch_video_transcript(cast(Any, HTTP()), VIDEO)
@@ -459,8 +447,7 @@ async def test_oversized_metadata_saves_the_limit_not_the_task_group(
 ):
     substitute_extractor(
         monkeypatch,
-        "import sys\n"
-        f"sys.stdout.write('x' * {transcripts.MAX_METADATA_BYTES + 1})",
+        stdout=b"x" * (transcripts.MAX_METADATA_BYTES + 1),
     )
 
     row = await transcripts.fetch_video_transcript(cast(Any, HTTP()), VIDEO)

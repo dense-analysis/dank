@@ -1,13 +1,14 @@
 """
 Tests for benchmarking different embeddings models against each other.
 
-In order to run theste tests you'll need to have first downloaded all of the
+In order to run these tests you'll need to have first downloaded all of the
 embeddings models and stored them in the sentence-transformers cache directory.
 """
 from __future__ import annotations
 
 import math
 import time
+from collections.abc import Iterator
 from typing import NamedTuple, cast
 
 import pytest
@@ -124,6 +125,7 @@ BENCHMARK_TEXTS = (
     "The unemployment rate climbed to the highest level in nearly five years.",
     "A city council approved a housing budget increase this week.",
 )
+BENCHMARK_THREADS = 2
 
 
 def _is_missing_model_error(message: str) -> bool:
@@ -138,6 +140,23 @@ def _is_missing_model_error(message: str) -> bool:
             "local_files_only",
         )
     )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def inference_threads() -> Iterator[None]:
+    from torch import (
+        get_num_threads,  # pyright: ignore[reportPrivateImportUsage]
+        set_num_threads,  # pyright: ignore[reportPrivateImportUsage]
+    )
+
+    original = get_num_threads()
+    # Small batches spend more time coordinating workers on many-core hosts.
+    set_num_threads(min(original, BENCHMARK_THREADS))
+
+    try:
+        yield
+    finally:
+        set_num_threads(original)
 
 
 @pytest.fixture(
@@ -160,10 +179,10 @@ def model_under_test(
         message = str(error).lower()
 
         if _is_missing_model_error(message):
-            pytest.skip(
-                "Model is not cached locally. "
-                "Run `uv run download-embedding-model --model "
-                f"{spec.model_name}` first.",
+            pytest.fail(
+                "Model is not cached locally. Run `make download-model "
+                f"MODE=native ARGS='--model {spec.model_name}'` first.",
+                pytrace=False,
             )
 
         raise
@@ -187,6 +206,18 @@ def _compute_case_scores(
     margin = related_similarity - unrelated_similarity
 
     return related_similarity, unrelated_similarity, margin
+
+
+@pytest.fixture(scope="module")
+def case_scores(
+    model_under_test: tuple[_ModelSpec, EmbeddingModel],
+) -> dict[_SimilarityCase, tuple[float, float, float]]:
+    _, model = model_under_test
+
+    return {
+        case: _compute_case_scores(model, case)
+        for case in ANONYMIZED_SIMILARITY_CASES
+    }
 
 
 def _cosine_similarity(
@@ -236,12 +267,10 @@ def test_identical_snippets_have_very_high_similarity(
 def test_related_snippets_score_higher_than_unrelated(
     model_under_test: tuple[_ModelSpec, EmbeddingModel],
     case: _SimilarityCase,
+    case_scores: dict[_SimilarityCase, tuple[float, float, float]],
 ) -> None:
-    spec, model = model_under_test
-    related_similarity, unrelated_similarity, margin = _compute_case_scores(
-        model,
-        case,
-    )
+    spec, _ = model_under_test
+    related_similarity, unrelated_similarity, margin = case_scores[case]
 
     print(
         "model="
@@ -258,16 +287,10 @@ def test_related_snippets_score_higher_than_unrelated(
 
 def test_similarity_margin_summary(
     model_under_test: tuple[_ModelSpec, EmbeddingModel],
+    case_scores: dict[_SimilarityCase, tuple[float, float, float]],
 ) -> None:
-    spec, model = model_under_test
-    margins: list[float] = []
-
-    for case in ANONYMIZED_SIMILARITY_CASES:
-        _, _, margin = _compute_case_scores(model, case)
-        margins.append(margin)
-
-    average_margin = sum(margins) / len(margins)
-    minimum_margin = min(margins)
+    spec, _ = model_under_test
+    average_margin, minimum_margin = _compute_margin_summary(case_scores)
 
     print(
         "summary "
@@ -279,12 +302,10 @@ def test_similarity_margin_summary(
     assert average_margin > 0.0
 
 
-def _compute_margin_summary(model: EmbeddingModel) -> tuple[float, float]:
-    margins: list[float] = []
-
-    for case in ANONYMIZED_SIMILARITY_CASES:
-        _, _, margin = _compute_case_scores(model, case)
-        margins.append(margin)
+def _compute_margin_summary(
+    scores: dict[_SimilarityCase, tuple[float, float, float]],
+) -> tuple[float, float]:
+    margins = [margin for _, _, margin in scores.values()]
 
     return sum(margins) / len(margins), min(margins)
 
@@ -307,42 +328,31 @@ def _measure_texts_per_second(model: EmbeddingModel) -> float:
     return len(benchmark_inputs) / median_elapsed
 
 
-def test_speed_ranked_against_accuracy() -> None:
+@pytest.fixture(scope="module")
+def benchmark_results() -> Iterator[list[_BenchmarkResult]]:
     results: list[_BenchmarkResult] = []
+    yield results
 
-    for spec in MODEL_SPECS:
-        model = EmbeddingModel(
-            model_name=spec.model_name,
-            local_files_only=True,
-        )
+    if results:
+        _print_rankings(results)
 
-        try:
-            model.ensure_model_loaded()
-        except (OSError, RuntimeError, ValueError) as error:
-            message = str(error).lower()
 
-            if _is_missing_model_error(message):
-                pytest.skip(
-                    "Model is not cached locally. "
-                    "Run `uv run download-embedding-model --model "
-                    f"{spec.model_name}` first.",
-                )
+def test_speed_ranked_against_accuracy(
+    model_under_test: tuple[_ModelSpec, EmbeddingModel],
+    case_scores: dict[_SimilarityCase, tuple[float, float, float]],
+    benchmark_results: list[_BenchmarkResult],
+) -> None:
+    spec, model = model_under_test
+    average_margin, minimum_margin = _compute_margin_summary(case_scores)
+    benchmark_results.append(_BenchmarkResult(
+        case_id=spec.case_id,
+        average_margin=average_margin,
+        minimum_margin=minimum_margin,
+        texts_per_second=_measure_texts_per_second(model),
+    ))
 
-            raise
 
-        average_margin, minimum_margin = _compute_margin_summary(model)
-        texts_per_second = _measure_texts_per_second(model)
-        results.append(
-            _BenchmarkResult(
-                case_id=spec.case_id,
-                average_margin=average_margin,
-                minimum_margin=minimum_margin,
-                texts_per_second=texts_per_second,
-            ),
-        )
-
-    assert results
-
+def _print_rankings(results: list[_BenchmarkResult]) -> None:
     by_accuracy = sorted(
         results,
         key=lambda result: result.average_margin,

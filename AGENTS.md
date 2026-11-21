@@ -109,8 +109,8 @@ module.
 * After changing an API route or a response model, run `make openapi` and
   commit `reader/openapi.json` and `reader/src/lib/api.gen.ts`. A test fails
   while the schema is stale.
-* You can run tests with `make test`. Pass paths or options through `ARGS`, as
-  in `make test ARGS='tests/db -k upgrade'`.
+* Run tests with the fast forked runner through `make test`. Pass paths or
+  options through `ARGS`, as in `make test ARGS='tests/db -k upgrade'`.
 * You can scrape data with `uv run scrape`.
     * Pass `--domains` to scrape only matching `sources` domains.
 * You can process scraped data with `uv run process`.

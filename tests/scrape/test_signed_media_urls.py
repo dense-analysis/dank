@@ -1,52 +1,36 @@
 import asyncio
 import pathlib
-import sys
-import tempfile
 from collections.abc import AsyncGenerator
+from http import HTTPStatus
 
 import aiohttp
 import pytest
-from aiohttp import web
 
 from dank.config import ScrapeSettings, SourceConfig
 from dank.model import AssetDiscovery
 from dank.scrape.assets import download_assets
 from dank.scrape.http import RequestLimiter, current_limiter
 from dank.scrape.metrics import SourceMetrics
+from tests.http import http_reply, local_http_client
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="HTTP fixture uses local Unix sockets",
-)
 SIGNED_PATH = "/image.jpeg?crop=1%3A1%2Csmart&s=signature"
 
 
 @pytest.fixture
 async def client() -> AsyncGenerator[aiohttp.ClientSession]:
-    async def respond(request: web.Request) -> web.Response:
-        if request.path == "/redirect":
-            return web.Response(status=302, headers={"Location": SIGNED_PATH})
+    def respond(path: str) -> bytes:
+        if path == "/redirect":
+            return http_reply(HTTPStatus.FOUND, Location=SIGNED_PATH)
 
-        if request.raw_path != SIGNED_PATH:
-            return web.Response(status=403)
+        if path != SIGNED_PATH:
+            return http_reply(HTTPStatus.FORBIDDEN)
 
-        return web.Response(body=b"image", content_type="image/jpeg")
+        return http_reply(HTTPStatus.OK, b"image", **{
+            "Content-Type": "image/jpeg",
+        })
 
-    app = web.Application()
-    app.router.add_get("/{path:.*}", respond)
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    with tempfile.TemporaryDirectory(prefix="dank-media-", dir="/tmp") as path:
-        try:
-            socket_path = path + "/http.sock"
-            await web.UnixSite(runner, socket_path).start()
-
-            async with aiohttp.ClientSession(
-                connector=aiohttp.UnixConnector(path=socket_path),
-            ) as session:
-                yield session
-        finally:
-            await runner.cleanup()
+    async with local_http_client(respond) as session:
+        yield session
 
 
 async def test_default_client_reproduces_signature_failure(
@@ -65,7 +49,7 @@ async def test_default_client_reproduces_signature_failure(
 @pytest.mark.parametrize("redirect", [False, True])
 @pytest.mark.parametrize("limited", [False, True])
 async def test_signed_preview_download_preserves_query_bytes_and_redirects(
-    client: aiohttp.ClientSession, tmp_path: pathlib.Path, host: str,
+    client: aiohttp.ClientSession, memory_path: pathlib.Path, host: str,
     *, redirect: bool, limited: bool,
 ) -> None:
     url = f"http://{host}" + ("/redirect" if redirect else SIGNED_PATH)
@@ -79,7 +63,7 @@ async def test_signed_preview_download_preserves_query_bytes_and_redirects(
 
     try:
         result = await download_assets(
-            [discovery], assets_dir=tmp_path, http_client=client,
+            [discovery], assets_dir=memory_path, http_client=client,
             max_asset_bytes=100, owners={discovery: stats},
         )
     finally:
@@ -96,7 +80,7 @@ async def test_signed_preview_download_preserves_query_bytes_and_redirects(
 
 
 async def test_genuine_preview_403_still_counts_as_failure(
-    client: aiohttp.ClientSession, tmp_path: pathlib.Path,
+    client: aiohttp.ClientSession, memory_path: pathlib.Path,
 ) -> None:
     discovery = AssetDiscovery(
         "reddit", "reddit.com", "t3_one",
@@ -105,7 +89,7 @@ async def test_genuine_preview_403_still_counts_as_failure(
     )
     stats = SourceMetrics(1, SourceConfig("reddit.com", ()))
     result = await download_assets(
-        [discovery], assets_dir=tmp_path, http_client=client,
+        [discovery], assets_dir=memory_path, http_client=client,
         max_asset_bytes=100, owners={discovery: stats},
     )
     assert result[0].local_path == ""

@@ -20,4 +20,4 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen
-      - run: uv run pytest tests/api/test_openapi_file.py
+      - run: make test ARGS=tests/api/test_openapi_file.py

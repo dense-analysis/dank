@@ -111,9 +111,9 @@ async def test_bundles_are_files_with_validators_and_ranges(
     "/..%2fsecret",
 ])
 async def test_missing_files_and_traversal_get_a_plain_404(
-    client: AsyncClient, tmp_path: pathlib.Path, path: str,
+    client: AsyncClient, memory_path: pathlib.Path, path: str,
 ) -> None:
-    (tmp_path / "secret").write_text("secret")
+    (memory_path / "secret").write_text("secret")
 
     response = await client.get(path)
 
@@ -153,10 +153,10 @@ async def test_bundles_and_data_assets_stay_apart(
 async def test_an_unbuilt_reader_is_a_plain_404(
     settings: Settings,
     roots: FileRoots,
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
     path: str,
 ) -> None:
-    app = create_app(settings, roots=roots._replace(reader=tmp_path / "no"))
+    app = create_app(settings, roots=roots._replace(reader=memory_path / "no"))
 
     async with http_client(app) as client:
         response = await client.get(path)

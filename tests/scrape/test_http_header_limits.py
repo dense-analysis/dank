@@ -1,52 +1,33 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import tempfile
 from collections.abc import AsyncGenerator, Generator
+from http import HTTPStatus
 
 import aiohttp
 import pytest
-from aiohttp import web
 
 from dank.config import ScrapeSettings
 from dank.scrape.http import RequestLimiter, current_limiter, http_response
-
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32", reason="HTTP fixture uses local Unix sockets",
-)
+from tests.http import http_reply, local_http_client
 
 
 @pytest.fixture
 async def client() -> AsyncGenerator[aiohttp.ClientSession]:
-    async def respond(request: web.Request) -> web.Response:
-        size = int(request.match_info["size"])
+    def respond(path: str) -> bytes:
+        _, kind, size_text = path.split("/")
+        size = int(size_text)
         headers = {"X-Large-Header": "x" * size}
 
-        if request.match_info["kind"] == "redirect":
-            headers["Location"] = f"/article/{size}"
+        if kind == "redirect":
+            return http_reply(
+                HTTPStatus.FOUND, Location=f"/article/{size}", **headers,
+            )
 
-            return web.Response(status=302, headers=headers)
+        return http_reply(HTTPStatus.OK, b"Article content", **headers)
 
-        return web.Response(text="Article content", headers=headers)
-
-    app = web.Application()
-    app.router.add_get("/{kind}/{size}", respond)
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    # A short Unix socket path works on macOS and needs no network exception.
-    with tempfile.TemporaryDirectory(prefix="dank-http-", dir="/tmp") as path:
-        try:
-            socket_path = path + "/http.sock"
-            await web.UnixSite(runner, socket_path).start()
-
-            async with aiohttp.ClientSession(
-                connector=aiohttp.UnixConnector(path=socket_path),
-            ) as session:
-                yield session
-        finally:
-            await runner.cleanup()
+    async with local_http_client(respond) as session:
+        yield session
 
 
 @pytest.fixture(params=[False, True])

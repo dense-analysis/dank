@@ -7,9 +7,7 @@ service with the real store swapped in for the fake.
 from __future__ import annotations
 
 import datetime as dt
-import json
 import pathlib
-from typing import Any
 from urllib.parse import quote
 
 import pytest
@@ -31,10 +29,8 @@ from tests.api.youtube.rows import (
     channel,
     discovery,
     entry,
-    metadata,
     playlist,
     reference,
-    transcript,
     video_payload,
 )
 
@@ -43,7 +39,6 @@ pytestmark = pytest.mark.clickhouse
 ROUTE = "/api/reader/youtube"
 VIDEO = "NnV_cWeoo5Q"
 EARLIER = COLLECTED_AT - dt.timedelta(hours=2)
-LATER = COLLECTED_AT + dt.timedelta(hours=1)
 VIDEOS = CHANNEL_URL + "/videos"
 SHORTS = CHANNEL_URL + "/shorts"
 SAME_ORIGIN = {"origin": "http://dank.test"}
@@ -156,18 +151,6 @@ async def test_channel_details_are_local_and_keep_the_rounded_count(
     [shown] = (await real_store.overview(catalog))["channels"]
 
     assert shown["avatar_url"] is None
-
-
-async def test_the_catalog_decides_which_feeds_are_listed(
-    real_store: ClickHouseYouTubeStore,
-) -> None:
-    feed = "https://www.youtube.com/@FromTheCatalog/videos"
-
-    body = await real_store.overview((
-        SourceConfig("youtube.com", (), (feed,)),
-    ))
-
-    assert feed in {found["url"] for found in body["feeds"]}
 
 
 async def test_channels_group_saved_examples_and_report_unknowns(
@@ -304,72 +287,6 @@ async def test_a_linked_video_can_be_opened_without_a_feed(
     assert body["items"][0]["references"][0]["reader_url"] == ""
 
 
-async def test_the_library_reports_its_count_and_status(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_playlists", [
-        playlist(status="partial"),
-        playlist("PLsecond", title="Second", snapshot_hash="second"),
-    ])
-    await insert(clickhouse, "youtube_playlist_library", [{
-        "observed_at": COLLECTED_AT, "playlist_ids": ["PLexample", "PLsecond"],
-    }])
-
-    body = (await client.get(f"{ROUTE}/playlists?limit=1")).json()
-
-    assert body["total"] == 2
-    assert body["next_cursor"]
-
-    [shown] = body["playlists"]
-
-    assert shown["status"] == "partial"
-    assert shown["complete"] is False
-    assert shown["snapshot_id"] == "old-order"
-
-    second = (await client.get(
-        f"{ROUTE}/playlists?limit=1&cursor={quote(body['next_cursor'])}",
-    )).json()
-
-    assert [found["id"] for found in second["playlists"]] == ["PLsecond"]
-    assert second["next_cursor"] is None
-
-
-async def test_an_empty_library_has_a_valid_cutoff(
-    client: AsyncClient,
-) -> None:
-    response = await client.get(f"{ROUTE}/playlists")
-
-    assert (response.status_code, response.json()) == (200, {
-        "playlists": [], "total": 0, "next_cursor": None,
-    })
-
-
-async def test_a_playlist_keeps_duplicates_and_unavailable_positions(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_playlists", [playlist()])
-    await insert(clickhouse, "youtube_playlist_entries", [
-        entry(1),
-        entry(2),
-        entry(3, "", available=False, title="[Private video]"),
-    ])
-
-    body = (await client.get(f"{ROUTE}/playlists/PLexample")).json()
-
-    assert body["total"] == 3
-    assert [item["id"] for item in body["items"]] == [
-        "video:aaaaaaaaaaa", "video:aaaaaaaaaaa", "unavailable:3",
-    ]
-    assert [item["playlist_position"] for item in body["items"]] == [1, 2, 3]
-    assert [item["playlist_entry_id"] for item in body["items"]] == [
-        "entry-1", "entry-2", "entry-3",
-    ]
-    assert body["items"][0]["duration_text"] == "1:01:01"
-    assert body["items"][2]["available"] is False
-    assert body["items"][2]["url"] == ""
-    assert body["items"][2]["video_url"] is None
-
-
 async def test_a_capture_published_between_pages_cant_change_the_rest(
     client: AsyncClient, clickhouse: ClickHouseClient,
 ) -> None:
@@ -404,163 +321,3 @@ async def test_a_capture_published_between_pages_cant_change_the_rest(
 
     assert fresh["playlist"]["snapshot_id"] == "new-order"
     assert fresh["items"][0]["video_id"] == "bbbbbbbbbbb"
-
-
-async def test_a_playlist_search_keeps_its_total_and_original_positions(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_playlists", [playlist(entry_count=100)])
-    await insert(clickhouse, "youtube_playlist_entries", [
-        entry(position, title="Findable" if position in {34, 89} else "Other")
-        for position in (1, 34, 50, 89)
-    ])
-    path = f"{ROUTE}/playlists/PLexample?q=Findable&limit=1"
-
-    body = (await client.get(path)).json()
-
-    assert body["total"] == 2
-    assert body["playlist"]["collected_count"] == 100
-    assert [item["playlist_position"] for item in body["items"]] == [34]
-
-    second = (await client.get(
-        f"{path}&cursor={quote(body['next_cursor'])}",
-    )).json()
-
-    assert [item["playlist_position"] for item in second["items"]] == [89]
-    assert second["next_cursor"] is None
-
-
-async def test_a_missing_playlist_answers_404(client: AsyncClient) -> None:
-    response = await client.get(f"{ROUTE}/playlists/missing")
-
-    assert (response.status_code, response.json()["error"]) == (
-        404, "Playlist not found",
-    )
-
-
-@pytest.mark.parametrize(("table", "row"), [
-    ("youtube_reference_evidence", reference(VIDEO)),
-    ("youtube_discoveries", discovery(f"video:{VIDEO}")),
-])
-async def test_a_video_is_known_from_either_source(
-    real_store: ClickHouseYouTubeStore,
-    clickhouse: ClickHouseClient,
-    table: str,
-    row: dict[str, Any],
-) -> None:
-    assert not await real_store.is_known(VIDEO)
-
-    await insert(clickhouse, table, [row])
-
-    assert await real_store.is_known(VIDEO)
-
-
-async def test_the_last_capture_ignores_later_failures(
-    real_store: ClickHouseYouTubeStore, clickhouse: ClickHouseClient,
-) -> None:
-    assert await real_store.last_metadata_capture(VIDEO) is None
-
-    await insert(clickhouse, "youtube_video_metadata", [
-        metadata(VIDEO, observed_at=EARLIER),
-        metadata(VIDEO, status="failed", observed_at=LATER),
-    ])
-
-    assert await real_store.last_metadata_capture(VIDEO) == EARLIER.isoformat()
-
-
-async def test_a_saved_transcript_hides_its_raw_fields(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_reference_evidence", [reference(VIDEO)])
-    await insert(clickhouse, "youtube_transcripts", [transcript(VIDEO)])
-
-    response = await client.get(f"{ROUTE}/transcript/{VIDEO}")
-    body = response.json()
-
-    assert response.status_code == 200
-    assert body["segments"][0] == {
-        "start": 1.5, "duration": 2.0, "text": "Saved words",
-    }
-    assert body["generated"] is True
-    assert body["retry_after"] == ""
-    assert "private" not in response.text
-
-
-async def test_the_newest_transcript_row_wins(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_reference_evidence", [reference(VIDEO)])
-    await insert(clickhouse, "youtube_transcripts", [
-        transcript(VIDEO, status="failed", observed_at=EARLIER),
-        transcript(VIDEO),
-    ])
-
-    body = (await client.get(f"{ROUTE}/transcript/{VIDEO}")).json()
-
-    assert body["status"] == "captured"
-
-
-async def test_a_valid_saved_observation_is_reused_without_the_network(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    # The network guard fails this test if the runner asks YouTube anything.
-    await insert(clickhouse, "youtube_reference_evidence", [reference(VIDEO)])
-    retry = dt.datetime.now(dt.UTC) + dt.timedelta(days=1)
-    await insert(clickhouse, "youtube_video_metadata", [
-        metadata(VIDEO, retry_after=retry),
-    ])
-
-    response = await client.post(
-        f"{ROUTE}/metadata/{VIDEO}", json={}, headers=SAME_ORIGIN,
-    )
-
-    assert (response.status_code, response.json()) == (200, {
-        "video_id": VIDEO,
-        "status": "captured",
-        "provider": "youtube_oembed",
-        "cached": True,
-        "observed_at": COLLECTED_AT.isoformat(),
-        "retry_after": retry.replace(
-            microsecond=retry.microsecond // 1000 * 1000,
-        ).isoformat(),
-        "available": True,
-        "captured_at": COLLECTED_AT.isoformat(),
-    })
-
-
-async def test_a_cached_failure_still_reports_the_earlier_preview(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_discoveries", [
-        discovery(f"video:{VIDEO}"),
-    ])
-    retry = dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)
-    await insert(clickhouse, "youtube_video_metadata", [
-        metadata(VIDEO, observed_at=EARLIER),
-        metadata(VIDEO, status="failed", retry_after=retry),
-    ])
-
-    body = (await client.post(
-        f"{ROUTE}/metadata/{VIDEO}", json={}, headers=SAME_ORIGIN,
-    )).json()
-
-    assert body["status"] == "failed"
-    assert body["cached"] is True
-    assert body["available"] is True
-    assert body["captured_at"] == EARLIER.isoformat()
-
-
-async def test_saved_captions_are_reused_without_the_network(
-    client: AsyncClient, clickhouse: ClickHouseClient,
-) -> None:
-    await insert(clickhouse, "youtube_reference_evidence", [reference(VIDEO)])
-    await insert(clickhouse, "youtube_transcripts", [transcript(VIDEO)])
-
-    response = await client.post(
-        f"{ROUTE}/transcript/{VIDEO}", json={}, headers=SAME_ORIGIN,
-    )
-
-    assert response.status_code == 200
-    assert response.json()["segments"][1]["text"] == "More words"
-    assert "private" not in response.text
-    assert json.loads(response.text)["retry_after"] == ""

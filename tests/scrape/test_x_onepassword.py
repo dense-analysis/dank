@@ -147,7 +147,7 @@ def test_pipe_preserves_password_and_redacts_repr() -> None:
 @pytest.mark.parametrize("payload", [
     b"user\0partial", b"user\0password\0extra", b"user\0\0",
     b"user\0pass\nword\0", b"user\0pass\tword\0", b"user\0\xff\0",
-    b"user\0" + b"p" * 8193 + b"\0",
+    pytest.param(b"user\0" + b"p" * 8193 + b"\0", id="oversize"),
 ])
 def test_pipe_rejects_partial_or_unsafe_values(payload: bytes) -> None:
     with pytest.raises(OnePasswordError):

@@ -187,14 +187,13 @@ projections. The current table deliberately supports multiple algorithms.
 ## Verification
 
 Category checks live in `tests/training/`, `tests/process/test_categories.py`,
-`tests/test_categories.py`, and `tests/test_lint_architecture.py`. They cover
+and `tests/test_categories.py`. They cover
 probability validation and retries, input limits, category query filters and
 bindings, returned assignments, resumable training, request limits, retained
 writes during a sibling failure, the four-field HTML payload, stable cache
-prefixes and pipeline import boundaries. Storage uses in-memory fakes and
-Decisions replies are simulated. Run these checks with `make test`; no active
-ClickHouse server or `--clickhouse-url` is needed. These unit tests exercise
-query construction and orchestration, rather than executing ClickHouse SQL.
+prefixes. Storage uses in-memory fakes and Decisions replies are simulated.
+Run the category checks with `make test` and the pipeline import boundary
+checks with `make lint`.
 No live paid API call or cache-hit measurement was made.
 [DEN-69](https://linear.app/dense-analysis/issue/DEN-69/benchmark-category-accuracy-and-clickhouse-vector-quantisation)
 tracks corpus calibration and performance/quantisation measurements.

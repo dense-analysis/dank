@@ -10,6 +10,7 @@ from clickhouse_connect.driver.binding import (
     bind_query,  # pyright: ignore[reportUnknownVariableType]
 )
 
+from dank.api.connections.clickhouse import ClickHouseConnectionStore
 from dank.api.connections.model import connection_scope
 from dank.api.connections.schemas import ConnectionQuery
 from dank.model import Post, RawPost
@@ -84,6 +85,78 @@ def client(*responses: list[dict[str, Any]]) -> Any:
     mocked.fetch_json.side_effect = [QueryResult(rows) for rows in responses]
 
     return mocked
+
+
+async def test_saved_rows_resolve_collected_and_video_destinations() -> None:
+    alias = "https://target.test/alias"
+    video = "https://www.youtube.com/watch?v=NnV_cWeoo5Q"
+    canonical = {
+        "domain": "target.test", "id": "article",
+        "url": "https://target.test/canonical",
+        "title": "Original article", "source": "linked_article",
+    }
+    related = {
+        **evidence(alias),
+        "domain": "reader.test",
+        "post_id": "456",
+        "related_post_url": canonical["url"],
+        **{f"related_{key}": value for key, value in canonical.items()},
+    }
+    outgoing = {**evidence(alias), "kind": "post", "connection_count": 3}
+    store = ClickHouseConnectionStore(client(
+        [ROOT], [evidence(ROOT["url"])],
+        [outgoing, evidence(video), evidence()],
+        [{"matched_target": alias, **canonical}],
+        [{"video_id": "NnV_cWeoo5Q", "title": "Video title"}], [related],
+    ))
+    result = await store.neighbourhood(connection_scope(
+        "origin.test", "123", source="reddit", community="kernel",
+    ))
+
+    assert result is not None
+    assert result["root"] == ROOT
+    assert result["context"] == {"source": "reddit", "community": "kernel"}
+    assert result["incoming_count"] == result["related_count"] == 1
+    assert result["outgoing_count"] == 3
+    assert result["incoming"][0]["target"]["post"] == ROOT
+    assert result["outgoing"][0]["target"]["post"] == canonical
+    assert result["outgoing"][1]["target"]["title"] == "Video title"
+    assert result["outgoing"][1]["target"]["youtube_item_id"] == (
+        "video:NnV_cWeoo5Q"
+    )
+    assert result["outgoing"][2]["target"]["post"] is None
+    assert result["related"][0]["direction"] == "related"
+    assert result["related"][0]["origin"]["id"] == "456"
+
+
+async def test_missing_root_and_empty_neighbourhood() -> None:
+    scope = connection_scope("origin.test", "123")
+    absent = ClickHouseConnectionStore(client([]))
+    empty = ClickHouseConnectionStore(client([ROOT], [], []))
+
+    assert await absent.neighbourhood(scope) is None
+    result = await empty.neighbourhood(scope)
+
+    assert result is not None
+    assert result["incoming"] == result["outgoing"] == result["related"] == []
+    assert result["incoming_count"] == result["outgoing_count"] == 0
+
+
+async def test_exact_lookup_retains_capture_time() -> None:
+    target = "https://target.test/article"
+    key = ConnectionQuery(
+        domain="origin.test", id="123", target=target, kind="comment",
+        reference_id="comment-2", observed_at=STAMP.isoformat(),
+    ).key()
+    present = ClickHouseConnectionStore(client([evidence(target)], []))
+    absent = ClickHouseConnectionStore(client([]))
+
+    result = await present.connection(key)
+
+    assert result is not None
+    assert result["target"]["url"] == target
+    assert result["evidence"]["observed_at"] == STAMP.isoformat()
+    assert await absent.connection(key) is None
 
 
 async def test_versioned_backfill_is_bounded_and_only_marks_success():

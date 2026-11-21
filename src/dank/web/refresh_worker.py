@@ -74,11 +74,12 @@ async def _collect(
 
 
 async def watch_owner(
-    connection: Connection, task: asyncio.Task[object],
+    connection: Connection, task: asyncio.Task[object], *,
+    heartbeat_seconds: float = 1,
 ) -> None:
     # An exec-based development reload closes the pipe without app cleanup.
     while not task.done():
-        await asyncio.sleep(1)
+        await asyncio.sleep(heartbeat_seconds)
 
         try:
             connection.send({})

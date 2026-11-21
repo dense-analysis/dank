@@ -10,12 +10,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from dank.config import Settings, SourceConfig, load_settings
+from dank.config import Settings, SourceConfig
 from dank.model import RawPost
 from dank.scrape import runner
 from dank.scrape.metrics import count
 from dank.scrape.types import ScrapeBatch
 from dank.storage.clickhouse import QueryResult
+from tests.settings import native_settings
 
 
 class Client:
@@ -58,7 +59,7 @@ class Browser:
 
 
 def settings(tmp_path: pathlib.Path, domain: str = "reddit.com") -> Settings:
-    return load_settings("config.native.example.toml")._replace(
+    return native_settings()._replace(
         data_dir=tmp_path, sources=(SourceConfig(domain, ()),),
         media_download_types=(),
     )

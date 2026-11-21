@@ -1,19 +1,8 @@
-"""The routes over the real repository and table."""
+"""Source settings round trips through the route and repository port."""
 
-from collections.abc import AsyncIterator
-
-import pytest
-from fastapi import FastAPI
 from httpx import AsyncClient
-from sqlalchemy import text
 
-from dank.api.source_settings.deps import source_repository
-from dank.config import PostgresSettings
-from dank.db.engine import async_engine, async_sessions
-from dank.db.sources import PostgresSourceRepository
 from tests.api.client import BASE_URL
-
-pytestmark = pytest.mark.postgres
 
 PATH = "/api/reader/source-settings"
 SAME_ORIGIN = {"origin": BASE_URL}
@@ -27,23 +16,6 @@ BODY = {
     "reddit": None,
     "hacker_news": None,
 }
-
-
-@pytest.fixture
-async def app(
-    app: FastAPI, postgres_settings: PostgresSettings,
-) -> AsyncIterator[FastAPI]:
-    engine = async_engine(postgres_settings)
-
-    async with engine.begin() as connection:
-        await connection.execute(text("TRUNCATE sources RESTART IDENTITY"))
-
-    repository = PostgresSourceRepository(async_sessions(engine))
-    app.dependency_overrides[source_repository] = lambda: repository
-
-    yield app
-
-    await engine.dispose()
 
 
 async def test_sources_are_saved_listed_and_edited(

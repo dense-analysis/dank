@@ -158,14 +158,6 @@ async def test_metadata_only_youtube_is_a_real_reader_destination(
     }
 
 
-async def test_unknown_root_is_not_found(client: AsyncClient) -> None:
-    response = await client.get("/api/reader/connections?domain=no&id=no")
-
-    assert (response.status_code, response.json()["code"]) == (
-        404, "not_found",
-    )
-
-
 async def test_context_narrows_related_publishers_but_not_outgoing_links(
     client: AsyncClient, clickhouse: ClickHouseClient,
 ) -> None:

@@ -14,23 +14,30 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SECRET = "correct-horse-battery-staple"
 
 
-def _load(tmp_path: pathlib.Path, config: str) -> Settings:
-    path = tmp_path / "settings.fixture.toml"
+def _load(memory_path: pathlib.Path, config: str) -> Settings:
+    path = memory_path / "settings.fixture.toml"
     path.write_text(config)
 
     return load_settings(path)
 
 
 def test_missing_section_uses_the_compose_service_defaults(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    assert _load(tmp_path, "").postgres == PostgresSettings(
+    assert _load(memory_path, "").postgres == PostgresSettings(
         host="postgres",
         port=5432,
         database="dank",
         user="dank",
         password_file=pathlib.Path("postgres-password"),
     )
+
+
+def test_password_and_backups_are_ignored_by_git() -> None:
+    ignored = (ROOT / ".gitignore").read_text().splitlines()
+
+    assert "/postgres-password" in ignored
+    assert "/backups/" in ignored
 
 
 def test_defaults_match_the_compose_service() -> None:
@@ -52,18 +59,24 @@ def test_container_copies_the_secret_to_the_default_password_file() -> None:
 def test_docker_template_matches_the_defaults() -> None:
     settings = load_settings(ROOT / "config.example.toml")
 
-    assert settings.postgres == PostgresSettings()
+    defaults = PostgresSettings()
+    assert settings.postgres == defaults._replace(
+        password_file=pathlib.Path(defaults.password_file),
+    )
 
 
 def test_native_template_points_at_a_local_server() -> None:
     settings = load_settings(ROOT / "config.native.example.toml")
 
-    assert settings.postgres == PostgresSettings(host="localhost")
+    defaults = PostgresSettings(host="localhost")
+    assert settings.postgres == defaults._replace(
+        password_file=pathlib.Path(defaults.password_file),
+    )
 
 
-def test_section_overrides_every_field(tmp_path: pathlib.Path) -> None:
+def test_section_overrides_every_field(memory_path: pathlib.Path) -> None:
     settings = _load(
-        tmp_path,
+        memory_path,
         '[postgres]\n'
         'host = "db.test"\n'
         'port = 6543\n'
@@ -82,19 +95,19 @@ def test_section_overrides_every_field(tmp_path: pathlib.Path) -> None:
 
 
 def test_loading_settings_does_not_need_the_password_file(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    missing = tmp_path / "missing"
-    settings = _load(tmp_path, f'[postgres]\npassword_file = "{missing}"\n')
+    missing = memory_path / "missing"
+    settings = _load(memory_path, f'[postgres]\npassword_file = "{missing}"\n')
 
     assert settings.postgres.password_file == missing
 
 
 def test_names_may_use_the_full_postgres_identifier_length(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
     name = "d" * 63
-    settings = _load(tmp_path, f'[postgres]\ndatabase = "{name}"\n')
+    settings = _load(memory_path, f'[postgres]\ndatabase = "{name}"\n')
 
     assert settings.postgres.database == name
 
@@ -122,28 +135,28 @@ def test_names_may_use_the_full_postgres_identifier_length(
     ],
 )
 def test_invalid_settings_are_rejected(
-    *, tmp_path: pathlib.Path, config: str, field: str,
+    *, memory_path: pathlib.Path, config: str, field: str,
 ) -> None:
     with pytest.raises(ConfigError, match=field):
-        _load(tmp_path, config)
+        _load(memory_path, config)
 
 
 def test_inline_password_is_rejected_without_repeating_it(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
     with pytest.raises(ConfigError, match="password_file") as caught:
-        _load(tmp_path, f'[postgres]\npassword = "{SECRET}"\n')
+        _load(memory_path, f'[postgres]\npassword = "{SECRET}"\n')
 
     assert SECRET not in str(caught.value)
 
 
 def test_settings_hold_the_password_path_but_not_the_password(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    password_file = tmp_path / "postgres-password"
+    password_file = memory_path / "postgres-password"
     password_file.write_text(SECRET)
     settings = _load(
-        tmp_path, f'[postgres]\npassword_file = "{password_file}"\n',
+        memory_path, f'[postgres]\npassword_file = "{password_file}"\n',
     )
 
     assert read_postgres_password(settings.postgres) == SECRET
@@ -151,9 +164,9 @@ def test_settings_hold_the_password_path_but_not_the_password(
 
 
 def test_password_strips_trailing_newlines_like_the_image_entrypoint(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    password_file = tmp_path / "postgres-password"
+    password_file = memory_path / "postgres-password"
     password_file.write_bytes(b" pass word \r\n\n")
 
     password = read_postgres_password(
@@ -165,9 +178,9 @@ def test_password_strips_trailing_newlines_like_the_image_entrypoint(
 
 @pytest.mark.parametrize("contents", [b"", b"\n\n"])
 def test_empty_password_file_is_rejected(
-    *, tmp_path: pathlib.Path, contents: bytes,
+    *, memory_path: pathlib.Path, contents: bytes,
 ) -> None:
-    password_file = tmp_path / "postgres-password"
+    password_file = memory_path / "postgres-password"
     password_file.write_bytes(contents)
 
     with pytest.raises(ConfigError, match="is empty"):
@@ -175,16 +188,16 @@ def test_empty_password_file_is_rejected(
 
 
 def test_unreadable_password_file_names_the_path(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
-    missing = tmp_path / "missing"
+    missing = memory_path / "missing"
 
     with pytest.raises(ConfigError, match=str(missing)):
         read_postgres_password(PostgresSettings(password_file=missing))
 
 
-def test_undecodable_password_is_not_shown(tmp_path: pathlib.Path) -> None:
-    password_file = tmp_path / "postgres-password"
+def test_undecodable_password_is_not_shown(memory_path: pathlib.Path) -> None:
+    password_file = memory_path / "postgres-password"
     password_file.write_bytes(SECRET.encode() + b"\xff")
 
     with pytest.raises(ConfigError, match="UTF-8") as caught:
@@ -195,15 +208,17 @@ def test_undecodable_password_is_not_shown(tmp_path: pathlib.Path) -> None:
     assert caught.value.__suppress_context__
 
 
-def test_postgres_is_enabled_unless_turned_off(tmp_path: pathlib.Path) -> None:
-    assert _load(tmp_path, "").postgres.enabled is True
+def test_postgres_is_enabled_unless_turned_off(
+    memory_path: pathlib.Path,
+) -> None:
+    assert _load(memory_path, "").postgres.enabled is True
 
-    settings = _load(tmp_path, "[postgres]\nenabled = false\n")
+    settings = _load(memory_path, "[postgres]\nenabled = false\n")
 
     assert settings.postgres.enabled is False
 
 
-def test_enabled_must_be_a_boolean(tmp_path: pathlib.Path) -> None:
+def test_enabled_must_be_a_boolean(memory_path: pathlib.Path) -> None:
     with pytest.raises(ConfigError, match=r"postgres\.enabled"):
-        _load(tmp_path, '[postgres]\nenabled = "no"\n')
+        _load(memory_path, '[postgres]\nenabled = "no"\n')
 

@@ -22,9 +22,9 @@ WEBP = base64.b64decode(
     (PNG, "image/png"), (WEBP, "image/webp"),
 ])
 def test_extensionless_images_are_reused_by_the_reader(
-    tmp_path: Path, data: bytes, content_type: str,
+    memory_path: Path, data: bytes, content_type: str,
 ) -> None:
-    image = tmp_path / "hashed-image"
+    image = memory_path / "hashed-image"
     image.write_bytes(data)
     now = datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC)
     url = "https://publisher.test/images/opaque-id?revision=4"
@@ -41,7 +41,7 @@ def test_extensionless_images_are_reused_by_the_reader(
     payload = post_payload(post, [AssetRow(
         asset.post_id, asset.url, asset.local_path, asset.content_type,
         asset.size_bytes,
-    )], tmp_path)
+    )], memory_path)
 
     assert payload["thumbnail"] == "/assets/hashed-image"
     assert '<img src="/assets/hashed-image">' in payload["html"]
@@ -56,9 +56,9 @@ def test_extensionless_images_are_reused_by_the_reader(
     (b"RIFF0000WAVE", "image"), (b"RIFF0000WEB", "image"),
 ])
 def test_unknown_extensionless_content_stays_unclassified(
-    tmp_path: Path, data: bytes, asset_type: str,
+    memory_path: Path, data: bytes, asset_type: str,
 ) -> None:
-    file = tmp_path / "unknown"
+    file = memory_path / "unknown"
     file.write_bytes(data)
     now = datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC)
     asset = convert_raw_asset(RawAsset(
@@ -70,8 +70,8 @@ def test_unknown_extensionless_content_stays_unclassified(
     assert asset.content_type == ""
 
 
-def test_filename_content_type_stays_authoritative(tmp_path: Path) -> None:
-    file = tmp_path / "attachment.txt"
+def test_filename_content_type_stays_authoritative(memory_path: Path) -> None:
+    file = memory_path / "attachment.txt"
     file.write_bytes(PNG)
     now = datetime.datetime(2026, 10, 15, tzinfo=datetime.UTC)
     asset = convert_raw_asset(RawAsset(
@@ -84,14 +84,15 @@ def test_filename_content_type_stays_authoritative(tmp_path: Path) -> None:
 
 
 def test_file_scrubbed_between_existence_check_and_stat_is_skipped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    memory_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    path = tmp_path / "media.png"
+    path = memory_path / "media.png"
     path.write_bytes(PNG)
     now = datetime.datetime(2026, 11, 21, tzinfo=datetime.UTC)
     raw = RawAsset("site.test", "post", "https://media/a", "image", now,
                    "rss", str(path))
-    original = Path.is_file
+    path_type = type(path)
+    original = path_type.is_file
 
     def exists(candidate: Path) -> bool:
         if candidate == path:
@@ -101,31 +102,32 @@ def test_file_scrubbed_between_existence_check_and_stat_is_skipped(
 
         return original(candidate)
 
-    monkeypatch.setattr(Path, "is_file", exists)
+    monkeypatch.setattr(path_type, "is_file", exists)
 
     assert convert_raw_asset(raw) is None
 
 
 def test_file_scrubbed_while_reading_its_image_signature_is_skipped(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    memory_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    path = tmp_path / "opaque-media"
+    path = memory_path / "opaque-media"
     path.write_bytes(PNG)
     now = datetime.datetime(2026, 11, 21, tzinfo=datetime.UTC)
     raw = RawAsset("site.test", "post", "https://media/a", "image", now,
                    "rss", str(path))
-    original = Path.is_file
+    path_type = type(path)
+    original = path_type.is_file
 
     def exists(candidate: Path) -> bool:
         if candidate == path:
             # stat still succeeds, but opening the file must tolerate expiry.
-            monkeypatch.setattr(Path, "open", missing)
+            monkeypatch.setattr(path_type, "open", missing)
 
         return original(candidate)
 
     def missing(*args: object, **kwargs: object) -> None:
         raise FileNotFoundError("File was scrubbed")
 
-    monkeypatch.setattr(Path, "is_file", exists)
+    monkeypatch.setattr(path_type, "is_file", exists)
 
     assert convert_raw_asset(raw) is None

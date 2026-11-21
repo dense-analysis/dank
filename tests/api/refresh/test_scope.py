@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pathlib
 from typing import Any
 
 import pytest
@@ -14,20 +13,19 @@ from dank.config import (
     SourceAdapter,
     SourceAdapterConfig,
     SourceConfig,
-    load_settings,
 )
 from dank.errors import InvalidInput
 from dank.scrape.youtube.feeds import configured_feeds
 from tests.api.refresh.fakes import FakeRefreshTargets, UnreachableTargets
+from tests.settings import native_settings
 
-EXAMPLE = pathlib.Path(__file__).parents[3] / "config.native.example.toml"
 YOUTUBE = "https://www.youtube.com"
 VIDEO = "L_6pAVHYoFM"
 CHANNEL = "UC1234567890123456789012"
 
 
 def configured(*sources: SourceConfig) -> Settings:
-    return load_settings(EXAMPLE)._replace(sources=sources)
+    return native_settings()._replace(sources=sources)
 
 
 def targets(

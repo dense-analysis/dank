@@ -57,7 +57,7 @@ async def _download(
 
 
 async def test_query_and_host_variants_have_distinct_files(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
     urls = [
         "https://one.test/_image?id=first",
@@ -67,7 +67,7 @@ async def test_query_and_host_variants_have_distinct_files(
     ]
     client = _Client()
     results = await asyncio.gather(*(
-        _download(tmp_path, client, url) for url in urls
+        _download(memory_path, client, url) for url in urls
     ))
     assert all(result is not None for result in results)
     paths = [pathlib.Path(result.local_path) for result in results if result]
@@ -76,44 +76,45 @@ async def test_query_and_host_variants_have_distinct_files(
         url.encode() for url in urls
     ]
     await asyncio.gather(*(
-        _download(tmp_path, client, url) for url in urls
+        _download(memory_path, client, url) for url in urls
     ))
     assert client.calls == 4
-    assert not await asyncio.to_thread(glob.glob, str(tmp_path / "*.part"))
+    assert not await asyncio.to_thread(glob.glob, str(memory_path / "*.part"))
 
 
 async def test_simultaneous_same_url_requests_use_separate_temporary_files(
-    tmp_path: pathlib.Path,
+    memory_path: pathlib.Path,
 ) -> None:
     client = _Client()
     url = "https://example.test/picture.png"
     results = await asyncio.gather(
-        _download(tmp_path, client, url), _download(tmp_path, client, url),
+        _download(memory_path, client, url),
+        _download(memory_path, client, url),
     )
     assert results[0] is not None and results[1] is not None
     assert results[0].local_path == results[1].local_path
     path = pathlib.Path(results[0].local_path)
     assert path.suffix == ".png"
     assert await asyncio.to_thread(path.read_bytes) == url.encode()
-    assert not await asyncio.to_thread(glob.glob, str(tmp_path / "*.part"))
+    assert not await asyncio.to_thread(glob.glob, str(memory_path / "*.part"))
 
 
 async def test_failed_publish_is_a_logged_download_failure(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     def fail(*args: object, **kwargs: object) -> None:
         raise OSError("cannot publish file")
 
     monkeypatch.setattr(pathlib.Path, "replace", fail)
-    result = await _download(tmp_path, _Client(), "https://example.test/a.jpg")
+    result = await _download(memory_path, _Client(), "https://example.test/a.jpg")
     assert result is not None and result.local_path == ""
     assert "cannot publish file" in caplog.text
-    assert await asyncio.to_thread(os.listdir, tmp_path) == []
+    assert await asyncio.to_thread(os.listdir, memory_path) == []
 
 
 async def test_cancelled_batch_stops_its_other_downloads(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch, memory_path: pathlib.Path,
 ) -> None:
     started = asyncio.Event()
     stopped = asyncio.Event()
@@ -139,7 +140,7 @@ async def test_cancelled_batch_stops_its_other_downloads(
 
     with pytest.raises(RuntimeError, match="unexpected downloader failure"):
         await download_assets(
-            assets, assets_dir=tmp_path, http_client=cast(Any, None),
+            assets, assets_dir=memory_path, http_client=cast(Any, None),
         )
 
     assert stopped.is_set()

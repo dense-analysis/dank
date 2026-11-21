@@ -7,17 +7,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from dank.config import Settings, SourceConfig, load_settings
+from dank.config import Settings, SourceConfig
 from dank.scrape import runner
 from dank.scrape.concurrency import collection_resources
 from dank.scrape.runner import (
     _run_source_sessions,  # pyright: ignore[reportPrivateUsage]
 )
 from dank.scrape.zendriver import BrowserConfig
+from tests.settings import native_settings
 
 
 def settings(tmp_path: pathlib.Path, *domains: str) -> Settings:
-    return load_settings("config.native.example.toml")._replace(
+    return native_settings()._replace(
         data_dir=tmp_path,
         sources=tuple(SourceConfig(domain, ()) for domain in domains),
         media_download_types=(),

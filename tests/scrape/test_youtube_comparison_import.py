@@ -10,10 +10,11 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from dank.config import Settings, load_settings
+from dank.config import Settings
 from dank.runtime import RuntimeInfo
 from dank.scrape import runner
 from dank.storage.clickhouse import QueryResult
+from tests.settings import native_settings
 
 HOME = "https://www.youtube.com/"
 START = "2026-10-23T10:00:00+00:00"
@@ -99,7 +100,7 @@ class Client:
 def setup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> tuple[Settings, Client, Mock]:
-    settings = load_settings("config.native.example.toml")._replace(
+    settings = native_settings()._replace(
         data_dir=tmp_path / "data",
     )
     client = Client()

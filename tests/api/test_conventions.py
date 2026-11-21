@@ -73,8 +73,9 @@ async def broken_probe() -> Probe:
     raise RuntimeError("ClickHouse is down")
 
 
-@pytest.fixture
-def app(app: FastAPI) -> FastAPI:
+@pytest.fixture(scope="module")
+def app(api_settings: Settings) -> FastAPI:
+    app = create_app(api_settings)
     app.include_router(probe)
 
     return app
@@ -320,34 +321,3 @@ async def test_head_answers_like_get_without_a_body(
     assert head.content == b""
     assert head.headers["content-length"] == get.headers["content-length"]
     assert head.headers["cache-control"] == "no-store"
-
-
-def test_every_route_returns_a_strict_model(settings: Settings) -> None:
-    # Checked through OpenAPI, the contract the reader's types come from:
-    # a named schema with additionalProperties false is an ApiModel.
-    document = create_app(settings).openapi()
-    schemas = document["components"]["schemas"]
-    operations = [
-        (path, operation)
-        for path, item in document["paths"].items()
-        for operation in item.values()
-    ]
-
-    assert operations
-
-    for path, operation in operations:
-        success = next(
-            response for status, response in operation["responses"].items()
-            if status.startswith("2")
-        )
-
-        assert path.startswith("/api/"), path
-
-        # The one route that isn't JSON. The reader only links to it.
-        if path == "/api/reader/source-icon":
-            assert set(success["content"]) == {"image/png"}
-
-            continue
-
-        ref = success["content"]["application/json"]["schema"]["$ref"]
-        assert schemas[ref.rsplit("/", 1)[1]]["additionalProperties"] is False

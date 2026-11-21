@@ -7,18 +7,19 @@ from subprocess import PIPE, Popen
 
 import pytest
 
-SCRIPT = (
-    pathlib.Path("run-linters.sh")
-    .read_text()
-    .split(
-        "# Keep API domain rules",
-        1,
-    )[0]
+pytestmark = pytest.mark.shell_io
+
+
+SCRIPT, END_OF_PIPELINE_CHECK, _ = pathlib.Path(
+    "run-linters.sh",
+).read_text().partition(
+    "# Keep domain rules and use cases free of frameworks and drivers.",
 )
 
 
-# Bind before the network guard; run only the local architecture checks.
 def _check(path: pathlib.Path) -> tuple[int, str]:
+    assert END_OF_PIPELINE_CHECK
+
     with Popen(["bash", "-c", SCRIPT], cwd=path, stdout=PIPE, stderr=PIPE,
                text=True) as process:
         _, stderr = process.communicate(timeout=10)
